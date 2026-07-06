@@ -1,0 +1,27 @@
+# Example PageLedger page taxonomy.
+#
+# A taxonomy names page types and maps them to default extraction actions.
+# Projects can add domain-specific labels, but the default set should stay
+# small enough for humans to review.
+
+schema_version: "0.1"  # Config file format version.
+taxonomy:
+  page_types:
+    structural_metadata:
+      description: Title pages, tables of contents, colophons, covers.
+      default_action: skip
+    blank:
+      description: Blank or filler pages.
+      default_action: skip
+    table_data:
+      description: Structured data tables that should be aligned to a schema.
+      default_action: vlm_table
+    prose:
+      description: Narrative or methodological text.
+      default_action: transcribe_text
+    index:
+      description: Alphabetical or topical index pages.
+      default_action: reference_entry
+    figure:
+      description: Visual pages where text extraction is secondary.
+      default_action: review

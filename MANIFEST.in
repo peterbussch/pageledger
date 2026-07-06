@@ -1,0 +1,19 @@
+include README.md
+include LICENSE
+include CHANGELOG.md
+include CITATION.cff
+recursive-include docs *.md *.yml
+recursive-include examples *.py *.sh
+recursive-include schemas *.json
+recursive-include skills *.md
+
+# Local-only material that may exist in a development working tree.
+# Never let it into the sdist even when present on disk.
+exclude docs/autoresearch.md
+exclude _session_research.md
+recursive-exclude prompts *
+recursive-exclude assets *
+prune .planning
+prune .stress
+prune .hermes
+prune runs

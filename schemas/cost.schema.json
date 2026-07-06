@@ -1,0 +1,67 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/peterbussch/pageledger/schemas/cost.json",
+  "title": "PageLedger Cost Report",
+  "description": "Page-denominated cost rollup for a run. Schema version 0.1.",
+  "type": "object",
+  "required": ["schema_version", "run_id", "execution_mode", "currency", "canonical_unit", "pages_extracted", "tokens_total", "pricing", "usage", "cost_usd", "cost_known", "cost_basis"],
+  "properties": {
+    "schema_version": { "type": "string", "const": "0.1" },
+    "run_id": { "type": "string" },
+    "execution_mode": { "type": "string", "enum": ["dry_run", "execute"] },
+    "currency": { "type": "string", "enum": ["USD"] },
+    "canonical_unit": { "type": "string", "const": "pages" },
+    "pages_extracted": { "type": "integer", "minimum": 0 },
+    "tokens_total": { "type": "integer", "minimum": 0 },
+    "pricing": {
+      "type": ["object", "null"],
+      "description": "User-configured pricing dict. Null or empty when no rates are set.",
+      "additionalProperties": true
+    },
+    "usage": {
+      "type": "object",
+      "description": "Rolled-up usage across all pages. May be null for fields where no adapter reported values.",
+      "required": ["pages"],
+      "properties": {
+        "pages": { "type": ["integer", "null"], "minimum": 1 },
+        "tokens": { "type": ["integer", "null"] },
+        "compute_seconds": { "type": ["number", "null"] },
+        "extraction_seconds": {
+          "type": ["number", "null"],
+          "description": "Wall-clock extraction time measured by the runner across all pages. Distinct from adapter-reported compute_seconds."
+        }
+      },
+      "additionalProperties": false
+    },
+    "cost_usd": {
+      "type": ["number", "null"],
+      "description": "Estimated total cost in USD. Null when cost is unknown."
+    },
+    "cost_known": {
+      "type": "boolean",
+      "description": "True if cost_usd is meaningful (at least one page had a known cost). False when pricing is absent and no adapter reported cost."
+    },
+    "cost_basis": {
+      "type": "string",
+      "enum": ["adapter_reported", "configured_rate", "mixed", "none"],
+      "description": "Where the dollar figure came from: real adapter-reported spend, the user's configured accounting rate, both, or nowhere (free/local engine with no pricing)."
+    },
+    "budget": {
+      "type": "object",
+      "description": "Per-unit budget status. Present when any budget cap is configured.",
+      "additionalProperties": {
+        "type": "object",
+        "required": ["max", "current", "exceeded"],
+        "properties": {
+          "max": { "type": "number" },
+          "current": { "type": "number" },
+          "exceeded": { "type": "boolean" },
+          "warn_at": { "type": "number" },
+          "warning": { "type": "boolean" }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

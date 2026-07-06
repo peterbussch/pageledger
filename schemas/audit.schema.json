@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/peterbussch/pageledger/schemas/audit.json",
+  "title": "PageLedger Audit",
+  "description": "Machine-readable audit result. audit.md is a rendering of this file, not a separate source of truth. Schema version 0.1.",
+  "type": "object",
+  "required": ["schema_version", "run_id", "review_queue", "quarantine_queue"],
+  "properties": {
+    "schema_version": { "type": "string", "const": "0.1" },
+    "run_id": { "type": "string" },
+    "review_queue": {
+      "type": "array",
+      "description": "Pages a human should inspect before trusting the run.",
+      "items": {
+        "type": "object",
+        "required": ["page_id", "page_number", "type", "action", "reason"],
+        "properties": {
+          "page_id": { "type": "string" },
+          "page_number": { "type": "integer", "minimum": 1 },
+          "type": { "type": "string" },
+          "confidence": { "type": ["number", "null"] },
+          "action": { "type": "string" },
+          "reason": { "type": "string" }
+        },
+        "additionalProperties": false
+      }
+    },
+    "quarantine_queue": {
+      "type": "array",
+      "description": "Pages excluded from rerun (quarantine policy, max depth, etc.). Empty in alpha.",
+      "items": {
+        "type": "object",
+        "required": ["page_id", "page_number", "type", "action", "reason"],
+        "properties": {
+          "page_id": { "type": "string" },
+          "page_number": { "type": "integer", "minimum": 1 },
+          "type": { "type": "string" },
+          "confidence": { "type": ["number", "null"] },
+          "action": { "type": "string" },
+          "reason": { "type": "string" }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

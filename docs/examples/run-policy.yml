@@ -1,0 +1,65 @@
+# Example PageLedger run policy.
+
+schema_version: "0.1"  # Config file format version.
+
+run:
+  # Current built-in adapters are `text` and `pdf_text`; project adapters can
+  # be loaded as `module.path:object`.
+  adapter: text
+
+  budget:
+    # Pages are the canonical, always-available unit. Any configured cap that
+    # is hit stops the run.
+    max_pages: 5000
+    max_usd: 25
+    warn_at_percent: 80
+
+  pricing:
+    # Unit rates. PageLedger derives dollar cost from pages and tokens when
+    # the adapter reports those units. Omit to run with pages-only accounting.
+    cost_per_page: 0.0015
+    cost_per_1k_tokens: 0.50
+
+  max_rerun_depth: 2
+
+  retry:
+    # The runner honors max_retries and backoff ("none" or "exponential":
+    # 0.5s base, doubling, capped at 8s). retry_on is a documented policy
+    # placeholder for project code and future runtime support.
+    max_retries: 3
+    backoff: exponential
+    # retry_on:
+    #   - rate_limit
+    #   - transient_provider_error
+    #   - timeout
+
+  # These policy sections are preserved in the config snapshot, but the alpha
+  # runner does not yet evaluate audit grades, schema failures, or quarantine
+  # rules. It queues dry-run/configured-review pages for review.
+  rerun_if:
+    - grade_below: C
+    - missing_required_columns: true
+    - arithmetic_failure_rate_above: 0.05
+    - provider_error: true
+
+  quarantine_if:
+    - grade_below: D
+    - hallucinated_columns_detected: true  # Detection is project-provided.
+    - route_confidence_below: 0.60
+
+# Artifact path overrides are a future feature. The alpha uses fixed artifact
+# names and paths (manifest.json, route-map.yml, raw/, normalized/, etc.).
+# artifacts:
+#   config_snapshot: config-snapshot.yml
+#   route_map: route-map.yml
+#   raw_dir: raw/
+#   normalized_dir: normalized/
+#   audit: audit.json
+#   audit_md: audit.md
+#   provenance: provenance.jsonl
+#   cost: cost.json
+#   run_log: run.log
+#   rerun_manifest: rerun-manifest.yml
+
+# The current loader reads runtime settings under `run.*`. Top-level `budget`,
+# `pricing`, and `max_rerun_depth` are rejected to avoid split-source drift.

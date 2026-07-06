@@ -1,0 +1,86 @@
+# Combined PageLedger v0.1-style config.
+#
+# The split files in this examples directory are easier to read in docs. This
+# single-file form is the recommended first-use shape.
+
+schema_version: "0.1"  # Config file format version.
+
+dataset_citation:
+  label: Example source collection
+  text: Replace this with the archive, collection, DOI, or source-image citation.
+
+taxonomy:
+  # Example only. Replace with your project's page types.
+  page_types:
+    structural_metadata:
+      default_action: skip
+    blank:
+      default_action: skip
+    table_data:
+      default_action: vlm_table
+    prose:
+      default_action: transcribe_text
+    index:
+      default_action: reference_entry
+    figure:
+      default_action: review
+
+# The schema section below is a design target. The alpha validates and
+# snapshots the config, but does not yet align extractor output to declared
+# columns, types, or checks.
+schema:
+  name: demographic_table
+  # Projects can add their own language-specific aliases here.
+  columns:
+    - name: place_name
+      aliases: [place, settlement, locality]
+      type: string
+      required: true
+    - name: population_total
+      aliases: [total, population]
+      type: integer
+      required: true
+    - name: population_male
+      aliases: [male, men]
+      type: integer
+    - name: population_female
+      aliases: [female, women]
+      type: integer
+  checks:
+    - name: population_sum
+      expression: population_total == population_male + population_female
+      tolerance: 2
+      severity: warning
+  quality:
+    minimum_required_column_coverage: 1.0
+    low_confidence_threshold: 0.70
+
+run:
+  # Fixture adapter for plain UTF-8 text inputs. Install pageledger[pdf] and use
+  # pdf_text for born-digital PDF text extraction. Real OCR/VLM adapters come later.
+  adapter: text
+  budget:
+    # The page is the canonical unit and always enforceable. Dollar/token caps
+    # apply only when a pricing rate is configured (see `pricing` below).
+    max_pages: 5000
+    max_usd: 25
+    warn_at_percent: 80
+  # max_rerun_depth: 2  # future — no rerun execution yet
+  retry:
+    max_retries: 3
+    # backoff: exponential  # future — not yet implemented
+  # Policy rules below are preserved in the config snapshot but the alpha
+  # runner does not yet evaluate audit grades, schema checks, or quarantine
+  # rules. They are documented design targets for future releases.
+  # rerun_if:
+  #   - grade_below: C
+  #   - missing_required_columns: true
+  # quarantine_if:
+  #   - grade_below: D
+  #   - route_confidence_below: 0.60
+  pricing:
+    # Unit rates. PageLedger derives cost_usd from pages (and tokens, for
+    # model-backed adapters); adapters never have to know dollar prices.
+    # Omit these entirely to run with pages-only accounting and no dollar cost.
+    cost_per_page: 0.0015
+    cost_per_1k_tokens: 0.50

@@ -1,0 +1,151 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/peterbussch/pageledger/schemas/manifest.json",
+  "title": "PageLedger Run Manifest",
+  "description": "Canonical run manifest — durable pointer to every other artifact in the run directory. Schema version 0.1.",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "run_id",
+    "execution_mode",
+    "started_at",
+    "status",
+    "inputs",
+    "config",
+    "extractors",
+    "artifacts",
+    "summary"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "description": "Manifest schema version. This release is '0.1'.",
+      "const": "0.1"
+    },
+    "run_id": {
+      "type": "string",
+      "description": "Stable identifier for this run (e.g. 'run-20260619T193000000000Z')."
+    },
+    "parent_run_id": {
+      "type": ["string", "null"],
+      "description": "Previous run identifier if this is a rerun. Null for first runs."
+    },
+    "execution_mode": {
+      "type": "string",
+      "description": "Execution mode.",
+      "enum": ["dry_run", "execute"]
+    },
+    "started_at": {
+      "type": "string",
+      "description": "Run start time in UTC ISO 8601 format."
+    },
+    "completed_at": {
+      "type": ["string", "null"],
+      "description": "Run completion time in UTC ISO 8601 format. Null if run did not complete."
+    },
+    "status": {
+      "type": "string",
+      "description": "Run status.",
+      "enum": ["completed", "failed", "partial"]
+    },
+    "inputs": {
+      "type": "array",
+      "description": "Source files processed in this run.",
+      "items": {
+        "type": "object",
+        "required": ["path", "sha256", "page_count"],
+        "properties": {
+          "path": { "type": "string" },
+          "sha256": { "type": "string", "description": "SHA-256 hex digest of the source file." },
+          "page_count": { "type": "integer", "minimum": 1 }
+        },
+        "additionalProperties": false
+      }
+    },
+    "config": {
+      "type": "object",
+      "required": ["path", "sha256", "source_paths"],
+      "properties": {
+        "path": { "type": "string", "description": "Relative path to config-snapshot.yml in the run directory." },
+        "sha256": { "type": "string" },
+        "source_paths": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      },
+      "additionalProperties": false
+    },
+    "extractors": {
+      "type": "array",
+      "description": "Extractor adapters used in this run.",
+      "items": {
+        "type": "object",
+        "required": ["name", "adapter", "version", "deterministic", "input_types", "output_types", "capabilities"],
+        "properties": {
+          "name": { "type": "string" },
+          "adapter": { "type": "string" },
+          "model": { "type": ["string", "null"] },
+          "version": { "type": "string" },
+          "prompt_hash": { "type": ["string", "null"] },
+          "deterministic": { "type": "boolean" },
+          "input_types": { "type": "array", "items": { "type": "string" } },
+          "output_types": { "type": "array", "items": { "type": "string" } },
+          "capabilities": { "type": "array", "items": { "type": "string" } }
+        },
+        "additionalProperties": false
+      }
+    },
+    "dataset_citation": {
+      "type": ["object", "null"],
+      "description": "Optional user-provided source citation.",
+      "properties": {
+        "label": { "type": "string" },
+        "text": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "artifacts": {
+      "type": "object",
+      "description": "Relative paths to all run artifacts.",
+      "required": [
+        "config_snapshot", "route_map", "raw_dir", "normalized_dir",
+        "audit", "audit_md", "provenance", "quality", "cost",
+        "run_log", "rerun_manifest"
+      ],
+      "properties": {
+        "config_snapshot": { "type": "string" },
+        "route_map": { "type": "string" },
+        "raw_dir": { "type": "string" },
+        "normalized_dir": { "type": "string" },
+        "audit": { "type": "string" },
+        "audit_md": { "type": "string" },
+        "provenance": { "type": "string" },
+        "quality": { "type": "string" },
+        "cost": { "type": "string" },
+        "run_log": { "type": "string" },
+        "rerun_manifest": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "summary": {
+      "type": "object",
+      "description": "Counts and cost summary for quick inspection.",
+      "required": [
+        "pages_total", "pages_extracted", "pages_skipped",
+        "pages_quarantined", "records_normalized", "estimated_cost_usd",
+        "quality_warning_pages"
+      ],
+      "properties": {
+        "pages_total": { "type": "integer", "minimum": 0 },
+        "pages_extracted": { "type": "integer", "minimum": 0 },
+        "pages_skipped": { "type": "integer", "minimum": 0 },
+        "pages_quarantined": { "type": "integer", "minimum": 0 },
+        "records_normalized": { "type": "integer", "minimum": 0 },
+        "estimated_cost_usd": { "type": "number" },
+        "quality_warning_pages": { "type": "integer", "minimum": 0, "description": "Number of pages with one or more quality warnings." }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

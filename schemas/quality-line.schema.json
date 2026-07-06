@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/peterbussch/pageledger/schemas/quality-line.json",
+  "title": "PageLedger Quality Line (JSONL)",
+  "description": "One line of quality.jsonl — per-page diagnostic signals, not calibrated accuracy. Schema version 0.1.",
+  "type": "object",
+  "required": ["schema_version", "page_id", "page_number", "adapter", "character_count", "word_count", "warnings", "text_quality", "embedded_text_comparison"],
+  "properties": {
+    "schema_version": { "type": "string", "const": "0.1" },
+    "page_id": { "type": "string" },
+    "page_number": { "type": "integer", "minimum": 1 },
+    "adapter": { "type": "string" },
+    "character_count": { "type": "integer", "minimum": 0 },
+    "word_count": { "type": "integer", "minimum": 0 },
+    "warnings": {
+      "type": "array",
+      "description": "Quality warnings: empty_text, short_text, replacement_characters, control_characters, suspicious_symbol_density, suspicious_embedded_text_delta.",
+      "items": { "type": "string" }
+    },
+    "text_quality": {
+      "type": "object",
+      "required": ["replacement_character_count", "control_character_count", "suspicious_symbol_count", "suspicious_symbol_ratio"],
+      "properties": {
+        "replacement_character_count": { "type": "integer", "minimum": 0 },
+        "control_character_count": { "type": "integer", "minimum": 0 },
+        "suspicious_symbol_count": { "type": "integer", "minimum": 0 },
+        "suspicious_symbol_ratio": { "type": "number", "minimum": 0, "maximum": 1 }
+      },
+      "additionalProperties": false
+    },
+    "embedded_text_comparison": {
+      "type": ["object", "null"],
+      "description": "Comparison against the PDF's embedded text layer. Null when source is not a PDF or adapter already reports embedded_text capability.",
+      "required": ["embedded_character_count", "character_delta", "character_ratio"],
+      "properties": {
+        "embedded_character_count": { "type": "integer", "minimum": 0 },
+        "character_delta": { "type": "integer" },
+        "character_ratio": { "type": ["number", "null"] }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

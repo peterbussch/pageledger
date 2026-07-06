@@ -1,0 +1,68 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pageledger"
+version = "0.1.0"
+description = "Page-denominated document extraction run ledger"
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MIT"
+authors = [
+  {name = "Peter Busscher"}
+]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Environment :: Console",
+  "Intended Audience :: Developers",
+  "Intended Audience :: Science/Research",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: Scientific/Engineering :: Information Analysis",
+  "Topic :: Text Processing",
+]
+keywords = [
+  "document-ai",
+  "ocr",
+  "vlm",
+  "digital-humanities",
+  "provenance",
+]
+dependencies = [
+  "PyYAML>=6.0.2",
+]
+
+[project.optional-dependencies]
+dev = [
+  "build>=1.2",
+  "jsonschema>=4.0",
+  "pytest>=8.0",
+  "twine>=6.0",
+]
+pdf = [
+  "pypdf>=6",
+]
+
+[project.urls]
+Homepage = "https://github.com/peterbussch/pageledger"
+Documentation = "https://github.com/peterbussch/pageledger#readme"
+"PDF/OCR First Run" = "https://github.com/peterbussch/pageledger/blob/main/docs/pdf-ocr-first-run.md"
+"OCR Options" = "https://github.com/peterbussch/pageledger/blob/main/docs/ocr-options.md"
+Issues = "https://github.com/peterbussch/pageledger/issues"
+Source = "https://github.com/peterbussch/pageledger"
+
+[project.scripts]
+pageledger = "pageledger.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["pageledger*"]
+
+[tool.pytest.ini_options]
+markers = [
+    "stress: Stress/performance tests that generate large synthetic inputs (skipped in default CI)",
+]

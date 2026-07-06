@@ -1,0 +1,57 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
+        extras: ["dev", "dev,pdf"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install with optional PDF extra
+        run: pip install ".[${{ matrix.extras }}]"
+      - name: Run tests
+        run: python -m pytest tests/pageledger/ -v -m "not stress"
+
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Install build tools
+        run: pip install build twine
+      - name: Build wheel and sdist
+        run: python -m build
+      - name: Check package metadata
+        run: twine check dist/*
+      - name: Smoke test wheel install
+        run: |
+          python -m venv /tmp/venv-wheel
+          /tmp/venv-wheel/bin/pip install "$(ls dist/pageledger-*.whl)[pdf]"
+          /tmp/venv-wheel/bin/pageledger init-config
+          /tmp/venv-wheel/bin/pageledger doctor --json
+          echo "first page" > /tmp/smoke.txt
+          /tmp/venv-wheel/bin/pageledger init-config --out /tmp/smoke-config.yml
+          /tmp/venv-wheel/bin/pageledger run /tmp/smoke.txt --config /tmp/smoke-config.yml --out /tmp/smoke-run --json
+      - name: Smoke test sdist install
+        run: |
+          python -m venv /tmp/venv-sdist
+          /tmp/venv-sdist/bin/pip install "$(ls dist/pageledger-*.tar.gz)[pdf]"
+          /tmp/venv-sdist/bin/pageledger init-config
+          /tmp/venv-sdist/bin/pageledger doctor --json
+          echo "page one\fpage two" > /tmp/smoke2.txt
+          /tmp/venv-sdist/bin/pageledger init-config --out /tmp/smoke2-config.yml
+          /tmp/venv-sdist/bin/pageledger run /tmp/smoke2.txt --config /tmp/smoke2-config.yml --out /tmp/smoke2-run --json

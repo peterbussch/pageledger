@@ -1,0 +1,2 @@
+clean page one with enough characters to avoid all quality warnings.
+This text exercises the normal path through PageLedger's text adapter.

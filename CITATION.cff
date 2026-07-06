@@ -1,0 +1,19 @@
+cff-version: 1.2.0
+title: "PageLedger: Auditable OCR/VLM Extraction Workflows"
+message: "If you use PageLedger in research, please cite the software and separately cite the source dataset or extraction run you created with it."
+type: software
+authors:
+  - family-names: Busscher
+    given-names: Peter
+abstract: "PageLedger is an alpha toolkit for routing, auditing, budgeting, and preserving filesystem-native provenance around OCR/VLM document extraction workflows."
+keywords:
+  - document extraction
+  - OCR
+  - vision-language models
+  - digital humanities
+  - provenance
+  - corpus infrastructure
+license: MIT
+repository-code: "https://github.com/peterbussch/pageledger"
+version: "0.1.0"
+date-released: "2026-07-06"

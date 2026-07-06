@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/peterbussch/pageledger/schemas/run-log-line.json",
+  "title": "PageLedger Run Log Line (JSONL)",
+  "description": "One line of run.log — an extraction event or summary entry. Schema version 0.1.",
+  "type": "object",
+  "required": ["schema_version", "timestamp", "level", "run_id"],
+  "properties": {
+    "schema_version": { "type": "string", "const": "0.1" },
+    "timestamp": { "type": "string", "description": "Event time in UTC ISO 8601." },
+    "level": { "type": "string", "enum": ["DEBUG", "INFO", "WARNING", "ERROR"] },
+    "run_id": { "type": "string" },
+    "execution_mode": {
+      "type": "string",
+      "enum": ["dry_run", "execute"],
+      "description": "Present on summary entries only."
+    },
+    "status": {
+      "type": "string",
+      "description": "dry_run_complete, run_complete, extracted, budget_exceeded, failed, retry."
+    },
+    "page_id": {
+      "type": "string",
+      "description": "Present on per-extraction entries only."
+    },
+    "adapter": {
+      "type": "string",
+      "description": "Adapter name. Present on extraction entries only."
+    },
+    "pages_total": { "type": "integer", "description": "Present on summary entries only." },
+    "pages_extracted": { "type": "integer", "description": "Present on summary entries only." },
+    "pages_skipped": { "type": "integer", "description": "Present on summary entries only." },
+    "attempt": { "type": "integer", "minimum": 1 },
+    "max_retries": { "type": "integer", "minimum": 0 },
+    "error": {
+      "description": "Adapter error envelope for failed/retry entries, or budget error string.",
+      "oneOf": [
+        { "type": "object" },
+        { "type": "string" },
+        { "type": "null" }
+      ]
+    },
+    "budget_warning": { "type": ["string", "null"] }
+  },
+  "additionalProperties": false
+}

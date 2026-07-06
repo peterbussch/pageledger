@@ -1,0 +1,91 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/peterbussch/pageledger/schemas/provenance-line.json",
+  "title": "PageLedger Provenance Line (JSONL)",
+  "description": "One line of provenance.jsonl — a single extractor activity record. Schema version 0.1.",
+  "type": "object",
+  "required": [
+    "schema_version", "run_id", "page_id", "source", "route",
+    "extractor", "result", "usage", "metrics", "extraction_seconds", "timestamp"
+  ],
+  "properties": {
+    "schema_version": { "type": "string", "const": "0.1" },
+    "run_id": { "type": "string" },
+    "page_id": { "type": "string" },
+    "source": {
+      "type": "object",
+      "required": ["path", "page_number", "sha256"],
+      "properties": {
+        "path": { "type": "string" },
+        "page_number": { "type": "integer", "minimum": 1 },
+        "sha256": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "route": {
+      "type": "object",
+      "required": ["type", "action"],
+      "properties": {
+        "type": { "type": "string" },
+        "action": { "type": "string" },
+        "route_confidence": { "type": ["number", "null"] }
+      },
+      "additionalProperties": false
+    },
+    "extractor": {
+      "type": "object",
+      "required": ["adapter", "adapter_version", "deterministic", "input_types", "output_types", "capabilities"],
+      "properties": {
+        "adapter": { "type": "string" },
+        "adapter_version": { "type": "string" },
+        "model": { "type": ["string", "null"] },
+        "prompt_hash": { "type": ["string", "null"] },
+        "deterministic": { "type": "boolean" },
+        "input_types": { "type": "array", "items": { "type": "string" } },
+        "output_types": { "type": "array", "items": { "type": "string" } },
+        "capabilities": { "type": "array", "items": { "type": "string" } }
+      },
+      "additionalProperties": false
+    },
+    "result": {
+      "type": "object",
+      "required": ["format", "warnings", "raw_artifact"],
+      "properties": {
+        "format": { "type": "string" },
+        "confidence": { "type": ["number", "null"] },
+        "warnings": { "type": "array", "items": { "type": "string" } },
+        "raw_artifact": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "usage": {
+      "type": "object",
+      "required": ["pages"],
+      "properties": {
+        "pages": { "type": "integer", "minimum": 1 },
+        "tokens": { "type": ["integer", "null"] },
+        "compute_seconds": { "type": ["number", "null"] },
+        "cost_usd": { "type": ["number", "null"] }
+      },
+      "additionalProperties": false
+    },
+    "metrics": {
+      "type": "object",
+      "description": "Flat copy of usage for analytical workflows.",
+      "required": ["pages"],
+      "properties": {
+        "pages": { "type": "integer", "minimum": 1 },
+        "tokens": { "type": ["integer", "null"] },
+        "compute_seconds": { "type": ["number", "null"] },
+        "cost_usd": { "type": ["number", "null"] }
+      },
+      "additionalProperties": false
+    },
+    "extraction_seconds": {
+      "type": ["number", "null"],
+      "description": "Wall-clock seconds for the successful extraction attempt, measured by the runner. Null in artifacts predating this field."
+    },
+    "timestamp": { "type": "string", "description": "Extraction time in UTC ISO 8601." }
+  },
+  "additionalProperties": false
+}
