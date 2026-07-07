@@ -1,7 +1,7 @@
 """PageLedger alpha runtime contracts.
 
-PageLedger is intentionally small: route pages, align outputs, audit evidence,
-and rerun failures around existing OCR/VLM extractors.
+PageLedger is intentionally small: route pages, audit evidence, and rerun
+flagged pages around existing OCR/VLM extractors.
 """
 
 from .config import PageLedgerConfig, load_config

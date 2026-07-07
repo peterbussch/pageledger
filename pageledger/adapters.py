@@ -8,11 +8,10 @@ import shutil
 import subprocess
 import tempfile
 import time
-from collections.abc import Sequence
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
-from typing import Any, Literal, Protocol, runtime_checkable
+from typing import Any, Literal
 
 # The classic plain-text page break. Splitting on it lets a single text file
 # carry multiple pages without any new dependency.
@@ -34,30 +33,6 @@ class ExtractionResult:
     # confidences). Shape is adapter-defined; recorded, never interpreted as
     # calibrated probability.
     confidence_detail: dict[str, Any] | None = None
-
-
-@runtime_checkable
-class AdapterProtocol(Protocol):
-    name: str
-    version: str
-    deterministic: bool
-    input_types: Sequence[str]
-    output_types: Sequence[str]
-    capabilities: Sequence[str]
-
-    def supports(self, action: str) -> bool:
-        ...
-
-    def extract(
-        self,
-        source: Path,
-        *,
-        page_id: str,
-        page_number: int,
-        action: str,
-        prompt: str | None = None,
-    ) -> ExtractionResult:
-        ...
 
 
 PDF_ADAPTER_NAMES = {"pdf_text", "pdf"}

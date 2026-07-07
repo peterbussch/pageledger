@@ -404,7 +404,6 @@ def test_pdf_ocr_extract_with_mocked_binaries(tmp_path: Path, monkeypatch) -> No
 
     monkeypatch.setattr(adapters_module.shutil, "which", fake_which)
     monkeypatch.setattr(adapters_module.subprocess, "run", fake_run)
-    adapters_module._tesseract_model_string.cache_clear()
 
     adapter = PdfOcrAdapter(dpi=400, lang="eng+deu")
     result = adapter.extract(
@@ -413,7 +412,6 @@ def test_pdf_ocr_extract_with_mocked_binaries(tmp_path: Path, monkeypatch) -> No
         page_number=3,
         action="transcribe_text",
     )
-    adapters_module._tesseract_model_string.cache_clear()
 
     assert result.content == "OCR TEXT\n"
     assert result.model == "tesseract 5.5.2"
@@ -671,9 +669,7 @@ def test_pdf_ocr_reports_word_confidence_from_tsv(tmp_path: Path, monkeypatch) -
         "5\t1\t1\t1\t1\t3\t300\t100\t80\t20\t91.0\tagain\n"
     )
     calls = _fake_ocr_binaries(monkeypatch, tsv_body=tsv)
-    adapters_module._tesseract_model_string.cache_clear()
     result = _extract_one(PdfOcrAdapter(), tmp_path)
-    adapters_module._tesseract_model_string.cache_clear()
 
     tesseract_call = calls[1]
     assert tesseract_call[-2:] == ["txt", "tsv"]
@@ -688,9 +684,7 @@ def test_pdf_ocr_reports_word_confidence_from_tsv(tmp_path: Path, monkeypatch) -
 
 def test_pdf_ocr_confidence_none_when_tsv_missing(tmp_path: Path, monkeypatch) -> None:
     _fake_ocr_binaries(monkeypatch, tsv_body=None)
-    adapters_module._tesseract_model_string.cache_clear()
     result = _extract_one(PdfOcrAdapter(), tmp_path)
-    adapters_module._tesseract_model_string.cache_clear()
     assert result.confidence is None
     assert result.confidence_detail is None
 
@@ -698,18 +692,14 @@ def test_pdf_ocr_confidence_none_when_tsv_missing(tmp_path: Path, monkeypatch) -
 def test_pdf_ocr_confidence_none_when_tsv_has_no_words(tmp_path: Path, monkeypatch) -> None:
     tsv = _TSV_HEADER + "1\t1\t0\t0\t0\t0\t0\t0\t1000\t1500\t-1\t\n"
     _fake_ocr_binaries(monkeypatch, tsv_body=tsv)
-    adapters_module._tesseract_model_string.cache_clear()
     result = _extract_one(PdfOcrAdapter(), tmp_path)
-    adapters_module._tesseract_model_string.cache_clear()
     assert result.confidence is None
     assert result.confidence_detail is None
 
 
 def test_pdf_ocr_confidence_survives_malformed_tsv(tmp_path: Path, monkeypatch) -> None:
     _fake_ocr_binaries(monkeypatch, tsv_body="not\ta\ttsv\nat all")
-    adapters_module._tesseract_model_string.cache_clear()
     result = _extract_one(PdfOcrAdapter(), tmp_path)
-    adapters_module._tesseract_model_string.cache_clear()
     assert result.content == "OCR TEXT\n"
     assert result.confidence is None
 
@@ -741,11 +731,9 @@ def _fake_binaries_with_langs(monkeypatch, langs: list[str]):
 
 def test_pdf_ocr_rejects_missing_language_pack(tmp_path: Path, monkeypatch) -> None:
     _fake_binaries_with_langs(monkeypatch, ["eng", "osd"])
-    adapters_module._tesseract_installed_langs.cache_clear()
     adapter = PdfOcrAdapter(lang="rus")
     with pytest.raises(RuntimeError) as excinfo:
         _extract_one(adapter, tmp_path)
-    adapters_module._tesseract_installed_langs.cache_clear()
     message = str(excinfo.value)
     assert "rus" in message
     assert "eng" in message  # names what IS installed
@@ -754,11 +742,7 @@ def test_pdf_ocr_rejects_missing_language_pack(tmp_path: Path, monkeypatch) -> N
 
 def test_pdf_ocr_accepts_installed_language_pack(tmp_path: Path, monkeypatch) -> None:
     _fake_binaries_with_langs(monkeypatch, ["eng", "rus", "osd"])
-    adapters_module._tesseract_installed_langs.cache_clear()
-    adapters_module._tesseract_model_string.cache_clear()
     result = _extract_one(PdfOcrAdapter(lang="eng+rus"), tmp_path)
-    adapters_module._tesseract_installed_langs.cache_clear()
-    adapters_module._tesseract_model_string.cache_clear()
     assert result.content == "OCR TEXT\n"
 
 
@@ -778,11 +762,7 @@ def test_pdf_ocr_skips_lang_check_when_listing_fails(tmp_path: Path, monkeypatch
 
     monkeypatch.setattr(adapters_module.shutil, "which", lambda name: f"/fake/bin/{name}")
     monkeypatch.setattr(adapters_module.subprocess, "run", fake_run)
-    adapters_module._tesseract_installed_langs.cache_clear()
-    adapters_module._tesseract_model_string.cache_clear()
     result = _extract_one(PdfOcrAdapter(lang="rus"), tmp_path)
-    adapters_module._tesseract_installed_langs.cache_clear()
-    adapters_module._tesseract_model_string.cache_clear()
     assert result.content == "OCR TEXT\n"
 
 
