@@ -129,6 +129,9 @@ not a calibrated accuracy score. Fields:
 | `control_character_count` | integer | Non-whitespace control characters below U+0020. |
 | `suspicious_symbol_count` | integer | Characters flagged as suspicious (non-ASCII, non-alphanumeric, non-common punctuation). |
 | `suspicious_symbol_ratio` | number (0–1) | `suspicious_symbol_count / character_count`. |
+| `alpha_token_count` | integer | Alphabetic tokens on the page. |
+| `mean_token_length` | number or null | Mean alphabetic token length; null with no tokens. Fragment noise collapses toward 1, tested prose sits above 4. |
+| `short_token_ratio` | number (0–1) or null | Share of alphabetic tokens with 1–2 characters. |
 
 ### Warning Taxonomy
 
@@ -139,6 +142,7 @@ not a calibrated accuracy score. Fields:
 | `replacement_characters` | `replacement_character_count > 0`. |
 | `control_characters` | `control_character_count > 0`. |
 | `suspicious_symbol_density` | `suspicious_symbol_ratio >= 0.03` AND `suspicious_symbol_count >= 5`. |
+| `fragmented_text` | `mean_token_length < 3.0` AND `alpha_token_count >= 20`. Catches OCR fragment noise; does not catch word-level misrecognition. |
 | `suspicious_embedded_text_delta` | PDF embedded text character ratio < 0.5 or > 1.8, when embedded text is available and adapter does not report `embedded_text` capability. |
 
 The JSON Schema is at `schemas/quality-line.schema.json`.

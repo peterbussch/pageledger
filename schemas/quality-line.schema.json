@@ -14,7 +14,7 @@
     "word_count": { "type": "integer", "minimum": 0 },
     "warnings": {
       "type": "array",
-      "description": "Quality warnings: empty_text, short_text, replacement_characters, control_characters, suspicious_symbol_density, suspicious_embedded_text_delta.",
+      "description": "Quality warnings: empty_text, short_text, replacement_characters, control_characters, suspicious_symbol_density, fragmented_text, suspicious_embedded_text_delta.",
       "items": { "type": "string" }
     },
     "text_quality": {
@@ -24,7 +24,18 @@
         "replacement_character_count": { "type": "integer", "minimum": 0 },
         "control_character_count": { "type": "integer", "minimum": 0 },
         "suspicious_symbol_count": { "type": "integer", "minimum": 0 },
-        "suspicious_symbol_ratio": { "type": "number", "minimum": 0, "maximum": 1 }
+        "suspicious_symbol_ratio": { "type": "number", "minimum": 0, "maximum": 1 },
+        "alpha_token_count": { "type": "integer", "minimum": 0 },
+        "mean_token_length": {
+          "type": ["number", "null"],
+          "description": "Mean length of alphabetic tokens. Null when the page has none. Fragment noise collapses toward 1; tested prose sits above 4."
+        },
+        "short_token_ratio": {
+          "type": ["number", "null"],
+          "minimum": 0,
+          "maximum": 1,
+          "description": "Share of alphabetic tokens with 1-2 characters. Null when the page has none."
+        }
       },
       "additionalProperties": false
     },

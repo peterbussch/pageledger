@@ -17,7 +17,6 @@ import json
 import sys
 from pathlib import Path
 
-import pytest
 import yaml
 
 HERE = Path(__file__).resolve().parent
@@ -162,6 +161,54 @@ def test_manifest_execute_success(tmp_path: Path) -> None:
     assert manifest["summary"]["pages_extracted"] == 2
 
 
+def test_manifest_records_adapter_options(tmp_path: Path) -> None:
+    """Extractor entries carry run.adapter_options and still validate."""
+    adapter_dir = tmp_path / "adapters"
+    adapter_dir.mkdir()
+    (adapter_dir / "suffix_adapter.py").write_text(
+        "from dataclasses import dataclass\n"
+        "from pageledger.adapters import ExtractionResult\n"
+        "\n"
+        "@dataclass\n"
+        "class SuffixAdapter:\n"
+        "    suffix: str = ''\n"
+        "    name: str = 'suffix'\n"
+        "    version: str = '1.0'\n"
+        "    deterministic: bool = True\n"
+        "    input_types: tuple[str, ...] = ('text',)\n"
+        "    output_types: tuple[str, ...] = ('text',)\n"
+        "    capabilities: tuple[str, ...] = ('local',)\n"
+        "\n"
+        "    def supports(self, action):\n"
+        "        return action == 'transcribe_text'\n"
+        "\n"
+        "    def extract(self, source, *, page_id, page_number, action, prompt=None):\n"
+        "        return ExtractionResult(\n"
+        "            content=source.read_text(encoding='utf-8') + self.suffix,\n"
+        "            format='text', confidence=None, model=None, warnings=[],\n"
+        "            usage={'pages': 1, 'tokens': None, 'compute_seconds': None, 'cost_usd': None},\n"
+        "        )\n",
+        encoding="utf-8",
+    )
+    source = tmp_path / "sample.txt"
+    source.write_text("page one\n", encoding="utf-8")
+    config = MINIMAL_CONFIG.replace(
+        "  adapter: text",
+        "  adapter: suffix_adapter:SuffixAdapter\n"
+        "  adapter_options:\n"
+        "    suffix: '!'",
+    )
+    out_dir = _run_pageledger(
+        tmp_path,
+        config_yaml=config,
+        inputs=[str(source)],
+        extra_args=["--adapter-path", str(adapter_dir)],
+    )
+    manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
+    _validate(_manifest_schema, manifest, "manifest.json (adapter_options)")
+    assert manifest["extractors"][0]["options"] == {"suffix": "!"}
+
+
 def test_manifest_budget_failure(tmp_path: Path) -> None:
     """Budget failure still produces a valid partial manifest."""
     source = tmp_path / "sample.txt"
@@ -193,7 +240,7 @@ def test_manifest_adapter_failure(tmp_path: Path) -> None:
     out_dir = tmp_path / "out"
     import subprocess
 
-    result = subprocess.run(
+    subprocess.run(
         [sys.executable, "-m", "pageledger", "run", str(source), "--config", str(config_path), "--out", str(out_dir)],
         capture_output=True, text=True, cwd=str(tmp_path),
     )

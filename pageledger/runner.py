@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+import sys
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -13,7 +14,15 @@ from typing import Any
 
 import yaml
 
-from .adapters import PDF_ADAPTER_NAMES, adapter_page_count, load_adapter, paginate, pdf_page_count
+from .adapters import (
+    PDF_ADAPTER_NAMES,
+    PDF_ONLY_ADAPTER_NAMES,
+    adapter_page_count,
+    load_adapter,
+    ocr_pdf_page_count,
+    paginate,
+    pdf_page_count,
+)
 from .artifacts import (
     build_audit,
     build_manifest,
@@ -101,6 +110,7 @@ def run(
     page_selection: list[dict[str, Any]] | None = None,
     parent_run_id: str | None = None,
     run_depth: int = 0,
+    adapter_path: Path | None = None,
 ) -> dict[str, Any]:
     """Run the alpha PageLedger loop.
 
@@ -108,17 +118,19 @@ def run(
     ``(source, page_number)`` pairs are planned and extracted, keeping their
     original ``page_id`` values for cross-run traceability. ``parent_run_id``
     and ``run_depth`` record rerun lineage in the manifest and the next
-    rerun manifest.
+    rerun manifest. ``adapter_path`` is a directory prepended to ``sys.path``
+    so custom adapters can be loaded without setting PYTHONPATH.
     """
 
     log_level = _normalize_log_level(log_level)
     execution_mode = "dry_run" if dry_run else "execute"
+    _apply_adapter_path(adapter_path)
     config = load_config(config_path, validate_adapter=not dry_run)
     adapter = None
     if not dry_run and _requires_adapter(config.default_action):
         if config.adapter_name is None:
             raise ValueError("No configured adapter; set run.adapter in the config")
-        adapter = load_adapter(config.adapter_name)
+        adapter = load_adapter(config.adapter_name, config.adapter_options)
         action = config.default_action
         if _requires_adapter(action) and not adapter.supports(action):
             raise ValueError(f"Adapter '{adapter.name}' does not support action '{action}'")
@@ -346,6 +358,8 @@ def run(
                 "output_types": adapter_output_types,
                 "capabilities": adapter_capabilities,
             }
+            if config.adapter_options:
+                extractor_entry["options"] = dict(config.adapter_options)
             if extractor_entry not in extractor_entries:
                 extractor_entries.append(extractor_entry)
             provenance_entries.append(
@@ -531,6 +545,7 @@ def rerun(
     out_dir: Path,
     dry_run: bool = False,
     log_level: str = "INFO",
+    adapter_path: Path | None = None,
 ) -> dict[str, Any]:
     """Execute the rerun manifest of a previous run.
 
@@ -555,6 +570,7 @@ def rerun(
     if not isinstance(parent_rerun, dict):
         raise ValueError(f"Invalid rerun manifest: {rerun_path}")
 
+    _apply_adapter_path(adapter_path)
     config = load_config(config_path, validate_adapter=not dry_run)
     child_depth = int(parent_rerun.get("rerun_depth", 0)) + 1
     if child_depth > config.max_rerun_depth:
@@ -714,10 +730,24 @@ def _planned_page_count(source: Path, *, adapter: Any, adapter_name: str | None)
     if adapter is not None:
         return adapter_page_count(adapter, source)
     if source.suffix.lower() == ".pdf":
+        if adapter_name == "pdf_ocr":
+            return ocr_pdf_page_count(source)
         if adapter_name in PDF_ADAPTER_NAMES or adapter_name is None:
             return pdf_page_count(source)
         return 1
     return paginate(source, allow_pdf=False)
+
+
+def _apply_adapter_path(adapter_path: Path | None) -> None:
+    """Prepend a directory to sys.path so custom adapter modules resolve."""
+    if adapter_path is None:
+        return
+    resolved = adapter_path.expanduser().resolve()
+    if not resolved.is_dir():
+        raise ValueError(f"--adapter-path is not a directory: {adapter_path}")
+    entry = str(resolved)
+    if entry not in sys.path:
+        sys.path.insert(0, entry)
 
 
 def _normalize_log_level(log_level: str) -> str:
@@ -753,9 +783,10 @@ def _validate_adapter_inputs(inputs: list[Path], *, adapter_name: str | None) ->
             first = pdf_inputs[0]
             raise ValueError(
                 f"Adapter 'text' cannot read PDF input: {first}. "
-                "Use run.adapter: pdf_text for born-digital PDFs or provide a custom OCR adapter."
+                "Use run.adapter: pdf_text for born-digital PDFs or "
+                "run.adapter: pdf_ocr for scanned PDFs."
             )
-    if adapter_name in PDF_ADAPTER_NAMES:
+    if adapter_name in PDF_ONLY_ADAPTER_NAMES:
         non_pdf_inputs = [path for path in inputs if path.suffix.lower() != ".pdf"]
         if non_pdf_inputs:
             first = non_pdf_inputs[0]
@@ -1144,6 +1175,8 @@ def _text_quality_metrics(text: str, *, character_count: int) -> dict[str, Any]:
         1 for char in text if ord(char) < 32 and char not in {"\n", "\r", "\t", "\f"}
     )
     suspicious_symbol_count = sum(1 for char in text if _is_suspicious_symbol(char))
+    token_lengths = [len(token) for token in re.findall(r"[^\W\d_]+", text)]
+    alpha_token_count = len(token_lengths)
     return {
         "replacement_character_count": replacement_character_count,
         "control_character_count": control_character_count,
@@ -1152,6 +1185,23 @@ def _text_quality_metrics(text: str, *, character_count: int) -> dict[str, Any]:
             0.0
             if character_count == 0
             else round(suspicious_symbol_count / character_count, 4)
+        ),
+        # Lexical shape of the output. Language-neutral evidence: sort pages
+        # by mean_token_length to find fragment noise. These metrics cannot
+        # detect word-level misrecognition ("matericl" for "material") \u2014
+        # that needs a dictionary or model, which PageLedger does not ship.
+        "alpha_token_count": alpha_token_count,
+        "mean_token_length": (
+            None
+            if alpha_token_count == 0
+            else round(sum(token_lengths) / alpha_token_count, 2)
+        ),
+        "short_token_ratio": (
+            None
+            if alpha_token_count == 0
+            else round(
+                sum(1 for length in token_lengths if length <= 2) / alpha_token_count, 4
+            )
         ),
     }
 
@@ -1164,6 +1214,15 @@ def _text_quality_warnings(metrics: dict[str, Any]) -> list[str]:
         warnings.append("control_characters")
     if metrics["suspicious_symbol_ratio"] >= 0.03 and metrics["suspicious_symbol_count"] >= 5:
         warnings.append("suspicious_symbol_density")
+    mean_token_length = metrics["mean_token_length"]
+    if (
+        mean_token_length is not None
+        and mean_token_length < 3.0
+        and metrics["alpha_token_count"] >= 20
+    ):
+        # Real prose in tested corpora sits above 4; OCR fragment noise
+        # ("l| ||| l|l ll") collapses toward 1.
+        warnings.append("fragmented_text")
     return warnings
 
 

@@ -11,8 +11,6 @@ All tests in this module that generate pages at scale are marked as
 from __future__ import annotations
 
 import json
-import os
-import sys
 import textwrap
 import time
 from pathlib import Path
@@ -70,8 +68,8 @@ def test_artifact_counts_consistent_checked_in(tmp_path: Path) -> None:
     pages_extracted = manifest["summary"]["pages_extracted"]
 
     raw_count = len(list((out_dir / "raw").iterdir()))
-    prov_count = sum(1 for l in _read_lines(out_dir / "provenance.jsonl") if l.strip())
-    quality_count = sum(1 for l in _read_lines(out_dir / "quality.jsonl") if l.strip())
+    prov_count = sum(1 for line in _read_lines(out_dir / "provenance.jsonl") if line.strip())
+    quality_count = sum(1 for line in _read_lines(out_dir / "quality.jsonl") if line.strip())
 
     assert raw_count == pages_extracted, f"raw={raw_count} != manifest={pages_extracted}"
     assert prov_count == pages_extracted, f"provenance={prov_count} != manifest={pages_extracted}"
@@ -88,8 +86,8 @@ def test_artifact_counts_consistent_synthetic(tmp_path: Path) -> None:
     pe = manifest["summary"]["pages_extracted"]
 
     raw_count = len(list((out_dir / "raw").iterdir()))
-    prov_count = sum(1 for l in _read_lines(out_dir / "provenance.jsonl") if l.strip())
-    quality_count = sum(1 for l in _read_lines(out_dir / "quality.jsonl") if l.strip())
+    prov_count = sum(1 for line in _read_lines(out_dir / "provenance.jsonl") if line.strip())
+    quality_count = sum(1 for line in _read_lines(out_dir / "quality.jsonl") if line.strip())
 
     assert raw_count == pe
     assert prov_count == pe
@@ -165,10 +163,10 @@ def _run_fixture(
         raw_files = list((out_dir / "raw").iterdir())
         assert len(raw_files) == expected_extracted
 
-        prov_lines = [l for l in _read_lines(out_dir / "provenance.jsonl") if l.strip()]
+        prov_lines = [line for line in _read_lines(out_dir / "provenance.jsonl") if line.strip()]
         assert len(prov_lines) == expected_extracted
 
-        quality_lines = [l for l in _read_lines(out_dir / "quality.jsonl") if l.strip()]
+        quality_lines = [line for line in _read_lines(out_dir / "quality.jsonl") if line.strip()]
         assert len(quality_lines) == expected_extracted
 
 
@@ -234,8 +232,8 @@ def _stress_run(tmp_path: Path, page_count: int) -> None:
     assert pe == page_count, f"pages_extracted={pe} != expected={page_count}"
 
     raw_count = len(list((out_dir / "raw").iterdir()))
-    prov_count = sum(1 for l in _read_lines(out_dir / "provenance.jsonl") if l.strip())
-    quality_count = sum(1 for l in _read_lines(out_dir / "quality.jsonl") if l.strip())
+    prov_count = sum(1 for line in _read_lines(out_dir / "provenance.jsonl") if line.strip())
+    quality_count = sum(1 for line in _read_lines(out_dir / "quality.jsonl") if line.strip())
 
     assert raw_count == page_count, f"raw={raw_count} != {page_count}"
     assert prov_count == page_count, f"provenance={prov_count} != {page_count}"

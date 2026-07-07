@@ -12,7 +12,8 @@ providers.
 | Tier | Example path | Runs local | Typical cost | Good fit | PageLedger integration |
 |---|---|---:|---|---|---|
 | Born-digital PDF | `pdf_text` | yes | free | PDFs with a real embedded text layer | Built-in adapter via `pageledger[pdf]`. |
-| Baseline OCR | OCRmyPDF + Tesseract | yes | free, plus compute | Scanned PDFs where searchable text is enough | External preprocessing, then `pdf_text`, or a custom adapter. |
+| Scanned PDF, plain text | `pdf_ocr` (Tesseract) | yes | free, plus compute | Image-only or noisy-layer scans where plain text is enough | Built-in adapter; needs poppler + Tesseract installed. `dpi`/`lang` via `run.adapter_options`. |
+| Baseline OCR preprocessing | OCRmyPDF + Tesseract | yes | free, plus compute | Producing a searchable PDF for other tools too | External preprocessing, then `pdf_text`. |
 | Local document conversion | Docling | yes | free/open, plus compute | PDF/document conversion with layout-aware output | Custom adapter returning text, Markdown, or JSON. |
 | Markdown/JSON extraction | Marker | yes | free/open, plus compute | Markdown, JSON, tables, equations, forms, images | Custom adapter returning Markdown or JSON. |
 | Local OCR/layout/tables | Surya | yes | free/open, often heavier compute | OCR, reading order, layout, table recognition | Custom adapter with `capabilities=("ocr", "layout", "tables", "local")`. |
@@ -25,14 +26,16 @@ providers.
 1. Run `pageledger doctor` to see local commands, optional packages, PATH, and
    redacted cloud environment status.
 2. Use `pdf_text` for born-digital PDFs.
-3. Use OCRmyPDF/Tesseract preprocessing when a scanned PDF only needs a text
-   layer.
+3. Use `pdf_ocr` for scans when plain text is enough.
 4. Use Docling, Marker, or Surya through a custom adapter when layout, tables,
    Markdown, or richer JSON matter.
 5. Use a cloud OCR/VLM adapter only when local output is weak, the document is
    especially complex, or managed infrastructure is required.
 6. Inspect `quality.jsonl`, `provenance.jsonl`, `run.log`, and `cost.json`
    before deciding whether to rerun pages with a stronger adapter.
+
+For a worked example of steps 2–3 and the rerun loop on a real scanned
+document, see `docs/examples/jfk-scanned-archive.md`.
 
 ## Adapter Capability Hints
 

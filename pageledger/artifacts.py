@@ -8,7 +8,6 @@ from typing import Any
 
 import yaml
 
-
 ARTIFACT_PATHS = {
     "config_snapshot": "config-snapshot.yml",
     "route_map": "route-map.yml",

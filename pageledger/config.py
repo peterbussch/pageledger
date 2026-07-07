@@ -58,6 +58,18 @@ class PageLedgerConfig:
         return str(value) if value else None
 
     @property
+    def adapter_options(self) -> dict[str, Any]:
+        value = _value_at(self.data, "run", "adapter_options")
+        if value is None:
+            return {}
+        if not isinstance(value, dict):
+            raise ValueError("run.adapter_options must be a mapping")
+        for key in value:
+            if not isinstance(key, str):
+                raise ValueError("run.adapter_options keys must be strings")
+        return value
+
+    @property
     def pricing(self) -> dict[str, Any]:
         return _mapping_at(self.data, "run", "pricing")
 
@@ -194,17 +206,22 @@ def _validate_config(config: PageLedgerConfig, *, validate_adapter: bool) -> Non
     _warn_unknown_top_level(config)
     _warn_impossible_budget(config)
 
-    config.max_rerun_depth
-    config.budget_max_usd
-    config.budget_warn_at_percent
-    config.budget_max_pages
-    config.budget_max_tokens
-    config.cost_per_page
-    config.cost_per_1k_tokens
-    config.max_retries
-    config.retry_backoff
+    # Each property raises ValueError on malformed config; touch them all.
+    for prop in (
+        "max_rerun_depth",
+        "budget_max_usd",
+        "budget_warn_at_percent",
+        "budget_max_pages",
+        "budget_max_tokens",
+        "cost_per_page",
+        "cost_per_1k_tokens",
+        "max_retries",
+        "retry_backoff",
+        "adapter_options",
+    ):
+        getattr(config, prop)
     if validate_adapter and config.adapter_name is not None:
-        load_adapter(config.adapter_name)
+        load_adapter(config.adapter_name, config.adapter_options)
 
 
 def _validate_taxonomy(config: PageLedgerConfig) -> None:

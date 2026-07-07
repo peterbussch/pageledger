@@ -15,8 +15,6 @@ Verifies:
 from __future__ import annotations
 
 import json
-import sys
-import textwrap
 from pathlib import Path
 
 import yaml
@@ -371,7 +369,8 @@ def test_rerun_enforces_depth_cap(tmp_path):
     config_path = tmp_path / "config.yml"
     config_path.write_text(config_depth_1, encoding="utf-8")
     parent_out = tmp_path / "parent"
-    from pageledger.runner import run as run_fn, rerun as rerun_fn
+    from pageledger.runner import rerun as rerun_fn
+    from pageledger.runner import run as run_fn
 
     run_fn(inputs=[source], config_path=config_path, out_dir=parent_out, dry_run=False)
     # Generation 1 is allowed; the child still has a short page, but its own

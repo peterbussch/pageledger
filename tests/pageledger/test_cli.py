@@ -7,7 +7,6 @@ import sys
 import textwrap
 from pathlib import Path
 
-import pytest
 import yaml
 
 # Reuse helper from test_schemas
@@ -72,6 +71,135 @@ def test_init_config_rejects_unknown_adapter(tmp_path: Path) -> None:
     """init-config rejects unrecognized adapter choices."""
     exit_code, stdout, stderr = _run_cli(["init-config", "--adapter", "ocr"])
     assert exit_code != 0
+
+
+def test_init_config_pdf_ocr_adapter(tmp_path: Path) -> None:
+    """init-config --adapter pdf_ocr generates a pdf_ocr config."""
+    exit_code, stdout, stderr = _run_cli(["init-config", "--adapter", "pdf_ocr"])
+    assert exit_code == 0
+    parsed = yaml.safe_load(stdout)
+    assert parsed["run"]["adapter"] == "pdf_ocr"
+
+
+# =========================================================================
+# adapter_options and --adapter-path
+# =========================================================================
+
+def test_config_adapter_options_must_be_mapping(tmp_path: Path) -> None:
+    source = tmp_path / "sample.txt"
+    source.write_text("page\n", encoding="utf-8")
+    config = tmp_path / "config.yml"
+    config.write_text(textwrap.dedent("""\
+        schema_version: "0.1"
+        taxonomy:
+          page_types:
+            prose:
+              default_action: transcribe_text
+        run:
+          adapter: text
+          adapter_options: not-a-mapping
+        """), encoding="utf-8")
+    exit_code, stdout, stderr = _run_cli(
+        ["run", str(source), "--config", str(config),
+         "--out", str(tmp_path / "out"), "--json"],
+    )
+    assert exit_code == 1
+    assert "run.adapter_options must be a mapping" in json.loads(stdout)["error"]
+
+
+def test_config_adapter_options_rejected_by_text_adapter(tmp_path: Path) -> None:
+    source = tmp_path / "sample.txt"
+    source.write_text("page\n", encoding="utf-8")
+    config = tmp_path / "config.yml"
+    config.write_text(textwrap.dedent("""\
+        schema_version: "0.1"
+        taxonomy:
+          page_types:
+            prose:
+              default_action: transcribe_text
+        run:
+          adapter: text
+          adapter_options:
+            dpi: 300
+        """), encoding="utf-8")
+    exit_code, stdout, stderr = _run_cli(
+        ["run", str(source), "--config", str(config),
+         "--out", str(tmp_path / "out"), "--json"],
+    )
+    assert exit_code == 1
+    assert "adapter_options" in json.loads(stdout)["error"]
+
+
+ADAPTER_MODULE = textwrap.dedent("""\
+    from dataclasses import dataclass
+    from pathlib import Path
+    from pageledger.adapters import ExtractionResult
+
+    @dataclass
+    class UppercaseAdapter:
+        suffix: str = ""
+        name: str = "uppercase"
+        version: str = "1.0"
+        deterministic: bool = True
+        input_types: tuple[str, ...] = ("text",)
+        output_types: tuple[str, ...] = ("text",)
+        capabilities: tuple[str, ...] = ("local",)
+
+        def supports(self, action):
+            return action == "transcribe_text"
+
+        def extract(self, source, *, page_id, page_number, action, prompt=None):
+            text = source.read_text(encoding="utf-8").upper() + self.suffix
+            return ExtractionResult(
+                content=text, format="text", confidence=None,
+                model=None, warnings=[],
+                usage={"pages": 1, "tokens": None, "compute_seconds": None, "cost_usd": None},
+            )
+    """)
+
+
+def test_adapter_path_loads_custom_adapter_without_pythonpath(tmp_path: Path) -> None:
+    adapter_dir = tmp_path / "adapters"
+    adapter_dir.mkdir()
+    (adapter_dir / "upper_adapter.py").write_text(ADAPTER_MODULE, encoding="utf-8")
+    source = tmp_path / "sample.txt"
+    source.write_text("hello\n", encoding="utf-8")
+    config = tmp_path / "config.yml"
+    config.write_text(textwrap.dedent("""\
+        schema_version: "0.1"
+        taxonomy:
+          page_types:
+            prose:
+              default_action: transcribe_text
+        run:
+          adapter: upper_adapter:UppercaseAdapter
+          adapter_options:
+            suffix: "!"
+        """), encoding="utf-8")
+    out_dir = tmp_path / "out"
+    exit_code, stdout, stderr = _run_cli(
+        ["run", str(source), "--config", str(config), "--out", str(out_dir),
+         "--adapter-path", str(adapter_dir), "--json"],
+    )
+    assert exit_code == 0, f"stdout={stdout}\nstderr={stderr}"
+    result = json.loads(stdout)
+    assert result["summary"]["pages_extracted"] == 1
+    raw = out_dir / "raw" / "doc_0001_page_0001.txt"
+    assert raw.read_text(encoding="utf-8") == "HELLO\n!"
+
+
+def test_adapter_path_missing_directory_errors(tmp_path: Path) -> None:
+    source = tmp_path / "sample.txt"
+    source.write_text("hello\n", encoding="utf-8")
+    config = tmp_path / "config.yml"
+    config.write_text(MINIMAL_CONFIG, encoding="utf-8")
+    exit_code, stdout, stderr = _run_cli(
+        ["run", str(source), "--config", str(config),
+         "--out", str(tmp_path / "out"),
+         "--adapter-path", str(tmp_path / "nope"), "--json"],
+    )
+    assert exit_code == 1
+    assert "adapter-path" in json.loads(stdout)["error"]
 
 
 # =========================================================================

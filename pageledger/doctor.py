@@ -99,8 +99,7 @@ def _command_version(path: str, args: list[str]) -> str | None:
         completed = subprocess.run(
             [path, *args],
             text=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            capture_output=True,
             timeout=5,
             check=False,
         )

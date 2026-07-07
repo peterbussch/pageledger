@@ -66,8 +66,7 @@ class TesseractPdftoppmAdapter:
                     str(prefix),
                 ],
                 check=True,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
+                capture_output=True,
                 text=True,
             )
             images = sorted(tmp_path.glob("page-*.png"))
@@ -77,8 +76,7 @@ class TesseractPdftoppmAdapter:
             subprocess.run(
                 ["tesseract", str(images[0]), str(output_prefix), "-l", "eng"],
                 check=True,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
+                capture_output=True,
                 text=True,
             )
             text = output_prefix.with_suffix(".txt").read_text(

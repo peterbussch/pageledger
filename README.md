@@ -28,13 +28,13 @@ answerable for source citation and methodological review. The run-ledger
 layer was extracted from that working pipeline and rebuilt as a standalone,
 domain-neutral tool.
 
-`0.1.0` is an early alpha focused on the run-ledger core: built-in `text` and
-`pdf_text` (born-digital) adapters, custom adapters via import strings,
-dry runs, budgets, quality signals, page-scoped reruns
-(`pageledger rerun`), and cross-run diffs (`pageledger compare-runs`). It
-does not yet OCR images itself, call network VLMs out of the box,
-automatically classify pages, align records to schemas, or compute audit
-grades — see [Current Runtime Capabilities](#current-runtime-capabilities).
+The current alpha covers the run-ledger core: built-in `text`, `pdf_text`
+(born-digital), and `pdf_ocr` (scanned, via local Tesseract) adapters, custom
+adapters via import strings, dry runs, budgets, quality signals, page-scoped
+reruns (`pageledger rerun`), and cross-run diffs (`pageledger compare-runs`).
+It does not call network VLMs out of the box, classify pages, align records
+to schemas, or compute audit grades — see
+[Current Runtime Capabilities](#current-runtime-capabilities).
 
 ## Install
 
@@ -87,20 +87,42 @@ pageledger run document.pdf --config pageledger-pdf.yml --out runs/pdf-dry --dry
 pageledger run document.pdf --config pageledger-pdf.yml --out runs/pdf-text --json
 ```
 
-`--out` must point to a new empty directory. For dry runs over PDFs, PageLedger
-uses `pypdf` page counts when the PDF extra is installed; execution with
-`pdf_text` extracts an existing text layer and does not OCR scanned images.
+`--out` must point to a new empty directory. `pdf_text` extracts an existing
+text layer and does not OCR scanned images.
+
+For a scanned PDF with no text layer, use `pdf_ocr`. It shells out to
+`pdftoppm` and `tesseract`, so install poppler and Tesseract first
+(`pageledger doctor` checks for both):
+
+```bash
+pageledger init-config --adapter pdf_ocr --out pageledger-ocr.yml
+pageledger run scan.pdf --config pageledger-ocr.yml --out runs/scan-ocr
+```
+
+Set DPI and language under `run.adapter_options`:
+
+```yaml
+run:
+  adapter: pdf_ocr
+  adapter_options:
+    dpi: 400
+    lang: eng+deu
+```
 
 The run directory contains `manifest.json`, `route-map.yml`, `audit.json`,
 `audit.md`, `provenance.jsonl`, `quality.jsonl`, `cost.json`, `run.log`,
 `rerun-manifest.yml`, and per-page raw output under `raw/`.
 
-For a real PDF/OCR walkthrough, see
-[`docs/pdf-ocr-first-run.md`](docs/pdf-ocr-first-run.md). For local, free,
-open-source, cloud, and hybrid extraction choices, see
+For a worked example on a real declassified scan, see
+[`docs/examples/jfk-scanned-archive.md`](docs/examples/jfk-scanned-archive.md).
+For choosing between local, cloud, and hybrid extraction, see
 [`docs/ocr-options.md`](docs/ocr-options.md). Custom adapter examples live
-under [`examples/`](examples/), including Tesseract via `pdftoppm`, OCRmyPDF
-preprocessing, and a redacted cloud/VLM skeleton.
+under [`examples/`](examples/); load them with `--adapter-path`:
+
+```bash
+pageledger run scan.pdf --config custom.yml --out runs/custom \
+  --adapter-path examples
+```
 
 ## How a Run Works
 
@@ -129,8 +151,12 @@ service or database.
 
 **Built-in and tested:**
 
-- `pageledger run` for text fixtures (form-feed pagination) and born-digital PDF
-  text layers (via `pageledger[pdf]`).
+- `pageledger run` for text fixtures (form-feed pagination), born-digital PDF
+  text layers (via `pageledger[pdf]`), and scanned PDFs (`pdf_ocr`, using
+  locally installed `pdftoppm` + `tesseract`).
+- Adapter options (`run.adapter_options`) passed to built-in and custom
+  adapter constructors, and `--adapter-path` for loading custom adapter
+  modules without touching PYTHONPATH.
 - Dry-run mode that generates full run artifacts without calling extractors.
 - Per-page provenance (`provenance.jsonl`), quality diagnostics
   (`quality.jsonl`), cost rollups (`cost.json`), structured run logs
@@ -154,8 +180,7 @@ service or database.
 
 **Adapter-supported but user-supplied:**
 
-- OCR via Tesseract (external `pdftoppm` + `tesseract` commands), OCRmyPDF
-  preprocessing, or any external engine wrapped as a custom adapter.
+- OCRmyPDF preprocessing, or any external engine wrapped as a custom adapter.
 - Cloud OCR/VLM adapters (user provides API keys, adapter code, and pricing).
 - Local document-conversion engines (Docling, Marker, Surya) through custom
   adapters.
@@ -173,17 +198,23 @@ service or database.
 
 ## Known Limits
 
-- **`pdf_text` reads existing text layers.** It does not perform OCR. Scanned
-  PDFs, image-heavy PDFs, or PDFs with noisy/absent text layers need an external
-  OCR step (OCRmyPDF, Tesseract, Docling, Marker, Surya, or cloud OCR) before
-  PageLedger can record useful text.
+- **`pdf_text` reads existing text layers.** It does not perform OCR. For
+  scanned PDFs use `pdf_ocr` (local Tesseract) or wrap a stronger engine
+  (OCRmyPDF, Docling, Marker, Surya, cloud OCR) as a custom adapter.
+- **`pdf_ocr` needs poppler and Tesseract installed.** PageLedger never
+  installs OCR engines; it shells out to `pdftoppm` and `tesseract` and fails
+  with an install hint (`pageledger doctor`) when they are missing. OCR
+  quality is Tesseract's, at the DPI and language you configure.
 - **Quality signals are diagnostic, not calibrated.** `quality.jsonl` records
   per-page evidence: character/word counts, replacement characters, control
-  characters, suspicious symbol density, and embedded-text deltas. A six-item
-  warning taxonomy (empty_text, short_text, replacement_characters,
-  control_characters, suspicious_symbol_density, suspicious_embedded_text_delta)
+  characters, suspicious symbol density, lexical shape (token counts, mean
+  token length), and embedded-text deltas. A seven-item warning taxonomy
+  (empty_text, short_text, replacement_characters, control_characters,
+  suspicious_symbol_density, fragmented_text, suspicious_embedded_text_delta)
   flags pages for review. These signals are NOT OCR accuracy scores — they are
-  evidence a human should weigh.
+  evidence a human should weigh. In particular, no heuristic here detects
+  word-level misrecognition ("matericl" for "material"); that takes a
+  dictionary, a model, or a human, and PageLedger ships none of them.
 - **Quality-warning pages appear in the audit review queue.** For execution
   runs, every page with one or more quality warnings is added to
   `audit.json` → `review_queue` with reason `"quality_warning"`. Dry-run
@@ -205,7 +236,7 @@ service or database.
 
 ## Tested Scale
 
-The 0.1.0 alpha has been tested locally on:
+The 0.1.x alpha has been tested locally on:
 
 - **5,000 synthetic text pages** (2.4s, ~2,100 pages/sec, artifact counts
   verified — raw files = provenance lines = quality lines = pages extracted).
@@ -234,11 +265,10 @@ work.** It is the only unit every extraction backend shares:
 - Self-hosted engines (e.g. Docling) have **no dollar cost at all**, only compute
   time.
 
-Because pages are the common denominator, denominating routing, budgeting, and
-audit in pages is what lets you **compare, budget, and reproduce a run across
-heterogeneous providers** — a Textract run against a Mistral run against a local
-model — with one number. Tokens, compute-seconds, and dollars are all carried as
-*optional, provider-conditional* signals on top.
+Because pages are the common denominator, routing, budgeting, and audit in
+pages lets you compare a Textract run against a Mistral run against a local
+model with one number. Tokens, compute-seconds, and dollars ride on top as
+optional, provider-conditional signals.
 
 Every adapter reports a usage record where **`pages` is required** and
 everything else is optional:
@@ -369,16 +399,14 @@ extractors, so you can inspect routing before spending money or trusting
 output. `--json` makes command status scriptable (parseable stdout, errors on
 stderr), and `--log-level` controls the detail written to the run log.
 
-Current non-dry-run support is deliberately tiny. Set `run.adapter: text` to
-write each page of a UTF-8 text input to `raw/doc_0001_page_0001.txt` (text
-sources are split into pages on the form-feed character), or install
-`pageledger[pdf]` and set `run.adapter: pdf_text` for born-digital PDF text
-extraction through `pypdf`. Both paths emit one `provenance.jsonl` line per
-page. This proves the preflight paginate → route → extract → provenance path
-before OCR/VLM integrations. For scanned PDFs or richer layout extraction, run
-an OCR/conversion tool first or point `run.adapter` at a project adapter such as
-`my_project.adapters:TesseractCliAdapter`; PageLedger will keep the same
-manifest, cost, log, and provenance envelope around that external engine.
+Three adapters ship built in. `text` writes each page of a UTF-8 text input
+to `raw/` (pages split on the form-feed character). `pdf_text` reads
+born-digital PDF text layers through `pypdf` (install `pageledger[pdf]`).
+`pdf_ocr` OCRs scanned PDFs through locally installed `pdftoppm` and
+`tesseract`. For richer layout extraction, point `run.adapter` at a project
+adapter such as `my_project.adapters:TesseractCliAdapter` (use
+`--adapter-path` to make the module importable); PageLedger keeps the same
+manifest, cost, log, and provenance envelope around any engine.
 
 The doctor output reports optional packages, common OCR commands, and whether
 cloud OCR/VLM keys are present without printing their values.

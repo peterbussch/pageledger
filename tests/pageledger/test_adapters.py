@@ -12,14 +12,16 @@ from pathlib import Path
 
 import pytest
 
+import pageledger.adapters as adapters_module
 from pageledger.adapters import (
     ExtractionResult,
-    TextAdapter,
+    PdfOcrAdapter,
     PdfTextAdapter,
+    TextAdapter,
     adapter_conformance_check,
     load_adapter,
+    ocr_pdf_page_count,
 )
-
 
 # =========================================================================
 # Adapter conformance helper — built-in adapters
@@ -336,6 +338,176 @@ class BadPageCountAdapter:
         )
 """)
     _run_and_assert_error(tmp_path, "badpc:BadPageCountAdapter", "page_count")
+
+
+# =========================================================================
+# Built-in pdf_ocr adapter
+# =========================================================================
+
+def test_pdf_ocr_adapter_passes_conformance() -> None:
+    issues = adapter_conformance_check(PdfOcrAdapter())
+    assert issues == []
+
+
+def test_pdf_ocr_rejects_bad_dpi() -> None:
+    with pytest.raises(ValueError, match="run.adapter_options.dpi"):
+        PdfOcrAdapter(dpi=10)
+    with pytest.raises(ValueError, match="run.adapter_options.dpi"):
+        PdfOcrAdapter(dpi="300")  # type: ignore[arg-type]
+
+
+def test_pdf_ocr_rejects_bad_lang() -> None:
+    with pytest.raises(ValueError, match="run.adapter_options.lang"):
+        PdfOcrAdapter(lang="eng; rm -rf /")
+    with pytest.raises(ValueError, match="run.adapter_options.lang"):
+        PdfOcrAdapter(lang="")
+
+
+def test_pdf_ocr_accepts_multi_language() -> None:
+    adapter = PdfOcrAdapter(dpi=400, lang="eng+rus")
+    assert adapter.dpi == 400
+    assert adapter.lang == "eng+rus"
+
+
+def test_load_adapter_passes_options_to_pdf_ocr() -> None:
+    adapter = load_adapter("pdf_ocr", {"dpi": 400, "lang": "deu"})
+    assert adapter.dpi == 400
+    assert adapter.lang == "deu"
+
+
+def test_load_adapter_rejects_options_for_text_adapter() -> None:
+    with pytest.raises(ValueError, match="run.adapter_options"):
+        load_adapter("text", {"dpi": 300})
+
+
+def test_pdf_ocr_extract_with_mocked_binaries(tmp_path: Path, monkeypatch) -> None:
+    calls: list[list[str]] = []
+
+    def fake_which(name: str) -> str:
+        return f"/fake/bin/{name}"
+
+    def fake_run(argv, **kwargs):  # noqa: ANN001, ANN003
+        binary = Path(argv[0]).name
+        if "--version" in argv:
+            return subprocess.CompletedProcess(argv, 0, stdout="tesseract 5.5.2\n", stderr="")
+        calls.append(list(argv))
+        if binary == "pdftoppm":
+            prefix = Path(argv[-1])
+            (prefix.parent / "page-1.png").write_bytes(b"png")
+        elif binary == "tesseract":
+            output_prefix = Path(argv[2])
+            output_prefix.with_suffix(".txt").write_text("OCR TEXT\n", encoding="utf-8")
+        return subprocess.CompletedProcess(argv, 0, stdout="", stderr="")
+
+    monkeypatch.setattr(adapters_module.shutil, "which", fake_which)
+    monkeypatch.setattr(adapters_module.subprocess, "run", fake_run)
+    adapters_module._tesseract_model_string.cache_clear()
+
+    adapter = PdfOcrAdapter(dpi=400, lang="eng+deu")
+    result = adapter.extract(
+        tmp_path / "scan.pdf",
+        page_id="doc_0001_page_0003",
+        page_number=3,
+        action="transcribe_text",
+    )
+    adapters_module._tesseract_model_string.cache_clear()
+
+    assert result.content == "OCR TEXT\n"
+    assert result.model == "tesseract 5.5.2"
+    assert result.format == "text"
+    assert result.usage["pages"] == 1
+    assert result.usage["compute_seconds"] is not None
+    assert result.usage["cost_usd"] is None
+
+    pdftoppm_call = calls[0]
+    assert "-r" in pdftoppm_call and "400" in pdftoppm_call
+    assert ["-f", "3", "-l", "3"] == pdftoppm_call[1:5]
+    tesseract_call = calls[1]
+    assert tesseract_call[-2:] == ["-l", "eng+deu"]
+
+
+def test_pdf_ocr_extract_missing_binary_points_at_doctor(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr(adapters_module.shutil, "which", lambda name: None)
+    adapter = PdfOcrAdapter()
+    with pytest.raises(RuntimeError, match="pageledger doctor"):
+        adapter.extract(
+            tmp_path / "scan.pdf",
+            page_id="doc_0001_page_0001",
+            page_number=1,
+            action="transcribe_text",
+        )
+
+
+def test_pdf_ocr_extract_surfaces_subprocess_stderr(tmp_path: Path, monkeypatch) -> None:
+    def fake_run(argv, **kwargs):  # noqa: ANN001, ANN003
+        return subprocess.CompletedProcess(argv, 1, stdout="", stderr="boom")
+
+    monkeypatch.setattr(adapters_module.shutil, "which", lambda name: f"/fake/bin/{name}")
+    monkeypatch.setattr(adapters_module.subprocess, "run", fake_run)
+    adapter = PdfOcrAdapter()
+    with pytest.raises(RuntimeError, match="boom"):
+        adapter.extract(
+            tmp_path / "scan.pdf",
+            page_id="doc_0001_page_0001",
+            page_number=1,
+            action="transcribe_text",
+        )
+
+
+def test_pdf_ocr_rejects_unsupported_action(tmp_path: Path) -> None:
+    adapter = PdfOcrAdapter()
+    with pytest.raises(ValueError, match="does not support action"):
+        adapter.extract(
+            tmp_path / "scan.pdf",
+            page_id="doc_0001_page_0001",
+            page_number=1,
+            action="summarize",
+        )
+
+
+def test_ocr_pdf_page_count_uses_pdfinfo(tmp_path: Path, monkeypatch) -> None:
+    def fake_run(argv, **kwargs):  # noqa: ANN001, ANN003
+        return subprocess.CompletedProcess(
+            argv, 0, stdout="Title: x\nPages:          107\n", stderr=""
+        )
+
+    monkeypatch.setattr(adapters_module.shutil, "which", lambda name: f"/fake/bin/{name}")
+    monkeypatch.setattr(adapters_module.subprocess, "run", fake_run)
+    assert ocr_pdf_page_count(tmp_path / "scan.pdf") == 107
+
+
+_MINIMAL_PDF = b"""%PDF-1.4
+1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj
+2 0 obj << /Type /Pages /Kids [3 0 R] /Count 1 >> endobj
+3 0 obj << /Type /Page /Parent 2 0 R /MediaBox [0 0 200 200] >> endobj
+trailer << /Root 1 0 R >>
+"""
+
+
+@pytest.mark.skipif(
+    not (adapters_module.shutil.which("tesseract") and adapters_module.shutil.which("pdftoppm")),
+    reason="tesseract and pdftoppm not installed",
+)
+def test_pdf_ocr_real_binaries_smoke(tmp_path: Path) -> None:
+    pdf = tmp_path / "blank.pdf"
+    pdf.write_bytes(_MINIMAL_PDF)
+    adapter = PdfOcrAdapter(dpi=100)
+    result = adapter.extract(
+        pdf, page_id="doc_0001_page_0001", page_number=1, action="transcribe_text",
+    )
+    assert result.usage["pages"] == 1
+    assert isinstance(result.content, str)
+    assert result.model and result.model.startswith("tesseract")
+
+
+def test_ocr_pdf_page_count_error_names_both_installs(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr(adapters_module.shutil, "which", lambda name: None)
+    monkeypatch.setattr(
+        adapters_module, "_pdf_page_count",
+        lambda source: (_ for _ in ()).throw(ValueError("pypdf missing")),
+    )
+    with pytest.raises(ValueError, match="poppler"):
+        ocr_pdf_page_count(tmp_path / "scan.pdf")
 
 
 # =========================================================================

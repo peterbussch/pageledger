@@ -6,6 +6,38 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to the artifact compatibility policy documented in
 `docs/run-manifest-spec.md` → Compatibility Policy.
 
+## 0.1.1 — 2026-07-07
+
+### Added
+
+- Built-in `pdf_ocr` adapter — OCRs scanned PDFs with locally installed
+  Tesseract, rendering pages via `pdftoppm`. No new Python dependencies;
+  missing binaries fail with a `pageledger doctor` hint. Reports
+  `model: "tesseract <version>"` and measured `compute_seconds` per page.
+- `run.adapter_options` — a config mapping passed to the adapter
+  constructor. `pdf_ocr` takes `dpi` (default 300) and `lang` (default
+  `eng`, `+`-joined for multiple languages). Custom adapter classes and
+  factories receive the same options, lifting the old no-argument
+  constructor limitation. Options are recorded in `manifest.extractors`
+  (new optional `options` field, additive and backward compatible).
+- `--adapter-path` on `run` and `rerun` — adds a directory to `sys.path`
+  so custom adapter modules load without setting PYTHONPATH.
+- `pageledger init-config --adapter pdf_ocr`.
+- Lexical-shape quality metrics (`alpha_token_count`, `mean_token_length`,
+  `short_token_ratio`) in `quality.jsonl`, and a `fragmented_text` warning
+  for OCR fragment noise (mean token length < 3 across 20+ tokens). These
+  are additive optional fields; the warning taxonomy grows to seven items.
+- `docs/examples/jfk-scanned-archive.md` — end-to-end walkthrough OCR-ing a
+  107-page declassified scanned document from the National Archives.
+- Ruff linting (`[tool.ruff]` in pyproject, dev extra, CI lint job).
+
+### Changed
+
+- Docs rewritten around the built-in OCR path: README quickstart,
+  `docs/pdf-ocr-first-run.md` (no more `PYTHONPATH=examples`),
+  `docs/ocr-options.md` decision matrix, `docs/adapter-protocol.md`
+  (adapter options, `--adapter-path`).
+
 ## 0.1.0 — 2026-07-06
 
 ### Added
@@ -33,9 +65,10 @@ and this project adheres to the artifact compatibility policy documented in
   `extraction_seconds`; provenance lines carry per-page `extraction_seconds`.
 - Retry with configurable `max_retries` and optional exponential backoff
   (`retry.backoff: exponential`, 0.5 s base doubling to an 8 s cap).
-- Quality signal diagnostics with six-item warning taxonomy (`empty_text`,
+- Quality signal diagnostics with seven-item warning taxonomy (`empty_text`,
   `short_text`, `replacement_characters`, `control_characters`,
-  `suspicious_symbol_density`, `suspicious_embedded_text_delta`).
+  `suspicious_symbol_density`, `fragmented_text`,
+  `suspicious_embedded_text_delta`).
 - Quality-warning pages automatically routed to audit `review_queue` with
   `reason: "quality_warning"`.
 - `quality_warning_pages` rollup count in `manifest.summary`.

@@ -13,17 +13,13 @@ from __future__ import annotations
 import json
 import sys
 import textwrap
-from pathlib import Path
 
 import pytest
 
-from pageledger.adapters import ExtractionResult
 from pageledger.runner import (
-    AdapterExecutionError,
     BudgetExceededError,
     run,
 )
-
 
 # =========================================================================
 # Adapter fails after prior pages succeed → partial artifacts
@@ -101,21 +97,21 @@ def test_adapter_fails_on_page_3_of_5_preserves_prior_pages(tmp_path):
 
     # Provenance: only 2 lines (pages 1-2)
     provenance_lines = [
-        l for l in (out_dir / "provenance.jsonl").read_text(encoding="utf-8").splitlines()
-        if l.strip()
+        line for line in (out_dir / "provenance.jsonl").read_text(encoding="utf-8").splitlines()
+        if line.strip()
     ]
     assert len(provenance_lines) == 2
 
     # Quality: only 2 entries
     quality_lines = [
-        l for l in (out_dir / "quality.jsonl").read_text(encoding="utf-8").splitlines()
-        if l.strip()
+        line for line in (out_dir / "quality.jsonl").read_text(encoding="utf-8").splitlines()
+        if line.strip()
     ]
     assert len(quality_lines) == 2
 
     # Run log has the error for page 3
     log_lines = (out_dir / "run.log").read_text(encoding="utf-8").splitlines()
-    error_lines = [l for l in log_lines if l.strip() and "failed" in l]
+    error_lines = [line for line in log_lines if line.strip() and "failed" in line]
     assert len(error_lines) >= 1
     error_entry = json.loads(error_lines[0])
     assert error_entry["page_id"] == "doc_0001_page_0003"
@@ -169,11 +165,11 @@ def test_budget_exceeded_mid_run_preserves_partial_output(tmp_path):
     assert not (out_dir / "raw" / "doc_0001_page_0003.txt").exists()
 
     # Provenance has 2 lines
-    prov_count = sum(1 for l in (out_dir / "provenance.jsonl").read_text(encoding="utf-8").splitlines() if l.strip())
+    prov_count = sum(1 for line in (out_dir / "provenance.jsonl").read_text(encoding="utf-8").splitlines() if line.strip())
     assert prov_count == 2
 
     # Run log has budget_exceeded entry
-    log_lines = [(l, json.loads(l)) for l in (out_dir / "run.log").read_text(encoding="utf-8").splitlines() if l.strip()]
+    log_lines = [(line, json.loads(line)) for line in (out_dir / "run.log").read_text(encoding="utf-8").splitlines() if line.strip()]
     budget_entries = [entry for _, entry in log_lines if entry.get("status") == "budget_exceeded"]
     assert len(budget_entries) >= 1
     assert "max_usd=75" in budget_entries[0]["error"]
@@ -240,8 +236,8 @@ def test_retry_exhausted_writes_retry_and_error_entries(tmp_path):
 
     out_dir = tmp_path / "out"
     log_lines = [
-        json.loads(l) for l in (out_dir / "run.log").read_text(encoding="utf-8").splitlines()
-        if l.strip()
+        json.loads(line) for line in (out_dir / "run.log").read_text(encoding="utf-8").splitlines()
+        if line.strip()
     ]
 
     # Should have retry entries (WARNING) and final error (ERROR)
@@ -334,7 +330,7 @@ def test_failed_run_manifest_status_is_failed_not_completed(tmp_path):
           adapter: text
         """), encoding="utf-8")
     out_dir2 = tmp_path / "out2"
-    result = run(inputs=[source], config_path=config2, out_dir=out_dir2, dry_run=False)
+    run(inputs=[source], config_path=config2, out_dir=out_dir2, dry_run=False)
     manifest = json.loads((out_dir2 / "manifest.json").read_text(encoding="utf-8"))
     assert manifest["status"] == "completed"
 
@@ -385,7 +381,7 @@ def test_run_log_does_not_contain_environment_secrets(tmp_path, monkeypatch):
 
     env = {**os.environ, "PYTHONPATH": str(tmp_path)}
     import subprocess
-    result = subprocess.run(
+    subprocess.run(
         [sys.executable, "-m", "pageledger", "run", str(source),
          "--config", str(config), "--out", str(tmp_path / "out"), "--json"],
         capture_output=True, text=True, cwd=str(tmp_path), env=env,

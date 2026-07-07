@@ -3,7 +3,7 @@
 Verifies the full quality warning taxonomy, round-trip from extraction
 through manifest.summary.quality_warning_pages to audit.json review_queue.
 
-Covers all 6 documented warning types plus:
+Covers all 7 documented warning types plus:
   - Clean text produces zero false-positive warnings
   - Empty / very-short pages
   - OCR-noisy text (replacement chars, control chars)
@@ -19,9 +19,6 @@ from __future__ import annotations
 import json
 import sys
 import textwrap
-from pathlib import Path
-
-import yaml
 
 
 def _run(inputs, config_text, tmp_path, *, dry_run=False):
@@ -249,6 +246,73 @@ def test_suspicious_symbol_density_triggers_warning(tmp_path):
     assert "suspicious_symbol_density" in entries[0]["warnings"]
     assert entries[0]["text_quality"]["suspicious_symbol_count"] >= 5
     assert entries[0]["text_quality"]["suspicious_symbol_ratio"] >= 0.03
+
+
+# =========================================================================
+# Fragmented text (lexical shape)
+# =========================================================================
+
+def test_fragmented_text_triggers_warning(tmp_path):
+    """OCR fragment noise (mean token length < 3) triggers fragmented_text."""
+    source = tmp_path / "fragments.txt"
+    # 30 alphabetic fragments, mean length ~1.3 — pdftoppm/tesseract line noise
+    source.write_text("l ll l lI ll I l li ll l Il ll i l ll lI l I li ll "
+                      "l ll I li l ll lI l li", encoding="utf-8")
+    out_dir = _run(
+        [source],
+        textwrap.dedent("""\
+            schema_version: "0.1"
+            taxonomy:
+              page_types:
+                prose:
+                  default_action: transcribe_text
+            run:
+              adapter: text
+            """),
+        tmp_path,
+    )
+    entries = [
+        json.loads(line)
+        for line in (out_dir / "quality.jsonl").read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    assert len(entries) == 1
+    assert "fragmented_text" in entries[0]["warnings"]
+    tq = entries[0]["text_quality"]
+    assert tq["alpha_token_count"] >= 20
+    assert tq["mean_token_length"] < 3.0
+    assert tq["short_token_ratio"] > 0.9
+
+
+def test_fragmented_text_not_triggered_by_prose_or_few_tokens(tmp_path):
+    """Normal prose and short fragment bursts stay unflagged."""
+    source = tmp_path / "mixed.txt"
+    # page 1: normal prose; page 2: fragment noise but only 5 tokens
+    source.write_text(
+        "The quick brown fox jumps over the lazy dog near the riverbank today."
+        "\fl ll I li l", encoding="utf-8")
+    out_dir = _run(
+        [source],
+        textwrap.dedent("""\
+            schema_version: "0.1"
+            taxonomy:
+              page_types:
+                prose:
+                  default_action: transcribe_text
+            run:
+              adapter: text
+            """),
+        tmp_path,
+    )
+    entries = [
+        json.loads(line)
+        for line in (out_dir / "quality.jsonl").read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    assert len(entries) == 2
+    for entry in entries:
+        assert "fragmented_text" not in entry["warnings"]
+    assert entries[0]["text_quality"]["mean_token_length"] > 3.0
 
 
 # =========================================================================

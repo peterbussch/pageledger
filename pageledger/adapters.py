@@ -3,8 +3,14 @@
 from __future__ import annotations
 
 import importlib
+import re
+import shutil
+import subprocess
+import tempfile
+import time
 from collections.abc import Sequence
 from dataclasses import dataclass
+from functools import lru_cache
 from pathlib import Path
 from typing import Any, Literal, Protocol, runtime_checkable
 
@@ -51,6 +57,10 @@ class AdapterProtocol(Protocol):
 
 
 PDF_ADAPTER_NAMES = {"pdf_text", "pdf"}
+
+# Built-in adapters that only accept PDF input (pdf_ocr renders pages itself,
+# so it does not need the pypdf extra for extraction).
+PDF_ONLY_ADAPTER_NAMES = PDF_ADAPTER_NAMES | {"pdf_ocr"}
 
 _ADAPTER_META_CHECKS: list[tuple[str, type | tuple[type, ...], str]] = [
     ("name", str, "must be a string"),
@@ -176,6 +186,195 @@ class PdfTextAdapter:
         )
 
 
+_LANG_PATTERN = re.compile(r"^[A-Za-z0-9_]+(\+[A-Za-z0-9_]+)*$")
+
+# Generous per-page ceilings; a page that takes longer than this is stuck.
+_RENDER_TIMEOUT_SECONDS = 120
+_OCR_TIMEOUT_SECONDS = 300
+
+
+@dataclass(frozen=True)
+class PdfOcrAdapter:
+    """OCR scanned PDFs with Tesseract, one page at a time.
+
+    Renders each page with ``pdftoppm`` and reads it with ``tesseract``.
+    Both binaries must be installed separately (``pageledger doctor`` checks
+    for them). Configure via ``run.adapter_options``: ``dpi`` (default 300)
+    and ``lang`` (Tesseract language codes, e.g. ``eng`` or ``eng+deu``).
+    """
+
+    dpi: int = 300
+    lang: str = "eng"
+    name: str = "pdf_ocr"
+    version: str = "0.1"
+    deterministic: bool = True
+    input_types: tuple[str, ...] = ("pdf",)
+    output_types: tuple[str, ...] = ("text",)
+    capabilities: tuple[str, ...] = ("ocr", "local")
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.dpi, int) or isinstance(self.dpi, bool):
+            raise ValueError("run.adapter_options.dpi must be an integer")
+        if not 50 <= self.dpi <= 1200:
+            raise ValueError("run.adapter_options.dpi must be between 50 and 1200")
+        if not isinstance(self.lang, str) or not _LANG_PATTERN.match(self.lang):
+            raise ValueError(
+                "run.adapter_options.lang must be a Tesseract language code "
+                "such as 'eng' or 'eng+deu'"
+            )
+
+    def supports(self, action: str) -> bool:
+        return action == "transcribe_text"
+
+    def page_count(self, source: Path) -> int:
+        return ocr_pdf_page_count(source)
+
+    def extract(
+        self,
+        source: Path,
+        *,
+        page_id: str,
+        page_number: int,
+        action: str,
+        prompt: str | None = None,
+    ) -> ExtractionResult:
+        if not self.supports(action):
+            raise ValueError(f"PDF OCR adapter does not support action: {action}")
+        _ = page_id, prompt
+        pdftoppm = _require_binary("pdftoppm")
+        tesseract = _require_binary("tesseract")
+
+        started = time.perf_counter()
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            prefix = tmp_path / "page"
+            _run_ocr_command(
+                [
+                    pdftoppm,
+                    "-f", str(page_number),
+                    "-l", str(page_number),
+                    "-r", str(self.dpi),
+                    "-png",
+                    str(source),
+                    str(prefix),
+                ],
+                timeout=_RENDER_TIMEOUT_SECONDS,
+                context=f"pdftoppm failed rendering page {page_number} of {source}",
+            )
+            images = sorted(tmp_path.glob("page-*.png"))
+            if not images:
+                raise RuntimeError(
+                    f"pdftoppm produced no image for page {page_number} of {source}"
+                )
+            output_prefix = tmp_path / "ocr"
+            _run_ocr_command(
+                [tesseract, str(images[0]), str(output_prefix), "-l", self.lang],
+                timeout=_OCR_TIMEOUT_SECONDS,
+                context=f"tesseract failed on page {page_number} of {source}",
+            )
+            text = output_prefix.with_suffix(".txt").read_text(
+                encoding="utf-8", errors="replace"
+            )
+        return ExtractionResult(
+            content=text,
+            format="text",
+            confidence=None,
+            model=_tesseract_model_string(),
+            warnings=[],
+            usage={
+                "pages": 1,
+                "tokens": None,
+                "compute_seconds": round(time.perf_counter() - started, 3),
+                "cost_usd": None,
+            },
+        )
+
+
+def _require_binary(name: str) -> str:
+    path = shutil.which(name)
+    if path is None:
+        raise RuntimeError(
+            f"The pdf_ocr adapter needs '{name}' on PATH. "
+            "Run 'pageledger doctor' for install hints."
+        )
+    return path
+
+
+def _run_ocr_command(argv: list[str], *, timeout: int, context: str) -> None:
+    try:
+        proc = subprocess.run(
+            argv,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise RuntimeError(f"{context}: timed out after {timeout}s") from exc
+    if proc.returncode != 0:
+        stderr = (proc.stderr or "").strip()
+        detail = f": {stderr}" if stderr else ""
+        raise RuntimeError(f"{context} (exit {proc.returncode}){detail}")
+
+
+@lru_cache(maxsize=1)
+def _tesseract_model_string() -> str:
+    path = shutil.which("tesseract")
+    if path is None:
+        return "tesseract"
+    try:
+        proc = subprocess.run(
+            [path, "--version"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            timeout=30,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return "tesseract"
+    first_line = (proc.stdout or "").splitlines()[:1]
+    if first_line and first_line[0].strip():
+        return first_line[0].strip()
+    return "tesseract"
+
+
+def ocr_pdf_page_count(source: Path) -> int:
+    """Page count for pdf_ocr: pdfinfo when available, else the pypdf extra."""
+    count = _pdf_page_count_pdfinfo(source)
+    if count is not None:
+        return count
+    try:
+        return _pdf_page_count(source)
+    except ValueError as exc:
+        raise ValueError(
+            f"Cannot count pages in {source}: install poppler (pdfinfo) "
+            "or the optional dependency pageledger[pdf]"
+        ) from exc
+
+
+def _pdf_page_count_pdfinfo(source: Path) -> int | None:
+    pdfinfo = shutil.which("pdfinfo")
+    if pdfinfo is None:
+        return None
+    try:
+        proc = subprocess.run(
+            [pdfinfo, str(source)],
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if proc.returncode != 0:
+        return None
+    for line in proc.stdout.splitlines():
+        if line.startswith("Pages:"):
+            try:
+                return int(line.split(":", 1)[1].strip())
+            except ValueError:
+                return None
+    return None
+
+
 def _load_pypdf() -> Any:
     try:
         from pypdf import PdfReader
@@ -207,18 +406,31 @@ def _pdf_page_text(source: Path, page_number: int) -> str:
         return reader.pages[page_number - 1].extract_text() or ""
 
 
-def load_adapter(name: str) -> Any:
+def load_adapter(name: str, options: dict[str, Any] | None = None) -> Any:
+    opts = dict(options or {})
     if name == "text":
-        adapter = TextAdapter()
+        adapter = _construct_builtin(TextAdapter, name, opts)
+    elif name == "pdf_ocr":
+        adapter = _construct_builtin(PdfOcrAdapter, name, opts)
     elif name in PDF_ADAPTER_NAMES:
-        adapter = PdfTextAdapter()
+        adapter = _construct_builtin(PdfTextAdapter, name, opts)
     elif ":" in name:
-        adapter = _load_custom_adapter(name)
+        adapter = _load_custom_adapter(name, opts)
     else:
-        valid = ", ".join(["text", "pdf_text", "module.path:object"])
+        valid = ", ".join(["text", "pdf_text", "pdf_ocr", "module.path:object"])
         raise ValueError(f"Unsupported adapter '{name}'. Valid adapters: {valid}")
     _validate_adapter_metadata(adapter)
     return adapter
+
+
+def _construct_builtin(cls: type, name: str, opts: dict[str, Any]) -> Any:
+    try:
+        return cls(**opts)
+    except TypeError as exc:
+        raise ValueError(
+            f"Adapter '{name}' does not accept run.adapter_options "
+            f"{sorted(opts)}"
+        ) from exc
 
 
 def _validate_adapter_metadata(adapter: Any) -> None:
@@ -230,7 +442,6 @@ def _validate_adapter_metadata(adapter: Any) -> None:
         if value is None:
             raise ValueError(f"{prefix} missing required attribute '{attr}'")
         if not isinstance(value, expected_type):
-            type_name = getattr(expected_type, "__name__", str(expected_type))
             raise ValueError(f"{prefix} '{attr}' {description}, got {type(value).__name__}")
 
     for attr in ["input_types", "output_types", "capabilities"]:
@@ -279,7 +490,8 @@ def adapter_conformance_check(adapter: Any) -> list[str]:
     return issues
 
 
-def _load_custom_adapter(spec: str) -> Any:
+def _load_custom_adapter(spec: str, opts: dict[str, Any] | None = None) -> Any:
+    opts = dict(opts or {})
     module_name, object_path = spec.split(":", 1)
     if not module_name or not object_path:
         raise ValueError("Custom adapter specs must use module.path:object")
@@ -300,18 +512,25 @@ def _load_custom_adapter(spec: str) -> Any:
     adapter = candidate
     if isinstance(adapter, type):
         try:
-            adapter = adapter()
+            adapter = adapter(**opts)
         except TypeError as exc:
             raise ValueError(
-                f"Custom adapter '{spec}' is a class but could not be constructed with no arguments"
+                f"Custom adapter '{spec}' is a class but could not be constructed "
+                f"with {_opts_phrase(opts)}"
             ) from exc
     elif not _looks_like_adapter(adapter) and callable(adapter):
         try:
-            adapter = adapter()
+            adapter = adapter(**opts)
         except TypeError as exc:
             raise ValueError(
-                f"Custom adapter '{spec}' is callable but could not be constructed with no arguments"
+                f"Custom adapter '{spec}' is callable but could not be constructed "
+                f"with {_opts_phrase(opts)}"
             ) from exc
+    elif opts:
+        raise ValueError(
+            f"Custom adapter '{spec}' is already an instance; "
+            "run.adapter_options require a class or factory"
+        )
     if not _looks_like_adapter(adapter):
         raise ValueError(
             f"Custom adapter '{spec}' must expose supports(action) and extract(...)"
@@ -332,6 +551,12 @@ def _load_custom_adapter(spec: str) -> Any:
             except Exception:
                 pass
     return adapter
+
+
+def _opts_phrase(opts: dict[str, Any]) -> str:
+    if not opts:
+        return "no arguments"
+    return f"run.adapter_options {sorted(opts)}"
 
 
 def _looks_like_adapter(value: Any) -> bool:

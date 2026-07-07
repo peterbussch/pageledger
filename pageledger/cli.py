@@ -4,14 +4,13 @@ from __future__ import annotations
 
 import argparse
 import json
-from pathlib import Path
 import sys
 import textwrap
+from pathlib import Path
 
 from .compare import compare_runs, render_comparison
 from .doctor import build_doctor_report
 from .runner import inspect_run, rerun, run
-
 
 MINIMAL_CONFIG = textwrap.dedent("""\
     schema_version: "0.1"
@@ -30,7 +29,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     run_parser = subparsers.add_parser(
         "run",
-        help="Run extraction; currently supports --dry-run and run.adapter: text or pdf_text",
+        help="Run extraction with run.adapter: text, pdf_text, pdf_ocr, or module.path:Object",
     )
     run_parser.add_argument(
         "inputs",
@@ -46,6 +45,12 @@ def build_parser() -> argparse.ArgumentParser:
         "--log-level",
         default="INFO",
         help="Minimum run.log event level: DEBUG, INFO, WARNING, or ERROR",
+    )
+    run_parser.add_argument(
+        "--adapter-path",
+        type=Path,
+        default=None,
+        help="Directory added to sys.path so a custom run.adapter module can be imported",
     )
 
     rerun_parser = subparsers.add_parser(
@@ -71,6 +76,12 @@ def build_parser() -> argparse.ArgumentParser:
         default="INFO",
         help="Minimum run.log event level: DEBUG, INFO, WARNING, or ERROR",
     )
+    rerun_parser.add_argument(
+        "--adapter-path",
+        type=Path,
+        default=None,
+        help="Directory added to sys.path so a custom run.adapter module can be imported",
+    )
 
     doctor_parser = subparsers.add_parser(
         "doctor",
@@ -90,7 +101,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     init_parser.add_argument(
         "--adapter",
-        choices=["text", "pdf_text"],
+        choices=["text", "pdf_text", "pdf_ocr"],
         default="text",
         help="Default adapter for the generated config (default: text)",
     )
@@ -224,6 +235,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
             out_dir=args.out,
             dry_run=args.dry_run,
             log_level=args.log_level,
+            adapter_path=args.adapter_path,
         )
     except (RuntimeError, ValueError) as exc:
         _print_error_json(exc, args)
@@ -259,6 +271,7 @@ def _cmd_rerun(args: argparse.Namespace) -> int:
             out_dir=args.out,
             dry_run=args.dry_run,
             log_level=args.log_level,
+            adapter_path=args.adapter_path,
         )
     except (RuntimeError, ValueError) as exc:
         _print_error_json(exc, args)

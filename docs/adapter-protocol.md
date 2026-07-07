@@ -111,35 +111,62 @@ when no rate is known.
 
 ## Loading Custom Adapters
 
-The built-in adapters are named `text` and `pdf_text`. Project-specific OCR or
-VLM wrappers can be loaded with a Python import string:
+The built-in adapters are named `text`, `pdf_text`, and `pdf_ocr`.
+Project-specific OCR or VLM wrappers can be loaded with a Python import
+string:
 
 ```yaml
 run:
   adapter: my_project.adapters:TesseractCliAdapter
 ```
 
-The object after `:` may be an adapter instance, a no-argument adapter class, or
-a no-argument factory function. The resolved adapter is validated for required
-metadata (`name`, `version`, `deterministic`, `input_types`, `output_types`,
-`capabilities`) and required methods (`supports`, `extract`). Validation errors
-include the config key path and expected type.
+The object after `:` may be an adapter instance, an adapter class, or a
+factory function. The resolved adapter is validated for required metadata
+(`name`, `version`, `deterministic`, `input_types`, `output_types`,
+`capabilities`) and required methods (`supports`, `extract`). Validation
+errors include the config key path and expected type.
 
 If the adapter can count pages before extraction, expose `page_count(source)`
 returning a positive integer. Adapters without this hook fall back to the
 generic paginator (form-feed for text, 1 page for unknown types, pypdf for PDFs
 when the adapter is in `PDF_ADAPTER_NAMES`).
 
-### Limits of no-arg import adapters
+### Adapter options
 
-Simple no-argument import-string adapters work for most local tools (Tesseract,
-OCRmyPDF wrappers, shell-out scripts). They do NOT support:
-- Constructor arguments (the loader calls the class with no args)
-- Async extraction (the runner is synchronous)
-- Multi-file state (each adapter instance is shared across a run)
+`run.adapter_options` is a mapping passed to the adapter constructor as
+keyword arguments. It works for built-in adapters and for custom classes and
+factories:
 
-For adapters that need configuration, instantiate them in your project code and
-pass the instance as `module.path:instance_name`.
+```yaml
+run:
+  adapter: pdf_ocr
+  adapter_options:
+    dpi: 400
+    lang: eng+rus
+```
+
+An adapter that does not accept a given option fails config validation with
+the offending keys named. Options used in a run are recorded in
+`manifest.extractors[].options`. Import strings that resolve to an already
+constructed *instance* cannot take options — pass a class or factory instead.
+
+### Finding the adapter module
+
+The module in an import string must be importable. Instead of setting
+PYTHONPATH, pass the directory with `--adapter-path`:
+
+```bash
+pageledger run scan.pdf --config custom.yml --out runs/custom \
+  --adapter-path ./my_adapters
+```
+
+The directory is prepended to `sys.path` before the config is validated.
+`rerun` accepts the same flag.
+
+### Remaining limits
+
+- Async extraction is not supported (the runner is synchronous).
+- One adapter instance is shared across the whole run.
 
 ## Timeout and Subprocess Guidance
 
@@ -217,9 +244,9 @@ Adapters should return `ExtractionResult` instances with:
 - olmOCR for LLM-oriented PDF extraction.
 - API VLMs through OpenAI-compatible clients.
 
-The first public alpha ships deterministic local adapters (`text`, plus optional
-`pdf_text` through `pageledger[pdf]`). OCR/VLM adapters come later; the adapter
-contract matters more than adapter breadth.
+Built-in adapters: `text`, `pdf_text` (through `pageledger[pdf]`), and
+`pdf_ocr` (through locally installed poppler + Tesseract). Anything stronger
+is a custom adapter; the adapter contract matters more than adapter breadth.
 
 Copy-paste examples live in `examples/`:
 

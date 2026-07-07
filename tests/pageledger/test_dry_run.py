@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-import json
 import hashlib
+import json
 import os
 import py_compile
 import sys
@@ -228,7 +228,7 @@ def test_dry_run_writes_auditable_artifacts(tmp_path):
 
 
 def test_package_exports_release_version():
-    assert pageledger.__version__ == "0.1.0"
+    assert pageledger.__version__ == "0.1.1"
 
 
 def test_dry_run_expands_directory_inputs_in_stable_order(tmp_path):
@@ -674,8 +674,8 @@ run:
 
 
 def test_configured_prompt_is_routed_to_adapter_and_provenance(tmp_path, monkeypatch):
-    monkeypatch.setattr(config_module, "load_adapter", lambda name: PromptEchoAdapter())
-    monkeypatch.setattr(runner_module, "load_adapter", lambda name: PromptEchoAdapter())
+    monkeypatch.setattr(config_module, "load_adapter", lambda name, options=None: PromptEchoAdapter())
+    monkeypatch.setattr(runner_module, "load_adapter", lambda name, options=None: PromptEchoAdapter())
     source = tmp_path / "sample.txt"
     source.write_text("example page", encoding="utf-8")
     config = tmp_path / "pageledger.yml"
@@ -708,8 +708,8 @@ run:
 
 def test_retry_recovers_from_transient_adapter_failure(tmp_path, monkeypatch):
     adapter = FlakyAdapter()
-    monkeypatch.setattr(config_module, "load_adapter", lambda name: adapter)
-    monkeypatch.setattr(runner_module, "load_adapter", lambda name: adapter)
+    monkeypatch.setattr(config_module, "load_adapter", lambda name, options=None: adapter)
+    monkeypatch.setattr(runner_module, "load_adapter", lambda name, options=None: adapter)
     source = tmp_path / "sample.txt"
     source.write_text("example page", encoding="utf-8")
     config = tmp_path / "pageledger.yml"
@@ -748,8 +748,8 @@ run:
 
 def test_log_level_filters_run_log_entries(tmp_path, monkeypatch):
     adapter = FlakyAdapter()
-    monkeypatch.setattr(config_module, "load_adapter", lambda name: adapter)
-    monkeypatch.setattr(runner_module, "load_adapter", lambda name: adapter)
+    monkeypatch.setattr(config_module, "load_adapter", lambda name, options=None: adapter)
+    monkeypatch.setattr(runner_module, "load_adapter", lambda name, options=None: adapter)
     source = tmp_path / "sample.txt"
     source.write_text("example page", encoding="utf-8")
     config = tmp_path / "pageledger.yml"
@@ -874,8 +874,8 @@ run:
 
 
 def test_malformed_adapter_result_writes_failed_manifest_and_run_log(tmp_path, monkeypatch):
-    monkeypatch.setattr(config_module, "load_adapter", lambda name: BadUsageAdapter())
-    monkeypatch.setattr(runner_module, "load_adapter", lambda name: BadUsageAdapter())
+    monkeypatch.setattr(config_module, "load_adapter", lambda name, options=None: BadUsageAdapter())
+    monkeypatch.setattr(runner_module, "load_adapter", lambda name, options=None: BadUsageAdapter())
     source = tmp_path / "sample.txt"
     source.write_text("example page", encoding="utf-8")
     config = tmp_path / "pageledger.yml"
@@ -907,8 +907,8 @@ run:
 
 
 def test_path_like_adapter_format_writes_failed_manifest_and_run_log(tmp_path, monkeypatch):
-    monkeypatch.setattr(config_module, "load_adapter", lambda name: BadFormatAdapter())
-    monkeypatch.setattr(runner_module, "load_adapter", lambda name: BadFormatAdapter())
+    monkeypatch.setattr(config_module, "load_adapter", lambda name, options=None: BadFormatAdapter())
+    monkeypatch.setattr(runner_module, "load_adapter", lambda name, options=None: BadFormatAdapter())
     source = tmp_path / "sample.txt"
     source.write_text("example page", encoding="utf-8")
     config = tmp_path / "pageledger.yml"
@@ -938,8 +938,8 @@ run:
 
 
 def test_budget_cap_stops_run_after_observed_cost(tmp_path, monkeypatch):
-    monkeypatch.setattr(config_module, "load_adapter", lambda name: CostlyAdapter())
-    monkeypatch.setattr(runner_module, "load_adapter", lambda name: CostlyAdapter())
+    monkeypatch.setattr(config_module, "load_adapter", lambda name, options=None: CostlyAdapter())
+    monkeypatch.setattr(runner_module, "load_adapter", lambda name, options=None: CostlyAdapter())
     source = tmp_path / "sample.txt"
     source.write_text("costly page", encoding="utf-8")
     config = tmp_path / "pageledger.yml"
@@ -978,8 +978,8 @@ run:
 
 
 def test_budget_warning_is_recorded_without_stopping_run(tmp_path, monkeypatch):
-    monkeypatch.setattr(config_module, "load_adapter", lambda name: CostlyAdapter())
-    monkeypatch.setattr(runner_module, "load_adapter", lambda name: CostlyAdapter())
+    monkeypatch.setattr(config_module, "load_adapter", lambda name, options=None: CostlyAdapter())
+    monkeypatch.setattr(runner_module, "load_adapter", lambda name, options=None: CostlyAdapter())
     source = tmp_path / "sample.txt"
     source.write_text("costly page", encoding="utf-8")
     config = tmp_path / "pageledger.yml"
@@ -1702,8 +1702,8 @@ def test_custom_adapter_page_count_hook_controls_planned_pages(tmp_path, monkeyp
             )
 
     adapter = ThreePagePdfAdapter()
-    monkeypatch.setattr(config_module, "load_adapter", lambda name: adapter)
-    monkeypatch.setattr(runner_module, "load_adapter", lambda name: adapter)
+    monkeypatch.setattr(config_module, "load_adapter", lambda name, options=None: adapter)
+    monkeypatch.setattr(runner_module, "load_adapter", lambda name, options=None: adapter)
     source = tmp_path / "scan.pdf"
     source.write_bytes(b"%PDF-1.4\nplaceholder")
     config = tmp_path / "pageledger.yml"
@@ -1750,8 +1750,8 @@ def test_custom_adapter_without_page_count_keeps_one_page_backcompat(tmp_path, m
             )
 
     adapter = OpaqueAdapter()
-    monkeypatch.setattr(config_module, "load_adapter", lambda name: adapter)
-    monkeypatch.setattr(runner_module, "load_adapter", lambda name: adapter)
+    monkeypatch.setattr(config_module, "load_adapter", lambda name, options=None: adapter)
+    monkeypatch.setattr(runner_module, "load_adapter", lambda name, options=None: adapter)
     source = tmp_path / "scan.pdf"
     source.write_bytes(b"%PDF-1.4\nplaceholder")
     config = tmp_path / "pageledger.yml"

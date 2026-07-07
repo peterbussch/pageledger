@@ -90,7 +90,11 @@
           "deterministic": { "type": "boolean" },
           "input_types": { "type": "array", "items": { "type": "string" } },
           "output_types": { "type": "array", "items": { "type": "string" } },
-          "capabilities": { "type": "array", "items": { "type": "string" } }
+          "capabilities": { "type": "array", "items": { "type": "string" } },
+          "options": {
+            "type": "object",
+            "description": "run.adapter_options the adapter was constructed with."
+          }
         },
         "additionalProperties": false
       }

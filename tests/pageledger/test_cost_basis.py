@@ -16,7 +16,6 @@ from pathlib import Path
 
 import pytest
 
-
 BASE = """\
 schema_version: "0.1"
 taxonomy:

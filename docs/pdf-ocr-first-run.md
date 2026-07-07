@@ -1,8 +1,8 @@
 # PDF/OCR First Run
 
-This tutorial uses a born-digital PDF (replace the path with your own file):
-
-`/path/to/your/document.pdf`
+This tutorial walks a PDF (replace the path with your own file) through
+extraction: born-digital first, then scanned via the built-in `pdf_ocr`
+adapter.
 
 PageLedger stays lean: it counts pages, runs configured adapters, writes
 provenance, and audits output. It does not install OCR engines for you.
@@ -21,7 +21,7 @@ python3 -m venv /tmp/pageledger-first-run
 From a built wheel:
 
 ```bash
-/tmp/pageledger-first-run/bin/python -m pip install "dist/pageledger-0.1.0-py3-none-any.whl[pdf]"
+/tmp/pageledger-first-run/bin/python -m pip install "dist/pageledger-0.1.1-py3-none-any.whl[pdf]"
 ```
 
 ## 2. Doctor
@@ -85,27 +85,48 @@ Read:
   warnings, and text-quality metrics.
 - `cost.json` for page/token/cost rollups. PageLedger does not hard-code pricing.
 
-## 5. External OCR Preprocessing
+## 5. Scanned PDF with `pdf_ocr`
 
-If the PDF is scanned or has a weak text layer, preprocess outside PageLedger:
+If the PDF is scanned (or the text layer is junk), use the built-in OCR
+adapter. It needs poppler and Tesseract installed — step 2's doctor output
+tells you if they're missing.
 
 ```bash
-examples/ocrmypdf_preprocess.sh \
-  /path/to/your/document.pdf \
-  /tmp/document-ocr.pdf
+cat > pageledger-ocr.yml <<'YAML'
+schema_version: "0.1"
+taxonomy:
+  page_types:
+    prose:
+      default_action: transcribe_text
+run:
+  adapter: pdf_ocr
+YAML
 
 /tmp/pageledger-first-run/bin/pageledger run \
-  /tmp/document-ocr.pdf \
-  --config pageledger-pdf.yml \
-  --out runs/document-ocrmypdf \
+  /path/to/your/document.pdf \
+  --config pageledger-ocr.yml \
+  --out runs/document-ocr \
   --json
 ```
 
-This keeps OCRmyPDF optional. PageLedger audits the resulting PDF text layer.
+Tune DPI and language in the config:
+
+```yaml
+run:
+  adapter: pdf_ocr
+  adapter_options:
+    dpi: 400
+    lang: eng+deu
+```
+
+For a full worked example on a real scanned document, see
+`docs/examples/jfk-scanned-archive.md`. To produce a searchable PDF for other
+tools as a side effect, preprocess with `examples/ocrmypdf_preprocess.sh`
+instead and run `pdf_text` on the output.
 
 ## 6. Custom OCR Adapter
 
-Use a Python import string:
+Wrap any engine as a custom adapter and name it with an import string:
 
 ```yaml
 schema_version: "0.1"
@@ -117,18 +138,20 @@ run:
   adapter: tesseract_pdftoppm_adapter:TesseractPdftoppmAdapter
 ```
 
-Run with the examples directory on `PYTHONPATH`:
+Point `--adapter-path` at the directory containing the module:
 
 ```bash
-PYTHONPATH=examples /tmp/pageledger-first-run/bin/pageledger run \
+/tmp/pageledger-first-run/bin/pageledger run \
   /path/to/your/document.pdf \
   --config pageledger-tesseract.yml \
   --out runs/document-tesseract \
+  --adapter-path examples \
   --json
 ```
 
 Custom PDF adapters should expose `page_count(source)`. That lets PageLedger
-paginate correctly without knowing about the OCR engine.
+paginate correctly without knowing about the OCR engine. Constructor options
+can come from `run.adapter_options` — see `docs/adapter-protocol.md`.
 
 ## 7. Rerun Flagged Pages With a Stronger Engine
 
@@ -137,9 +160,9 @@ If the first run flagged pages in `quality.jsonl` (they also land in
 those pages — with a different adapter if you want — and compare:
 
 ```bash
-PYTHONPATH=examples /tmp/pageledger-first-run/bin/pageledger rerun \
+/tmp/pageledger-first-run/bin/pageledger rerun \
   runs/document-pdf-text \
-  --config pageledger-tesseract.yml \
+  --config pageledger-ocr.yml \
   --out runs/document-rerun
 
 /tmp/pageledger-first-run/bin/pageledger compare-runs \

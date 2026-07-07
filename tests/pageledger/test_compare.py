@@ -11,8 +11,6 @@ Verifies:
 from __future__ import annotations
 
 import json
-from pathlib import Path
-
 
 MINIMAL = """\
 schema_version: "0.1"
