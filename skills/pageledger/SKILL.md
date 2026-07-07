@@ -1,100 +1,90 @@
 ---
 name: pageledger
-description: Use when planning, running, or reviewing auditable OCR/VLM extraction workflows with page routing, quality/cost controls, provenance, audit queues, and rerun planning.
+description: This skill should be used when the user asks to "OCR these scans", "extract text from this archive", "track what my extraction run did", "rerun the bad pages", "compare two runs", or otherwise wants document extraction with provenance, quality review, cost budgets, or reproducibility — digitization projects, archival scans, batch PDF extraction, OCR auditing. Also use it when operating or extending the pageledger CLI or writing a PageLedger adapter.
 ---
 
 # PageLedger
 
-Use this skill when the user wants to build or operate a document extraction
-pipeline where OCR/VLM output must be auditable, rerunnable, and reviewable.
+PageLedger is a page-denominated run ledger for document extraction. It
+does not extract anything itself: it routes pages to an adapter
+(Tesseract, a cloud VLM, anything wrapped in the protocol), enforces
+page/token/dollar budgets, and records provenance, quality signals, cost,
+review queues, and rerun plans as plain files in a run directory.
 
-PageLedger is an alpha package, not a finalized stable library. Treat
-the repository docs as design direction. The implementation in
-`pageledger/` currently supports dry-run artifact generation, the deterministic
-`run.adapter: text` path for UTF-8 fixtures, optional `run.adapter: pdf_text`
-for born-digital PDFs through `pageledger[pdf]`, custom adapter import strings,
-and `pageledger doctor` diagnostics for optional PDF/OCR/cloud tooling.
+Trust the version installed, not memory of an older one. `pageledger
+doctor` reports the version; `docs/capabilities-and-limits.md` is the
+authoritative scope list.
 
-## Shape
+## Command quick reference
 
-PageLedger is a small control plane around extractors:
+| Task | Command |
+|---|---|
+| OCR a scan, no config | `pageledger run scan.pdf --adapter pdf_ocr --out runs/a` |
+| Born-digital PDF | `pageledger run doc.pdf --adapter pdf_text --out runs/a` (needs `pageledger[pdf]`) |
+| Sample pages first | add `--pages "1-10,50-60"` (page ids keep source numbering) |
+| Plan without extracting | add `--dry-run` |
+| Full config run | `pageledger run inputs/ --config pageledger.yml --out runs/a` |
+| Re-extract flagged pages | `pageledger rerun runs/a --config stronger.yml --out runs/b` |
+| Diff two runs | `pageledger compare-runs runs/a runs/b` |
+| Summarize a run | `pageledger inspect-run runs/a` (`--csv` for per-page rows, `--json` for scripts) |
+| Write a starter config | `pageledger init-config --adapter pdf_ocr --out pageledger.yml` |
+| Check environment | `pageledger doctor --json` (includes installed OCR languages) |
 
-- Route pages before extraction.
-- Control the run and decide what needs review or rerun.
-- (Design target, not yet implemented: align extractor output to a declared
-  schema.)
+`--out` must be a new directory. `--config` and `--adapter` are mutually
+exclusive; no config file is ever read implicitly. `pdf_ocr` needs poppler
+and Tesseract installed and refuses to run if `adapter_options.lang` names
+a missing language pack.
 
-Keep it boring: one config, one command, one run directory, plain files.
+## Operating loop
 
-**The canonical unit is the page.** It is the only unit every backend shares
-(cloud OCR bills per page; tokens exist only on model paths; self-hosted engines
-have no dollar cost), so PageLedger routes, budgets, and audits in pages — which
-is what makes runs comparable and reproducible across providers. Adapters must
-report `usage.pages`; `tokens`, `compute_seconds`, and `cost_usd` are optional.
-Dollar cost is derived by PageLedger (adapter passthrough → configured unit
-rates → `null`), never required of the adapter. Budgets cap on pages, tokens, or
-dollars — whichever the config sets.
+1. `pageledger doctor` to check tools, then dry-run to inspect routing
+   before spending anything.
+2. Run cheap extraction first (`pdf_text` or `pdf_ocr`).
+3. Read the evidence: `inspect-run`, then `quality.jsonl` warnings
+   (`empty_text`, `low_confidence`, `historical_orthography`, five more),
+   `cost.json` (check `cost_basis` — derived rates are not billed spend),
+   and `audit.json`'s review queue.
+4. `rerun` with a stronger adapter re-extracts exactly the flagged pages,
+   preserving page ids and lineage; `compare-runs` shows what improved.
+5. Merging parent and rerun output into a corpus is the project's call —
+   present the compare-runs evidence rather than deciding silently.
 
-## Operating Principles
+## Configuration essentials
 
-- Do not present PageLedger as a replacement for Docling, Marker, Surya,
-  olmOCR, OCR-D, Tesseract, or API VLMs. It should orchestrate and audit them.
-- Keep v0.1 centered on `pageledger run`; staged commands are future advanced
-  interfaces.
-- Keep taxonomies, schemas, pricing, and quality rules in user config.
-- Preserve uncertainty. Flag, review, and rerun uncertain output; do not
-  silently correct it.
-- Treat confidence as evidence, not calibrated probability, unless calibration
-  is explicitly proven.
-- Prefer plain artifacts: YAML config, JSON/JSONL outputs, Markdown rendering,
-  and greppable logs.
-- For digital humanities use, favor provenance, citation, reviewability, and
-  reproducibility over clever extraction tricks.
+One `pageledger.yml` with `taxonomy`, `schema`, and `run` sections
+(`init-config` writes it). The knobs that matter in practice live under
+`run`: `adapter`, `adapter_options` (`dpi`, `lang` for pdf_ocr),
+`budget` (`max_pages`, `max_tokens`, `max_usd` — preflight refuses
+over-budget runs before writing anything), `retry`, `pricing`, and
+`max_rerun_depth`. Custom adapters load from `module.path:Object` import
+strings plus `--adapter-path DIR`.
 
-## Minimal Loop (0.1.0 alpha)
+## Boundaries the design enforces
 
-1. Read current PageLedger docs and examples.
-2. Define or inspect `pageledger.yml`.
-3. Run `pageledger doctor` to check optional PDF/OCR/cloud dependencies.
-4. Dry-run routing and inspect the route map.
-5. Run extraction through built-in (`text`, `pdf_text`) or custom adapters.
-6. Inspect run artifacts: provenance, quality diagnostics, cost rollup
-   (check `cost_basis` — derived rates are not billed spend), run log,
-   audit queues, and rerun manifest.
-7. Re-extract flagged pages with a stronger adapter:
-   `pageledger rerun RUN_DIR --config stronger.yml --out NEW_DIR`.
-8. Compare the runs: `pageledger compare-runs RUN_DIR NEW_DIR` — warnings
-   resolved/introduced, char deltas, cost.
+- Adapters are thin wrappers; PageLedger owns the process around
+  extraction, never extraction itself. Do not present it as a replacement
+  for Docling, Marker, Surya, olmOCR, Tesseract, or API VLMs.
+- Record uncertainty; never silently correct it. Uncertain output gets
+  flagged, reviewed, or rerun. Transforms that rewrite text (like the
+  pre-reform orthography normalizer in `examples/`) run as their own
+  recorded run so the original remains evidence.
+- Confidence values are evidence, not calibrated probability.
+- Core stays PyYAML-only (`pypdf` behind the `[pdf]` extra). Domain
+  taxonomies, provider pricing catalogs, header dictionaries, CV
+  heuristics, exporters (TEI/PAGE/ALTO/GIS), dashboards, and ensemble
+  voting stay out of core.
+- Not yet implemented (do not claim otherwise): automatic page
+  classification, schema alignment (`normalized/` stays empty), audit
+  grading, `rerun_if` policies, staged CLI commands.
 
-Future stages (not yet implemented in the alpha):
-- Schema alignment execution.
-- Audit grading.
-- Conditional rerun policies (`rerun_if`).
+## Where to read more
 
-## Keep Out Of Core
-
-- Domain taxonomies such as Soviet census page types.
-- Hardcoded provider pricing.
-- Hardcoded column/header dictionaries.
-- Computer-vision fallback heuristics.
-- GIS, TEI/PAGE/ALTO/DDI/DataCite exporters.
-- Web UI, dashboards, or ensemble voting.
-
-## Repo Context
-
-Relevant PageLedger modules:
-
-- `pageledger/cli.py`
-- `pageledger/config.py`
-- `pageledger/runner.py`
-- `pageledger/adapters.py`
-- `pageledger/artifacts.py`
-- `pageledger/doctor.py`
-- `docs/adapter-protocol.md`
-- `docs/run-manifest-spec.md`
-- `docs/route-map-spec.md`
-- `docs/provenance-spec.md`
-- `docs/rerun-manifest-spec.md`
-
-Keep implementation aligned with these files and avoid domain-specific
-assumptions in core.
+| Need | Read |
+|---|---|
+| Exact scope of this version | `docs/capabilities-and-limits.md` |
+| All flags and config keys | `docs/cli.md` |
+| What each run artifact means | `docs/artifacts.md`, `docs/*-spec.md`, `schemas/` |
+| Writing an adapter | `docs/adapter-protocol.md`, `examples/*.py` |
+| Choosing an engine or escalation tier | `docs/ocr-options.md`, `docs/examples/jfk-scanned-archive.md` |
+| Non-English or historical documents | `docs/multilingual-ocr.md` |
+| Contributing code | `AGENTS.md` (schema + spec + tests change together) |
