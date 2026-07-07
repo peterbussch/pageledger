@@ -1917,3 +1917,33 @@ def test_docs_examples_smoke_without_heavy_ocr_installs():
     manifest = (root / "MANIFEST.in").read_text(encoding="utf-8")
     assert "recursive-include docs" in manifest
     assert "recursive-include examples" in manifest
+
+
+def test_doctor_reports_ocr_languages(monkeypatch):
+    import subprocess as subprocess_module
+
+    import pageledger.adapters
+
+    def fake_which(name):
+        return "/fake/bin/tesseract" if name == "tesseract" else None
+
+    def fake_run(argv, **kwargs):
+        if "--list-langs" in argv:
+            body = 'List of available languages in "/fake/tessdata/" (3):\r\neng\r\nrus\r\n\nosd\n'
+            return subprocess_module.CompletedProcess(argv, 0, stdout=body, stderr="")
+        return subprocess_module.CompletedProcess(argv, 0, stdout="tesseract 5.5.2\n", stderr="")
+
+    monkeypatch.setattr(pageledger.doctor.shutil, "which", fake_which)
+    monkeypatch.setattr(pageledger.adapters.subprocess, "run", fake_run)
+    report = pageledger.doctor.build_doctor_report()
+
+    assert report["ocr_languages"]["available"] is True
+    assert report["ocr_languages"]["languages"] == ["eng", "osd", "rus"]
+
+
+def test_doctor_ocr_languages_unavailable_without_tesseract(monkeypatch):
+    monkeypatch.setattr(pageledger.doctor.shutil, "which", lambda name: None)
+    report = pageledger.doctor.build_doctor_report()
+
+    assert report["ocr_languages"]["available"] is False
+    assert report["ocr_languages"]["languages"] == []

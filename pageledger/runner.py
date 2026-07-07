@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import csv
 import hashlib
+import io
 import json
 import re
 import sys
 import time
+from collections.abc import Sequence
 from datetime import datetime, timezone
 from pathlib import Path
 from shutil import copyfile
@@ -107,12 +110,18 @@ def run(
     out_dir: Path,
     dry_run: bool,
     log_level: str = "INFO",
+    pages: str | None = None,
     page_selection: list[dict[str, Any]] | None = None,
     parent_run_id: str | None = None,
     run_depth: int = 0,
     adapter_path: Path | None = None,
 ) -> dict[str, Any]:
     """Run the alpha PageLedger loop.
+
+    ``pages`` limits a single-input run to the listed source pages
+    (e.g. ``"1-8,81,100-110"``). Page ids keep the source numbering, so the
+    ledger stays truthful about which physical pages were extracted —
+    unlike splitting the PDF beforehand, which renumbers them.
 
     When ``page_selection`` is given (by ``rerun``), only the listed
     ``(source, page_number)`` pairs are planned and extracted, keeping their
@@ -143,6 +152,11 @@ def run(
     else:
         selection_by_source = _group_selection(page_selection)
         input_paths = list(selection_by_source)
+    selected_page_numbers: list[int] | None = None
+    if pages is not None:
+        if len(input_paths) != 1:
+            raise ValueError("--pages requires a single input file")
+        selected_page_numbers = _parse_pages_expression(pages)
     _validate_adapter_inputs(input_paths, adapter_name=config.adapter_name)
     _validate_out_dir(out_dir)
 
@@ -174,15 +188,24 @@ def run(
             page_count = _planned_page_count(
                 source, adapter=adapter, adapter_name=config.adapter_name
             )
+            page_numbers: Sequence[int] = range(1, page_count + 1)
+            if selected_page_numbers is not None:
+                highest = selected_page_numbers[-1]
+                if highest > page_count:
+                    raise ValueError(
+                        f"--pages selects page {highest} but {source} has "
+                        f"{page_count} pages"
+                    )
+                page_numbers = selected_page_numbers
             planned = [
                 (f"doc_{document_index:04d}_page_{page_number:04d}", page_number)
-                for page_number in range(1, page_count + 1)
+                for page_number in page_numbers
             ]
         else:
             selected = selection_by_source[source]
             page_count = len(selected)
             planned = [(item["page_id"], int(item["page_number"])) for item in selected]
-        pages: list[dict[str, Any]] = []
+        routed_pages: list[dict[str, Any]] = []
         for page_id, page_number in planned:
             action = "review" if dry_run else config.default_action
             reason = _route_reason(action=action, dry_run=dry_run)
@@ -200,22 +223,23 @@ def run(
                 review_queue.append(page)
             if action == "skip":
                 pages_skipped += 1
-            pages.append(page)
+            routed_pages.append(page)
             planned_pages.append((source, page))
             pages_total += 1
-        documents.append({"source": str(resolved_source), "pages": pages})
+        documents.append({"source": str(resolved_source), "pages": routed_pages})
         try:
             source_sha256 = _sha256_path(source)
             source_sha256_map[source] = source_sha256
         except OSError as exc:
             raise RuntimeError(f"Cannot read input file '{source}': {exc}") from exc
-        input_entries.append(
-            {
-                "path": str(source),
-                "sha256": source_sha256,
-                "page_count": page_count,
-            }
-        )
+        input_entry = {
+            "path": str(source),
+            "sha256": source_sha256,
+            "page_count": page_count,
+        }
+        if selected_page_numbers is not None:
+            input_entry["pages"] = pages
+        input_entries.append(input_entry)
 
     preflight_error = _preflight_budget_error(config=config, pages_total=pages_total)
     if preflight_error is not None:
@@ -618,6 +642,24 @@ def rerun(
     return result
 
 
+def _parse_pages_expression(expression: str) -> list[int]:
+    """Parse a page selection like ``1-8,81,100-110`` into sorted numbers."""
+    numbers: set[int] = set()
+    for part in expression.split(","):
+        part = part.strip()
+        match = re.fullmatch(r"(\d+)(?:-(\d+))?", part)
+        if match is None:
+            raise ValueError(
+                f"--pages: cannot parse '{part}'; use forms like '1-8,81,100-110'"
+            )
+        start = int(match.group(1))
+        end = int(match.group(2)) if match.group(2) else start
+        if start < 1 or end < start:
+            raise ValueError(f"--pages: invalid range '{part}'")
+        numbers.update(range(start, end + 1))
+    return sorted(numbers)
+
+
 def _group_selection(page_selection: list[dict[str, Any]]) -> dict[Path, list[dict[str, Any]]]:
     """Group rerun items by source path, preserving first-seen source order."""
     grouped: dict[Path, list[dict[str, Any]]] = {}
@@ -710,6 +752,51 @@ def inspect_run(run_dir: Path) -> dict[str, Any]:
         "artifacts_present": artifacts_present,
         "artifacts_missing": artifacts_missing,
     }
+
+
+def run_pages_csv(run_dir: Path) -> str:
+    """Render a run's per-page evidence as CSV for spreadsheet triage.
+
+    One row per extracted page, joining quality.jsonl (counts, confidence,
+    warnings) with provenance.jsonl (cost, timing) on page_id.
+    """
+    out_dir = run_dir.expanduser().resolve()
+    quality_path = out_dir / "quality.jsonl"
+    if not quality_path.is_file():
+        raise FileNotFoundError(f"No quality.jsonl found in {out_dir}")
+
+    provenance: dict[str, dict[str, Any]] = {}
+    provenance_path = out_dir / "provenance.jsonl"
+    if provenance_path.is_file():
+        for line in provenance_path.read_text(encoding="utf-8").splitlines():
+            if line.strip():
+                entry = json.loads(line)
+                provenance[entry["page_id"]] = entry
+
+    columns = [
+        "page_id", "page_number", "adapter", "character_count", "word_count",
+        "confidence", "warnings", "cost_usd", "extraction_seconds",
+    ]
+    buffer = io.StringIO()
+    writer = csv.DictWriter(buffer, fieldnames=columns)
+    writer.writeheader()
+    for line in quality_path.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        quality = json.loads(line)
+        page_provenance = provenance.get(quality["page_id"], {})
+        writer.writerow({
+            "page_id": quality["page_id"],
+            "page_number": quality["page_number"],
+            "adapter": quality["adapter"],
+            "character_count": quality["character_count"],
+            "word_count": quality["word_count"],
+            "confidence": quality.get("confidence"),
+            "warnings": ";".join(quality["warnings"]),
+            "cost_usd": page_provenance.get("usage", {}).get("cost_usd"),
+            "extraction_seconds": page_provenance.get("extraction_seconds"),
+        })
+    return buffer.getvalue()
 
 
 def _route_reason(*, action: str, dry_run: bool) -> str:
@@ -1137,6 +1224,9 @@ def _build_quality_entry(
         warnings.append("short_text")
     text_quality = _text_quality_metrics(text, character_count=character_count)
     warnings.extend(_text_quality_warnings(text_quality))
+    confidence_detail = getattr(result, "confidence_detail", None)
+    if _has_low_confidence_tail(confidence_detail):
+        warnings.append("low_confidence")
     embedded = _embedded_text_quality(source, page["page_number"], adapter)
     delta: dict[str, Any] | None = None
     if embedded is not None:
@@ -1157,16 +1247,46 @@ def _build_quality_entry(
         "adapter": adapter.name,
         "character_count": character_count,
         "word_count": word_count,
+        "confidence": result.confidence,
+        "confidence_detail": confidence_detail,
         "warnings": warnings,
         "text_quality": text_quality,
         "embedded_text_comparison": delta,
     }
 
 
+def _has_low_confidence_tail(detail: Any) -> bool:
+    """True when engine-native word confidences show a weak tail.
+
+    A quarter of the words under confidence 60 flags the page; a mean can
+    hide one illegible paragraph on an otherwise clean page. Requires 10+
+    words — less is not enough evidence to warn on.
+    """
+    if not isinstance(detail, dict):
+        return False
+    ratio = detail.get("below_60_ratio")
+    word_count = detail.get("word_count")
+    return (
+        isinstance(ratio, (int, float))
+        and isinstance(word_count, int)
+        and word_count >= 10
+        and ratio >= 0.25
+    )
+
+
 def _quality_text(content: Any) -> str:
     if isinstance(content, str):
         return content
     return json.dumps(content, ensure_ascii=False, sort_keys=True)
+
+
+# Letters abolished by the 1918 Russian orthographic reform. \u0456 is deliberately
+# absent: it is standard modern Ukrainian and Belarusian.
+_PREREFORM_LETTERS = frozenset("\u0463\u0462\u0473\u0472\u0475\u0474")
+# Word-final hard sign \u2014 mandatory before 1918, absent from modern Russian.
+# OCR models trained on modern text destroy the abolished letters but keep \u044a,
+# so this is the pre-reform signal that survives extraction.
+_TERMINAL_HARD_SIGN = re.compile(r"[\u044a\u042a](?![^\W\d_])")
 
 
 def _text_quality_metrics(text: str, *, character_count: int) -> dict[str, Any]:
@@ -1203,6 +1323,8 @@ def _text_quality_metrics(text: str, *, character_count: int) -> dict[str, Any]:
                 sum(1 for length in token_lengths if length <= 2) / alpha_token_count, 4
             )
         ),
+        "prereform_letter_count": sum(1 for char in text if char in _PREREFORM_LETTERS),
+        "terminal_hard_sign_count": len(_TERMINAL_HARD_SIGN.findall(text)),
     }
 
 
@@ -1223,6 +1345,15 @@ def _text_quality_warnings(metrics: dict[str, Any]) -> list[str]:
         # Real prose in tested corpora sits above 4; OCR fragment noise
         # ("l| ||| l|l ll") collapses toward 1.
         warnings.append("fragmented_text")
+    if metrics["prereform_letter_count"] >= 2 or (
+        metrics["alpha_token_count"] >= 20
+        and metrics["terminal_hard_sign_count"] >= 2
+        and metrics["terminal_hard_sign_count"] >= metrics["alpha_token_count"] / 100
+    ):
+        # Pre-1918 Russian orthography: the configured OCR model is probably
+        # mismatched with the page. Measured on an 1850 gubernia review:
+        # 21 terminal hard signs per 100 tokens vs 0.00 in modern text.
+        warnings.append("historical_orthography")
     return warnings
 
 
@@ -1232,6 +1363,9 @@ def _is_suspicious_symbol(char: str) -> bool:
     if char.isalnum() or char.isspace():
         return False
     if char in ".,;:!?()'\"-$%&+=*#@<>":
+        return False
+    if char in "«»„“”‘’‚—–…·§№°":
+        # Standard European/Cyrillic typography, not extraction garble.
         return False
     return not char.isascii()
 

@@ -49,6 +49,7 @@ class ExtractionResult:
     model: str | None
     warnings: list[str]
     usage: dict[str, Any]  # {"pages": 1, "tokens": int|None, ...}
+    confidence_detail: dict[str, Any] | None = None  # engine-native evidence
 
 
 class ExtractorAdapter:
@@ -234,6 +235,7 @@ Adapters should return `ExtractionResult` instances with:
 | `model` | string or null | Model or OCR engine identifier. |
 | `warnings` | array | Non-fatal issues (empty list if none). |
 | `usage` | object | **`pages` must be 1**; `tokens`, `compute_seconds`, `cost_usd` optional/nullable. |
+| `confidence_detail` | object or null | Optional engine-native confidence evidence, adapter-defined shape; recorded into `quality.jsonl` verbatim. `pdf_ocr` fills Tesseract per-word statistics (`scale`, `word_count`, `mean`, `min`, `below_60_count`, `below_60_ratio`). |
 
 ## Adapter Candidates
 
@@ -252,5 +254,7 @@ Copy-paste examples live in `examples/`:
 
 - `tesseract_pdftoppm_adapter.py`
 - `cloud_vlm_adapter_skeleton.py`
+- `prereform_normalizer_adapter.py` — OCR plus pre-1918 Russian orthography
+  canonicalization, with the rewrite recorded as a result warning
 
 For a provider-agnostic tier guide, see `docs/ocr-options.md`.

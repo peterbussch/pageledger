@@ -390,6 +390,9 @@ def test_pdf_ocr_extract_with_mocked_binaries(tmp_path: Path, monkeypatch) -> No
         binary = Path(argv[0]).name
         if "--version" in argv:
             return subprocess.CompletedProcess(argv, 0, stdout="tesseract 5.5.2\n", stderr="")
+        if "--list-langs" in argv:
+            # Listing unavailable — the language preflight skips itself.
+            return subprocess.CompletedProcess(argv, 1, stdout="", stderr="")
         calls.append(list(argv))
         if binary == "pdftoppm":
             prefix = Path(argv[-1])
@@ -423,7 +426,7 @@ def test_pdf_ocr_extract_with_mocked_binaries(tmp_path: Path, monkeypatch) -> No
     assert "-r" in pdftoppm_call and "400" in pdftoppm_call
     assert ["-f", "3", "-l", "3"] == pdftoppm_call[1:5]
     tesseract_call = calls[1]
-    assert tesseract_call[-2:] == ["-l", "eng+deu"]
+    assert tesseract_call[-4:] == ["-l", "eng+deu", "txt", "tsv"]
 
 
 def test_pdf_ocr_extract_missing_binary_points_at_doctor(tmp_path: Path, monkeypatch) -> None:
@@ -612,3 +615,223 @@ def _run_and_assert_error(
     assert expected_in_error in error_json["error"], (
         f"Expected '{expected_in_error}' in error, got: {error_json['error']}"
     )
+
+
+# ---------------------------------------------------------------------------
+# pdf_ocr word confidence (Tesseract TSV)
+# ---------------------------------------------------------------------------
+
+_TSV_HEADER = (
+    "level\tpage_num\tblock_num\tpar_num\tline_num\tword_num"
+    "\tleft\ttop\twidth\theight\tconf\ttext\n"
+)
+
+
+def _fake_ocr_binaries(monkeypatch, *, tsv_body: str | None, txt: str = "OCR TEXT\n"):
+    """Mock pdftoppm/tesseract; tesseract writes txt plus tsv when given."""
+    calls: list[list[str]] = []
+
+    def fake_run(argv, **kwargs):  # noqa: ANN001, ANN003
+        if "--version" in argv:
+            return subprocess.CompletedProcess(argv, 0, stdout="tesseract 5.5.2\n", stderr="")
+        if "--list-langs" in argv:
+            # Listing unavailable — the language preflight skips itself.
+            return subprocess.CompletedProcess(argv, 1, stdout="", stderr="")
+        calls.append(list(argv))
+        binary = Path(argv[0]).name
+        if binary == "pdftoppm":
+            prefix = Path(argv[-1])
+            (prefix.parent / "page-1.png").write_bytes(b"png")
+        elif binary == "tesseract":
+            output_prefix = Path(argv[2])
+            output_prefix.with_suffix(".txt").write_text(txt, encoding="utf-8")
+            if tsv_body is not None:
+                output_prefix.with_suffix(".tsv").write_text(tsv_body, encoding="utf-8")
+        return subprocess.CompletedProcess(argv, 0, stdout="", stderr="")
+
+    monkeypatch.setattr(adapters_module.shutil, "which", lambda name: f"/fake/bin/{name}")
+    monkeypatch.setattr(adapters_module.subprocess, "run", fake_run)
+    return calls
+
+
+def _extract_one(adapter, tmp_path):
+    return adapter.extract(
+        tmp_path / "scan.pdf",
+        page_id="doc_0001_page_0001",
+        page_number=1,
+        action="transcribe_text",
+    )
+
+
+def test_pdf_ocr_reports_word_confidence_from_tsv(tmp_path: Path, monkeypatch) -> None:
+    tsv = _TSV_HEADER + (
+        "1\t1\t0\t0\t0\t0\t0\t0\t1000\t1500\t-1\t\n"
+        "5\t1\t1\t1\t1\t1\t100\t100\t80\t20\t96.5\tHello\n"
+        "5\t1\t1\t1\t1\t2\t200\t100\t80\t20\t42.1\tw0rld\n"
+        "5\t1\t1\t1\t1\t3\t300\t100\t80\t20\t91.0\tagain\n"
+    )
+    calls = _fake_ocr_binaries(monkeypatch, tsv_body=tsv)
+    adapters_module._tesseract_model_string.cache_clear()
+    result = _extract_one(PdfOcrAdapter(), tmp_path)
+    adapters_module._tesseract_model_string.cache_clear()
+
+    tesseract_call = calls[1]
+    assert tesseract_call[-2:] == ["txt", "tsv"]
+    assert result.confidence == pytest.approx(0.7653, abs=1e-4)
+    detail = result.confidence_detail
+    assert detail["word_count"] == 3
+    assert detail["mean"] == pytest.approx(76.53, abs=0.01)
+    assert detail["min"] == pytest.approx(42.1)
+    assert detail["below_60_count"] == 1
+    assert detail["below_60_ratio"] == pytest.approx(1 / 3, abs=1e-4)
+
+
+def test_pdf_ocr_confidence_none_when_tsv_missing(tmp_path: Path, monkeypatch) -> None:
+    _fake_ocr_binaries(monkeypatch, tsv_body=None)
+    adapters_module._tesseract_model_string.cache_clear()
+    result = _extract_one(PdfOcrAdapter(), tmp_path)
+    adapters_module._tesseract_model_string.cache_clear()
+    assert result.confidence is None
+    assert result.confidence_detail is None
+
+
+def test_pdf_ocr_confidence_none_when_tsv_has_no_words(tmp_path: Path, monkeypatch) -> None:
+    tsv = _TSV_HEADER + "1\t1\t0\t0\t0\t0\t0\t0\t1000\t1500\t-1\t\n"
+    _fake_ocr_binaries(monkeypatch, tsv_body=tsv)
+    adapters_module._tesseract_model_string.cache_clear()
+    result = _extract_one(PdfOcrAdapter(), tmp_path)
+    adapters_module._tesseract_model_string.cache_clear()
+    assert result.confidence is None
+    assert result.confidence_detail is None
+
+
+def test_pdf_ocr_confidence_survives_malformed_tsv(tmp_path: Path, monkeypatch) -> None:
+    _fake_ocr_binaries(monkeypatch, tsv_body="not\ta\ttsv\nat all")
+    adapters_module._tesseract_model_string.cache_clear()
+    result = _extract_one(PdfOcrAdapter(), tmp_path)
+    adapters_module._tesseract_model_string.cache_clear()
+    assert result.content == "OCR TEXT\n"
+    assert result.confidence is None
+
+
+# ---------------------------------------------------------------------------
+# pdf_ocr language preflight
+# ---------------------------------------------------------------------------
+
+def _fake_binaries_with_langs(monkeypatch, langs: list[str]):
+    def fake_run(argv, **kwargs):  # noqa: ANN001, ANN003
+        if "--version" in argv:
+            return subprocess.CompletedProcess(argv, 0, stdout="tesseract 5.5.2\n", stderr="")
+        if "--list-langs" in argv:
+            listed = "\n".join(langs)
+            body = f'List of available languages in "/fake/tessdata/" ({len(langs)}):\n{listed}\n'
+            return subprocess.CompletedProcess(argv, 0, stdout=body, stderr="")
+        binary = Path(argv[0]).name
+        if binary == "pdftoppm":
+            prefix = Path(argv[-1])
+            (prefix.parent / "page-1.png").write_bytes(b"png")
+        elif binary == "tesseract":
+            output_prefix = Path(argv[2])
+            output_prefix.with_suffix(".txt").write_text("OCR TEXT\n", encoding="utf-8")
+        return subprocess.CompletedProcess(argv, 0, stdout="", stderr="")
+
+    monkeypatch.setattr(adapters_module.shutil, "which", lambda name: f"/fake/bin/{name}")
+    monkeypatch.setattr(adapters_module.subprocess, "run", fake_run)
+
+
+def test_pdf_ocr_rejects_missing_language_pack(tmp_path: Path, monkeypatch) -> None:
+    _fake_binaries_with_langs(monkeypatch, ["eng", "osd"])
+    adapters_module._tesseract_installed_langs.cache_clear()
+    adapter = PdfOcrAdapter(lang="rus")
+    with pytest.raises(RuntimeError) as excinfo:
+        _extract_one(adapter, tmp_path)
+    adapters_module._tesseract_installed_langs.cache_clear()
+    message = str(excinfo.value)
+    assert "rus" in message
+    assert "eng" in message  # names what IS installed
+    assert "doctor" in message
+
+
+def test_pdf_ocr_accepts_installed_language_pack(tmp_path: Path, monkeypatch) -> None:
+    _fake_binaries_with_langs(monkeypatch, ["eng", "rus", "osd"])
+    adapters_module._tesseract_installed_langs.cache_clear()
+    adapters_module._tesseract_model_string.cache_clear()
+    result = _extract_one(PdfOcrAdapter(lang="eng+rus"), tmp_path)
+    adapters_module._tesseract_installed_langs.cache_clear()
+    adapters_module._tesseract_model_string.cache_clear()
+    assert result.content == "OCR TEXT\n"
+
+
+def test_pdf_ocr_skips_lang_check_when_listing_fails(tmp_path: Path, monkeypatch) -> None:
+    """An unparseable --list-langs must not block extraction."""
+    def fake_run(argv, **kwargs):  # noqa: ANN001, ANN003
+        if "--version" in argv:
+            return subprocess.CompletedProcess(argv, 0, stdout="tesseract 5.5.2\n", stderr="")
+        if "--list-langs" in argv:
+            return subprocess.CompletedProcess(argv, 1, stdout="", stderr="weird failure")
+        binary = Path(argv[0]).name
+        if binary == "pdftoppm":
+            (Path(argv[-1]).parent / "page-1.png").write_bytes(b"png")
+        elif binary == "tesseract":
+            Path(argv[2]).with_suffix(".txt").write_text("OCR TEXT\n", encoding="utf-8")
+        return subprocess.CompletedProcess(argv, 0, stdout="", stderr="")
+
+    monkeypatch.setattr(adapters_module.shutil, "which", lambda name: f"/fake/bin/{name}")
+    monkeypatch.setattr(adapters_module.subprocess, "run", fake_run)
+    adapters_module._tesseract_installed_langs.cache_clear()
+    adapters_module._tesseract_model_string.cache_clear()
+    result = _extract_one(PdfOcrAdapter(lang="rus"), tmp_path)
+    adapters_module._tesseract_installed_langs.cache_clear()
+    adapters_module._tesseract_model_string.cache_clear()
+    assert result.content == "OCR TEXT\n"
+
+
+# ---------------------------------------------------------------------------
+# examples/prereform_normalizer_adapter.py
+# ---------------------------------------------------------------------------
+
+def _load_prereform_example():
+    examples_dir = Path(__file__).resolve().parents[2] / "examples"
+    sys.path.insert(0, str(examples_dir))
+    try:
+        import prereform_normalizer_adapter
+        return prereform_normalizer_adapter
+    finally:
+        sys.path.pop(0)
+
+
+def test_prereform_normalization_rules() -> None:
+    module = _load_prereform_example()
+    cases = {
+        "съѣздъ": "съезд",      # keep morphological ъ, drop final, ѣ→е
+        "городъ.": "город.",    # final ъ before punctuation
+        "подъёмъ": "подъём",    # medial ъ before vowel kept
+        "объектъ": "объект",
+        "уѣздъ": "уезд",
+        "ѳита и ѵжица": "фита и ижица",
+        "Бѣлгородъ": "Белгород",
+        "мир": "мир",           # modern text untouched
+    }
+    for original, expected in cases.items():
+        normalized, _ = module.normalize_orthography(original)
+        assert normalized == expected, original
+    _, replacements = module.normalize_orthography("уѣздъ")
+    assert replacements == 2  # ѣ→е plus dropped final ъ
+
+
+def test_prereform_adapter_normalizes_and_records(tmp_path: Path, monkeypatch) -> None:
+    module = _load_prereform_example()
+    _fake_ocr_binaries(monkeypatch, tsv_body=None, txt="Харьковскій уѣздъ\n")
+
+    adapter = module.PrereformNormalizerAdapter(dpi=200, lang="rus")
+    result = _extract_one(adapter, tmp_path)
+
+    assert result.content == "Харьковский уезд\n"
+    assert any(w.startswith("prereform_normalization_applied:") for w in result.warnings)
+    assert "prereform-normalizer" in result.model
+
+
+def test_prereform_adapter_passes_conformance() -> None:
+    module = _load_prereform_example()
+    issues = adapter_conformance_check(module.PrereformNormalizerAdapter())
+    assert issues == []

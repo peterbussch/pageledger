@@ -682,3 +682,162 @@ def test_text_only_newlines(tmp_path: Path) -> None:
     out_dir = tmp_path / "out"
     exit_code, stdout, stderr = _run_cli(["run", str(source), "--config", str(config), "--out", str(out_dir), "--json"])
     assert exit_code == 0
+
+
+# =========================================================================
+# inspect-run --csv
+# =========================================================================
+
+def _make_run(tmp_path: Path) -> Path:
+    source = tmp_path / "pages.txt"
+    source.write_text("a page of ordinary text\fshorty", encoding="utf-8")
+    config = tmp_path / "config.yml"
+    config.write_text(MINIMAL_CONFIG, encoding="utf-8")
+    out_dir = tmp_path / "run"
+    exit_code, _, stderr = _run_cli([
+        "run", str(source), "--config", str(config), "--out", str(out_dir),
+    ])
+    assert exit_code == 0, stderr
+    return out_dir
+
+
+def test_inspect_run_csv_emits_one_row_per_page(tmp_path: Path) -> None:
+    import csv
+    import io
+
+    out_dir = _make_run(tmp_path)
+    exit_code, stdout, stderr = _run_cli(["inspect-run", str(out_dir), "--csv"])
+    assert exit_code == 0, stderr
+
+    rows = list(csv.DictReader(io.StringIO(stdout)))
+    assert len(rows) == 2
+    first, second = rows
+    assert first["page_id"] == "doc_0001_page_0001"
+    assert first["adapter"] == "text"
+    assert first["warnings"] == ""
+    assert int(first["character_count"]) > 10
+    assert second["warnings"] == "short_text"
+    assert second["confidence"] == ""  # text adapter reports none
+    for column in ("page_number", "word_count", "cost_usd", "extraction_seconds"):
+        assert column in first
+
+
+def test_inspect_run_csv_rejects_combination_with_json(tmp_path: Path) -> None:
+    out_dir = _make_run(tmp_path)
+    exit_code, _, stderr = _run_cli(["inspect-run", str(out_dir), "--csv", "--json"])
+    assert exit_code == 2
+    assert "not allowed" in stderr
+
+
+# =========================================================================
+# run without a config file (--adapter)
+# =========================================================================
+
+def test_run_with_adapter_flag_needs_no_config(tmp_path: Path) -> None:
+    source = tmp_path / "pages.txt"
+    source.write_text("first page\fsecond page", encoding="utf-8")
+    out_dir = tmp_path / "run"
+    exit_code, stdout, stderr = _run_cli([
+        "run", str(source), "--adapter", "text", "--out", str(out_dir),
+    ])
+    assert exit_code == 0, stderr
+    manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
+    assert manifest["summary"]["pages_extracted"] == 2
+    snapshot = yaml.safe_load((out_dir / "config-snapshot.yml").read_text(encoding="utf-8"))
+    assert snapshot["run"]["adapter"] == "text"
+
+
+def test_run_rejects_config_and_adapter_together(tmp_path: Path) -> None:
+    source = tmp_path / "pages.txt"
+    source.write_text("page", encoding="utf-8")
+    config = tmp_path / "config.yml"
+    config.write_text(MINIMAL_CONFIG, encoding="utf-8")
+    exit_code, _, stderr = _run_cli([
+        "run", str(source), "--config", str(config),
+        "--adapter", "text", "--out", str(tmp_path / "run"),
+    ])
+    assert exit_code == 2
+    assert "not allowed" in stderr
+
+
+def test_run_requires_config_or_adapter(tmp_path: Path) -> None:
+    source = tmp_path / "pages.txt"
+    source.write_text("page", encoding="utf-8")
+    exit_code, _, stderr = _run_cli([
+        "run", str(source), "--out", str(tmp_path / "run"),
+    ])
+    assert exit_code == 2
+    assert "--config" in stderr and "--adapter" in stderr
+
+
+def test_run_adapter_flag_snapshot_documents_pdf_ocr_options(tmp_path: Path) -> None:
+    """The synthesized pdf_ocr config surfaces the dpi/lang knobs."""
+    exit_code, stdout, _ = _run_cli(["init-config", "--adapter", "pdf_ocr"])
+    assert exit_code == 0
+    parsed = yaml.safe_load(stdout)
+    assert parsed["run"]["adapter"] == "pdf_ocr"
+    assert parsed["run"]["adapter_options"]["dpi"] == 300
+    assert parsed["run"]["adapter_options"]["lang"] == "eng"
+
+
+# =========================================================================
+# page selection (--pages)
+# =========================================================================
+
+def _three_page_source(tmp_path: Path) -> Path:
+    source = tmp_path / "pages.txt"
+    source.write_text("page one text\fpage two text\fpage three text", encoding="utf-8")
+    return source
+
+
+def test_run_pages_selects_subset_preserving_page_identity(tmp_path: Path) -> None:
+    source = _three_page_source(tmp_path)
+    out_dir = tmp_path / "run"
+    exit_code, _, stderr = _run_cli([
+        "run", str(source), "--adapter", "text", "--out", str(out_dir),
+        "--pages", "2-3",
+    ])
+    assert exit_code == 0, stderr
+    manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
+    assert manifest["summary"]["pages_total"] == 2
+    entry = manifest["inputs"][0]
+    assert entry["page_count"] == 3  # the document's real size
+    assert entry["pages"] == "2-3"  # what this run selected from it
+    raw = sorted(p.name for p in (out_dir / "raw").iterdir())
+    assert raw == ["doc_0001_page_0002.txt", "doc_0001_page_0003.txt"]
+    assert (out_dir / "raw" / "doc_0001_page_0002.txt").read_text(
+        encoding="utf-8") == "page two text"
+
+
+def test_run_pages_rejects_out_of_range(tmp_path: Path) -> None:
+    source = _three_page_source(tmp_path)
+    exit_code, _, stderr = _run_cli([
+        "run", str(source), "--adapter", "text", "--out", str(tmp_path / "run"),
+        "--pages", "7",
+    ])
+    assert exit_code == 1
+    assert "3 pages" in stderr
+
+
+def test_run_pages_rejects_malformed_expressions(tmp_path: Path) -> None:
+    source = _three_page_source(tmp_path)
+    for bad in ("abc", "0", "5-2", "1,,2", "-3"):
+        exit_code, _, stderr = _run_cli([
+            "run", str(source), "--adapter", "text",
+            "--out", str(tmp_path / f"run-{bad}"), "--pages", bad,
+        ])
+        assert exit_code == 1, bad
+        assert "--pages" in stderr
+
+
+def test_run_pages_rejects_multiple_inputs(tmp_path: Path) -> None:
+    a = tmp_path / "a.txt"
+    b = tmp_path / "b.txt"
+    a.write_text("page", encoding="utf-8")
+    b.write_text("page", encoding="utf-8")
+    exit_code, _, stderr = _run_cli([
+        "run", str(a), str(b), "--adapter", "text",
+        "--out", str(tmp_path / "run"), "--pages", "1",
+    ])
+    assert exit_code == 1
+    assert "single input" in stderr

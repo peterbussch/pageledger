@@ -30,6 +30,10 @@ class ExtractionResult:
     #   {"pages": int, "tokens": int|None,
     #    "compute_seconds": float|None, "cost_usd": float|None}
     usage: dict[str, Any]
+    # Optional engine-native confidence evidence (e.g. Tesseract per-word
+    # confidences). Shape is adapter-defined; recorded, never interpreted as
+    # calibrated probability.
+    confidence_detail: dict[str, Any] | None = None
 
 
 @runtime_checkable
@@ -243,6 +247,7 @@ class PdfOcrAdapter:
         _ = page_id, prompt
         pdftoppm = _require_binary("pdftoppm")
         tesseract = _require_binary("tesseract")
+        _check_tesseract_langs(tesseract, self.lang)
 
         started = time.perf_counter()
         with tempfile.TemporaryDirectory() as tmp:
@@ -268,17 +273,20 @@ class PdfOcrAdapter:
                 )
             output_prefix = tmp_path / "ocr"
             _run_ocr_command(
-                [tesseract, str(images[0]), str(output_prefix), "-l", self.lang],
+                [tesseract, str(images[0]), str(output_prefix), "-l", self.lang, "txt", "tsv"],
                 timeout=_OCR_TIMEOUT_SECONDS,
                 context=f"tesseract failed on page {page_number} of {source}",
             )
             text = output_prefix.with_suffix(".txt").read_text(
                 encoding="utf-8", errors="replace"
             )
+            confidence, confidence_detail = _tesseract_word_confidence(
+                output_prefix.with_suffix(".tsv")
+            )
         return ExtractionResult(
             content=text,
             format="text",
-            confidence=None,
+            confidence=confidence,
             model=_tesseract_model_string(),
             warnings=[],
             usage={
@@ -287,7 +295,99 @@ class PdfOcrAdapter:
                 "compute_seconds": round(time.perf_counter() - started, 3),
                 "cost_usd": None,
             },
+            confidence_detail=confidence_detail,
         )
+
+
+@lru_cache(maxsize=8)
+def _tesseract_installed_langs(tesseract: str) -> frozenset[str] | None:
+    """Installed language packs per ``tesseract --list-langs``.
+
+    Returns None when the listing fails or cannot be parsed — an unreadable
+    listing must never block extraction.
+    """
+    try:
+        proc = subprocess.run(
+            [tesseract, "--list-langs"],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if proc.returncode != 0:
+        return None
+    # First line is a "List of available languages..." banner on every
+    # Tesseract version we know; keep only plausible language codes below it.
+    langs = frozenset(
+        line.strip()
+        for line in (proc.stdout or "").splitlines()[1:]
+        if line.strip() and _LANG_PATTERN.match(line.strip())
+    )
+    return langs or None
+
+
+def _check_tesseract_langs(tesseract: str, lang: str) -> None:
+    installed = _tesseract_installed_langs(tesseract)
+    if installed is None:
+        return
+    missing = [part for part in lang.split("+") if part not in installed]
+    if missing:
+        raise RuntimeError(
+            f"Tesseract language pack(s) not installed: {', '.join(missing)}. "
+            f"Installed: {', '.join(sorted(installed))}. "
+            "Install the missing traineddata or change run.adapter_options.lang; "
+            "'pageledger doctor' lists available OCR languages."
+        )
+
+
+# Words with Tesseract confidence below this are counted into the
+# low-confidence tail that quality signals inspect.
+_LOW_WORD_CONFIDENCE = 60.0
+
+
+def _tesseract_word_confidence(
+    tsv_path: Path,
+) -> tuple[float | None, dict[str, Any] | None]:
+    """Summarize per-word confidences from Tesseract TSV output.
+
+    Returns ``(confidence, detail)`` where confidence is the mean word
+    confidence scaled to 0–1. Any parse problem yields ``(None, None)`` —
+    confidence is optional evidence, never worth failing a page over.
+    """
+    try:
+        lines = tsv_path.read_text(encoding="utf-8", errors="replace").splitlines()
+        header = lines[0].split("\t")
+        conf_col = header.index("conf")
+        text_col = header.index("text")
+        level_col = header.index("level")
+        confidences = []
+        for line in lines[1:]:
+            fields = line.split("\t")
+            if len(fields) <= max(conf_col, text_col, level_col):
+                continue
+            # Level 5 rows are words; other levels carry conf -1.
+            if fields[level_col] != "5" or not fields[text_col].strip():
+                continue
+            conf = float(fields[conf_col])
+            if conf < 0:
+                continue
+            confidences.append(conf)
+    except (OSError, ValueError, IndexError):
+        return None, None
+    if not confidences:
+        return None, None
+    mean = sum(confidences) / len(confidences)
+    below = sum(1 for conf in confidences if conf < _LOW_WORD_CONFIDENCE)
+    detail = {
+        "scale": "tesseract_word_confidence_0_100",
+        "word_count": len(confidences),
+        "mean": round(mean, 2),
+        "min": round(min(confidences), 2),
+        "below_60_count": below,
+        "below_60_ratio": round(below / len(confidences), 4),
+    }
+    return round(mean / 100, 4), detail
 
 
 def _require_binary(name: str) -> str:

@@ -57,7 +57,8 @@
         "properties": {
           "path": { "type": "string" },
           "sha256": { "type": "string", "description": "SHA-256 hex digest of the source file." },
-          "page_count": { "type": "integer", "minimum": 1 }
+          "page_count": { "type": "integer", "minimum": 1 },
+          "pages": { "type": "string", "description": "Page selection this run extracted from the source (e.g. '1-8,81'), when --pages was used. page_count stays the source's full size." }
         },
         "additionalProperties": false
       }

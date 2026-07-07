@@ -78,7 +78,7 @@ is the durable pointer to every other artifact in the run directory.
 | `started_at` | ISO timestamp | Run start time in UTC. |
 | `completed_at` | ISO timestamp or null | Run completion time in UTC. |
 | `status` | string | `running`, `completed`, `failed`, or `partial`. |
-| `inputs` | array | Source files and checksums. |
+| `inputs` | array | Source files and checksums. Each entry carries `path`, `sha256`, `page_count` (the source's full size), and — when `--pages` limited the run — the selection expression as `pages` (e.g. `"1-8,81"`). |
 | `config` | object | Run-directory config snapshot path, checksum, and source config paths. |
 | `extractors` | array | Extractor adapters and model/version metadata. |
 | `dataset_citation` | object or null | Optional user-provided source citation for the input collection. |

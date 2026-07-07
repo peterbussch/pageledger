@@ -6,6 +6,47 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to the artifact compatibility policy documented in
 `docs/run-manifest-spec.md` → Compatibility Policy.
 
+## 0.1.2 — 2026-07-07
+
+### Added
+
+- Word-level OCR confidence: `pdf_ocr` reads Tesseract's TSV output and
+  reports mean page confidence (`ExtractionResult.confidence`, 0–1) plus
+  per-word statistics in a new optional `confidence_detail` field. Both are
+  recorded in `quality.jsonl`. A new `low_confidence` warning fires when a
+  quarter of a page's words fall under engine confidence 60 (10+ words),
+  catching weak passages a page mean would hide.
+- Historical-orthography detection: `quality.jsonl` now counts letters
+  abolished by the 1918 Russian reform (`prereform_letter_count`) and
+  word-final hard signs (`terminal_hard_sign_count`), and a
+  `historical_orthography` warning flags pre-1918 pages where an OCR model
+  trained on modern text will degrade. Calibrated on an 1850 gubernia
+  review: 21 terminal ъ per 100 tokens vs 0.00 in modern Russian.
+- `--pages` on `run` — extract only the listed source pages
+  (`--pages "1-8,81,100-110"`). Page ids keep the source numbering, so
+  sampling a large volume no longer means splitting the PDF and losing
+  page identity in the ledger. The selection is recorded in
+  `manifest.inputs[].pages`.
+- `run --adapter text|pdf_text|pdf_ocr` — run a built-in adapter without
+  writing a YAML config. The generated defaults are recorded in
+  `config-snapshot.yml`; no implicit config file is ever read.
+- `inspect-run --csv` — one row per page (counts, confidence, warnings,
+  cost, timing) for spreadsheet triage.
+- `pageledger doctor` lists installed Tesseract language packs, and
+  `pdf_ocr` fails before extraction with the installed-language list when
+  `run.adapter_options.lang` names a pack that is not installed.
+- `init-config --adapter pdf_ocr` now includes `adapter_options`
+  (`dpi`, `lang`) so the knobs non-English collections need are visible.
+- `examples/prereform_normalizer_adapter.py` — OCR plus pre-1918 Russian
+  orthography canonicalization (ѣ→е, і→и, ѳ→ф, ѵ→и, morphology-aware ъ),
+  with every rewrite counted in a result warning.
+
+### Changed
+
+- Standard European/Cyrillic typography («guillemets», em/en dashes,
+  ellipsis, №, §, °) no longer counts toward `suspicious_symbol_density`,
+  which was flagging ordinary Russian bibliographies.
+
 ## 0.1.1 — 2026-07-07
 
 ### Added

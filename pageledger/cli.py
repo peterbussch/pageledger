@@ -4,13 +4,15 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
+import tempfile
 import textwrap
 from pathlib import Path
 
 from .compare import compare_runs, render_comparison
 from .doctor import build_doctor_report
-from .runner import inspect_run, rerun, run
+from .runner import inspect_run, rerun, run, run_pages_csv
 
 MINIMAL_CONFIG = textwrap.dedent("""\
     schema_version: "0.1"
@@ -21,6 +23,20 @@ MINIMAL_CONFIG = textwrap.dedent("""\
     run:
       adapter: text
     """)
+
+# Adapters whose knobs a first-time user should see in a generated config.
+ADAPTER_OPTION_TEMPLATES = {
+    "pdf_ocr": "  adapter_options:\n    dpi: 300\n    lang: eng\n",
+}
+
+BUILTIN_ADAPTERS = ["text", "pdf_text", "pdf_ocr"]
+
+
+def _config_template(adapter: str) -> str:
+    text = MINIMAL_CONFIG
+    if adapter != "text":
+        text = text.replace("adapter: text", f"adapter: {adapter}")
+    return text + ADAPTER_OPTION_TEMPLATES.get(adapter, "")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -37,8 +53,19 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         help="Input files or directories; directories are expanded to direct child files",
     )
-    run_parser.add_argument("--config", required=True, type=Path, help="PageLedger YAML config")
+    run_config = run_parser.add_mutually_exclusive_group(required=True)
+    run_config.add_argument("--config", type=Path, help="PageLedger YAML config")
+    run_config.add_argument(
+        "--adapter",
+        choices=BUILTIN_ADAPTERS,
+        help="Run a built-in adapter with a generated default config (no YAML needed)",
+    )
     run_parser.add_argument("--out", required=True, type=Path, help="New empty run directory")
+    run_parser.add_argument(
+        "--pages",
+        default=None,
+        help="Only extract these source pages, e.g. '1-8,81,100-110'; page ids keep the source numbering",
+    )
     run_parser.add_argument("--dry-run", action="store_true")
     run_parser.add_argument("--json", action="store_true", dest="json_output")
     run_parser.add_argument(
@@ -115,7 +142,14 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         help="Path to a run output directory",
     )
-    inspect_parser.add_argument("--json", action="store_true", dest="json_output")
+    inspect_format = inspect_parser.add_mutually_exclusive_group()
+    inspect_format.add_argument("--json", action="store_true", dest="json_output")
+    inspect_format.add_argument(
+        "--csv",
+        action="store_true",
+        dest="csv_output",
+        help="One CSV row per page: counts, confidence, warnings, cost, timing",
+    )
 
     compare_parser = subparsers.add_parser(
         "compare-runs",
@@ -160,9 +194,7 @@ def main(argv: list[str] | None = None) -> int:
 # -- init-config --------------------------------------------------------------
 
 def _cmd_init_config(args: argparse.Namespace) -> int:
-    config_text = MINIMAL_CONFIG
-    if args.adapter != "text":
-        config_text = config_text.replace("adapter: text", f"adapter: {args.adapter}")
+    config_text = _config_template(args.adapter)
     if args.out:
         args.out.write_text(config_text, encoding="utf-8")
         print(f"Wrote {args.out}", file=sys.stderr)
@@ -175,6 +207,9 @@ def _cmd_init_config(args: argparse.Namespace) -> int:
 
 def _cmd_inspect_run(args: argparse.Namespace) -> int:
     try:
+        if args.csv_output:
+            sys.stdout.write(run_pages_csv(args.run_dir))
+            return 0
         report = inspect_run(args.run_dir)
     except (ValueError, FileNotFoundError) as exc:
         _print_error_json(exc, args)
@@ -228,19 +263,32 @@ def _cmd_compare_runs(args: argparse.Namespace) -> int:
 # -- run ---------------------------------------------------------------------
 
 def _cmd_run(args: argparse.Namespace) -> int:
+    config_path = args.config
+    temp_config: str | None = None
+    if config_path is None:
+        # --adapter mode: synthesize the same config init-config would write.
+        # Never read an implicit config file from the working directory.
+        fd, temp_config = tempfile.mkstemp(prefix="pageledger-", suffix=".yml")
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(_config_template(args.adapter))
+        config_path = Path(temp_config)
     try:
         result = run(
             inputs=args.inputs,
-            config_path=args.config,
+            config_path=config_path,
             out_dir=args.out,
             dry_run=args.dry_run,
             log_level=args.log_level,
+            pages=args.pages,
             adapter_path=args.adapter_path,
         )
     except (RuntimeError, ValueError) as exc:
         _print_error_json(exc, args)
         print(f"pageledger: error: {exc}", file=sys.stderr)
         return 1
+    finally:
+        if temp_config is not None:
+            os.unlink(temp_config)
     if args.json_output:
         print(json.dumps(result, ensure_ascii=False, sort_keys=True))
     else:
@@ -312,6 +360,14 @@ def _cmd_doctor(args: argparse.Namespace) -> int:
             print(f"Command {name}: {status}{version}")
             if not info["available"]:
                 print(f"  {info['explanation']} {info['install_hint']}")
+        ocr_langs = report["ocr_languages"]
+        if ocr_langs["available"]:
+            print(
+                f"OCR languages ({len(ocr_langs['languages'])}): "
+                + ", ".join(ocr_langs["languages"])
+            )
+        else:
+            print(f"OCR languages: unavailable ({ocr_langs['explanation']})")
         for name, info in report["cloud_environment"].items():
             status = "set" if info["set"] else "missing"
             print(f"Env {name}: {status} ({info['explanation']})")

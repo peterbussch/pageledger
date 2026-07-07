@@ -520,3 +520,217 @@ def test_manifest_quality_warning_pages_matches_quality_jsonl(tmp_path):
     warning_count = sum(1 for e in entries if e["warnings"])
     manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
     assert manifest["summary"]["quality_warning_pages"] == warning_count
+
+
+# =========================================================================
+# Historical orthography detection (pre-reform Cyrillic)
+# =========================================================================
+
+_TEXT_CONFIG = textwrap.dedent("""\
+    schema_version: "0.1"
+    taxonomy:
+      page_types:
+        prose:
+          default_action: transcribe_text
+    run:
+      adapter: text
+    """)
+
+
+def _quality_entries(out_dir):
+    return [
+        json.loads(line)
+        for line in (out_dir / "quality.jsonl").read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+
+
+def test_prereform_text_triggers_historical_orthography_warning(tmp_path):
+    """Pre-reform Russian with abolished letters is flagged and counted."""
+    source = tmp_path / "prereform.txt"
+    source.write_text(
+        "Военно-статистическое обозрѣніе Харьковской губерніи. "
+        "Свѣдѣнія о населеніи уѣзда собраны въ 1850 году. "
+        "Каждый городъ и уѣздъ имѣетъ свои особенности.",
+        encoding="utf-8",
+    )
+    out_dir = _run([source], _TEXT_CONFIG, tmp_path)
+    entry = _quality_entries(out_dir)[0]
+    assert "historical_orthography" in entry["warnings"]
+    assert entry["text_quality"]["prereform_letter_count"] > 0
+    assert entry["text_quality"]["terminal_hard_sign_count"] > 0
+
+
+def test_ocr_garbled_prereform_detected_via_terminal_hard_signs(tmp_path):
+    """OCR of pre-reform scans loses the abolished letters but keeps terminal
+    hard signs; density alone must trigger the warning (>=1 per 100 tokens
+    over >=20 tokens)."""
+    source = tmp_path / "ocr.txt"
+    # Modeled on real Tesseract rus output of an 1850 scan: no yat survives,
+    # but word-final hard signs are everywhere.
+    source.write_text(
+        "Въ 1819 году отчисленъ отъ Воронежской губерши въ Слободско "
+        "Украинскую городъ Старобфльскъ съ убздомъ Наконецъ въ 1836 году "
+        "губершя опять переименована въ Харьковскую и каждый городъ приписанъ",
+        encoding="utf-8",
+    )
+    out_dir = _run([source], _TEXT_CONFIG, tmp_path)
+    entry = _quality_entries(out_dir)[0]
+    assert entry["text_quality"]["prereform_letter_count"] == 0
+    assert "historical_orthography" in entry["warnings"]
+
+
+def test_modern_russian_not_flagged_as_historical(tmp_path):
+    """Modern Russian, including medial hard signs and Ukrainian і, stays clean."""
+    source = tmp_path / "modern.txt"
+    source.write_text(
+        "Оценка современной экономической ситуации в России показывает, что "
+        "объект исследования и подъезд к нему описаны точно. "
+        "Українська мова використовує літеру і в сучасному правописі, "
+        "тому вона не є ознакою дореформеної орфографії взагалі.",
+        encoding="utf-8",
+    )
+    out_dir = _run([source], _TEXT_CONFIG, tmp_path)
+    entry = _quality_entries(out_dir)[0]
+    assert "historical_orthography" not in entry["warnings"]
+    assert entry["text_quality"]["prereform_letter_count"] == 0
+
+
+def test_english_text_reports_zero_orthography_metrics(tmp_path):
+    """Latin-script pages carry the metrics as zeros and never warn."""
+    source = tmp_path / "english.txt"
+    source.write_text(
+        "The quick brown fox jumps over the lazy dog near the riverbank "
+        "while the miller keeps a careful ledger of every single page.",
+        encoding="utf-8",
+    )
+    out_dir = _run([source], _TEXT_CONFIG, tmp_path)
+    entry = _quality_entries(out_dir)[0]
+    assert entry["text_quality"]["prereform_letter_count"] == 0
+    assert entry["text_quality"]["terminal_hard_sign_count"] == 0
+    assert "historical_orthography" not in entry["warnings"]
+
+
+# =========================================================================
+# Cyrillic/European typography is not "suspicious symbols"
+# =========================================================================
+
+def test_guillemets_and_dashes_are_not_suspicious_symbols(tmp_path):
+    """Standard Russian typography — «guillemets», em/en dashes, ellipsis,
+    numero sign — must not count toward suspicious_symbol_density."""
+    source = tmp_path / "typography.txt"
+    source.write_text(
+        "Катасонов В. Ю. «Санкционная война против России» — М.: Книжный мир, "
+        "2022. — 320 с. № 78… Обзор литературы — важная часть работы «всех» "
+        "исследователей — и историков, и социологов.",
+        encoding="utf-8",
+    )
+    out_dir = _run([source], _TEXT_CONFIG, tmp_path)
+    entry = _quality_entries(out_dir)[0]
+    assert entry["text_quality"]["suspicious_symbol_count"] == 0
+    assert "suspicious_symbol_density" not in entry["warnings"]
+
+
+# =========================================================================
+# Word-confidence evidence in quality lines + low_confidence warning
+# =========================================================================
+
+def _confidence_adapter_module(tmp_path, name, mean, below_ratio, word_count):
+    """Write an importable custom adapter emitting fixed confidence detail.
+
+    Each test uses a distinct module name: Python caches imported adapter
+    modules in sys.modules, so reusing one name would leak state between
+    tests."""
+    module = tmp_path / f"{name}.py"
+    module.write_text(textwrap.dedent(f"""\
+        from pageledger.adapters import ExtractionResult
+
+        class ConfAdapter:
+            name = "conf"
+            version = "0.1"
+            deterministic = True
+            input_types = ("text",)
+            output_types = ("text",)
+            capabilities = ("local",)
+
+            def supports(self, action):
+                return action == "transcribe_text"
+
+            def extract(self, source, *, page_id, page_number, action, prompt=None):
+                return ExtractionResult(
+                    content="plausible page text with enough words to look ordinary",
+                    format="text",
+                    confidence={mean / 100},
+                    model="conf-test",
+                    warnings=[],
+                    usage={{"pages": 1, "tokens": None,
+                            "compute_seconds": None, "cost_usd": None}},
+                    confidence_detail={{
+                        "scale": "tesseract_word_confidence_0_100",
+                        "word_count": {word_count},
+                        "mean": {mean},
+                        "min": 5.0,
+                        "below_60_count": {int(below_ratio * word_count)},
+                        "below_60_ratio": {below_ratio},
+                    }},
+                )
+        """), encoding="utf-8")
+    return module
+
+
+def _run_conf_adapter(tmp_path, *, name, mean, below_ratio, word_count):
+    _confidence_adapter_module(tmp_path, name, mean, below_ratio, word_count)
+    source = tmp_path / "page.txt"
+    source.write_text("one ordinary page", encoding="utf-8")
+    config_path = tmp_path / "config.yml"
+    config_path.write_text(textwrap.dedent(f"""\
+        schema_version: "0.1"
+        taxonomy:
+          page_types:
+            prose:
+              default_action: transcribe_text
+        run:
+          adapter: {name}:ConfAdapter
+        """), encoding="utf-8")
+    from pageledger.runner import run
+
+    out_dir = tmp_path / "out"
+    run(
+        inputs=[source],
+        config_path=config_path,
+        out_dir=out_dir,
+        dry_run=False,
+        adapter_path=tmp_path,
+    )
+    return _quality_entries(out_dir)[0]
+
+
+def test_quality_line_records_confidence_and_detail(tmp_path):
+    entry = _run_conf_adapter(tmp_path, name="conf_high", mean=91.0, below_ratio=0.05, word_count=200)
+    assert entry["confidence"] == 0.91
+    assert entry["confidence_detail"]["word_count"] == 200
+    assert "low_confidence" not in entry["warnings"]
+
+
+def test_low_confidence_warning_fires_on_weak_tail(tmp_path):
+    """A quarter of the words below 60 marks the page for review."""
+    entry = _run_conf_adapter(tmp_path, name="conf_tail", mean=71.0, below_ratio=0.3, word_count=120)
+    assert "low_confidence" in entry["warnings"]
+
+
+def test_low_confidence_ignores_tiny_pages(tmp_path):
+    """A handful of words is not enough evidence to warn on."""
+    entry = _run_conf_adapter(tmp_path, name="conf_tiny", mean=40.0, below_ratio=0.5, word_count=4)
+    assert "low_confidence" not in entry["warnings"]
+
+
+def test_quality_line_confidence_null_without_detail(tmp_path):
+    """Adapters that report nothing leave confidence null, no warning."""
+    source = tmp_path / "page.txt"
+    source.write_text("an ordinary page of plain text with no confidence data",
+                      encoding="utf-8")
+    out_dir = _run([source], _TEXT_CONFIG, tmp_path)
+    entry = _quality_entries(out_dir)[0]
+    assert entry["confidence"] is None
+    assert entry["confidence_detail"] is None
+    assert "low_confidence" not in entry["warnings"]

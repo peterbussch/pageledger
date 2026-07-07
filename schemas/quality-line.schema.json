@@ -4,7 +4,7 @@
   "title": "PageLedger Quality Line (JSONL)",
   "description": "One line of quality.jsonl — per-page diagnostic signals, not calibrated accuracy. Schema version 0.1.",
   "type": "object",
-  "required": ["schema_version", "page_id", "page_number", "adapter", "character_count", "word_count", "warnings", "text_quality", "embedded_text_comparison"],
+  "required": ["schema_version", "page_id", "page_number", "adapter", "character_count", "word_count", "confidence", "confidence_detail", "warnings", "text_quality", "embedded_text_comparison"],
   "properties": {
     "schema_version": { "type": "string", "const": "0.1" },
     "page_id": { "type": "string" },
@@ -12,9 +12,17 @@
     "adapter": { "type": "string" },
     "character_count": { "type": "integer", "minimum": 0 },
     "word_count": { "type": "integer", "minimum": 0 },
+    "confidence": {
+      "type": ["number", "null"],
+      "description": "Adapter-reported page confidence, 0–1. Evidence, not calibrated probability. Null when the engine reports none."
+    },
+    "confidence_detail": {
+      "type": ["object", "null"],
+      "description": "Engine-native confidence evidence, adapter-defined shape. pdf_ocr reports Tesseract per-word statistics: scale, word_count, mean, min, below_60_count, below_60_ratio."
+    },
     "warnings": {
       "type": "array",
-      "description": "Quality warnings: empty_text, short_text, replacement_characters, control_characters, suspicious_symbol_density, fragmented_text, suspicious_embedded_text_delta.",
+      "description": "Quality warnings: empty_text, short_text, replacement_characters, control_characters, suspicious_symbol_density, fragmented_text, suspicious_embedded_text_delta, historical_orthography.",
       "items": { "type": "string" }
     },
     "text_quality": {
@@ -35,6 +43,16 @@
           "minimum": 0,
           "maximum": 1,
           "description": "Share of alphabetic tokens with 1-2 characters. Null when the page has none."
+        },
+        "prereform_letter_count": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Occurrences of Cyrillic letters abolished by the 1918 Russian orthographic reform (ѣ, ѳ, ѵ). Modern Ukrainian/Belarusian і is deliberately not counted."
+        },
+        "terminal_hard_sign_count": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Word-final hard signs (ъ) — mandatory in pre-1918 Russian orthography, absent from modern text. Survives OCR even when abolished letters do not."
         }
       },
       "additionalProperties": false

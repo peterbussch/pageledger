@@ -71,6 +71,7 @@ def build_doctor_report() -> dict[str, Any]:
             name: _command_report(name)
             for name in EXTERNAL_COMMANDS
         },
+        "ocr_languages": _ocr_languages_report(),
         "cloud_environment": {
             name: {
                 "set": bool(os.environ.get(name)),
@@ -79,6 +80,23 @@ def build_doctor_report() -> dict[str, Any]:
             }
             for name in CLOUD_ENV_KEYS
         },
+    }
+
+
+def _ocr_languages_report() -> dict[str, Any]:
+    from .adapters import _tesseract_installed_langs
+
+    path = shutil.which("tesseract")
+    langs = _tesseract_installed_langs(path) if path else None
+    return {
+        "available": langs is not None,
+        "languages": sorted(langs) if langs else [],
+        "source": "tesseract --list-langs",
+        "explanation": (
+            "Installed Tesseract language packs; values for run.adapter_options.lang."
+            if langs is not None
+            else "Tesseract is missing or its language listing failed."
+        ),
     }
 
 

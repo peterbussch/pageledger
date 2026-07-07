@@ -117,6 +117,8 @@ not a calibrated accuracy score. Fields:
 | `adapter` | string | ✅ | no | Adapter name for diagnostics attribution. |
 | `character_count` | integer | ✅ | no | Total characters in extractor output. |
 | `word_count` | integer | ✅ | no | Regex word count (`\w+`). |
+| `confidence` | number or null | ✅ | yes | Adapter-reported page confidence, 0–1. Evidence, not calibrated probability. |
+| `confidence_detail` | object or null | ✅ | yes | Engine-native confidence evidence, adapter-defined shape. `pdf_ocr` reports Tesseract per-word statistics: `scale`, `word_count`, `mean`, `min`, `below_60_count`, `below_60_ratio` (0–100 scale). |
 | `warnings` | array of strings | ✅ | no | Quality warnings (see taxonomy below). |
 | `text_quality` | object | ✅ | no | Sub-metrics (see below). |
 | `embedded_text_comparison` | object | ❌ | yes | Comparison with PDF embedded text layer. Null for non-PDF sources. |
@@ -132,6 +134,8 @@ not a calibrated accuracy score. Fields:
 | `alpha_token_count` | integer | Alphabetic tokens on the page. |
 | `mean_token_length` | number or null | Mean alphabetic token length; null with no tokens. Fragment noise collapses toward 1, tested prose sits above 4. |
 | `short_token_ratio` | number (0–1) or null | Share of alphabetic tokens with 1–2 characters. |
+| `prereform_letter_count` | integer | Cyrillic letters abolished by the 1918 Russian reform (ѣ, ѳ, ѵ). Modern Ukrainian/Belarusian і is deliberately not counted. |
+| `terminal_hard_sign_count` | integer | Word-final hard signs (ъ) — mandatory before 1918, absent from modern Russian. This is the pre-reform signal that survives OCR: engines trained on modern text destroy the abolished letters but keep ъ. |
 
 ### Warning Taxonomy
 
@@ -144,5 +148,7 @@ not a calibrated accuracy score. Fields:
 | `suspicious_symbol_density` | `suspicious_symbol_ratio >= 0.03` AND `suspicious_symbol_count >= 5`. |
 | `fragmented_text` | `mean_token_length < 3.0` AND `alpha_token_count >= 20`. Catches OCR fragment noise; does not catch word-level misrecognition. |
 | `suspicious_embedded_text_delta` | PDF embedded text character ratio < 0.5 or > 1.8, when embedded text is available and adapter does not report `embedded_text` capability. |
+| `historical_orthography` | `prereform_letter_count >= 2`, OR `terminal_hard_sign_count >= 2` at a density of ≥1 per 100 alphabetic tokens over ≥20 tokens. The page is pre-1918 Russian orthography and an OCR model trained on modern text is probably mismatched. Measured on an 1850 gubernia review: 21 terminal ъ per 100 tokens vs 0.00 in modern text. |
+| `low_confidence` | `confidence_detail.below_60_ratio >= 0.25` over ≥10 words. A quarter of the words under engine confidence 60 marks the page for review; a mean can hide one illegible paragraph on an otherwise clean page. |
 
 The JSON Schema is at `schemas/quality-line.schema.json`.
