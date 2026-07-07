@@ -148,6 +148,46 @@ Options used are recorded in `manifest.extractors[].options`, so a 300 DPI
 run and a 400 DPI run are distinguishable in the ledger, not just in your
 memory.
 
+## Escalating past Tesseract
+
+Raw Tesseract on 1960s–70s typescript is usable but rough ("lh Nett et"
+where the page says something else entirely). We validated two escalation
+tiers on this document, both driven by the same rerun mechanism. The three
+tiers, measured on the same pages:
+
+| Tier | Engine | Speed | Cost | What it fixes |
+|---|---|---|---|---|
+| 1 | `pdf_ocr` (Tesseract) | 1.25 s/page | free | Gets legible typescript mostly right. |
+| 2 | Tesseract + local LLM cleanup | ~70 s/page | free, local | Character errors and noise: "ClA—<ontrolled" → "CIA-controlled". |
+| 3 | Cloud vision model | ~11 s/page | paid tokens | Reads the image itself; clean transcription of pages tier 1 garbled. |
+
+**Tier 2** wraps Tesseract output with a locally served model
+(a 26B Gemma via mlx_lm in our runs) that repairs recognition errors
+without sending the document anywhere. See
+[`examples/local_llm_cleanup_adapter.py`](../../examples/local_llm_cleanup_adapter.py)
+for the adapter and the two failure modes the ledger caught while we built
+it: reasoning models leaking their thought process into `raw/` (now
+stripped and recorded as a `thought_block_stripped` warning), and token
+budgets starved by that same thinking (every page came back flagged
+`short_text`). On a working run, 3 of 4 pages cleaned well at ~1,000
+chars/page and 25k real tokens; the one page the model overthought was
+re-queued for review by its quality warnings, which is the behavior you
+want.
+
+**Tier 3** sends the rendered page image to a vision model through a
+custom adapter (the cloud-VLM skeleton in
+[`examples/`](../../examples/cloud_vlm_adapter_skeleton.py) is the
+starting point). On a 4-page slice: 4/4 pages, 14,579 real tokens,
+`cost_usd: 0.044` with `cost_basis: configured_rate`, and a $0.25 budget
+cap standing guard. One detail from `compare-runs` worth repeating: the
+model marked unreadable words `[illegible]`, the brackets tripped
+`suspicious_symbol_density`, and those pages went straight back to the
+review queue. The pages the VLM itself could not fully read are exactly
+the ones a human now looks at.
+
+The workflow is the same at every tier: run cheap, read the flags, rerun
+just the flagged pages with something stronger, compare.
+
 ## Honest limits
 
 - Tesseract output on 1960s–70s typescript is usable but rough — stamps,

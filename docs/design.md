@@ -1,8 +1,8 @@
 # PageLedger Design Targets
 
 This document holds the intended architecture beyond the current alpha.
-Nothing here is a promise: the release contract is what `README.md` lists
-under "Current Runtime Capabilities" and what the JSON Schemas in
+Nothing here is a promise: the release contract is what `capabilities-and-limits.md` lists
+as built in and what the JSON Schemas in
 [`../schemas/`](../schemas/) validate. The `0.1.0` alpha implements the
 **run controller** (budgets, retry/backoff, provenance, quality signals,
 audit queues, rerun execution, cross-run comparison) and the **adapter
@@ -29,6 +29,54 @@ flowchart LR
     SA -. "would consume raw/" .-> AG
     AG -. "would feed" .-> RIF -. "would feed" .-> RR
 ```
+
+## The canonical unit: pages
+
+PageLedger's defining decision is that the page is the canonical unit of
+work. It is the only unit every extraction backend shares:
+
+- Cloud OCR (Textract, Azure Document Intelligence, Google Document AI,
+  Mistral OCR) bills and reports per page.
+- VLM/LLM extractors expose tokens, but only on model-backed paths; tokens
+  are meaningless for classical OCR.
+- Self-hosted engines (Docling and friends) have no dollar cost at all,
+  only compute time.
+
+Because pages are the common denominator, routing, budgeting, and audit in
+pages lets you compare a Textract run against a Mistral run against a
+local model with one number. Tokens, compute seconds, and dollars ride on
+top as optional, provider-conditional signals.
+
+Every adapter reports a usage record where `pages` is required and
+everything else is optional:
+
+```python
+usage = {
+    "pages": 1,              # REQUIRED — the portable unit
+    "tokens": None,          # VLM/LLM paths only
+    "compute_seconds": None, # self-hosted engines
+    "cost_usd": None,        # optional adapter-reported passthrough
+}
+```
+
+Dollar cost is derived by PageLedger, never required of the adapter, in
+priority order: (1) adapter-reported `cost_usd`, (2) configured unit rates
+(`cost_per_page` / `cost_per_1k_tokens`), (3) otherwise `null` — the run
+still reports raw page counts. Budgets cap on pages, tokens, or dollars,
+whichever the config sets, because the page count is the only value always
+present.
+
+## Design principles
+
+- Record uncertainty; do not silently fix it.
+- Treat heuristic confidence as evidence, not probability. Uncalibrated
+  extractors should not imply certainty.
+- Every run produces inspectable artifacts on disk.
+- Adapters are thin: PageLedger does not own extraction, it owns the
+  process around extraction.
+- The manifest, route map, and provenance files should be useful without a
+  running service or database.
+- Preserve separate citations for software and source data.
 
 ## 1. Page Router *(design target)*
 

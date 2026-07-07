@@ -21,7 +21,7 @@ python3 -m venv /tmp/pageledger-first-run
 From a built wheel:
 
 ```bash
-/tmp/pageledger-first-run/bin/python -m pip install "dist/pageledger-0.1.1-py3-none-any.whl[pdf]"
+/tmp/pageledger-first-run/bin/python -m pip install "dist/pageledger-0.1.2-py3-none-any.whl[pdf]"
 ```
 
 ## 2. Doctor
