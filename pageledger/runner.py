@@ -37,6 +37,7 @@ from .artifacts import (
     write_yaml,
 )
 from .config import load_config
+from .grading import grade_page
 
 LOG_LEVELS = {"DEBUG": 10, "INFO": 20, "WARNING": 30, "ERROR": 40}
 
@@ -444,6 +445,11 @@ def run(
         documents=documents,
     )
     write_yaml(out_dir / "route-map.yml", route_map)
+
+    for entry in quality_entries:
+        entry.update(
+            grade_page(entry, None, config.grading_thresholds)
+        )
 
     quality_warning_pages = sum(1 for entry in quality_entries if entry.get("warnings"))
 

@@ -10,6 +10,7 @@ import yaml
 
 from .adapters import load_adapter
 from .aligner import load_schema_spec
+from .grading import GRADES, merge_thresholds, validate_thresholds
 
 # ---------------------------------------------------------------------------
 # Known top-level keys for v0.1.  Unknown keys trigger a warning so users
@@ -171,6 +172,29 @@ class PageLedgerConfig:
         return None
 
     @property
+    def review_below_grade(self) -> str | None:
+        """Grade threshold below which pages join the review queue.
+
+        Null by default: grading annotates without changing review behavior
+        unless the user opts in.
+        """
+        value = _value_at(self.data, "run", "grading", "review_below_grade")
+        if value is None:
+            return None
+        grade = str(value).upper()
+        if grade not in GRADES:
+            raise ValueError(
+                f"run.grading.review_below_grade must be one of: {', '.join(GRADES)}"
+            )
+        return grade
+
+    @property
+    def grading_thresholds(self) -> dict[str, dict[str, float]]:
+        overrides = _value_at(self.data, "run", "grading", "thresholds")
+        validate_thresholds(overrides)
+        return merge_thresholds(overrides)
+
+    @property
     def dataset_citation(self) -> dict[str, str] | None:
         citation = self.data.get("dataset_citation")
         if not isinstance(citation, dict):
@@ -220,6 +244,8 @@ def _validate_config(config: PageLedgerConfig, *, validate_adapter: bool) -> Non
         "max_retries",
         "retry_backoff",
         "adapter_options",
+        "review_below_grade",
+        "grading_thresholds",
     ):
         getattr(config, prop)
     if validate_adapter and config.adapter_name is not None:

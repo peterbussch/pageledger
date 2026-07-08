@@ -4,7 +4,7 @@
   "title": "PageLedger Quality Line (JSONL)",
   "description": "One line of quality.jsonl — per-page diagnostic signals, not calibrated accuracy. Schema version 0.1.",
   "type": "object",
-  "required": ["schema_version", "page_id", "page_number", "adapter", "character_count", "word_count", "confidence", "confidence_detail", "warnings", "text_quality", "embedded_text_comparison"],
+  "required": ["schema_version", "page_id", "page_number", "adapter", "character_count", "word_count", "confidence", "confidence_detail", "warnings", "text_quality", "embedded_text_comparison", "grade", "grade_basis", "grade_detail"],
   "properties": {
     "schema_version": { "type": "string", "const": "0.1" },
     "page_id": { "type": "string" },
@@ -65,6 +65,34 @@
         "embedded_character_count": { "type": "integer", "minimum": 0 },
         "character_delta": { "type": "integer" },
         "character_ratio": { "type": ["number", "null"] }
+      },
+      "additionalProperties": false
+    },
+    "grade": {
+      "type": "string",
+      "enum": ["A", "B", "C", "D", "F"],
+      "description": "Deterministic evidence summary, not calibrated accuracy. Worst of the signal and schema axes. Only comparable within one adapter."
+    },
+    "grade_basis": {
+      "type": "string",
+      "enum": ["signals_only", "schema_aware"],
+      "description": "signals_only: graded on text signals alone (no alignment). schema_aware: schema column/check evidence contributed. A signals-only A is weaker evidence than a schema-aware A."
+    },
+    "grade_detail": {
+      "type": "object",
+      "required": ["signals_grade", "schema_grade", "confidence_band", "warning_count", "required_column_coverage", "arithmetic_pass_rate", "reasons"],
+      "properties": {
+        "signals_grade": { "type": "string", "enum": ["A", "B", "C", "D", "F"] },
+        "schema_grade": { "type": ["string", "null"], "enum": ["A", "B", "C", "D", "F", null] },
+        "confidence_band": {
+          "type": ["string", "null"],
+          "enum": ["A", "B", "C", "D", "F", null],
+          "description": "Null when the adapter reports no confidence — the signals grade then rests on warnings alone."
+        },
+        "warning_count": { "type": "integer", "minimum": 0 },
+        "required_column_coverage": { "type": ["number", "null"], "minimum": 0, "maximum": 1 },
+        "arithmetic_pass_rate": { "type": ["number", "null"], "minimum": 0, "maximum": 1 },
+        "reasons": { "type": "array", "items": { "type": "string" } }
       },
       "additionalProperties": false
     }
