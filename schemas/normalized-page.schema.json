@@ -1,0 +1,108 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/peterbussch/pageledger/schemas/normalized-page.json",
+  "title": "PageLedger Normalized Page",
+  "description": "One normalized/{page_id}.json file — the schema aligner's output for a structured page. Records are declared-column mappings; coercion errors and failed checks are recorded evidence, never silent fixes. Schema version 0.1.",
+  "type": "object",
+  "required": ["schema_version", "run_id", "page_id", "page_number", "schema_name", "source_format", "raw_artifact", "columns", "records", "coercion_errors", "checks", "metrics"],
+  "properties": {
+    "schema_version": { "type": "string", "const": "0.1" },
+    "run_id": { "type": "string" },
+    "page_id": { "type": "string" },
+    "page_number": { "type": "integer", "minimum": 1 },
+    "schema_name": { "type": "string" },
+    "source_format": { "type": "string", "enum": ["markdown_table", "csv", "json"] },
+    "raw_artifact": { "type": "string" },
+    "columns": {
+      "type": "object",
+      "required": ["matched", "missing_required", "missing_optional", "extra"],
+      "properties": {
+        "matched": {
+          "type": "object",
+          "description": "Source header → declared column name, exact normalized match only.",
+          "additionalProperties": { "type": "string" }
+        },
+        "missing_required": { "type": "array", "items": { "type": "string" } },
+        "missing_optional": { "type": "array", "items": { "type": "string" } },
+        "extra": {
+          "type": "array",
+          "description": "Source headers that matched no declared column or alias.",
+          "items": { "type": "string" }
+        }
+      },
+      "additionalProperties": false
+    },
+    "records": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "description": "One record per source row. Every declared column is present; null means unmatched column, empty cell, or coercion failure (see coercion_errors).",
+        "additionalProperties": { "type": ["string", "number", "null"] }
+      }
+    },
+    "coercion_errors": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["row", "column", "raw", "error"],
+        "properties": {
+          "row": { "type": "integer", "minimum": 1 },
+          "column": { "type": "string" },
+          "raw": { "type": "string" },
+          "error": { "type": "string", "enum": ["not_integer", "not_number"] }
+        },
+        "additionalProperties": false
+      }
+    },
+    "checks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "rows_checked", "rows_passed", "rows_failed", "rows_unchecked", "pass_rate", "failures"],
+        "properties": {
+          "name": { "type": "string" },
+          "rows_checked": { "type": "integer", "minimum": 0 },
+          "rows_passed": { "type": "integer", "minimum": 0 },
+          "rows_failed": { "type": "integer", "minimum": 0 },
+          "rows_unchecked": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Rows where a check operand was null — missing evidence, counted as neither pass nor fail."
+          },
+          "pass_rate": { "type": ["number", "null"], "minimum": 0, "maximum": 1 },
+          "failures": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["row", "delta"],
+              "properties": {
+                "row": { "type": "integer", "minimum": 1 },
+                "delta": { "type": "number" }
+              },
+              "additionalProperties": false
+            }
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "metrics": {
+      "type": "object",
+      "required": ["row_count", "tables_found", "required_column_coverage", "column_coverage", "arithmetic_pass_rate", "coercion_error_count", "parse_error"],
+      "properties": {
+        "row_count": { "type": "integer", "minimum": 0 },
+        "tables_found": { "type": "integer", "minimum": 0 },
+        "required_column_coverage": { "type": "number", "minimum": 0, "maximum": 1 },
+        "column_coverage": { "type": "number", "minimum": 0, "maximum": 1 },
+        "arithmetic_pass_rate": { "type": ["number", "null"], "minimum": 0, "maximum": 1 },
+        "coercion_error_count": { "type": "integer", "minimum": 0 },
+        "parse_error": {
+          "type": ["string", "null"],
+          "description": "Set when the structured payload could not be parsed (e.g. no_markdown_table_found, invalid_json). The page still gets a record: the failure is evidence."
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

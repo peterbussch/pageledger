@@ -9,6 +9,7 @@ from typing import Any
 import yaml
 
 from .adapters import load_adapter
+from .aligner import load_schema_spec
 
 # ---------------------------------------------------------------------------
 # Known top-level keys for v0.1.  Unknown keys trigger a warning so users
@@ -202,6 +203,7 @@ def load_config(path: Path, *, validate_adapter: bool = True) -> PageLedgerConfi
 
 def _validate_config(config: PageLedgerConfig, *, validate_adapter: bool) -> None:
     _validate_taxonomy(config)
+    load_schema_spec(config.data)
     _reject_flat_keys(config)
     _warn_unknown_top_level(config)
     _warn_impossible_budget(config)

@@ -340,7 +340,12 @@ def run(
                 break
             usage = _canonical_usage(result.usage)
             raw_artifact = Path("raw") / f"{page_id}.{_artifact_extension(result.format)}"
-            (out_dir / raw_artifact).write_text(str(result.content), encoding="utf-8")
+            raw_text = (
+                result.content
+                if isinstance(result.content, str)
+                else json.dumps(result.content, ensure_ascii=False)
+            )
+            (out_dir / raw_artifact).write_text(raw_text, encoding="utf-8")
             page_tokens = usage.get("tokens")
             page_cost, page_cost_basis = _derive_cost(
                 usage,

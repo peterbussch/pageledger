@@ -183,6 +183,8 @@ def test_dry_run_writes_auditable_artifacts(tmp_path):
               default_action: transcribe_text
         schema:
           name: example
+          columns:
+            - name: text
         run:
           max_rerun_depth: 2
         """,
