@@ -127,6 +127,11 @@ Details and examples live in [`design.md`](design.md).
 - Born-digital text layers carry their own defects. Mid-word space
   artifacts («С анкционная» for «Санкционная») pass every shape heuristic;
   they come from the source PDF, not from extraction.
+- Struck-through or overstamped text (e.g. classification portion
+  markings on declassified documents) is silently dropped or garbled by
+  OCR without any warning firing. Dropped text is invisible to shape
+  heuristics; if portion markings are citable metadata in your workflow,
+  verify them against the page images.
 - Quality-warning pages land in `audit.json → review_queue` with reason
   `quality_warning`. Dry-run review entries use route-based reasons.
 - No automatic page routing. Every page follows the configured
