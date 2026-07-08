@@ -815,3 +815,45 @@ def test_prereform_adapter_passes_conformance() -> None:
     module = _load_prereform_example()
     issues = adapter_conformance_check(module.PrereformNormalizerAdapter())
     assert issues == []
+
+
+def test_tesseract_tsv_table_example_passes_conformance() -> None:
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "examples"))
+    try:
+        from tesseract_tsv_table_adapter import TesseractTsvTableAdapter
+        issues = adapter_conformance_check(TesseractTsvTableAdapter())
+        assert issues == []
+    finally:
+        sys.path.pop(0)
+        for mod in list(sys.modules):
+            if "tesseract" in mod.lower():
+                del sys.modules[mod]
+
+
+def test_tsv_table_clustering_builds_markdown_table() -> None:
+    """Words on TSV lines become rows; wide horizontal gaps become columns."""
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "examples"))
+    try:
+        from tesseract_tsv_table_adapter import _cluster_table, _parse_tsv_words
+
+        header = "level\tpage_num\tblock_num\tpar_num\tline_num\tword_num\tleft\ttop\twidth\theight\tconf\ttext"
+        rows = [
+            # header line: two cells separated by a wide gap
+            "5\t1\t1\t1\t1\t1\t10\t10\t60\t20\t95\tplace",
+            "5\t1\t1\t1\t1\t2\t300\t10\t60\t20\t96\ttotal",
+            # data line
+            "5\t1\t1\t1\t2\t1\t10\t50\t80\t20\t91\tMoscow",
+            "5\t1\t1\t1\t2\t2\t300\t50\t80\t20\t88\t4137000",
+            # rejected: level 4 and conf -1 rows
+            "4\t1\t1\t1\t3\t0\t0\t90\t500\t20\t-1\t",
+        ]
+        words = _parse_tsv_words("\n".join([header, *rows]))
+        assert len(words) == 4
+        table = _cluster_table(words)
+        assert table.splitlines()[0] == "| place | total |"
+        assert "| Moscow | 4137000 |" in table
+    finally:
+        sys.path.pop(0)
+        for mod in list(sys.modules):
+            if "tesseract" in mod.lower():
+                del sys.modules[mod]

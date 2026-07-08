@@ -25,7 +25,8 @@ authoritative scope list.
 | Plan without extracting | add `--dry-run` |
 | Full config run | `pageledger run inputs/ --config pageledger.yml --out runs/a` |
 | Re-extract flagged pages | `pageledger rerun runs/a --config stronger.yml --out runs/b` |
-| Diff two runs | `pageledger compare-runs runs/a runs/b` |
+| Re-align/regrade without re-extracting | `pageledger align runs/a --schema table-v2.yml` |
+| Diff two runs | `pageledger compare-runs runs/a runs/b` (includes grade changes) |
 | Summarize a run | `pageledger inspect-run runs/a` (`--csv` for per-page rows, `--json` for scripts) |
 | Write a starter config | `pageledger init-config --adapter pdf_ocr --out pageledger.yml` |
 | Check environment | `pageledger doctor --json` (includes installed OCR languages) |
@@ -40,13 +41,23 @@ a missing language pack.
 1. `pageledger doctor` to check tools, then dry-run to inspect routing
    before spending anything.
 2. Run cheap extraction first (`pdf_text` or `pdf_ocr`).
-3. Read the evidence: `inspect-run`, then `quality.jsonl` warnings
-   (`empty_text`, `low_confidence`, `historical_orthography`, five more),
-   `cost.json` (check `cost_basis` — derived rates are not billed spend),
-   and `audit.json`'s review queue.
-4. `rerun` with a stronger adapter re-extracts exactly the flagged pages,
-   preserving page ids and lineage; `compare-runs` shows what improved.
-5. Merging parent and rerun output into a corpus is the project's call —
+3. Read the evidence: `inspect-run` (grade distribution, records
+   normalized), then `quality.jsonl` warnings and grades (`empty_text`,
+   `low_confidence`, `historical_orthography`, five more; grades A–F with
+   a basis label — `A (signals)` is weaker evidence than `A (schema)` and
+   grades only compare within one adapter), `cost.json` (check
+   `cost_basis` — derived rates are not billed spend), and `audit.json`'s
+   review queue.
+4. For tabular work, declare a `schema` section (columns, aliases,
+   arithmetic checks) so structured adapter output lands in `normalized/`
+   and grades gain column/check evidence. Iterating on aliases is free:
+   `pageledger align runs/a --schema v2.yml` re-derives records and
+   grades from raw/ without re-extracting.
+5. `rerun` with a stronger adapter re-extracts exactly the flagged pages
+   (set `run.grading.review_below_grade: C` to queue low-graded pages),
+   preserving page ids and lineage; `compare-runs` shows what improved,
+   warnings and grades both.
+6. Merging parent and rerun output into a corpus is the project's call —
    present the compare-runs evidence rather than deciding silently.
 
 ## Configuration essentials
@@ -55,9 +66,13 @@ One `pageledger.yml` with `taxonomy`, `schema`, and `run` sections
 (`init-config` writes it). The knobs that matter in practice live under
 `run`: `adapter`, `adapter_options` (`dpi`, `lang` for pdf_ocr),
 `budget` (`max_pages`, `max_tokens`, `max_usd` — preflight refuses
-over-budget runs before writing anything), `retry`, `pricing`, and
-`max_rerun_depth`. Custom adapters load from `module.path:Object` import
-strings plus `--adapter-path DIR`.
+over-budget runs before writing anything), `retry`, `pricing`,
+`grading` (`review_below_grade`, `thresholds`), and `max_rerun_depth`.
+The `schema` section (columns/aliases/types/checks) is active: it is
+strictly validated at load and drives the aligner for structured page
+formats (`markdown_table`, `json`, `csv`; plain text is never aligned).
+Custom adapters load from `module.path:Object` import strings plus
+`--adapter-path DIR`.
 
 ## Boundaries the design enforces
 
@@ -73,9 +88,12 @@ strings plus `--adapter-path DIR`.
   taxonomies, provider pricing catalogs, header dictionaries, CV
   heuristics, exporters (TEI/PAGE/ALTO/GIS), dashboards, and ensemble
   voting stay out of core.
+- Grades are deterministic evidence summaries, never calibrated accuracy;
+  do not compare grades across adapters or drop the basis label.
 - Not yet implemented (do not claim otherwise): automatic page
-  classification, schema alignment (`normalized/` stays empty), audit
-  grading, `rerun_if` policies, staged CLI commands.
+  classification, the full `rerun_if`/`quarantine_if` policy grammar
+  (`review_below_grade` is the shipped subset), and the `classify`/
+  `extract`/`audit` staged commands (`align` ships).
 
 ## Where to read more
 

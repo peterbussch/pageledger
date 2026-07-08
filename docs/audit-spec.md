@@ -53,4 +53,6 @@
 | `type` | string | ✅ | no | Page type from taxonomy. |
 | `confidence` | number | ❌ | yes | Classifier confidence. Null in alpha. |
 | `action` | string | ✅ | no | Extraction action. |
-| `reason` | string | ✅ | no | Reason for queue placement. |
+| `reason` | string | ✅ | no | Reason for queue placement (`quality_warning`, `grade_below_threshold`, or a route-based reason). |
+| `grade` | string | ❌ | yes | Page grade at queue time (`A`–`F`). Absent on entries queued before grading (configured-review pages). |
+| `grade_basis` | string | ❌ | yes | `signals_only` or `schema_aware`. |

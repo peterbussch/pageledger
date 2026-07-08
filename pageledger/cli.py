@@ -22,6 +22,10 @@ MINIMAL_CONFIG = textwrap.dedent("""\
       page_types:
         prose:
           default_action: transcribe_text
+    # For tabular work, add a schema section (columns, aliases, checks) so
+    # structured adapter output lands in normalized/ with graded evidence,
+    # and a run.grading section to act on grades. Commented reference:
+    # docs/examples/pageledger.yml
     run:
       adapter: text
     """)

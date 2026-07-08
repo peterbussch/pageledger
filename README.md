@@ -95,15 +95,25 @@ Every box on the right is a plain file in the run directory.
   tokens and dollars on top when they exist.
 - Cost records that name their basis, so a derived estimate is never
   mistaken for provider-billed spend.
-- Page-scoped reruns with lineage, cross-run diffs, CSV export, and a
-  `doctor` command for environment diagnostics.
+- Schema alignment: declare columns, aliases, types, and arithmetic checks
+  once, and structured extractor output (markdown tables, JSON, CSV)
+  becomes normalized records — with coercion failures and failed checks
+  recorded, never silently fixed. `pageledger align` re-aligns an existing
+  run against a revised schema without re-extracting (or re-paying).
+- Per-page grades (A–F) that combine text signals with schema evidence and
+  always name their basis — `A (signals)` and `A (schema)` are different
+  claims. `review_below_grade: C` turns grades into an actionable review
+  queue.
+- Page-scoped reruns with lineage, cross-run diffs (including grade
+  changes), CSV export, and a `doctor` command for environment diagnostics.
 - JSON Schemas for every artifact, enforced in CI, and an
   [`AGENTS.md`](AGENTS.md) so AI coding agents can operate the tool and
   validate their own output.
 
-The alpha routes every page to one configured action; automatic page
-classification, schema alignment, and audit grading are documented design
-targets, not shipped features. The full honest-scope list is in
+Every page still routes to one configured action; automatic page
+classification and the full conditional-rerun policy grammar are
+documented design targets, not shipped features. The full honest-scope
+list is in
 [`docs/capabilities-and-limits.md`](docs/capabilities-and-limits.md).
 
 ## Tested on
@@ -120,7 +130,7 @@ the quality signals flagged page by page. Synthetic stress runs cover
 
 | | |
 |---|---|
-| [`docs/cli.md`](docs/cli.md) | All six commands, flags, and config keys |
+| [`docs/cli.md`](docs/cli.md) | All seven commands, flags, and config keys |
 | [`docs/artifacts.md`](docs/artifacts.md) | What each file in a run directory answers |
 | [`docs/capabilities-and-limits.md`](docs/capabilities-and-limits.md) | What works, what you supply, what is design |
 | [`docs/ocr-options.md`](docs/ocr-options.md) | Choosing local, cloud, or hybrid extraction |

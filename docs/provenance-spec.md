@@ -122,6 +122,32 @@ not a calibrated accuracy score. Fields:
 | `warnings` | array of strings | ✅ | no | Quality warnings (see taxonomy below). |
 | `text_quality` | object | ✅ | no | Sub-metrics (see below). |
 | `embedded_text_comparison` | object | ❌ | yes | Comparison with PDF embedded text layer. Null for non-PDF sources. |
+| `grade` | string | ✅ | no | `A`–`F`. Deterministic summary of this line's evidence — worst of the signal and schema axes. Only comparable within one adapter. |
+| `grade_basis` | string | ✅ | no | `signals_only` (no alignment for this page) or `schema_aware` (schema column/check evidence contributed). Rendered surfaces always show it: `A (signals)` and `A (schema)` are different claims. |
+| `grade_detail` | object | ✅ | no | `signals_grade`, `schema_grade`, `confidence_band`, `warning_count`, `required_column_coverage`, `arithmetic_pass_rate`, and human-readable `reasons`. |
+
+### Grade Bands
+
+Grades combine two axes, taking the worst letter of the two:
+
+- **Signals axis** — worst of the confidence band (defaults: A ≥ 0.90,
+  B ≥ 0.80, C ≥ 0.70, D ≥ 0.55, else F; skipped when the adapter reports
+  no confidence) and the warning-count band (0 → A, 1 → B, 2 → C, 3+ → D).
+  `empty_text` forces F.
+- **Schema axis** (only when a normalized record exists) — worst of the
+  required-column-coverage band (A ≥ 1.0, B ≥ 0.9, C ≥ 0.7, else D; F when
+  parsing failed, no rows, or all required columns missing) and the
+  arithmetic-pass-rate band (A ≥ 0.98, B ≥ 0.90, C ≥ 0.75, else D).
+  Coercion errors cap the axis at B.
+
+Confidence/coverage/pass-rate thresholds are overridable under
+`run.grading.thresholds`. The schema `quality` section adds floors:
+coverage below `minimum_required_column_coverage` forces the schema axis
+to F, and page confidence under `low_confidence_threshold` caps the final
+grade at C. The structured-format prose heuristics
+(`suspicious_symbol_density`, `fragmented_text`) do not fire on
+`markdown_table`/`json`/`csv` pages — pipes and braces are construction,
+not garble.
 
 ### text_quality Fields
 

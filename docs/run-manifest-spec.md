@@ -84,10 +84,12 @@ is the durable pointer to every other artifact in the run directory.
 | `dataset_citation` | object or null | Optional user-provided source citation for the input collection. |
 | `artifacts` | object | Relative paths to route, raw, normalized, audit, and provenance artifacts. |
 | `summary` | object | Counts and cost summary for quick inspection. |
+| `alignment` | object | Optional. Present only after `pageledger align` re-derived the run's normalized/grade artifacts: `aligned_at`, `schema_source` (`config_snapshot` or the external schema path, snapshotted as `align-schema-snapshot.yml`), `schema_sha256`, `pageledger_version`. |
 
 Required `summary` keys are `pages_total`, `pages_extracted`,
-`pages_skipped`, `pages_quarantined`, `records_normalized`,
-`estimated_cost_usd`, and `quality_warning_pages`.
+`pages_skipped`, `pages_quarantined`, `records_normalized` (rows written
+to `normalized/` by the schema aligner), `estimated_cost_usd`, and
+`quality_warning_pages`.
 
 Use `partial` for dry runs and other runs that intentionally produce only part
 of the extraction lifecycle.

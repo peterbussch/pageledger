@@ -11,7 +11,8 @@ runs/run-001/
 ├── route-map.yml        # which page went where, and why
 ├── raw/
 │   └── doc_0001_page_0002.txt
-├── normalized/          # reserved for schema alignment (empty in 0.1.x)
+├── normalized/          # schema-aligned records, one JSON file per structured page
+│   └── doc_0001_page_0002.json
 ├── audit.json           # review + quarantine queues
 ├── audit.md             # human rendering of audit.json
 ├── provenance.jsonl     # one line per extracted page
@@ -55,10 +56,20 @@ Spec: [`provenance-spec.md`](provenance-spec.md).
 
 **quality.jsonl** — how each page looks. Character and word counts,
 engine-reported confidence with per-word statistics, lexical shape,
-script/orthography evidence, and a warning list (`empty_text`,
-`low_confidence`, `historical_orthography`, and five others). These are
-diagnostics for a human, not accuracy scores.
+script/orthography evidence, a warning list (`empty_text`,
+`low_confidence`, `historical_orthography`, and five others), and a grade
+(`A`–`F` with `grade_basis` and per-axis detail). These are diagnostics
+for a human, not accuracy scores; a grade is a deterministic summary of
+this evidence, comparable only within one adapter.
 Spec: [`provenance-spec.md`](provenance-spec.md) (companion section).
+
+**normalized/** — what the schema aligner extracted, one
+`{page_id}.json` per structured page: records keyed by declared columns,
+matched/missing/extra headers, coercion errors with the raw strings, and
+arithmetic-check results. Written during `pageledger run` when the config
+has a `schema` section, and rewritten by `pageledger align`. Plain-text
+pages produce no normalized file.
+Spec: [`normalized-spec.md`](normalized-spec.md).
 
 **cost.json** — what it cost, and how we know. Usage totals plus
 `cost_basis`: `adapter_reported` (the provider said so), `configured_rate`
@@ -76,8 +87,21 @@ Spec: [`audit-spec.md`](audit-spec.md).
 
 **rerun-manifest.yml** — what to do next. An executable list of flagged
 pages that `pageledger rerun` re-extracts with the config you give it,
-preserving page ids and lineage.
+preserving page ids and lineage. Each item records `previous_grade`; a
+page flagged for more than one reason appears once, reasons joined
+(`quality_warning+grade_below_threshold`).
 Spec: [`rerun-manifest-spec.md`](rerun-manifest-spec.md).
+
+## Re-alignment
+
+`pageledger align <run-dir>` is the one sanctioned mutation of a run
+directory: it re-derives `normalized/`, the grade fields in
+`quality.jsonl`, the grade-threshold audit entries, and the rerun
+manifest from the untouched `raw/` evidence. Every rewrite is atomic, the
+mutation is logged in `run.log` (`status: aligned`), and `manifest.json`
+is written last with an `alignment` block (timestamp, schema source and
+hash, PageLedger version) as the commit point. An external `--schema`
+file is snapshotted as `align-schema-snapshot.yml`.
 
 ## Compatibility
 

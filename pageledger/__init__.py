@@ -7,7 +7,7 @@ flagged pages around existing OCR/VLM extractors.
 from .config import PageLedgerConfig, load_config
 from .runner import AdapterExecutionError, BudgetExceededError, run
 
-__version__ = "0.1.2"
+__version__ = "0.1.3"
 
 __all__ = [
     "AdapterExecutionError",

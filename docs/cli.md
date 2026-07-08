@@ -1,7 +1,8 @@
 # CLI reference
 
-Six commands ship in the alpha. `run` and `rerun` are the ones that
-extract; the rest inspect, compare, or scaffold.
+Seven commands ship. `run` and `rerun` are the ones that extract; `align`
+re-derives normalized records and grades from an existing run; the rest
+inspect, compare, or scaffold.
 
 ## run
 
@@ -46,6 +47,24 @@ adapter to escalate just the weak pages. Enforces `run.max_rerun_depth`
 and warns when a source file changed since the parent run. Takes the same
 `--dry-run`, `--json`, `--log-level`, and `--adapter-path` flags as `run`.
 
+## align
+
+```bash
+pageledger align runs/run-001/
+pageledger align runs/run-001/ --schema table-v2.yml
+```
+
+Re-aligns an existing run's structured raw pages against a schema and
+regrades every page — without re-extracting, so iterating on column
+aliases costs nothing even when the extraction was paid OCR or a VLM.
+Without `--schema` the run's own `config-snapshot.yml` schema is used;
+with it, the file (a bare schema mapping or any config with a `schema:`
+section) is snapshotted into the run directory as
+`align-schema-snapshot.yml`. Rewrites `normalized/`, the grade fields in
+`quality.jsonl`, the grade-threshold audit entries, and the rerun
+manifest; records the mutation in `run.log` and a `manifest.json`
+`alignment` block. `--json` for machine-readable output.
+
 ## compare-runs
 
 ```bash
@@ -53,8 +72,10 @@ pageledger compare-runs runs/run-001/ runs/run-002/
 ```
 
 Page-by-page diff of two runs: character and word deltas, warnings
-resolved or introduced, adapters, and cost. This is how you decide whether
-an escalation was worth it. `--json` for machine-readable output.
+resolved or introduced, grades improved or regressed (rendered with their
+basis, e.g. `C (signals)→A (schema)`), adapters, and cost. This is how
+you decide whether an escalation was worth it. `--json` for
+machine-readable output.
 
 ## inspect-run
 
@@ -64,9 +85,10 @@ pageledger inspect-run runs/run-001/ --csv > pages.csv
 ```
 
 Summarizes a run directory: status, page counts, warnings, failures,
-review-queue size, cost, artifact presence. `--csv` writes one row per
-page (page id, counts, confidence, warnings, cost, timing) for triage in a
-spreadsheet. `--json` for the summary as JSON.
+review-queue size, records normalized, grade distribution, cost, artifact
+presence. `--csv` writes one row per page (page id, counts, confidence,
+warnings, grade, cost, timing) for triage in a spreadsheet. `--json` for
+the summary as JSON.
 
 ## init-config
 
@@ -112,6 +134,8 @@ run:
     backoff: exponential
   pricing:
     cost_per_page: 0.0015       # only if you want derived cost estimates
+  grading:
+    review_below_grade: C       # queue pages graded below C (off by default)
   max_rerun_depth: 2
 ```
 

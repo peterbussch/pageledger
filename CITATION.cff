@@ -15,5 +15,5 @@ keywords:
   - corpus infrastructure
 license: MIT
 repository-code: "https://github.com/peterbussch/pageledger"
-version: "0.1.2"
-date-released: "2026-07-07"
+version: "0.1.3"
+date-released: "2026-07-08"

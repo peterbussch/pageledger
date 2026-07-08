@@ -40,10 +40,32 @@ stays short because this exists.
   run's rerun manifest (typically with a stronger adapter), preserving page
   ids, recording parent lineage, enforcing `max_rerun_depth`, and warning
   if a source file changed since the parent run.
+- Schema alignment: the config `schema` section (columns, aliases, types,
+  required fields, arithmetic `checks` with tolerance) maps structured
+  extraction output (`markdown_table`, `json`, `csv`) to normalized
+  records in `normalized/{page_id}.json`. Header matching is exact
+  (casefold + collapsed whitespace) against declared names and aliases —
+  never fuzzy. Coercion failures and failed checks are recorded evidence,
+  never silent fixes. Plain-text pages are not aligned.
+- Per-page quality grades (A–F) in `quality.jsonl`, `audit.json`/`audit.md`,
+  `inspect-run`, its CSV, and `compare-runs`. Grades combine text signals
+  (confidence bands, warning counts) with schema evidence (required-column
+  coverage, arithmetic pass rate) and always carry their basis:
+  `A (signals)` and `A (schema)` are different claims. Thresholds are
+  configurable under `run.grading.thresholds`.
+- `run.grading.review_below_grade: C` adds pages graded below the
+  threshold to the review queue (reason `grade_below_threshold`) and the
+  rerun manifest, which now records `previous_grade`. Off by default.
+- `pageledger align <run-dir> [--schema file.yml]`: re-align and regrade
+  an existing run from its raw pages without re-extracting — iterate on a
+  schema without paying for OCR/VLM again. The manifest records the
+  re-alignment (`alignment` block, schema hash); external schemas are
+  snapshotted into the run directory.
 - `pageledger compare-runs`: page-by-page diff of two runs. Character and
-  word deltas, warnings resolved or introduced, adapters, cost.
+  word deltas, warnings resolved or introduced, grades improved or
+  regressed, adapters, cost.
 - `pageledger inspect-run --csv`: one row per page (counts, confidence,
-  warnings, cost, timing) for spreadsheet triage.
+  warnings, grade, cost, timing) for spreadsheet triage.
 - Cost provenance: `cost.json` records `cost_basis` (`adapter_reported`,
   `configured_rate`, `mixed`, or `none`) so derived accounting rates are
   never mistaken for provider-billed spend, plus measured
@@ -68,12 +90,10 @@ stays short because this exists.
 - Automatic page classification. The alpha routes every page to the
   configured `default_action` (`review` in dry-run mode); no classifier
   ships.
-- Schema alignment. The schema config section is parsed and preserved but
-  the runner does not yet produce normalized records; the `normalized/`
-  directory stays empty.
-- Audit grading. Review queues are populated but no grades are computed.
-- Multi-adapter routing chains, `rerun_if`/`quarantine_if` policies, and
-  staged CLI commands (`classify`, `extract`, `align`, `audit`).
+- Multi-adapter routing chains and the full `rerun_if`/`quarantine_if`
+  policy grammar (`review_below_grade` is the shipped subset), and the
+  remaining staged CLI commands (`classify`, `extract`, `audit` — `align`
+  ships in 0.1.3).
 
 Details and examples live in [`design.md`](design.md).
 
@@ -92,6 +112,18 @@ Details and examples live in [`design.md`](design.md).
   "material"); Tesseract's own word confidence (`low_confidence`) is the
   closest signal the alpha ships, and it reflects the engine's opinion of
   itself, not ground truth.
+- Grades are deterministic summaries of that same evidence, not accuracy.
+  A grade is only comparable within one adapter: confidence is
+  uncalibrated across engines, so an `A` from one extractor and a `B`
+  from another are not orderable claims. A `signals_only` grade from an
+  adapter that reports no confidence rests on warning counts alone — the
+  `(signals)`/`(schema)` label exists so that weaker evidence is never
+  mistaken for schema-checked records.
+- Schema alignment consumes structured output only. `pdf_ocr` and other
+  plain-text adapters grade on signals alone; producing tables is the
+  adapter's job (see
+  [`examples/tesseract_tsv_table_adapter.py`](../examples/tesseract_tsv_table_adapter.py)
+  for a deliberately naive demonstration).
 - Born-digital text layers carry their own defects. Mid-word space
   artifacts («С анкционная» for «Санкционная») pass every shape heuristic;
   they come from the source PDF, not from extraction.

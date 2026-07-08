@@ -69,8 +69,10 @@ items:
 ## Per-Item Fields
 
 Each item must include `page_id`, `page_number`, `source`, `action`, `reason`,
-and `previous_grade`. `previous_grade` is always `null` in the alpha since
-audit grading does not execute.
+and `previous_grade`. `previous_grade` carries the page's grade (`A`–`F`)
+from `quality.jsonl` at manifest generation. A page flagged for more than
+one reason appears once, with the reasons joined
+(`quality_warning+grade_below_threshold`).
 
 ## Review Queue Semantics
 
@@ -106,9 +108,11 @@ manifests.
   the parent manifest.
 - Top-level `reason` values: `dry_run` or `audit_policy`.
 - Item-level `reason` values: `no_classifier_available`, `configured_review`,
-  `quality_warning`. Future audit failures can add `confidence_below_threshold`,
-  `missing_required_columns`, etc.
-- `previous_grade` is always `null` — audit grades are not implemented yet.
+  `quality_warning`, `grade_below_threshold` (joined with `+` when a page
+  matches several). Future audit failures can add
+  `confidence_below_threshold`, `missing_required_columns`, etc.
+- `previous_grade` is the page grade at generation time; `null` only for
+  pages without a quality entry (e.g. dry-run manifests).
 - Quarantine takes precedence over rerun (when implemented).
 - Each item carries enough information to rerun without reclassifying the
   whole corpus.

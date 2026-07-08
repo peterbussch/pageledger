@@ -6,6 +6,73 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to the artifact compatibility policy documented in
 `docs/run-manifest-spec.md` → Compatibility Policy.
 
+## 0.1.3 — 2026-07-08
+
+### Added
+
+- **Schema aligner** (previously a design target): the config `schema`
+  section now drives extraction. Structured page output (`markdown_table`,
+  `json`, `csv`) is mapped to declared columns — exact alias matching
+  (casefold, collapsed whitespace; never fuzzy), `integer`/`number`
+  coercion tolerant of thousand separators, and arithmetic `checks` with
+  tolerance — writing one `normalized/{page_id}.json` record per page
+  (new JSON Schema `schemas/normalized-page.schema.json`, spec
+  `docs/normalized-spec.md`). Coercion failures and failed checks are
+  recorded evidence, never silent fixes; unparseable structured payloads
+  produce a record with `parse_error` set. Plain-text pages are not
+  aligned. Check expressions are validated against an AST whitelist at
+  config load.
+- **Per-page quality grades (A–F)** (previously a design target):
+  `quality.jsonl` lines now carry `grade`, `grade_basis`
+  (`signals_only`/`schema_aware`), and `grade_detail`. Grades take the
+  worst of a signals axis (confidence bands, warning counts, hard F on
+  `empty_text`) and a schema axis (required-column coverage, arithmetic
+  pass rate, coercion cap at B). Rendered surfaces always show the basis —
+  `A (signals)` and `A (schema)` are different claims — because grades are
+  evidence summaries per adapter, not calibrated accuracy. Thresholds are
+  configurable under `run.grading.thresholds`; the schema `quality` keys
+  act as floors.
+- **`pageledger align <run-dir> [--schema file.yml]`** — re-align and
+  regrade an existing run from its raw pages without re-extracting, so
+  iterating on a schema costs nothing even when extraction was paid.
+  Atomic rewrites; `manifest.json` written last with a new `alignment`
+  block (timestamp, schema source, hash, version); external schemas
+  snapshotted as `align-schema-snapshot.yml`; the mutation logged in
+  `run.log` (`status: aligned`).
+- **`run.grading.review_below_grade`** — pages graded strictly below the
+  configured letter join the review queue (reason `grade_below_threshold`)
+  and the rerun manifest. Off by default: grading annotates without
+  changing review behavior unless you opt in. This is the shipped subset
+  of the `rerun_if` design target.
+- Rerun manifests now fill `previous_grade` (previously always null) and
+  list a multi-reason page once with reasons joined
+  (`quality_warning+grade_below_threshold`).
+- `inspect-run` reports `records_normalized` and a grade distribution;
+  `inspect-run --csv` gains `grade` and `grade_basis` columns;
+  `compare-runs` counts grades improved/regressed and renders transitions
+  (`C (signals)→A (schema)`); audit.md queues gain a grade column.
+- `examples/tesseract_tsv_table_adapter.py` — Tesseract TSV words
+  clustered into a `markdown_table` by pixel coordinates. Deliberately
+  naive column clustering, shipped as the structured-output adapter
+  example the aligner needs.
+
+### Changed
+
+- The `schema` config section is now strictly validated at load
+  (previously parsed and ignored). A schema without `columns` — legal as
+  an inert stub in 0.1.2 — is now a config error.
+- Raw artifacts for adapters returning dict/list content are written as
+  JSON (`json.dumps`, `ensure_ascii=False`), not Python `repr`. Byte-level
+  change for third-party structured adapters; required for `align` to
+  re-parse raw pages.
+- The prose-calibrated shape warnings (`suspicious_symbol_density`,
+  `fragmented_text`) no longer fire on structured formats
+  (`markdown_table`/`json`/`csv`) — pipes and braces are construction,
+  not garble.
+- `quality.jsonl` lines now require the grade fields; external validators
+  holding the 0.1 quality-line schema will reject pre-0.1.3 artifacts
+  against the new schema (same precedent as `confidence_detail` in 0.1.2).
+
 ## 0.1.2 — 2026-07-07
 
 ### Added

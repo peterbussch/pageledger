@@ -25,9 +25,11 @@ taxonomy:
     figure:
       default_action: review
 
-# The schema section below is a design target. The alpha validates and
-# snapshots the config, but does not yet align extractor output to declared
-# columns, types, or checks.
+# The schema aligner maps structured extractor output (markdown_table,
+# json, csv) to these columns, writing normalized/{page_id}.json records.
+# Header matching is exact against names and aliases; coercion failures
+# and failed checks are recorded, never silently fixed. Plain-text pages
+# are not aligned and grade on signals alone.
 schema:
   name: demographic_table
   # Projects can add their own language-specific aliases here.
@@ -50,8 +52,9 @@ schema:
     - name: population_sum
       expression: population_total == population_male + population_female
       tolerance: 2
-      severity: warning
   quality:
+    # Grading floors: required-column coverage below the minimum forces the
+    # schema axis to F; page confidence under the threshold caps the grade at C.
     minimum_required_column_coverage: 1.0
     low_confidence_threshold: 0.70
 
@@ -65,13 +68,22 @@ run:
     max_pages: 5000
     max_usd: 25
     warn_at_percent: 80
-  # max_rerun_depth: 2  # future — no rerun execution yet
+  # max_rerun_depth: 2  # generations of `pageledger rerun` allowed (default 2)
   retry:
     max_retries: 3
-    # backoff: exponential  # future — not yet implemented
-  # Policy rules below are preserved in the config snapshot but the alpha
-  # runner does not yet evaluate audit grades, schema checks, or quarantine
-  # rules. They are documented design targets for future releases.
+    backoff: exponential
+  grading:
+    # Pages graded strictly below this letter join the review queue
+    # (reason grade_below_threshold) and the rerun manifest. Omit to keep
+    # grading purely informational (the default).
+    review_below_grade: C
+    # Band thresholds are overridable per axis; these are the defaults.
+    # thresholds:
+    #   confidence: {A: 0.90, B: 0.80, C: 0.70, D: 0.55}
+    #   required_column_coverage: {A: 1.0, B: 0.9, C: 0.7}
+    #   arithmetic_pass_rate: {A: 0.98, B: 0.90, C: 0.75}
+  # The full rerun_if/quarantine_if policy grammar is a documented design
+  # target; review_below_grade above is the shipped subset.
   # rerun_if:
   #   - grade_below: C
   #   - missing_required_columns: true
