@@ -313,3 +313,17 @@ def test_config_load_validates_schema_section(tmp_path):
     )
     with pytest.raises(ValueError, match="undeclared"):
         load_config(config)
+
+
+def test_period_thousands_grouping_coerces_for_integers():
+    """Soviet-era numbers group thousands with periods: 1.084.598."""
+    md = "| place | total | male | female |\n| - | - | - | - |\n| A | 1.084.598 | 521.790 | 562.808 |\n"
+    result = _align(md, "markdown_table")
+    assert result["records"][0]["population_total"] == 1084598
+    assert result["records"][0]["population_male"] == 521790
+    assert result["coercion_errors"] == []
+    # A non-grouped decimal-looking string still fails integer coercion
+    md = "| place | total |\n| - | - |\n| B | 12.5 |\n"
+    result = _align(md, "markdown_table")
+    assert result["records"][0]["population_total"] is None
+    assert result["coercion_errors"][0]["error"] == "not_integer"

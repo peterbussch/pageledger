@@ -643,6 +643,14 @@ def _coerce(value: Any, column_type: str) -> tuple[Any, str | None]:
     if column_type == "string":
         return str(value).strip(), None
 
+    if isinstance(value, str) and column_type == "integer":
+        # European/Russian thousands grouping uses periods (161.168,
+        # 1.084.598). Only the full grouped pattern is rewritten — a lone
+        # "161.168" declared as `number` stays a decimal.
+        grouped = value.strip()
+        if re.fullmatch(r"\d{1,3}(\.\d{3})+", grouped):
+            value = grouped.replace(".", "")
+
     number = _parse_number(value)
     if number is None:
         return None, "not_integer" if column_type == "integer" else "not_number"

@@ -177,6 +177,15 @@ def _cluster_table(words: list[dict]) -> str:
 
     if not rows:
         return ""
+    # Header = the densest of the first rows, not blindly the first line:
+    # scanned tables open with captions ("Таблица 4") before the real
+    # column headers. Lines above the chosen header are dropped — a naive
+    # trade-off this example accepts and real adapters should not.
+    header_index = max(
+        range(min(len(rows), 8)),
+        key=lambda position: sum(1 for cell in rows[position] if cell),
+    )
+    rows = rows[header_index:]
     width = max(len(row) for row in rows)
     lines = []
     for position, row in enumerate(rows):
