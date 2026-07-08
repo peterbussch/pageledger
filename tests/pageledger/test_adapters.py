@@ -857,3 +857,37 @@ def test_tsv_table_clustering_builds_markdown_table() -> None:
         for mod in list(sys.modules):
             if "tesseract" in mod.lower():
                 del sys.modules[mod]
+
+
+def test_strip_thought_blocks_variants() -> None:
+    """Both channel-marker spellings strip; unterminated thought yields empty."""
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "examples"))
+    try:
+        from local_llm_cleanup_adapter import strip_thought_blocks
+
+        # two-pipe form with final channel
+        text, seen = strip_thought_blocks(
+            "<|channel|>thought reasoning here <|channel|>final The answer."
+        )
+        assert (text, seen) == ("The answer.", True)
+        # one-pipe form (Gemma) with answer channel
+        text, seen = strip_thought_blocks(
+            "<|channel>thought reasoning <|channel>answer Cleaned text."
+        )
+        assert (text, seen) == ("Cleaned text.", True)
+        # <think> form
+        text, seen = strip_thought_blocks("<think>hmm</think>Result")
+        assert (text, seen) == ("Result", True)
+        # unterminated thought: whole budget burned reasoning -> empty answer
+        text, seen = strip_thought_blocks(
+            "<|channel>thought endless reasoning that never reaches an answer"
+        )
+        assert (text, seen) == ("", True)
+        # plain answer untouched
+        text, seen = strip_thought_blocks("Just the transcription.")
+        assert (text, seen) == ("Just the transcription.", False)
+    finally:
+        sys.path.pop(0)
+        for mod in list(sys.modules):
+            if "local_llm" in mod.lower():
+                del sys.modules[mod]

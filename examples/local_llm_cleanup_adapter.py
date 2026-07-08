@@ -59,15 +59,30 @@ OCR OUTPUT:
 {text}"""
 
 # Common reasoning-model markers. Extend for your model's chat template.
+# Gemma emits `<|channel>thought` (one pipe); other templates use
+# `<|channel|>thought` — match both, and both `final`/`answer` closers.
 THOUGHT_BLOCK = re.compile(
-    r"<think>.*?</think>|<\|channel\|>thought.*?<\|channel\|>final",
+    r"<think>.*?</think>"
+    r"|<\|channel\|?>\s*thought.*?<\|channel\|?>\s*(?:final|answer)\s*",
     re.DOTALL,
 )
+_THOUGHT_OPENER = re.compile(r"\s*(?:<think>|<\|channel\|?>\s*thought)")
 
 
 def strip_thought_blocks(text: str) -> tuple[str, bool]:
+    """Return (answer_text, thought_seen).
+
+    When the output is one *unterminated* thought block — the model spent
+    its whole budget reasoning (or looping) and never reached an answer
+    channel — the answer is empty. Returning "" is deliberate: the
+    `empty_text` quality warning grades the page F and re-queues it,
+    instead of a reasoning transcript masquerading as a transcription.
+    """
     stripped = THOUGHT_BLOCK.sub("", text)
-    return stripped.strip(), stripped != text
+    had_thoughts = stripped != text
+    if _THOUGHT_OPENER.match(stripped):
+        return "", True
+    return stripped.strip(), had_thoughts
 
 
 class LocalLlmCleanupAdapter:
