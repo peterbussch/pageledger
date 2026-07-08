@@ -150,6 +150,18 @@
         "quality_warning_pages": { "type": "integer", "minimum": 0, "description": "Number of pages with one or more quality warnings." }
       },
       "additionalProperties": false
+    },
+    "alignment": {
+      "type": "object",
+      "description": "Present only after `pageledger align` re-aligned this run. Records that the run's normalized/grade artifacts were re-derived after the original run, and from which schema.",
+      "required": ["aligned_at", "schema_source", "schema_sha256", "pageledger_version"],
+      "properties": {
+        "aligned_at": { "type": "string", "description": "Re-alignment time in UTC ISO 8601 format." },
+        "schema_source": { "type": "string", "description": "'config_snapshot' or the path of the external schema file passed via --schema (snapshotted as align-schema-snapshot.yml)." },
+        "schema_sha256": { "type": "string" },
+        "pageledger_version": { "type": "string" }
+      },
+      "additionalProperties": false
     }
   },
   "additionalProperties": false

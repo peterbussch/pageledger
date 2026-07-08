@@ -26,6 +26,7 @@ from .adapters import (
     paginate,
     pdf_page_count,
 )
+from .aligner import ALIGNABLE_FORMATS, align_page, load_schema_spec
 from .artifacts import (
     build_audit,
     build_manifest,
@@ -37,7 +38,7 @@ from .artifacts import (
     write_yaml,
 )
 from .config import load_config
-from .grading import grade_page
+from .grading import grade_is_below, grade_page
 
 LOG_LEVELS = {"DEBUG": 10, "INFO": 20, "WARNING": 30, "ERROR": 40}
 
@@ -170,6 +171,8 @@ def run(
     log_entries: list[dict[str, Any]] = []
     usage_entries: list[dict[str, Any]] = []
     quality_entries: list[dict[str, Any]] = []
+    schema_spec = load_schema_spec(config.data)
+    alignments: dict[str, dict[str, Any]] = {}
     pages_total = 0
     pages_extracted = 0
     pages_skipped = 0
@@ -420,6 +423,19 @@ def run(
                     adapter=adapter,
                 )
             )
+            if schema_spec is not None and result.format in ALIGNABLE_FORMATS:
+                alignment = align_page(
+                    result.content,
+                    result.format,
+                    schema_spec,
+                    page=page,
+                    run_id=run_id,
+                    schema_version=config.schema_version,
+                    raw_artifact=raw_artifact.as_posix(),
+                )
+                if alignment is not None:
+                    write_json(out_dir / "normalized" / f"{page_id}.json", alignment)
+                    alignments[page_id] = alignment
             log_entries.append(
                 {
                     "schema_version": config.schema_version,
@@ -448,7 +464,12 @@ def run(
 
     for entry in quality_entries:
         entry.update(
-            grade_page(entry, None, config.grading_thresholds)
+            grade_page(
+                entry,
+                alignments.get(entry["page_id"]),
+                config.grading_thresholds,
+                quality_floors=schema_spec.quality if schema_spec else None,
+            )
         )
 
     quality_warning_pages = sum(1 for entry in quality_entries if entry.get("warnings"))
@@ -464,6 +485,21 @@ def run(
                 "confidence": None,
                 "action": "review",
                 "reason": "quality_warning",
+                "grade": entry["grade"],
+                "grade_basis": entry["grade_basis"],
+            })
+        if config.review_below_grade is not None and grade_is_below(
+            entry["grade"], config.review_below_grade
+        ):
+            review_queue.append({
+                "page_id": entry["page_id"],
+                "page_number": entry["page_number"],
+                "type": config.default_review_type,
+                "confidence": None,
+                "action": "review",
+                "reason": "grade_below_threshold",
+                "grade": entry["grade"],
+                "grade_basis": entry["grade_basis"],
             })
 
     status = "failed" if failure_error else "completed" if not dry_run else "partial"
@@ -482,7 +518,9 @@ def run(
         pages_extracted=pages_extracted,
         pages_skipped=pages_skipped,
         pages_quarantined=0,
-        records_normalized=0,
+        records_normalized=sum(
+            len(alignment["records"]) for alignment in alignments.values()
+        ),
         estimated_cost_usd=estimated_cost_usd,
         quality_warning_pages=quality_warning_pages,
         status=status,
@@ -530,6 +568,7 @@ def run(
         audit=audit,
         route_map=route_map,
         run_depth=run_depth,
+        grades={entry["page_id"]: entry["grade"] for entry in quality_entries},
     )
     write_yaml(out_dir / "rerun-manifest.yml", rerun_manifest)
 
@@ -1234,7 +1273,17 @@ def _build_quality_entry(
     elif character_count < 10:
         warnings.append("short_text")
     text_quality = _text_quality_metrics(text, character_count=character_count)
-    warnings.extend(_text_quality_warnings(text_quality))
+    shape_warnings = _text_quality_warnings(text_quality)
+    if result.format in ALIGNABLE_FORMATS:
+        # The symbol/shape heuristics are calibrated on prose. Structured
+        # payloads are full of pipes, braces, and short numeric tokens by
+        # construction — flagging them would be noise, not evidence.
+        shape_warnings = [
+            warning
+            for warning in shape_warnings
+            if warning not in {"suspicious_symbol_density", "fragmented_text"}
+        ]
+    warnings.extend(shape_warnings)
     confidence_detail = getattr(result, "confidence_detail", None)
     if _has_low_confidence_tail(confidence_detail):
         warnings.append("low_confidence")

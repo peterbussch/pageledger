@@ -8,6 +8,8 @@ from typing import Any
 
 import yaml
 
+from .grading import format_grade
+
 ARTIFACT_PATHS = {
     "config_snapshot": "config-snapshot.yml",
     "route_map": "route-map.yml",
@@ -141,6 +143,7 @@ def build_rerun_manifest(
     audit: dict[str, Any],
     route_map: dict[str, Any],
     run_depth: int = 0,
+    grades: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     """Generate a rerun manifest consumable by ``pageledger rerun``.
 
@@ -166,17 +169,26 @@ def build_rerun_manifest(
     allowed = run_depth < max_rerun_depth
     items: list[dict[str, Any]] = []
     if allowed:
-        items = [
-            {
-                "page_id": page["page_id"],
+        # A page can sit in the review queue once per reason (e.g. both
+        # quality_warning and grade_below_threshold); the rerun manifest
+        # lists it once, with the reasons joined.
+        by_page: dict[str, dict[str, Any]] = {}
+        for page in audit["review_queue"]:
+            page_id = page["page_id"]
+            existing = by_page.get(page_id)
+            if existing is not None:
+                if page["reason"] not in existing["reason"].split("+"):
+                    existing["reason"] += f"+{page['reason']}"
+                continue
+            by_page[page_id] = {
+                "page_id": page_id,
                 "page_number": page["page_number"],
-                "source": sources_by_page[page["page_id"]],
+                "source": sources_by_page[page_id],
                 "action": page["action"],
                 "reason": page["reason"],
-                "previous_grade": None,
+                "previous_grade": (grades or {}).get(page_id),
             }
-            for page in audit["review_queue"]
-        ]
+        items = list(by_page.values())
     if not allowed:
         rerun_status = "no_further_generations"
     elif items:
@@ -221,13 +233,14 @@ def _render_queue(title: str, queue: list[dict[str, Any]]) -> list[str]:
         "",
         f"## {title}",
         "",
-        "| page_id | page_number | type | action | reason |",
-        "|---|---:|---|---|---|",
+        "| page_id | page_number | type | action | reason | grade |",
+        "|---|---:|---|---|---|---|",
     ]
     for item in queue:
         lines.append(
             f"| {item.get('page_id', '')} | {item.get('page_number', '')}"
             f" | {item.get('type', '')} | {item.get('action', '')}"
-            f" | {item.get('reason', '')} |"
+            f" | {item.get('reason', '')}"
+            f" | {format_grade(item.get('grade'), item.get('grade_basis'))} |"
         )
     return lines

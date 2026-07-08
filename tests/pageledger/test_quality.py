@@ -734,3 +734,65 @@ def test_quality_line_confidence_null_without_detail(tmp_path):
     assert entry["confidence"] is None
     assert entry["confidence_detail"] is None
     assert "low_confidence" not in entry["warnings"]
+
+
+# =========================================================================
+# Grading integration (0.1.3)
+# =========================================================================
+
+_GRADING_CONFIG = """\
+schema_version: "0.1"
+taxonomy:
+  page_types:
+    prose:
+      default_action: transcribe_text
+run:
+  adapter: text
+  grading:
+    review_below_grade: C
+"""
+
+
+def test_review_below_grade_off_by_default(tmp_path):
+    """Without the knob, grading annotates but never queues pages."""
+    source = tmp_path / "page.txt"
+    source.write_text("", encoding="utf-8")  # empty_text -> grade F
+    out_dir = _run([source], _TEXT_CONFIG, tmp_path)
+    entry = _quality_entries(out_dir)[0]
+    assert entry["grade"] == "F"
+    audit = json.loads((out_dir / "audit.json").read_text(encoding="utf-8"))
+    reasons = {item["reason"] for item in audit["review_queue"]}
+    assert "grade_below_threshold" not in reasons
+
+
+def test_review_below_grade_queues_and_rerun_manifest_dedupes(tmp_path):
+    """An empty page fires both quality_warning and grade_below_threshold;
+    the audit queue keeps both reasons, the rerun manifest lists the page
+    once with the reasons joined and previous_grade filled."""
+    import yaml
+
+    source = tmp_path / "page.txt"
+    source.write_text("", encoding="utf-8")
+    out_dir = _run([source], _GRADING_CONFIG, tmp_path)
+
+    audit = json.loads((out_dir / "audit.json").read_text(encoding="utf-8"))
+    reasons = sorted(item["reason"] for item in audit["review_queue"])
+    assert reasons == ["grade_below_threshold", "quality_warning"]
+    assert all(item["grade"] == "F" for item in audit["review_queue"])
+
+    rerun = yaml.safe_load((out_dir / "rerun-manifest.yml").read_text(encoding="utf-8"))
+    assert len(rerun["items"]) == 1
+    item = rerun["items"][0]
+    assert item["reason"] == "quality_warning+grade_below_threshold"
+    assert item["previous_grade"] == "F"
+
+
+def test_clean_page_gets_signals_only_a(tmp_path):
+    source = tmp_path / "page.txt"
+    source.write_text("an ordinary page of clean prose text with no problems at all",
+                      encoding="utf-8")
+    out_dir = _run([source], _TEXT_CONFIG, tmp_path)
+    entry = _quality_entries(out_dir)[0]
+    assert entry["grade"] == "A"
+    assert entry["grade_basis"] == "signals_only"
+    assert entry["grade_detail"]["confidence_band"] is None

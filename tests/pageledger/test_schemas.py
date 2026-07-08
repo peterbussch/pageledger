@@ -538,3 +538,169 @@ def test_provenance_line_keys(tmp_path: Path) -> None:
         # usage.pages must be present and >= 1
         assert entry["usage"]["pages"] >= 1
         assert entry["metrics"]["pages"] >= 1
+
+
+# --- schema alignment + grading (0.1.3) ------------------------------------
+
+_normalized_schema = json.loads(
+    (SCHEMAS / "normalized-page.schema.json").read_text(encoding="utf-8")
+)
+
+_TABLE_ADAPTER = '''\
+from pageledger.adapters import ExtractionResult
+
+
+class TableAdapter:
+    name = "table_test"
+    version = "0.1"
+    deterministic = True
+    input_types = ("text",)
+    output_types = ("markdown_table",)
+    capabilities = ("local",)
+
+    def supports(self, action):
+        return action == "transcribe_text"
+
+    def extract(self, source, *, page_id, page_number, action, prompt=None):
+        pages = source.read_text(encoding="utf-8").split("\\f")
+        return ExtractionResult(
+            content=pages[page_number - 1],
+            format="markdown_table",
+            confidence=0.95,
+            model=None,
+            warnings=[],
+            usage={"pages": 1, "tokens": None, "compute_seconds": None, "cost_usd": None},
+        )
+'''
+
+CONFIG_WITH_SCHEMA = """\
+schema_version: "0.1"
+taxonomy:
+  page_types:
+    prose:
+      default_action: transcribe_text
+schema:
+  name: demographic_table
+  columns:
+    - {name: place_name, aliases: [place], type: string, required: true}
+    - {name: population_total, aliases: [total], type: integer, required: true}
+    - {name: population_male, aliases: [male], type: integer}
+    - {name: population_female, aliases: [female], type: integer}
+  checks:
+    - {name: population_sum, expression: population_total == population_male + population_female, tolerance: 2}
+run:
+  adapter: table_adapter:TableAdapter
+  grading:
+    review_below_grade: C
+"""
+
+_GOOD_TABLE = (
+    "| place | total | male | female |\n"
+    "| - | - | - | - |\n"
+    "| Moscow | 4137000 | 2001000 | 2136000 |\n"
+)
+_PROSE_PAGE = "no table on this page, only running prose text"
+
+
+def _run_schema_scenario(tmp_path: Path) -> Path:
+    (tmp_path / "table_adapter.py").write_text(_TABLE_ADAPTER, encoding="utf-8")
+    source = tmp_path / "volume.txt"
+    source.write_text(_GOOD_TABLE + "\f" + _PROSE_PAGE, encoding="utf-8")
+    return _run_pageledger(
+        tmp_path,
+        config_yaml=CONFIG_WITH_SCHEMA,
+        inputs=[str(source)],
+        extra_args=["--adapter-path", str(tmp_path)],
+    )
+
+
+def test_normalized_pages_validate_and_grades_flow_through(tmp_path: Path) -> None:
+    """A structured-adapter run populates normalized/ and grades every surface."""
+    out_dir = _run_schema_scenario(tmp_path)
+
+    normalized_files = sorted((out_dir / "normalized").glob("*.json"))
+    assert len(normalized_files) == 2
+    by_page = {}
+    for path in normalized_files:
+        record = json.loads(path.read_text(encoding="utf-8"))
+        _validate(_normalized_schema, record, f"normalized/{path.name}")
+        by_page[record["page_number"]] = record
+
+    good = by_page[1]
+    assert good["records"] == [{
+        "place_name": "Moscow", "population_total": 4137000,
+        "population_male": 2001000, "population_female": 2136000,
+    }]
+    assert good["metrics"]["parse_error"] is None
+    bad = by_page[2]
+    assert bad["metrics"]["parse_error"] == "no_markdown_table_found"
+    assert bad["records"] == []
+
+    quality_entries = _validate_jsonl(out_dir / "quality.jsonl", _quality_schema, "quality")
+    grades = {entry["page_number"]: entry for entry in quality_entries}
+    assert grades[1]["grade"] == "A"
+    assert grades[1]["grade_basis"] == "schema_aware"
+    assert grades[2]["grade"] == "F"
+
+    manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
+    _validate(_manifest_schema, manifest, "manifest.json (schema run)")
+    assert manifest["summary"]["records_normalized"] == 1
+
+    audit = json.loads((out_dir / "audit.json").read_text(encoding="utf-8"))
+    _validate(_audit_schema, audit, "audit.json (schema run)")
+    below = [item for item in audit["review_queue"]
+             if item["reason"] == "grade_below_threshold"]
+    assert [item["grade"] for item in below] == ["F"]
+
+    rerun = yaml.safe_load((out_dir / "rerun-manifest.yml").read_text(encoding="utf-8"))
+    assert rerun["rerun_executable"] is True
+    items = {item["page_id"]: item for item in rerun["items"]}
+    assert len(items) == len(rerun["items"])  # deduped by page_id
+    bad_item = items[bad["page_id"]]
+    assert bad_item["previous_grade"] == "F"
+
+    # raw artifact keeps the structured extension and its original text
+    raw = out_dir / "raw" / f"{good['page_id']}.markdown_table"
+    assert raw.read_text(encoding="utf-8") == _GOOD_TABLE
+
+
+def test_dict_content_raw_artifact_is_valid_json(tmp_path: Path) -> None:
+    """Raw artifacts for dict/list content are JSON, not Python repr."""
+    adapter = '''\
+from pageledger.adapters import ExtractionResult
+
+
+class JsonAdapter:
+    name = "json_test"
+    version = "0.1"
+    deterministic = True
+    input_types = ("text",)
+    output_types = ("json",)
+    capabilities = ("local",)
+
+    def supports(self, action):
+        return action == "transcribe_text"
+
+    def extract(self, source, *, page_id, page_number, action, prompt=None):
+        return ExtractionResult(
+            content=[{"place": "Baku", "total": 500}],
+            format="json",
+            confidence=None,
+            model=None,
+            warnings=[],
+            usage={"pages": 1, "tokens": None, "compute_seconds": None, "cost_usd": None},
+        )
+'''
+    (tmp_path / "json_adapter.py").write_text(adapter, encoding="utf-8")
+    source = tmp_path / "page.txt"
+    source.write_text("one page", encoding="utf-8")
+    config = MINIMAL_CONFIG.replace("adapter: text", "adapter: json_adapter:JsonAdapter")
+    out_dir = _run_pageledger(
+        tmp_path, config_yaml=config, inputs=[str(source)],
+        extra_args=["--adapter-path", str(tmp_path)],
+    )
+    raw_files = list((out_dir / "raw").glob("*.json"))
+    assert len(raw_files) == 1
+    assert json.loads(raw_files[0].read_text(encoding="utf-8")) == [
+        {"place": "Baku", "total": 500}
+    ]

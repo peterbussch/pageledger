@@ -20,7 +20,13 @@
           "type": { "type": "string" },
           "confidence": { "type": ["number", "null"] },
           "action": { "type": "string" },
-          "reason": { "type": "string" }
+          "reason": { "type": "string" },
+          "grade": {
+            "type": ["string", "null"],
+            "enum": ["A", "B", "C", "D", "F", null],
+            "description": "Page grade at queue time. Absent or null for entries queued before grading (configured-review pages)."
+          },
+          "grade_basis": { "type": ["string", "null"], "enum": ["signals_only", "schema_aware", null] }
         },
         "additionalProperties": false
       }
@@ -37,7 +43,9 @@
           "type": { "type": "string" },
           "confidence": { "type": ["number", "null"] },
           "action": { "type": "string" },
-          "reason": { "type": "string" }
+          "reason": { "type": "string" },
+          "grade": { "type": ["string", "null"], "enum": ["A", "B", "C", "D", "F", null] },
+          "grade_basis": { "type": ["string", "null"], "enum": ["signals_only", "schema_aware", null] }
         },
         "additionalProperties": false
       }
