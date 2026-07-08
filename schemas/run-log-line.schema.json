@@ -17,7 +17,7 @@
     },
     "status": {
       "type": "string",
-      "description": "dry_run_complete, run_complete, extracted, budget_exceeded, failed, retry."
+      "description": "dry_run_complete, run_complete, extracted, budget_exceeded, failed, retry, aligned."
     },
     "page_id": {
       "type": "string",

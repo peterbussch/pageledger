@@ -841,3 +841,176 @@ def test_run_pages_rejects_multiple_inputs(tmp_path: Path) -> None:
     ])
     assert exit_code == 1
     assert "single input" in stderr
+
+
+# =========================================================================
+# align (0.1.3)
+# =========================================================================
+
+_TABLE_ADAPTER_SRC = '''\
+from pageledger.adapters import ExtractionResult
+
+
+class TableAdapter:
+    name = "table_test"
+    version = "0.1"
+    deterministic = True
+    input_types = ("text",)
+    output_types = ("markdown_table",)
+    capabilities = ("local",)
+
+    def supports(self, action):
+        return action == "transcribe_text"
+
+    def extract(self, source, *, page_id, page_number, action, prompt=None):
+        pages = source.read_text(encoding="utf-8").split("\\f")
+        return ExtractionResult(
+            content=pages[page_number - 1],
+            format="markdown_table",
+            confidence=0.95,
+            model=None,
+            warnings=[],
+            usage={"pages": 1, "tokens": None, "compute_seconds": None, "cost_usd": None},
+        )
+'''
+
+_SCHEMA_CONFIG = textwrap.dedent("""\
+    schema_version: "0.1"
+    taxonomy:
+      page_types:
+        prose:
+          default_action: transcribe_text
+    schema:
+      name: demo
+      columns:
+        - {name: place_name, aliases: [place], type: string, required: true}
+        - {name: population_total, aliases: [total], type: integer, required: true}
+    run:
+      adapter: table_adapter:TableAdapter
+      grading:
+        review_below_grade: C
+    """)
+
+# Header "town" matches nothing in v1 but matches an alias in v2.
+_TABLE_PAGE = "| town | total |\n| - | - |\n| Kazan | 400000 |\n"
+
+_SCHEMA_V2 = textwrap.dedent("""\
+    schema:
+      name: demo_v2
+      columns:
+        - {name: place_name, aliases: [place, town], type: string, required: true}
+        - {name: population_total, aliases: [total], type: integer, required: true}
+    """)
+
+
+def _make_structured_run(tmp_path: Path) -> Path:
+    (tmp_path / "table_adapter.py").write_text(_TABLE_ADAPTER_SRC, encoding="utf-8")
+    source = tmp_path / "doc.txt"
+    source.write_text(_TABLE_PAGE, encoding="utf-8")
+    config = tmp_path / "config.yml"
+    config.write_text(_SCHEMA_CONFIG, encoding="utf-8")
+    out_dir = tmp_path / "run-a"
+    exit_code, stdout, stderr = _run_cli([
+        "run", str(source), "--config", str(config), "--out", str(out_dir),
+        "--adapter-path", str(tmp_path),
+    ])
+    assert exit_code == 0, stderr
+    return out_dir
+
+
+def test_align_reuses_config_snapshot_schema(tmp_path: Path) -> None:
+    out_dir = _make_structured_run(tmp_path)
+    exit_code, stdout, stderr = _run_cli(["align", str(out_dir), "--json"])
+    assert exit_code == 0, stderr
+    report = json.loads(stdout)
+    assert report["schema_source"] == "config_snapshot"
+    assert report["pages_aligned"] == 1
+    # "town" matches no v1 alias: required coverage 0.5 lands in the D band
+    assert report["grade_distribution"]["D"] == 1
+    manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
+    assert manifest["alignment"]["schema_source"] == "config_snapshot"
+
+
+def test_align_with_schema_override_improves_grades(tmp_path: Path) -> None:
+    out_dir = _make_structured_run(tmp_path)
+    schema_v2 = tmp_path / "schema-v2.yml"
+    schema_v2.write_text(_SCHEMA_V2, encoding="utf-8")
+    exit_code, stdout, stderr = _run_cli([
+        "align", str(out_dir), "--schema", str(schema_v2), "--json",
+    ])
+    assert exit_code == 0, stderr
+    report = json.loads(stdout)
+    assert report["schema_name"] == "demo_v2"
+    assert report["records_normalized"] == 1
+    assert report["grade_distribution"]["A"] == 1
+    # external schema is snapshotted into the run dir for reproducibility
+    assert (out_dir / "align-schema-snapshot.yml").is_file()
+    manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
+    assert manifest["alignment"]["schema_source"] == str(schema_v2.resolve())
+    assert manifest["summary"]["records_normalized"] == 1
+    # normalized record reflects the v2 match
+    normalized = list((out_dir / "normalized").glob("*.json"))
+    assert len(normalized) == 1
+    record = json.loads(normalized[0].read_text(encoding="utf-8"))
+    assert record["records"][0]["place_name"] == "Kazan"
+    # review queue no longer holds a grade_below page; rerun manifest agrees
+    audit = json.loads((out_dir / "audit.json").read_text(encoding="utf-8"))
+    assert all(i["reason"] != "grade_below_threshold" for i in audit["review_queue"])
+
+
+def test_align_is_idempotent(tmp_path: Path) -> None:
+    out_dir = _make_structured_run(tmp_path)
+    _run_cli(["align", str(out_dir)])
+
+    def snapshot() -> dict[str, str]:
+        artifacts = ["quality.jsonl", "audit.json", "audit.md", "rerun-manifest.yml"]
+        state = {name: (out_dir / name).read_text(encoding="utf-8") for name in artifacts}
+        for path in sorted((out_dir / "normalized").glob("*.json")):
+            state[f"normalized/{path.name}"] = path.read_text(encoding="utf-8")
+        return state
+
+    before = snapshot()
+    exit_code, _, stderr = _run_cli(["align", str(out_dir)])
+    assert exit_code == 0, stderr
+    assert snapshot() == before
+
+
+def test_align_without_any_schema_errors(tmp_path: Path) -> None:
+    source = tmp_path / "doc.txt"
+    source.write_text("plain page\n", encoding="utf-8")
+    config = tmp_path / "config.yml"
+    config.write_text(MINIMAL_CONFIG, encoding="utf-8")
+    out_dir = tmp_path / "run-plain"
+    exit_code, _, stderr = _run_cli([
+        "run", str(source), "--config", str(config), "--out", str(out_dir),
+    ])
+    assert exit_code == 0, stderr
+    exit_code, _, stderr = _run_cli(["align", str(out_dir)])
+    assert exit_code == 1
+    assert "no schema section" in stderr
+
+
+def test_align_missing_run_dir_errors(tmp_path: Path) -> None:
+    exit_code, _, stderr = _run_cli(["align", str(tmp_path / "nope")])
+    assert exit_code == 1
+    assert "manifest.json" in stderr
+
+
+def test_inspect_run_reports_grades_and_csv_columns(tmp_path: Path) -> None:
+    out_dir = _make_structured_run(tmp_path)
+    exit_code, stdout, _ = _run_cli(["inspect-run", str(out_dir), "--json"])
+    assert exit_code == 0
+    report = json.loads(stdout)
+    assert report["grade_distribution"]["D"] == 1
+    assert report["records_normalized"] == 1  # row kept; unmatched column is null
+
+    exit_code, stdout, _ = _run_cli(["inspect-run", str(out_dir), "--csv"])
+    assert exit_code == 0
+    header, row = stdout.strip().splitlines()[:2]
+    assert "grade" in header.split(",")
+    assert "grade_basis" in header.split(",")
+    assert ",D," in row and "schema_aware" in row
+
+    exit_code, stdout, _ = _run_cli(["inspect-run", str(out_dir)])
+    assert exit_code == 0
+    assert "Grades: A=0 B=0 C=0 D=1 F=0" in stdout

@@ -38,7 +38,7 @@ from .artifacts import (
     write_yaml,
 )
 from .config import load_config
-from .grading import grade_is_below, grade_page
+from .grading import grade_distribution, grade_is_below, grade_page
 
 LOG_LEVELS = {"DEBUG": 10, "INFO": 20, "WARNING": 30, "ERROR": 40}
 
@@ -785,6 +785,19 @@ def inspect_run(run_dir: Path) -> dict[str, Any]:
         audit = json.loads(audit_path.read_text(encoding="utf-8"))
         review_queue_count = len(audit.get("review_queue", []))
 
+    # Grade distribution ({} for pre-grading runs — entries without grades)
+    quality_path = out_dir / "quality.jsonl"
+    graded_entries: list[dict[str, Any]] = []
+    if quality_path.is_file():
+        graded_entries = [
+            json.loads(line)
+            for line in quality_path.read_text(encoding="utf-8").splitlines()
+            if line.strip()
+        ]
+    distribution = grade_distribution(graded_entries)
+    if not any(distribution.values()):
+        distribution = {}
+
     return {
         "run_id": manifest["run_id"],
         "run_dir": str(out_dir),
@@ -797,6 +810,8 @@ def inspect_run(run_dir: Path) -> dict[str, Any]:
         "quality_warning_pages": quality_warning_pages,
         "failed_page_count": failed_page_count,
         "review_queue_count": review_queue_count,
+        "records_normalized": summary.get("records_normalized", 0),
+        "grade_distribution": distribution,
         "cost_known": cost_known,
         "estimated_cost_usd": estimated_cost_usd,
         "artifacts_present": artifacts_present,
@@ -825,7 +840,8 @@ def run_pages_csv(run_dir: Path) -> str:
 
     columns = [
         "page_id", "page_number", "adapter", "character_count", "word_count",
-        "confidence", "warnings", "cost_usd", "extraction_seconds",
+        "confidence", "warnings", "grade", "grade_basis", "cost_usd",
+        "extraction_seconds",
     ]
     buffer = io.StringIO()
     writer = csv.DictWriter(buffer, fieldnames=columns)
@@ -843,6 +859,8 @@ def run_pages_csv(run_dir: Path) -> str:
             "word_count": quality["word_count"],
             "confidence": quality.get("confidence"),
             "warnings": ";".join(quality["warnings"]),
+            "grade": quality.get("grade"),
+            "grade_basis": quality.get("grade_basis"),
             "cost_usd": page_provenance.get("usage", {}).get("cost_usd"),
             "extraction_seconds": page_provenance.get("extraction_seconds"),
         })

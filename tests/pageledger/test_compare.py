@@ -140,3 +140,68 @@ def test_compare_cli_error_exit_code(tmp_path, capsys):
     assert exit_code == 1
     out = json.loads(capsys.readouterr().out)
     assert out["status"] == "error"
+
+
+# =========================================================================
+# Grade comparison (0.1.3)
+# =========================================================================
+
+
+def test_compare_reports_grade_changes(tmp_path):
+    """A page whose grade improves in run B is counted and rendered with basis labels."""
+    from pageledger.compare import compare_runs, render_comparison
+
+    source = tmp_path / "doc.txt"
+    # Page 1 empty (grade F), page 2 clean (grade A)
+    source.write_text("\fsecond page of clean text here\n", encoding="utf-8")
+    out_a = _run([source], tmp_path, "a")
+
+    # Page 1 recovers in run B
+    source.write_text(
+        "page one now has plenty of recovered text\fsecond page of clean text here\n",
+        encoding="utf-8",
+    )
+    out_b = _run([source], tmp_path, "b")
+
+    report = compare_runs(out_a, out_b)
+    assert report["grades_improved_total"] == 1
+    assert report["grades_regressed_total"] == 0
+    page1 = next(p for p in report["pages"] if p["page_id"] == "doc_0001_page_0001")
+    assert page1["grade_a"] == "F"
+    assert page1["grade_b"] == "A"
+    assert page1["grade_basis_a"] == "signals_only"
+
+    rendered = render_comparison(report)
+    assert "Grades: improved 1 / regressed 0" in rendered
+    assert "F (signals)→A (signals)" in rendered
+
+
+def test_compare_tolerates_ungraded_runs(tmp_path):
+    """Pre-0.1.3 runs without grades compare cleanly: null grades, zero totals."""
+    import json as json_module
+
+    from pageledger.compare import compare_runs, render_comparison
+
+    source = tmp_path / "doc.txt"
+    source.write_text("a page of clean text\n", encoding="utf-8")
+    out_a = _run([source], tmp_path, "a")
+    out_b = _run([source], tmp_path, "b")
+
+    # Simulate an old run by stripping grade fields from run A
+    quality_path = out_a / "quality.jsonl"
+    entries = [json_module.loads(line) for line in quality_path.read_text().splitlines()]
+    for entry in entries:
+        for key in ("grade", "grade_basis", "grade_detail"):
+            entry.pop(key, None)
+    quality_path.write_text(
+        "".join(json_module.dumps(e, sort_keys=True) + "\n" for e in entries),
+        encoding="utf-8",
+    )
+
+    report = compare_runs(out_a, out_b)
+    assert report["grades_improved_total"] == 0
+    assert report["grades_regressed_total"] == 0
+    page = report["pages"][0]
+    assert page["grade_a"] is None
+    assert page["grade_b"] == "A"
+    render_comparison(report)  # must not raise

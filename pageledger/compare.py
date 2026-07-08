@@ -6,6 +6,8 @@ import json
 from pathlib import Path
 from typing import Any
 
+from .grading import format_grade, grade_is_below
+
 
 def compare_runs(run_dir_a: Path, run_dir_b: Path) -> dict[str, Any]:
     """Compare two run directories page-by-page.
@@ -25,6 +27,8 @@ def compare_runs(run_dir_a: Path, run_dir_b: Path) -> dict[str, Any]:
     pages: list[dict[str, Any]] = []
     warnings_resolved = 0
     warnings_introduced = 0
+    grades_improved = 0
+    grades_regressed = 0
     for page_id in common:
         qa = a["quality"][page_id]
         qb = b["quality"][page_id]
@@ -34,6 +38,13 @@ def compare_runs(run_dir_a: Path, run_dir_b: Path) -> dict[str, Any]:
         introduced = sorted(set_b - set_a)
         warnings_resolved += len(resolved)
         warnings_introduced += len(introduced)
+        grade_a = qa.get("grade")
+        grade_b = qb.get("grade")
+        if grade_a is not None and grade_b is not None and grade_a != grade_b:
+            if grade_is_below(grade_a, grade_b):
+                grades_improved += 1
+            else:
+                grades_regressed += 1
         pages.append(
             {
                 "page_id": page_id,
@@ -48,6 +59,10 @@ def compare_runs(run_dir_a: Path, run_dir_b: Path) -> dict[str, Any]:
                 "warnings_b": sorted(set_b),
                 "warnings_resolved": resolved,
                 "warnings_introduced": introduced,
+                "grade_a": grade_a,
+                "grade_b": grade_b,
+                "grade_basis_a": qa.get("grade_basis"),
+                "grade_basis_b": qb.get("grade_basis"),
             }
         )
 
@@ -61,6 +76,8 @@ def compare_runs(run_dir_a: Path, run_dir_b: Path) -> dict[str, Any]:
         "warning_pages_b": sum(1 for q in b["quality"].values() if q.get("warnings")),
         "warnings_resolved_total": warnings_resolved,
         "warnings_introduced_total": warnings_introduced,
+        "grades_improved_total": grades_improved,
+        "grades_regressed_total": grades_regressed,
         "pages": pages,
     }
 
@@ -85,26 +102,35 @@ def render_comparison(report: dict[str, Any]) -> str:
         f"Warning pages: A={report['warning_pages_a']} B={report['warning_pages_b']}",
         f"Warnings resolved in B: {report['warnings_resolved_total']}",
         f"Warnings introduced in B: {report['warnings_introduced_total']}",
+        f"Grades: improved {report['grades_improved_total']}"
+        f" / regressed {report['grades_regressed_total']}",
         f"Cost: A={_cost_line(a)} B={_cost_line(b)}",
     ]
     changed = [
         page
         for page in report["pages"]
-        if page["warnings_resolved"] or page["warnings_introduced"]
+        if page["warnings_resolved"]
+        or page["warnings_introduced"]
+        or (
+            page["grade_a"] is not None
+            and page["grade_b"] is not None
+            and page["grade_a"] != page["grade_b"]
+        )
     ]
     if changed:
         lines.extend(
             [
                 "",
-                "Pages with warning changes:",
-                "| page_id | chars A→B | resolved | introduced |",
-                "|---|---|---|---|",
+                "Pages with warning or grade changes:",
+                "| page_id | chars A→B | grade A→B | resolved | introduced |",
+                "|---|---|---|---|---|",
             ]
         )
         for page in changed[:50]:
             lines.append(
                 f"| {page['page_id']}"
                 f" | {page['character_count_a']}→{page['character_count_b']}"
+                f" | {_grade_transition(page)}"
                 f" | {', '.join(page['warnings_resolved']) or '-'}"
                 f" | {', '.join(page['warnings_introduced']) or '-'} |"
             )
@@ -153,6 +179,14 @@ def _run_summary(loaded: dict[str, Any]) -> dict[str, Any]:
         "cost_known": cost.get("cost_known"),
         "cost_basis": cost.get("cost_basis"),
     }
+
+
+def _grade_transition(page: dict[str, Any]) -> str:
+    if page["grade_a"] is None and page["grade_b"] is None:
+        return "-"
+    left = format_grade(page["grade_a"], page["grade_basis_a"]) or "?"
+    right = format_grade(page["grade_b"], page["grade_basis_b"]) or "?"
+    return f"{left}→{right}"
 
 
 def _delta(value_a: Any, value_b: Any) -> int | None:

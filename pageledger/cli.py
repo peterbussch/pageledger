@@ -10,8 +10,10 @@ import tempfile
 import textwrap
 from pathlib import Path
 
+from .aligner import align_run
 from .compare import compare_runs, render_comparison
 from .doctor import build_doctor_report
+from .grading import GRADES
 from .runner import inspect_run, rerun, run, run_pages_csv
 
 MINIMAL_CONFIG = textwrap.dedent("""\
@@ -151,6 +153,23 @@ def build_parser() -> argparse.ArgumentParser:
         help="One CSV row per page: counts, confidence, warnings, cost, timing",
     )
 
+    align_parser = subparsers.add_parser(
+        "align",
+        help="Re-align an existing run's raw pages against a schema and regrade, without re-extracting",
+    )
+    align_parser.add_argument(
+        "run_dir",
+        type=Path,
+        help="Path to a run output directory",
+    )
+    align_parser.add_argument(
+        "--schema",
+        type=Path,
+        default=None,
+        help="Schema YAML (bare schema mapping or a config with a schema: section); defaults to the run's config-snapshot.yml",
+    )
+    align_parser.add_argument("--json", action="store_true", dest="json_output")
+
     compare_parser = subparsers.add_parser(
         "compare-runs",
         help="Compare two run directories page-by-page (quality, warnings, cost)",
@@ -178,6 +197,9 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "compare-runs":
         return _cmd_compare_runs(args)
+
+    if args.command == "align":
+        return _cmd_align(args)
 
     if args.command == "run":
         return _cmd_run(args)
@@ -232,6 +254,10 @@ def _print_inspect_report(report: dict) -> None:
     print(f"Quality warnings: {report['quality_warning_pages']}")
     print(f"Failed pages: {report['failed_page_count']}")
     print(f"Review queue: {report['review_queue_count']}")
+    print(f"Records normalized: {report['records_normalized']}")
+    distribution = report["grade_distribution"]
+    if distribution:
+        print("Grades: " + " ".join(f"{g}={distribution[g]}" for g in GRADES))
     print(f"Cost known: {report['cost_known']}")
     if report["estimated_cost_usd"] is not None:
         print(f"Estimated cost USD: {report['estimated_cost_usd']}")
@@ -242,6 +268,28 @@ def _print_inspect_report(report: dict) -> None:
         print(f"Artifacts missing: {len(missing)}")
         for name in missing:
             print(f"  - {name}")
+
+
+# -- align ---------------------------------------------------------------------
+
+def _cmd_align(args: argparse.Namespace) -> int:
+    try:
+        report = align_run(args.run_dir, schema_path=args.schema)
+    except (RuntimeError, ValueError, FileNotFoundError) as exc:
+        _print_error_json(exc, args)
+        print(f"pageledger: error: {exc}", file=sys.stderr)
+        return 1
+    if args.json_output:
+        print(json.dumps(report, ensure_ascii=False, sort_keys=True))
+    else:
+        print(f"Aligned run {report['run_id']} against schema '{report['schema_name']}'")
+        print(f"Schema source: {report['schema_source']}")
+        print(f"Pages aligned: {report['pages_aligned']}")
+        print(f"Records normalized: {report['records_normalized']}")
+        distribution = report["grade_distribution"]
+        print("Grades: " + " ".join(f"{g}={distribution[g]}" for g in GRADES))
+        print(f"Review queue: {report['review_queue_count']}")
+    return 0
 
 
 # -- compare-runs --------------------------------------------------------------

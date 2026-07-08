@@ -11,11 +11,16 @@ from __future__ import annotations
 
 import ast
 import csv
+import hashlib
 import io
 import json
 import re
 from dataclasses import dataclass
+from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
+
+import yaml
 
 # Formats the aligner understands. Plain text/markdown pages are not
 # aligned: without a declared structure in the payload there is nothing to
@@ -291,6 +296,233 @@ def align_page(
             "parse_error": parse_error,
         },
     }
+
+
+def align_run(run_dir: Path, *, schema_path: Path | None = None) -> dict[str, Any]:
+    """Re-align an existing run's raw pages and regrade, without re-extracting.
+
+    This is the one sanctioned mutation of a run directory. Every rewrite is
+    atomic (temp file + rename); the manifest is written last as the commit
+    point, gaining an ``alignment`` block that records when and from which
+    schema the derived artifacts were re-computed. Grades and normalized
+    records are derived fields — overwriting them is re-derivation, not
+    history loss; the raw evidence is untouched.
+    """
+    from .config import load_config
+    from .grading import grade_distribution, grade_is_below, grade_page
+
+    out_dir = Path(run_dir).expanduser().resolve()
+    manifest_path = out_dir / "manifest.json"
+    if not manifest_path.is_file():
+        raise ValueError(f"No manifest.json found in {out_dir}")
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    run_id = manifest["run_id"]
+    schema_version = manifest["schema_version"]
+
+    snapshot_path = out_dir / "config-snapshot.yml"
+    if not snapshot_path.is_file():
+        raise ValueError(f"No config-snapshot.yml found in {out_dir}")
+    config = load_config(snapshot_path, validate_adapter=False)
+
+    spec, schema_source, schema_sha256 = _resolve_align_schema(
+        out_dir, schema_path=schema_path, config_data=config.data
+    )
+
+    provenance_entries = _read_jsonl(out_dir / "provenance.jsonl")
+    quality_entries = _read_jsonl(out_dir / "quality.jsonl")
+
+    # Re-align every structured page from its raw artifact.
+    alignments: dict[str, dict[str, Any]] = {}
+    for entry in provenance_entries:
+        fmt = entry["result"]["format"]
+        if fmt not in ALIGNABLE_FORMATS:
+            continue
+        raw_path = out_dir / entry["result"]["raw_artifact"]
+        content = raw_path.read_text(encoding="utf-8")
+        alignment = align_page(
+            content,
+            fmt,
+            spec,
+            page={"page_id": entry["page_id"], "page_number": entry["source"]["page_number"]},
+            run_id=run_id,
+            schema_version=schema_version,
+            raw_artifact=entry["result"]["raw_artifact"],
+        )
+        if alignment is not None:
+            alignments[entry["page_id"]] = alignment
+
+    from .artifacts import (
+        build_rerun_manifest,
+        render_audit_markdown,
+        write_json,
+        write_jsonl,
+        write_yaml,
+    )
+
+    # normalized/: replace wholesale so repeated aligns are idempotent and
+    # records from a previous schema cannot linger.
+    normalized_dir = out_dir / "normalized"
+    normalized_dir.mkdir(exist_ok=True)
+    for stale in normalized_dir.glob("*.json"):
+        stale.unlink()
+    for page_id, alignment in alignments.items():
+        write_json(normalized_dir / f"{page_id}.json", alignment, atomic=True)
+
+    # quality.jsonl: recompute the derived grade fields on every line.
+    for entry in quality_entries:
+        entry.update(
+            grade_page(
+                entry,
+                alignments.get(entry["page_id"]),
+                config.grading_thresholds,
+                quality_floors=spec.quality,
+            )
+        )
+    write_jsonl(out_dir / "quality.jsonl", quality_entries, atomic=True)
+    grades = {entry["page_id"]: entry for entry in quality_entries}
+
+    # audit.json: replace only the grade-derived entries; refresh stale
+    # grade fields on entries that stay; regenerate the markdown rendering.
+    audit_path = out_dir / "audit.json"
+    audit = json.loads(audit_path.read_text(encoding="utf-8"))
+    review_queue = [
+        item
+        for item in audit.get("review_queue", [])
+        if item.get("reason") != "grade_below_threshold"
+    ]
+    for item in review_queue:
+        graded = grades.get(item.get("page_id"))
+        if graded is not None and "grade" in item:
+            item["grade"] = graded["grade"]
+            item["grade_basis"] = graded["grade_basis"]
+    if config.review_below_grade is not None:
+        for entry in quality_entries:
+            if grade_is_below(entry["grade"], config.review_below_grade):
+                review_queue.append({
+                    "page_id": entry["page_id"],
+                    "page_number": entry["page_number"],
+                    "type": config.default_review_type,
+                    "confidence": None,
+                    "action": "review",
+                    "reason": "grade_below_threshold",
+                    "grade": entry["grade"],
+                    "grade_basis": entry["grade_basis"],
+                })
+    audit["review_queue"] = review_queue
+    write_json(audit_path, audit, atomic=True)
+    (out_dir / "audit.md").write_text(render_audit_markdown(audit), encoding="utf-8")
+
+    # rerun-manifest.yml: rebuild from the updated audit, preserving lineage.
+    rerun_path = out_dir / "rerun-manifest.yml"
+    previous_rerun = yaml.safe_load(rerun_path.read_text(encoding="utf-8"))
+    route_map = yaml.safe_load((out_dir / "route-map.yml").read_text(encoding="utf-8"))
+    aligned_at = _utc_now()
+    rerun_manifest = build_rerun_manifest(
+        schema_version=schema_version,
+        run_id=run_id,
+        parent_run_id=previous_rerun["parent_run_id"],
+        created_at=aligned_at,
+        max_rerun_depth=previous_rerun["max_rerun_depth"],
+        reason=previous_rerun["reason"],
+        audit=audit,
+        route_map=route_map,
+        run_depth=previous_rerun["rerun_depth"],
+        grades={page_id: entry["grade"] for page_id, entry in grades.items()},
+    )
+    write_yaml(rerun_path, rerun_manifest, atomic=True)
+
+    # The mutation is itself ledgered.
+    records_normalized = sum(len(a["records"]) for a in alignments.values())
+    log_line = {
+        "schema_version": schema_version,
+        "timestamp": aligned_at,
+        "level": "INFO",
+        "run_id": run_id,
+        "status": "aligned",
+    }
+    with (out_dir / "run.log").open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(log_line, sort_keys=True) + "\n")
+
+    # manifest.json last: its alignment block is the commit point.
+    from pageledger import __version__
+
+    manifest["summary"]["records_normalized"] = records_normalized
+    manifest["alignment"] = {
+        "aligned_at": aligned_at,
+        "schema_source": schema_source,
+        "schema_sha256": schema_sha256,
+        "pageledger_version": __version__,
+    }
+    write_json(manifest_path, manifest, atomic=True)
+
+    return {
+        "run_id": run_id,
+        "run_dir": str(out_dir),
+        "schema_name": spec.name,
+        "schema_source": schema_source,
+        "pages_aligned": len(alignments),
+        "records_normalized": records_normalized,
+        "grade_distribution": grade_distribution(quality_entries),
+        "review_queue_count": len(review_queue),
+    }
+
+
+def _resolve_align_schema(
+    out_dir: Path, *, schema_path: Path | None, config_data: dict[str, Any]
+) -> tuple[SchemaSpec, str, str]:
+    """Pick the schema for align_run and snapshot external schema files.
+
+    An external ``--schema`` file is copied to ``align-schema-snapshot.yml``
+    in the run directory so the manifest's hash stays reproducible after
+    the original file changes or disappears.
+    """
+    if schema_path is not None:
+        schema_file = Path(schema_path).expanduser().resolve()
+        if not schema_file.is_file():
+            raise ValueError(f"Schema file does not exist: {schema_file}")
+        text = schema_file.read_text(encoding="utf-8")
+        loaded = yaml.safe_load(text)
+        if not isinstance(loaded, dict):
+            raise ValueError(f"Schema file must be a YAML mapping: {schema_file}")
+        # Accept either a bare schema mapping or a document with a
+        # top-level `schema:` key (a full pageledger config also works).
+        section = loaded.get("schema", loaded)
+        spec = load_schema_spec({"schema": section})
+        if spec is None:
+            raise ValueError(f"Schema file declares no columns: {schema_file}")
+        (out_dir / "align-schema-snapshot.yml").write_text(text, encoding="utf-8")
+        return spec, str(schema_file), _sha256_text(text)
+
+    spec = load_schema_spec(config_data)
+    if spec is None:
+        raise ValueError(
+            "Run config snapshot has no schema section; pass --schema <file.yml>"
+        )
+    snapshot_text = (out_dir / "config-snapshot.yml").read_text(encoding="utf-8")
+    return spec, "config_snapshot", _sha256_text(snapshot_text)
+
+
+def _read_jsonl(path: Path) -> list[dict[str, Any]]:
+    if not path.is_file():
+        return []
+    return [
+        json.loads(line)
+        for line in path.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+
+
+def _sha256_text(text: str) -> str:
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def _utc_now() -> str:
+    return (
+        datetime.now(timezone.utc)
+        .replace(microsecond=0)
+        .isoformat()
+        .replace("+00:00", "Z")
+    )
 
 
 # ---------------------------------------------------------------------------
