@@ -7,7 +7,7 @@ on your machine, and reports real token usage into the ledger.
 
 This example targets ``mlx_lm`` (Apple Silicon). mlx_lm is NOT a PageLedger
 dependency and never will be; this file is an extension pattern. The same
-shape works with llama.cpp, Ollama, or vLLM — swap ``_generate``.
+shape works with llama.cpp or vLLM — swap ``_generate``.
 
     pip install mlx-lm
     pageledger rerun runs/tesseract --config cleanup.yml \\
@@ -42,10 +42,10 @@ output: compare-runs against the plain OCR run before trusting it.
 
 from __future__ import annotations
 
+import math
 import re
 import time
 from pathlib import Path
-from typing import Any
 
 from pageledger.adapters import ExtractionResult, PdfOcrAdapter
 
@@ -103,10 +103,23 @@ class LocalLlmCleanupAdapter:
         max_tokens: int = 8192,
         temperature: float = 0.1,
     ) -> None:
+        if not isinstance(model, str) or not model:
+            raise ValueError("run.adapter_options.model must be a non-empty string")
+        if not isinstance(max_tokens, int) or isinstance(max_tokens, bool) or max_tokens < 1:
+            raise ValueError("run.adapter_options.max_tokens must be a positive integer")
+        if (
+            isinstance(temperature, bool)
+            or not isinstance(temperature, (int, float))
+            or not math.isfinite(temperature)
+            or temperature < 0
+        ):
+            raise ValueError(
+                "run.adapter_options.temperature must be a finite non-negative number"
+            )
         self._ocr = PdfOcrAdapter(dpi=dpi, lang=lang)
         self.model = model
         self.max_tokens = max_tokens
-        self.temperature = temperature
+        self.temperature = float(temperature)
         self._llm = None  # loaded on first page, not at config validation
 
     def supports(self, action: str) -> bool:
@@ -134,6 +147,8 @@ class LocalLlmCleanupAdapter:
             max_tokens=self.max_tokens,
             sampler=make_sampler(temp=self.temperature),
         )
+        if not isinstance(completion, str):
+            raise RuntimeError("mlx_lm.generate() returned non-text output")
         tokens = len(tokenizer.encode(completion)) + len(templated)
         return completion, tokens
 
@@ -154,10 +169,16 @@ class LocalLlmCleanupAdapter:
             prompt=prompt,
         )
         started = time.perf_counter()
-        completion, tokens = self._generate(PROMPT.format(text=ocr_result.content))
+        if prompt:
+            cleanup_prompt = prompt.replace("{text}", str(ocr_result.content))
+            if "{text}" not in prompt:
+                cleanup_prompt = f"{cleanup_prompt.rstrip()}\n\nOCR OUTPUT:\n{ocr_result.content}"
+        else:
+            cleanup_prompt = PROMPT.format(text=ocr_result.content)
+        completion, tokens = self._generate(cleanup_prompt)
         cleaned, had_thoughts = strip_thought_blocks(completion)
 
-        warnings: list[Any] = list(ocr_result.warnings)
+        warnings: list[str] = list(ocr_result.warnings)
         if had_thoughts:
             warnings.append("thought_block_stripped")
 

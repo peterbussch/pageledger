@@ -22,7 +22,7 @@
     },
     "warnings": {
       "type": "array",
-      "description": "Quality warnings: empty_text, short_text, replacement_characters, control_characters, suspicious_symbol_density, fragmented_text, suspicious_embedded_text_delta, historical_orthography.",
+      "description": "Quality warnings include empty_text, short_text, replacement_characters, control_characters, suspicious_symbol_density, fragmented_text, suspicious_embedded_text_delta, historical_orthography, low_confidence, instruction_echo, and output_inflation.",
       "items": { "type": "string" }
     },
     "text_quality": {
@@ -65,6 +65,24 @@
         "embedded_character_count": { "type": "integer", "minimum": 0 },
         "character_delta": { "type": "integer" },
         "character_ratio": { "type": ["number", "null"] }
+      },
+      "additionalProperties": false
+    },
+    "output_integrity": {
+      "type": "object",
+      "description": "Conservative evidence of leaked chat-template markers and rerun output inflation. Added in PageLedger 0.1.4; optional for compatibility with older quality lines.",
+      "required": ["instruction_markers", "parent_character_count", "character_delta", "character_ratio"],
+      "properties": {
+        "instruction_markers": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": ["<think>", "</think>", "<|channel", "<|im_start|>", "<|im_end|>", "[INST]", "[/INST]"]
+          }
+        },
+        "parent_character_count": { "type": ["integer", "null"], "minimum": 0 },
+        "character_delta": { "type": ["integer", "null"] },
+        "character_ratio": { "type": ["number", "null"], "minimum": 0 }
       },
       "additionalProperties": false
     },

@@ -26,35 +26,49 @@ and in pageledger.yml:
 
 from __future__ import annotations
 
+import math
+import re
 import subprocess
 import tempfile
 import time
 from dataclasses import dataclass
 from pathlib import Path
+from typing import ClassVar
 
-from pageledger.adapters import ExtractionResult, pdf_page_count
+from pageledger.adapters import ExtractionResult, ocr_pdf_page_count
 
-# Horizontal whitespace (pixels) treated as a column break. At 300 dpi one
-# character is roughly 15-25 px, so 40 px is a deliberate gap, not kerning.
-COLUMN_GAP_PX = 40
+# Horizontal whitespace treated as a column break. At 300 dpi one character
+# is roughly 15-25 px, so 40 px is a deliberate gap, not kerning. Extraction
+# scales the threshold with the configured render resolution.
+COLUMN_GAP_PX_AT_300_DPI = 40
+COMMAND_TIMEOUT_SECONDS = 300
+LANG_PATTERN = re.compile(r"^[A-Za-z0-9_]+(?:\+[A-Za-z0-9_]+)*$")
 
 
 @dataclass(frozen=True)
 class TesseractTsvTableAdapter:
     dpi: int = 300
     lang: str = "eng"
-    name: str = "tesseract-tsv-table"
-    version: str = "example"
-    deterministic: bool = True
-    input_types: tuple[str, ...] = ("pdf",)
-    output_types: tuple[str, ...] = ("markdown_table",)
-    capabilities: tuple[str, ...] = ("ocr", "local")
+    name: ClassVar[str] = "tesseract-tsv-table"
+    version: ClassVar[str] = "example"
+    deterministic: ClassVar[bool] = True
+    input_types: ClassVar[tuple[str, ...]] = ("pdf",)
+    output_types: ClassVar[tuple[str, ...]] = ("markdown_table",)
+    capabilities: ClassVar[tuple[str, ...]] = ("ocr", "tables", "local")
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.dpi, int) or isinstance(self.dpi, bool):
+            raise ValueError("run.adapter_options.dpi must be an integer")
+        if not 50 <= self.dpi <= 1200:
+            raise ValueError("run.adapter_options.dpi must be between 50 and 1200")
+        if not isinstance(self.lang, str) or not LANG_PATTERN.fullmatch(self.lang):
+            raise ValueError("run.adapter_options.lang must be a Tesseract language code")
 
     def supports(self, action: str) -> bool:
         return action == "transcribe_text"
 
     def page_count(self, source: Path) -> int:
-        return pdf_page_count(source)
+        return ocr_pdf_page_count(source)
 
     def extract(
         self,
@@ -82,28 +96,36 @@ class TesseractTsvTableAdapter:
                     str(source),
                     str(prefix),
                 ],
-                check=True, capture_output=True, text=True,
+                check=True,
+                capture_output=True,
+                text=True,
+                timeout=COMMAND_TIMEOUT_SECONDS,
             )
             images = sorted(tmp_path.glob("page-*.png"))
             if not images:
                 raise RuntimeError("pdftoppm did not render an image")
             result = subprocess.run(
                 ["tesseract", str(images[0]), "-", "-l", self.lang, "tsv"],
-                check=True, capture_output=True, text=True,
+                check=True,
+                capture_output=True,
+                text=True,
+                timeout=COMMAND_TIMEOUT_SECONDS,
             )
 
         words = _parse_tsv_words(result.stdout)
-        table = _cluster_table(words)
+        column_gap_px = max(1, round(COLUMN_GAP_PX_AT_300_DPI * self.dpi / 300))
+        table = _cluster_table(words, column_gap_px=column_gap_px)
         confidences = [word["conf"] for word in words]
         detail = None
         confidence = None
         if confidences:
             below_60 = sum(1 for value in confidences if value < 60)
-            confidence = round(sum(confidences) / len(confidences) / 100, 4)
+            mean_confidence = sum(confidences) / len(confidences)
+            confidence = round(mean_confidence / 100, 4)
             detail = {
                 "scale": "tesseract_word_conf_0_100",
                 "word_count": len(confidences),
-                "mean": round(sum(confidences) / len(confidences), 2),
+                "mean": round(mean_confidence, 2),
                 "min": min(confidences),
                 "below_60_count": below_60,
                 "below_60_ratio": round(below_60 / len(confidences), 4),
@@ -132,13 +154,29 @@ def _parse_tsv_words(tsv: str) -> list[dict]:
         return words
     header = lines[0].split("\t")
     index = {column: position for position, column in enumerate(header)}
+    required = {
+        "level",
+        "block_num",
+        "par_num",
+        "line_num",
+        "left",
+        "top",
+        "width",
+        "conf",
+        "text",
+    }
+    missing = required - index.keys()
+    if missing:
+        raise ValueError(
+            f"Tesseract TSV is missing columns: {', '.join(sorted(missing))}"
+        )
     for line in lines[1:]:
         fields = line.split("\t")
         if len(fields) != len(header) or fields[index["level"]] != "5":
             continue
         text = fields[index["text"]].strip()
         conf = float(fields[index["conf"]])
-        if not text or conf < 0:
+        if not text or not math.isfinite(conf) or conf < 0:
             continue
         words.append({
             "row_key": (
@@ -155,7 +193,9 @@ def _parse_tsv_words(tsv: str) -> list[dict]:
     return words
 
 
-def _cluster_table(words: list[dict]) -> str:
+def _cluster_table(
+    words: list[dict], *, column_gap_px: int = COLUMN_GAP_PX_AT_300_DPI
+) -> str:
     """Render OCR words as a markdown table: TSV lines are rows, gaps are columns."""
     rows_by_key: dict[tuple, list[dict]] = {}
     for word in words:
@@ -167,7 +207,7 @@ def _cluster_table(words: list[dict]) -> str:
         cells: list[str] = []
         current = [line_words[0]]
         for word in line_words[1:]:
-            if word["left"] - current[-1]["right"] > COLUMN_GAP_PX:
+            if word["left"] - current[-1]["right"] > column_gap_px:
                 cells.append(" ".join(w["text"] for w in current))
                 current = [word]
             else:

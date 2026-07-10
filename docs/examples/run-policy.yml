@@ -3,8 +3,8 @@
 schema_version: "0.1"  # Config file format version.
 
 run:
-  # Current built-in adapters are `text` and `pdf_text`; project adapters can
-  # be loaded as `module.path:object`.
+  # Current built-in adapters are `text`, `pdf_text`, and `pdf_ocr`; project
+  # adapters can be loaded as `module.path:object`.
   adapter: text
 
   budget:
@@ -33,19 +33,14 @@ run:
     #   - transient_provider_error
     #   - timeout
 
-  # These policy sections are preserved in the config snapshot, but the alpha
-  # runner does not yet evaluate audit grades, schema failures, or quarantine
-  # rules. It queues dry-run/configured-review pages for review.
-  rerun_if:
-    - grade_below: C
-    - missing_required_columns: true
-    - arithmetic_failure_rate_above: 0.05
-    - provider_error: true
-
-  quarantine_if:
-    - grade_below: D
-    - hallucinated_columns_detected: true  # Detection is project-provided.
-    - route_confidence_below: 0.60
+  # The full rerun_if/quarantine_if grammar is a design target, not runtime
+  # configuration. PageLedger warns when these keys are present. The shipped
+  # grade policy is run.grading.review_below_grade (see pageledger.yml).
+  # rerun_if:
+  #   - grade_below: C
+  #   - missing_required_columns: true
+  # quarantine_if:
+  #   - grade_below: D
 
 # Artifact path overrides are a future feature. The alpha uses fixed artifact
 # names and paths (manifest.json, route-map.yml, raw/, normalized/, etc.).

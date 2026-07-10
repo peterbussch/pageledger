@@ -122,6 +122,7 @@ not a calibrated accuracy score. Fields:
 | `warnings` | array of strings | ✅ | no | Quality warnings (see taxonomy below). |
 | `text_quality` | object | ✅ | no | Sub-metrics (see below). |
 | `embedded_text_comparison` | object | ❌ | yes | Comparison with PDF embedded text layer. Null for non-PDF sources. |
+| `output_integrity` | object | ❌ | no | Conservative chat-template-marker and parent-rerun size evidence. Present on new 0.1.4 quality lines; optional so older lines remain valid. |
 | `grade` | string | ✅ | no | `A`–`F`. Deterministic summary of this line's evidence — worst of the signal and schema axes. Only comparable within one adapter. |
 | `grade_basis` | string | ✅ | no | `signals_only` (no alignment for this page) or `schema_aware` (schema column/check evidence contributed). Rendered surfaces always show it: `A (signals)` and `A (schema)` are different claims. |
 | `grade_detail` | object | ✅ | no | `signals_grade`, `schema_grade`, `confidence_band`, `warning_count`, `required_column_coverage`, `arithmetic_pass_rate`, and human-readable `reasons`. |
@@ -138,7 +139,8 @@ Grades combine two axes, taking the worst letter of the two:
   required-column-coverage band (A ≥ 1.0, B ≥ 0.9, C ≥ 0.7, else D; F when
   parsing failed, no rows, or all required columns missing) and the
   arithmetic-pass-rate band (A ≥ 0.98, B ≥ 0.90, C ≥ 0.75, else D).
-  Coercion errors cap the axis at B.
+  Coercion errors or recorded structural loss cap the axis at B without
+  lifting an already-worse grade.
 
 Confidence/coverage/pass-rate thresholds are overridable under
 `run.grading.thresholds`. The schema `quality` section adds floors:
@@ -176,5 +178,21 @@ not garble.
 | `suspicious_embedded_text_delta` | PDF embedded text character ratio < 0.5 or > 1.8, when embedded text is available and adapter does not report `embedded_text` capability. |
 | `historical_orthography` | `prereform_letter_count >= 2`, OR `terminal_hard_sign_count >= 2` at a density of ≥1 per 100 alphabetic tokens over ≥20 tokens. The page is pre-1918 Russian orthography and an OCR model trained on modern text is probably mismatched. Measured on an 1850 gubernia review: 21 terminal ъ per 100 tokens vs 0.00 in modern text. |
 | `low_confidence` | `confidence_detail.below_60_ratio >= 0.25` over ≥10 words. A quarter of the words under engine confidence 60 marks the page for review; a mean can hide one illegible paragraph on an otherwise clean page. |
+| `instruction_echo` | Output contains one of the high-specificity chat-template markers `<think>`, `</think>`, `<|channel`, `<|im_start|>`, `<|im_end|>`, `[INST]`, or `[/INST]`. Generic words such as “instructions” or “channel” do not trigger it. |
+| `output_inflation` | On a rerun, output is at least 4× and at least 1,000 characters longer than the same parent page. Parent counts, delta, and ratio are recorded in `output_integrity`; this is review evidence, not proof of hallucination. |
+
+### output_integrity Fields
+
+| Field | Type | Meaning |
+|---|---|---|
+| `instruction_markers` | array of strings | Exact marker labels found in the output; empty when none match. |
+| `parent_character_count` | integer or null | Parent page character count when usable rerun evidence exists. |
+| `character_delta` | integer or null | Child count minus parent count. |
+| `character_ratio` | number or null | Child count divided by parent count, rounded to four decimals; null when the parent is absent or empty. |
+
+An empty parent can still trigger `output_inflation` when the child is at
+least 1,000 characters: the 4× condition is satisfied, but the undefined
+ratio remains null. Missing or incomplete legacy parent evidence leaves all
+three comparison fields null and cannot trigger inflation.
 
 The JSON Schema is at `schemas/quality-line.schema.json`.

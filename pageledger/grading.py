@@ -10,6 +10,7 @@ evidence than one whose records passed schema checks.
 
 from __future__ import annotations
 
+import math
 from typing import Any
 
 GRADES = ("A", "B", "C", "D", "F")
@@ -77,7 +78,14 @@ def grade_page(
             reasons.append(f"confidence {confidence:.2f} in {confidence_band} band")
 
     warning_count = len(warnings)
-    warning_band = _warning_band(warning_count)
+    if warning_count == 0:
+        warning_band = "A"
+    elif warning_count == 1:
+        warning_band = "B"
+    elif warning_count == 2:
+        warning_band = "C"
+    else:
+        warning_band = "D"
     if warning_count:
         reasons.append(
             f"{warning_count} quality warning{'s' if warning_count != 1 else ''}: "
@@ -97,9 +105,7 @@ def grade_page(
         metrics = alignment["metrics"]
         coverage = metrics["required_column_coverage"]
         pass_rate = metrics["arithmetic_pass_rate"]
-        schema_grade, schema_reasons = _schema_grade(
-            metrics, alignment, thresholds, quality_floors
-        )
+        schema_grade, schema_reasons = _schema_grade(metrics, alignment, thresholds, quality_floors)
         reasons.extend(schema_reasons)
 
     if schema_grade is None:
@@ -191,6 +197,14 @@ def _schema_grade(
             f"{'s' if metrics['coercion_error_count'] != 1 else ''} cap schema grade at B"
         )
 
+    structure_issue_count = metrics.get("structure_issue_count", 0)
+    if structure_issue_count > 0 and not grade_is_below(grade, "B"):
+        grade = "B"
+        reasons.append(
+            f"{structure_issue_count} structural issue"
+            f"{'s' if structure_issue_count != 1 else ''} cap schema grade at B"
+        )
+
     return grade, reasons
 
 
@@ -200,16 +214,6 @@ def _band(value: float, bands: dict[str, float], *, floor: str) -> str:
         if threshold is not None and value >= threshold:
             return grade
     return floor
-
-
-def _warning_band(count: int) -> str:
-    if count == 0:
-        return "A"
-    if count == 1:
-        return "B"
-    if count == 2:
-        return "C"
-    return "D"
 
 
 def validate_thresholds(overrides: Any) -> None:
@@ -229,20 +233,16 @@ def validate_thresholds(overrides: Any) -> None:
         merged = dict(DEFAULT_THRESHOLDS[axis])
         for letter, value in bands.items():
             if letter not in _GRADE_ORDER or letter == "F":
-                raise ValueError(
-                    f"run.grading.thresholds.{axis} keys must be grade letters A-D"
-                )
+                raise ValueError(f"run.grading.thresholds.{axis} keys must be grade letters A-D")
             if isinstance(value, bool) or not isinstance(value, (int, float)):
                 raise ValueError(
                     f"run.grading.thresholds.{axis}.{letter} must be a number between 0 and 1"
                 )
-            if value < 0 or value > 1:
+            if not math.isfinite(value) or value < 0 or value > 1:
                 raise ValueError(
                     f"run.grading.thresholds.{axis}.{letter} must be a number between 0 and 1"
                 )
             merged[letter] = float(value)
         ordered = [merged[letter] for letter in ("A", "B", "C", "D") if letter in merged]
         if any(earlier < later for earlier, later in zip(ordered, ordered[1:], strict=False)):
-            raise ValueError(
-                f"run.grading.thresholds.{axis} must be non-increasing from A to D"
-            )
+            raise ValueError(f"run.grading.thresholds.{axis} must be non-increasing from A to D")

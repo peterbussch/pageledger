@@ -75,7 +75,8 @@ for the extraction process:
 - routing before extraction,
 - evidence and provenance around extraction,
 - rerun decisions after audit,
-- schema alignment after extraction (a design target — see `design.md`).
+- schema alignment after extraction, with uncertainty and discarded structure
+  recorded rather than silently repaired.
 
 That process orientation is the reason the package could be interesting to
 archives, libraries, digital-humanities labs, and research projects.

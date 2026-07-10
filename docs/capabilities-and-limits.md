@@ -33,6 +33,9 @@ stays short because this exists.
   `historical_orthography` warning when a page is orthographically
   mismatched with a modern OCR model. See
   [`multilingual-ocr.md`](multilingual-ocr.md).
+- Conservative output-integrity signals: `instruction_echo` detects leaked
+  chat-template markers, and reruns record parent character evidence with an
+  `output_inflation` warning at the fixed 4× / 1,000-character boundary.
 - Page-denominated budget enforcement (pages, tokens, dollars) with
   preflight refusal and per-page caps.
 - Retry with configurable `max_retries` and optional exponential backoff.
@@ -60,10 +63,15 @@ stays short because this exists.
   an existing run from its raw pages without re-extracting — iterate on a
   schema without paying for OCR/VLM again. The manifest records the
   re-alignment (`alignment` block, schema hash); external schemas are
-  snapshotted into the run directory.
+  snapshotted into the run directory. `--dry-run` previews the complete
+  grade/audit/normalized change without mutating the ledger.
 - `pageledger compare-runs`: page-by-page diff of two runs. Character and
-  word deltas, warnings resolved or introduced, grades improved or
-  regressed, adapters, cost.
+  word deltas, warning and grade transitions, adapters, and cost. Directional
+  improvement/resolution totals are reported only when source identity and
+  adapter match; cross-adapter and changed-source transitions are unranked.
+- `pageledger verify-run`: checks cross-artifact ledger coherence, identifiers,
+  counts, hashes, and references without claiming OCR correctness or requiring
+  a runtime JSON Schema dependency.
 - `pageledger inspect-run --csv`: one row per page (counts, confidence,
   warnings, grade, cost, timing) for spreadsheet triage.
 - Cost provenance: `cost.json` records `cost_basis` (`adapter_reported`,
@@ -112,6 +120,9 @@ Details and examples live in [`design.md`](design.md).
   "material"); Tesseract's own word confidence (`low_confidence`) is the
   closest signal the alpha ships, and it reflects the engine's opinion of
   itself, not ground truth.
+- Output-integrity signals are deliberately conservative heuristics. A marker
+  or large rerun expansion queues review; it does not prove that an adapter
+  hallucinated, and absence of a warning does not prove faithful output.
 - Grades are deterministic summaries of that same evidence, not accuracy.
   A grade is only comparable within one adapter: confidence is
   uncalibrated across engines, so an `A` from one extractor and a `B`

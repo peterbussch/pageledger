@@ -6,16 +6,17 @@ import json
 from pathlib import Path
 from typing import Any
 
+from .artifacts import read_jsonl
 from .grading import format_grade, grade_is_below
 
 
 def compare_runs(run_dir_a: Path, run_dir_b: Path) -> dict[str, Any]:
     """Compare two run directories page-by-page.
 
-    Pages are matched on ``page_id``, which reruns preserve, so an original
-    run and its rerun (or two runs of the same inputs with different
-    adapters) line up directly. Returns a machine-readable report; raises
-    ValueError when either directory is not a run directory.
+    Pages line up on ``page_id``, but changes are ranked only when provenance
+    proves that both entries refer to the same source bytes, source page, and
+    adapter. Reused identifiers and legacy runs with incomplete evidence stay
+    visible as incomparable pages.
     """
     a = _load_run(run_dir_a, label="A")
     b = _load_run(run_dir_b, label="B")
@@ -29,18 +30,44 @@ def compare_runs(run_dir_a: Path, run_dir_b: Path) -> dict[str, Any]:
     warnings_introduced = 0
     grades_improved = 0
     grades_regressed = 0
+    pages_comparable = 0
+    identity_mismatches: list[str] = []
     for page_id in common:
         qa = a["quality"][page_id]
         qb = b["quality"][page_id]
+        provenance_a = a["provenance"].get(page_id, {})
+        provenance_b = b["provenance"].get(page_id, {})
+        source_a = provenance_a.get("source")
+        source_b = provenance_b.get("source")
+        source_status = _source_status(source_a, source_b)
+        if source_status in {"changed", "different"}:
+            identity_mismatches.append(page_id)
+        adapter_a = qa.get("adapter") or provenance_a.get("extractor", {}).get("adapter")
+        adapter_b = qb.get("adapter") or provenance_b.get("extractor", {}).get("adapter")
+        if source_status in {"changed", "different"}:
+            comparability = "incomparable_source"
+        elif source_status == "unknown" or not adapter_a or not adapter_b:
+            comparability = "incomparable_unknown"
+        elif adapter_a != adapter_b:
+            comparability = "incomparable_adapter"
+        else:
+            comparability = "comparable"
+            pages_comparable += 1
         set_a = set(qa.get("warnings", []))
         set_b = set(qb.get("warnings", []))
         resolved = sorted(set_a - set_b)
         introduced = sorted(set_b - set_a)
-        warnings_resolved += len(resolved)
-        warnings_introduced += len(introduced)
+        if comparability == "comparable":
+            warnings_resolved += len(resolved)
+            warnings_introduced += len(introduced)
         grade_a = qa.get("grade")
         grade_b = qb.get("grade")
-        if grade_a is not None and grade_b is not None and grade_a != grade_b:
+        if (
+            comparability == "comparable"
+            and grade_a is not None
+            and grade_b is not None
+            and grade_a != grade_b
+        ):
             if grade_is_below(grade_a, grade_b):
                 grades_improved += 1
             else:
@@ -55,6 +82,13 @@ def compare_runs(run_dir_a: Path, run_dir_b: Path) -> dict[str, Any]:
                 ),
                 "word_count_a": qa.get("word_count"),
                 "word_count_b": qb.get("word_count"),
+                "word_delta": _delta(qa.get("word_count"), qb.get("word_count")),
+                "extraction_seconds_a": provenance_a.get("extraction_seconds"),
+                "extraction_seconds_b": provenance_b.get("extraction_seconds"),
+                "extraction_seconds_delta": _delta(
+                    provenance_a.get("extraction_seconds"),
+                    provenance_b.get("extraction_seconds"),
+                ),
                 "warnings_a": sorted(set_a),
                 "warnings_b": sorted(set_b),
                 "warnings_resolved": resolved,
@@ -63,6 +97,12 @@ def compare_runs(run_dir_a: Path, run_dir_b: Path) -> dict[str, Any]:
                 "grade_b": grade_b,
                 "grade_basis_a": qa.get("grade_basis"),
                 "grade_basis_b": qb.get("grade_basis"),
+                "source_a": source_a,
+                "source_b": source_b,
+                "source_status": source_status,
+                "adapter_a": adapter_a,
+                "adapter_b": adapter_b,
+                "comparability": comparability,
             }
         )
 
@@ -70,6 +110,9 @@ def compare_runs(run_dir_a: Path, run_dir_b: Path) -> dict[str, Any]:
         "run_a": _run_summary(a),
         "run_b": _run_summary(b),
         "pages_compared": len(common),
+        "pages_comparable_total": pages_comparable,
+        "pages_incomparable_total": len(common) - pages_comparable,
+        "page_identity_mismatches": identity_mismatches,
         "pages_only_in_a": sorted(ids_a - ids_b),
         "pages_only_in_b": sorted(ids_b - ids_a),
         "warning_pages_a": sum(1 for q in a["quality"].values() if q.get("warnings")),
@@ -100,6 +143,8 @@ def render_comparison(report: dict[str, Any]) -> str:
             else ""
         ),
         f"Warning pages: A={report['warning_pages_a']} B={report['warning_pages_b']}",
+        f"Comparable pages: {report.get('pages_comparable_total', report['pages_compared'])}"
+        f" / incomparable {report.get('pages_incomparable_total', 0)}",
         f"Warnings resolved in B: {report['warnings_resolved_total']}",
         f"Warnings introduced in B: {report['warnings_introduced_total']}",
         f"Grades: improved {report['grades_improved_total']}"
@@ -122,13 +167,14 @@ def render_comparison(report: dict[str, Any]) -> str:
             [
                 "",
                 "Pages with warning or grade changes:",
-                "| page_id | chars A→B | grade A→B | resolved | introduced |",
-                "|---|---|---|---|---|",
+                "| page_id | comparable | chars A→B | grade A→B | resolved | introduced |",
+                "|---|---|---|---|---|---|",
             ]
         )
         for page in changed[:50]:
             lines.append(
                 f"| {page['page_id']}"
+                f" | {page.get('comparability', 'comparable')}"
                 f" | {page['character_count_a']}→{page['character_count_b']}"
                 f" | {_grade_transition(page)}"
                 f" | {', '.join(page['warnings_resolved']) or '-'}"
@@ -146,20 +192,26 @@ def _load_run(run_dir: Path, *, label: str) -> dict[str, Any]:
         raise ValueError(f"Run {label}: no manifest.json found in {out_dir}")
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
 
-    quality: dict[str, dict[str, Any]] = {}
-    quality_path = out_dir / "quality.jsonl"
-    if quality_path.is_file():
-        for line in quality_path.read_text(encoding="utf-8").splitlines():
-            if line.strip():
-                entry = json.loads(line)
-                quality[entry["page_id"]] = entry
+    quality = {
+        entry["page_id"]: entry for entry in read_jsonl(out_dir / "quality.jsonl")
+    }
 
     cost: dict[str, Any] = {}
     cost_path = out_dir / "cost.json"
     if cost_path.is_file():
         cost = json.loads(cost_path.read_text(encoding="utf-8"))
 
-    return {"dir": out_dir, "manifest": manifest, "quality": quality, "cost": cost}
+    provenance = {
+        entry["page_id"]: entry for entry in read_jsonl(out_dir / "provenance.jsonl")
+    }
+
+    return {
+        "dir": out_dir,
+        "manifest": manifest,
+        "quality": quality,
+        "provenance": provenance,
+        "cost": cost,
+    }
 
 
 def _run_summary(loaded: dict[str, Any]) -> dict[str, Any]:
@@ -189,10 +241,46 @@ def _grade_transition(page: dict[str, Any]) -> str:
     return f"{left}→{right}"
 
 
-def _delta(value_a: Any, value_b: Any) -> int | None:
-    if isinstance(value_a, int) and isinstance(value_b, int):
+def _delta(value_a: Any, value_b: Any) -> int | float | None:
+    if (
+        isinstance(value_a, (int, float))
+        and not isinstance(value_a, bool)
+        and isinstance(value_b, (int, float))
+        and not isinstance(value_b, bool)
+    ):
         return value_b - value_a
     return None
+
+
+def _source_identity(source: Any) -> tuple[str, int] | None:
+    if not isinstance(source, dict):
+        return None
+    sha256 = source.get("sha256")
+    page_number = source.get("page_number")
+    if (
+        not isinstance(sha256, str)
+        or not sha256
+        or not isinstance(page_number, int)
+        or isinstance(page_number, bool)
+    ):
+        return None
+    return sha256, page_number
+
+
+def _source_status(source_a: Any, source_b: Any) -> str:
+    identity_a = _source_identity(source_a)
+    identity_b = _source_identity(source_b)
+    if identity_a is None or identity_b is None:
+        return "unknown"
+    if identity_a == identity_b:
+        return "same"
+    if identity_a[1] != identity_b[1]:
+        return "different"
+    path_a = source_a.get("path")
+    path_b = source_b.get("path")
+    if isinstance(path_a, str) and isinstance(path_b, str) and path_a == path_b:
+        return "changed"
+    return "different"
 
 
 def _cost_line(summary: dict[str, Any]) -> str:

@@ -1,8 +1,10 @@
 # CLI reference
 
-Seven commands ship. `run` and `rerun` are the ones that extract; `align`
+Eight commands ship. `run` and `rerun` are the ones that extract; `align`
 re-derives normalized records and grades from an existing run; the rest
 inspect, compare, or scaffold.
+
+`pageledger --version` prints the installed release.
 
 ## run
 
@@ -52,6 +54,7 @@ and warns when a source file changed since the parent run. Takes the same
 ```bash
 pageledger align runs/run-001/
 pageledger align runs/run-001/ --schema table-v2.yml
+pageledger align runs/run-001/ --schema table-v2.yml --dry-run
 ```
 
 Re-aligns an existing run's structured raw pages against a schema and
@@ -65,17 +68,38 @@ section) is snapshotted into the run directory as
 manifest; records the mutation in `run.log` and a `manifest.json`
 `alignment` block. `--json` for machine-readable output.
 
+`--dry-run` computes the complete replacement in memory and reports
+before/after grades, review-queue size, and normalized-record count without
+writing any artifact or schema snapshot. Applied alignment stages every
+derived file first and writes `manifest.json` last as the commit indicator;
+the multi-file update is deliberately not described as a transaction.
+
 ## compare-runs
 
 ```bash
 pageledger compare-runs runs/run-001/ runs/run-002/
 ```
 
-Page-by-page diff of two runs: character and word deltas, warnings
-resolved or introduced, grades improved or regressed (rendered with their
-basis, e.g. `C (signals)→A (schema)`), adapters, and cost. This is how
-you decide whether an escalation was worth it. `--json` for
-machine-readable output.
+Page-by-page diff of two runs: character, word, and extraction-time deltas;
+warning and grade transitions; adapters; provenance identity; and cost.
+Directional totals such as “improved” and “resolved” are counted only when
+source bytes, source page, and adapter match. Cross-adapter, changed-source,
+and legacy-unknown transitions are shown but unranked. `--json` exposes the
+comparability evidence for every shared page id.
+
+## verify-run
+
+```bash
+pageledger verify-run runs/run-001/
+pageledger verify-run runs/run-001/ --json
+```
+
+Checks that the files in a run directory agree with one another: manifest
+declarations, identifiers, hashes, page counts, raw and normalized references,
+quality totals, audit/rerun items, and cost totals. Missing or changed external
+source files are warnings; malformed or inconsistent ledger artifacts are
+errors and produce exit code 1. Verification checks coherence, not extraction
+accuracy, and is not a replacement for the JSON Schema test suite.
 
 ## inspect-run
 

@@ -56,8 +56,9 @@ Spec: [`provenance-spec.md`](provenance-spec.md).
 
 **quality.jsonl** — how each page looks. Character and word counts,
 engine-reported confidence with per-word statistics, lexical shape,
-script/orthography evidence, a warning list (`empty_text`,
-`low_confidence`, `historical_orthography`, and five others), and a grade
+script/orthography evidence, conservative LLM-output integrity evidence,
+a warning list (`empty_text`, `low_confidence`, `instruction_echo`,
+`output_inflation`, and others), and a grade
 (`A`–`F` with `grade_basis` and per-axis detail). These are diagnostics
 for a human, not accuracy scores; a grade is a deterministic summary of
 this evidence, comparable only within one adapter.
@@ -65,8 +66,9 @@ Spec: [`provenance-spec.md`](provenance-spec.md) (companion section).
 
 **normalized/** — what the schema aligner extracted, one
 `{page_id}.json` per structured page: records keyed by declared columns,
-matched/missing/extra headers, coercion errors with the raw strings, and
-arithmetic-check results. Written during `pageledger run` when the config
+matched/missing/extra headers, coercion errors with the raw strings,
+structural-loss issues, and arithmetic-check results. Written during
+`pageledger run` when the config
 has a `schema` section, and rewritten by `pageledger align`. Plain-text
 pages produce no normalized file.
 Spec: [`normalized-spec.md`](normalized-spec.md).
@@ -97,11 +99,23 @@ Spec: [`rerun-manifest-spec.md`](rerun-manifest-spec.md).
 `pageledger align <run-dir>` is the one sanctioned mutation of a run
 directory: it re-derives `normalized/`, the grade fields in
 `quality.jsonl`, the grade-threshold audit entries, and the rerun
-manifest from the untouched `raw/` evidence. Every rewrite is atomic, the
-mutation is logged in `run.log` (`status: aligned`), and `manifest.json`
-is written last with an `alignment` block (timestamp, schema source and
-hash, PageLedger version) as the commit point. An external `--schema`
-file is snapshotted as `align-schema-snapshot.yml`.
+manifest from the untouched `raw/` evidence. `--dry-run` previews the same
+derived result without changing the run. Applied output is staged before
+replacement, individual artifact writes are atomic, the mutation is logged
+in `run.log` (`status: aligned`), and `manifest.json` is written last with an
+`alignment` block (timestamp, schema source and hash, PageLedger version) as
+the commit point. This is crash-honest, not a cross-file transaction. An
+external `--schema` file is snapshotted as `align-schema-snapshot.yml` only
+when the preview is applied.
+
+## Verification
+
+`pageledger verify-run <run-dir>` checks the relationships among these files:
+declared paths, identifiers, hashes, page counts, raw/normalized provenance,
+quality totals, audit/rerun references, and cost totals. Internal corruption is
+an error; a missing or changed external source is a warning because the ledger
+itself remains inspectable. Verification does not judge OCR accuracy and does
+not replace the build-time JSON Schema suite.
 
 ## Compatibility
 

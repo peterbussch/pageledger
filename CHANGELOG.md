@@ -6,6 +6,50 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to the artifact compatibility policy documented in
 `docs/run-manifest-spec.md` → Compatibility Policy.
 
+## 0.1.4 — 2026-07-10
+
+### Added
+
+- **`pageledger verify-run`** checks cross-artifact ledger coherence:
+  declared files, run/schema identities, config and source hashes, route and
+  extraction counts, raw/normalized references, audit/rerun membership, and
+  cost totals. External source drift is a warning; internal inconsistency is
+  an error. It uses only stdlib and PyYAML and does not claim OCR correctness.
+- **Read-only alignment preview** with `pageledger align ... --dry-run`,
+  reporting before/after grades, review counts, and normalized records without
+  writing a schema snapshot or changing the run.
+- **Output-integrity evidence** in `quality.jsonl`: `instruction_echo` for
+  high-specificity chat-template markers and `output_inflation` when a rerun
+  is at least 4× and 1,000 characters larger than its parent page.
+- **Alignment structure accounting** records duplicate headers, row-width
+  mismatches, and ignored Markdown tables instead of silently discarding that
+  ambiguity. Structural loss caps the schema grade at B.
+- Top-level `pageledger --version`.
+
+### Changed
+
+- `compare-runs` now ranks warning and grade changes only when provenance
+  proves the source bytes, source page, and adapter match. Changed-source,
+  cross-adapter, and legacy-unknown transitions remain visible but unranked.
+- Configuration, schema, adapter results, and artifact writers reject
+  malformed mappings, booleans/fractions used as integers, unsupported schema
+  versions, protocol-incomplete adapters, and non-finite JSON values.
+- Built-in adapter identity is immutable; custom adapter metadata is required
+  rather than invented. Adapter classes/factories are constructed once per
+  execution.
+- New-run and re-alignment manifests are written last as commit indicators.
+  Re-alignment stages all derived output before replacing existing files.
+- The duplicate Tesseract example is now a compatibility alias for the built-in
+  `PdfOcrAdapter`; the TSV and local-LLM examples gained stricter bounds and
+  output validation.
+
+### Compatibility
+
+- Artifact schema version remains `0.1`; new artifact fields are optional and
+  no existing field was removed, renamed, or retyped.
+- Malformed configs and adapters that depended on undocumented metadata
+  invention now fail with explicit errors.
+
 ## 0.1.3 — 2026-07-08
 
 ### Added

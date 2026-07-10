@@ -84,8 +84,9 @@ class ExtractorAdapter:
     ) -> ExtractionResult:
         """Extract one routed page.
 
-        Called exactly once per page.  usage.pages MUST be 1 — the canonical
-        unit is the page, and each call handles one page.
+        Called once per attempt for a page; configured retries may call it
+        again after an exception. usage.pages MUST be 1 — the canonical unit
+        is the page, and each successful call handles one page.
         """
 ```
 
@@ -103,6 +104,12 @@ causes an `AdapterExecutionError`. This rule is enforced by the runner's
 
 `usage.tokens`, `usage.compute_seconds`, and `usage.cost_usd` remain optional
 and may be `null`.
+
+All result evidence must fit the artifact contract before PageLedger writes
+raw output: `confidence` is finite and between 0 and 1, `model` is text or
+null, warning items are strings, `confidence_detail` is a JSON-serializable
+mapping or null, and numeric usage values are finite numbers rather than
+booleans. `NaN` and infinity are rejected at the adapter boundary.
 
 Adapters do **not** have to know dollar prices. Report `cost_usd` only if the
 backend returns it directly (e.g. an OpenRouter-style gateway); otherwise leave
@@ -125,7 +132,9 @@ The object after `:` may be an adapter instance, an adapter class, or a
 factory function. The resolved adapter is validated for required metadata
 (`name`, `version`, `deterministic`, `input_types`, `output_types`,
 `capabilities`) and required methods (`supports`, `extract`). Validation
-errors include the config key path and expected type.
+errors include the config key path and expected type. PageLedger never invents
+missing metadata: doing so would make provenance claims the adapter did not
+make. Classes and factories are constructed once per execution.
 
 If the adapter can count pages before extraction, expose `page_count(source)`
 returning a positive integer. Adapters without this hook fall back to the

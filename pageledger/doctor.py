@@ -12,33 +12,35 @@ from typing import Any
 
 from . import __version__
 
-OPTIONAL_PACKAGES = ["pypdf"]
-EXTERNAL_COMMANDS = [
-    "pdftoppm",
-    "pdfinfo",
-    "tesseract",
-    "ocrmypdf",
-    "docling",
-    "marker_single",
-    "surya_ocr",
-]
-COMMAND_VERSION_ARGS = {
-    "pdftoppm": ["-v"],
-    "pdfinfo": ["-v"],
-    "tesseract": ["--version"],
-    "ocrmypdf": ["--version"],
-    "docling": ["--version"],
-    "marker_single": ["--version"],
-    "surya_ocr": ["--help"],
-}
-INSTALL_HINTS = {
-    "pdftoppm": "Install poppler (for example: brew install poppler, apt install poppler-utils).",
-    "pdfinfo": "Install poppler (for example: brew install poppler, apt install poppler-utils).",
-    "tesseract": "Install Tesseract OCR separately when you want local OCR.",
-    "ocrmypdf": "Install OCRmyPDF separately for external OCR preprocessing.",
-    "docling": "Install Docling in a project or tool venv if you choose that backend.",
-    "marker_single": "Install Marker in a project or tool venv if you choose that backend.",
-    "surya_ocr": "Install Surya and its runtime backend if you choose that backend.",
+EXTERNAL_COMMANDS = {
+    "pdftoppm": (
+        ["-v"],
+        "Install poppler (for example: brew install poppler, apt install poppler-utils).",
+    ),
+    "pdfinfo": (
+        ["-v"],
+        "Install poppler (for example: brew install poppler, apt install poppler-utils).",
+    ),
+    "tesseract": (
+        ["--version"],
+        "Install Tesseract OCR separately when you want local OCR.",
+    ),
+    "ocrmypdf": (
+        ["--version"],
+        "Install OCRmyPDF separately for external OCR preprocessing.",
+    ),
+    "docling": (
+        ["--version"],
+        "Install Docling in a project or tool venv if you choose that backend.",
+    ),
+    "marker_single": (
+        ["--version"],
+        "Install Marker in a project or tool venv if you choose that backend.",
+    ),
+    "surya_ocr": (
+        ["--help"],
+        "Install Surya and its runtime backend if you choose that backend.",
+    ),
 }
 CLOUD_ENV_EXPLANATIONS = {
     "GOOGLE_API_KEY": "Optional for Gemini/VLM adapters.",
@@ -46,14 +48,6 @@ CLOUD_ENV_EXPLANATIONS = {
     "OPENROUTER_API_KEY": "Optional for OpenRouter VLM adapters.",
     "OPENAI_API_KEY": "Optional for OpenAI VLM adapters.",
 }
-CLOUD_ENV_KEYS = [
-    "GOOGLE_API_KEY",
-    "ANTHROPIC_API_KEY",
-    "OPENROUTER_API_KEY",
-    "OPENAI_API_KEY",
-]
-
-
 def build_doctor_report() -> dict[str, Any]:
     return {
         "pageledger_version": __version__,
@@ -64,8 +58,7 @@ def build_doctor_report() -> dict[str, Any]:
             "path": os.environ.get("PATH", ""),
         },
         "optional_packages": {
-            name: {"available": importlib.util.find_spec(name) is not None}
-            for name in OPTIONAL_PACKAGES
+            "pypdf": {"available": importlib.util.find_spec("pypdf") is not None}
         },
         "external_commands": {
             name: _command_report(name)
@@ -78,7 +71,7 @@ def build_doctor_report() -> dict[str, Any]:
                 "value": "<redacted>",
                 "explanation": CLOUD_ENV_EXPLANATIONS[name],
             }
-            for name in CLOUD_ENV_KEYS
+            for name in CLOUD_ENV_EXPLANATIONS
         },
     }
 
@@ -101,14 +94,15 @@ def _ocr_languages_report() -> dict[str, Any]:
 
 
 def _command_report(name: str) -> dict[str, Any]:
+    version_args, install_hint = EXTERNAL_COMMANDS[name]
     path = shutil.which(name)
     available = path is not None
     return {
         "available": available,
         "path": path,
-        "version": _command_version(path, COMMAND_VERSION_ARGS[name]) if path else None,
+        "version": _command_version(path, version_args) if path else None,
         "explanation": "Command is available on PATH." if available else f"{name} was not found on PATH.",
-        "install_hint": INSTALL_HINTS[name],
+        "install_hint": install_hint,
     }
 
 

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import math
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -24,6 +26,21 @@ _KNOWN_TOP_LEVEL = frozenset({
     "run",
 })
 
+_KNOWN_RUN_KEYS = frozenset({
+    "adapter",
+    "adapter_options",
+    "budget",
+    "grading",
+    "max_rerun_depth",
+    "pricing",
+    "retry",
+})
+
+_INTEGER_STRING = re.compile(r"-?(?:0|[1-9][0-9]*)\Z")
+_NUMBER_STRING = re.compile(
+    r"-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?\Z"
+)
+
 
 @dataclass(frozen=True)
 class PageLedgerConfig:
@@ -43,25 +60,23 @@ class PageLedgerConfig:
 
     @property
     def max_rerun_depth(self) -> int:
-        value = _value_at(self.data, "run", "max_rerun_depth")
+        value = _walk(self.data, "run", "max_rerun_depth")
         if value is None:
             return 2
-        try:
-            max_rerun_depth = int(value)
-        except (TypeError, ValueError) as exc:
-            raise ValueError("run.max_rerun_depth must be an integer") from exc
-        if max_rerun_depth < 0:
-            raise ValueError("run.max_rerun_depth must be non-negative")
-        return max_rerun_depth
+        return _nonneg_number(value, "run.max_rerun_depth", cast=int)
 
     @property
     def adapter_name(self) -> str | None:
-        value = _value_at(self.data, "run", "adapter")
-        return str(value) if value else None
+        value = _walk(self.data, "run", "adapter")
+        if value is None:
+            return None
+        if not isinstance(value, str) or not value:
+            raise ValueError("run.adapter must be a non-empty string")
+        return value
 
     @property
     def adapter_options(self) -> dict[str, Any]:
-        value = _value_at(self.data, "run", "adapter_options")
+        value = _walk(self.data, "run", "adapter_options")
         if value is None:
             return {}
         if not isinstance(value, dict):
@@ -78,21 +93,21 @@ class PageLedgerConfig:
     @property
     def cost_per_page(self) -> float | None:
         return _nonneg_number(
-            _value_at(self.data, "run", "pricing", "cost_per_page"),
+            _walk(self.data, "run", "pricing", "cost_per_page"),
             "run.pricing.cost_per_page",
         )
 
     @property
     def cost_per_1k_tokens(self) -> float | None:
         return _nonneg_number(
-            _value_at(self.data, "run", "pricing", "cost_per_1k_tokens"),
+            _walk(self.data, "run", "pricing", "cost_per_1k_tokens"),
             "run.pricing.cost_per_1k_tokens",
         )
 
     @property
     def budget_max_pages(self) -> int | None:
         return _nonneg_number(
-            _value_at(self.data, "run", "budget", "max_pages"),
+            _walk(self.data, "run", "budget", "max_pages"),
             "run.budget.max_pages",
             cast=int,
         )
@@ -100,53 +115,40 @@ class PageLedgerConfig:
     @property
     def budget_max_tokens(self) -> int | None:
         return _nonneg_number(
-            _value_at(self.data, "run", "budget", "max_tokens"),
+            _walk(self.data, "run", "budget", "max_tokens"),
             "run.budget.max_tokens",
             cast=int,
         )
 
     @property
     def budget_max_usd(self) -> float | None:
-        value = _value_at(self.data, "run", "budget", "max_usd")
-        if value is None:
-            return None
-        try:
-            max_usd = float(value)
-        except (TypeError, ValueError) as exc:
-            raise ValueError("run.budget.max_usd must be a number") from exc
-        if max_usd < 0:
-            raise ValueError("run.budget.max_usd must be non-negative")
-        return max_usd
+        return _nonneg_number(
+            _walk(self.data, "run", "budget", "max_usd"),
+            "run.budget.max_usd",
+        )
 
     @property
     def budget_warn_at_percent(self) -> float | None:
-        value = _value_at(self.data, "run", "budget", "warn_at_percent")
-        if value is None:
+        warn_at_percent = _nonneg_number(
+            _walk(self.data, "run", "budget", "warn_at_percent"),
+            "run.budget.warn_at_percent",
+        )
+        if warn_at_percent is None:
             return None
-        try:
-            warn_at_percent = float(value)
-        except (TypeError, ValueError) as exc:
-            raise ValueError("run.budget.warn_at_percent must be a number") from exc
-        if warn_at_percent < 0 or warn_at_percent > 100:
+        if warn_at_percent > 100:
             raise ValueError("run.budget.warn_at_percent must be between 0 and 100")
         return warn_at_percent
 
     @property
     def max_retries(self) -> int:
-        value = _value_at(self.data, "run", "retry", "max_retries")
+        value = _walk(self.data, "run", "retry", "max_retries")
         if value is None:
             return 0
-        try:
-            max_retries = int(value)
-        except (TypeError, ValueError) as exc:
-            raise ValueError("run.retry.max_retries must be an integer") from exc
-        if max_retries < 0:
-            raise ValueError("run.retry.max_retries must be non-negative")
-        return max_retries
+        return _nonneg_number(value, "run.retry.max_retries", cast=int)
 
     @property
     def retry_backoff(self) -> str:
-        value = _value_at(self.data, "run", "retry", "backoff")
+        value = _walk(self.data, "run", "retry", "backoff")
         if value is None:
             return "none"
         backoff = str(value)
@@ -178,7 +180,7 @@ class PageLedgerConfig:
         Null by default: grading annotates without changing review behavior
         unless the user opts in.
         """
-        value = _value_at(self.data, "run", "grading", "review_below_grade")
+        value = _walk(self.data, "run", "grading", "review_below_grade")
         if value is None:
             return None
         grade = str(value).upper()
@@ -190,20 +192,21 @@ class PageLedgerConfig:
 
     @property
     def grading_thresholds(self) -> dict[str, dict[str, float]]:
-        overrides = _value_at(self.data, "run", "grading", "thresholds")
+        overrides = _walk(self.data, "run", "grading", "thresholds")
         validate_thresholds(overrides)
         return merge_thresholds(overrides)
 
     @property
     def dataset_citation(self) -> dict[str, str] | None:
         citation = self.data.get("dataset_citation")
-        if not isinstance(citation, dict):
+        if citation is None:
             return None
 
+        # Shape and value types are validated during loading.
         label = citation.get("label")
         text = citation.get("text")
         if label or text:
-            return {"label": str(label or ""), "text": str(text or "")}
+            return {"label": label or "", "text": text or ""}
         return None
 
 
@@ -219,17 +222,24 @@ def load_config(path: Path, *, validate_adapter: bool = True) -> PageLedgerConfi
     if not isinstance(loaded, dict):
         raise ValueError(f"Config must be a YAML mapping: {path}")
 
-    schema_version = loaded.get("schema_version", "0.1")
-    config = PageLedgerConfig(schema_version=str(schema_version), data=loaded)
+    schema_version = str(loaded.get("schema_version", "0.1"))
+    if schema_version != "0.1":
+        raise ValueError(
+            f"Unsupported schema_version '{schema_version}'; expected '0.1'"
+        )
+    config = PageLedgerConfig(schema_version=schema_version, data=loaded)
     _validate_config(config, validate_adapter=validate_adapter)
     return config
 
 
 def _validate_config(config: PageLedgerConfig, *, validate_adapter: bool) -> None:
+    _validate_mapping_sections(config.data)
+    _validate_dataset_citation(config.data)
     _validate_taxonomy(config)
     load_schema_spec(config.data)
     _reject_flat_keys(config)
     _warn_unknown_top_level(config)
+    _warn_unknown_run_keys(config)
     _warn_impossible_budget(config)
 
     # Each property raises ValueError on malformed config; touch them all.
@@ -243,6 +253,7 @@ def _validate_config(config: PageLedgerConfig, *, validate_adapter: bool) -> Non
         "cost_per_1k_tokens",
         "max_retries",
         "retry_backoff",
+        "adapter_name",
         "adapter_options",
         "review_below_grade",
         "grading_thresholds",
@@ -250,6 +261,27 @@ def _validate_config(config: PageLedgerConfig, *, validate_adapter: bool) -> Non
         getattr(config, prop)
     if validate_adapter and config.adapter_name is not None:
         load_adapter(config.adapter_name, config.adapter_options)
+
+
+def _validate_mapping_sections(data: dict[str, Any]) -> None:
+    """Reject present config objects whose contents would otherwise be ignored."""
+    for key in ("run", "dataset_citation", "schema"):
+        if key in data and not isinstance(data[key], dict):
+            raise ValueError(f"{key} must be a mapping")
+    run = data.get("run", {})
+    for key in ("budget", "retry", "pricing", "grading"):
+        if key in run and not isinstance(run[key], dict):
+            raise ValueError(f"run.{key} must be a mapping")
+
+
+def _validate_dataset_citation(data: dict[str, Any]) -> None:
+    citation = data.get("dataset_citation")
+    if citation is None:
+        return
+    for key in ("label", "text"):
+        value = citation.get(key)
+        if value is not None and not isinstance(value, str):
+            raise ValueError(f"dataset_citation.{key} must be a string")
 
 
 def _validate_taxonomy(config: PageLedgerConfig) -> None:
@@ -290,6 +322,15 @@ def _warn_unknown_top_level(config: PageLedgerConfig) -> None:
             )
 
 
+def _warn_unknown_run_keys(config: PageLedgerConfig) -> None:
+    run = _mapping_at(config.data, "run")
+    for key in run:
+        if key not in _KNOWN_RUN_KEYS:
+            config.warnings.append(
+                f"Unknown run key '{key}' — ignored by schema_version 0.1"
+            )
+
+
 def _warn_impossible_budget(config: PageLedgerConfig) -> None:
     """Warn when budget thresholds make enforcement impossible."""
     budget = _mapping_at(config.data, "run", "budget")
@@ -315,11 +356,26 @@ def _warn_impossible_budget(config: PageLedgerConfig) -> None:
 def _nonneg_number(value: Any, name: str, *, cast: Any = float) -> Any:
     if value is None:
         return None
-    try:
-        number = cast(value)
-    except (TypeError, ValueError) as exc:
-        kind = "an integer" if cast is int else "a number"
-        raise ValueError(f"{name} must be {kind}") from exc
+    kind = "an integer" if cast is int else "a number"
+    if isinstance(value, bool):
+        raise ValueError(f"{name} must be {kind}")
+
+    if cast is int:
+        if isinstance(value, int):
+            number = value
+        elif isinstance(value, str) and _INTEGER_STRING.fullmatch(value):
+            number = int(value)
+        else:
+            raise ValueError(f"{name} must be an integer")
+    else:
+        if isinstance(value, (int, float)):
+            number = float(value)
+        elif isinstance(value, str) and _NUMBER_STRING.fullmatch(value):
+            number = float(value)
+        else:
+            raise ValueError(f"{name} must be a number")
+        if not math.isfinite(number):
+            raise ValueError(f"{name} must be a finite number")
     if number < 0:
         raise ValueError(f"{name} must be non-negative")
     return number
@@ -338,7 +394,3 @@ def _walk(data: dict[str, Any], *path: str) -> Any:
 def _mapping_at(data: dict[str, Any], *path: str) -> dict[str, Any]:
     value = _walk(data, *path)
     return value if isinstance(value, dict) else {}
-
-
-def _value_at(data: dict[str, Any], *path: str) -> Any:
-    return _walk(data, *path)

@@ -26,7 +26,7 @@
         "missing_optional": { "type": "array", "items": { "type": "string" } },
         "extra": {
           "type": "array",
-          "description": "Source headers that matched no declared column or alias.",
+          "description": "Source headers not retained as a unique declared-column mapping, including unmatched and duplicate-mapped headers.",
           "items": { "type": "string" }
         }
       },
@@ -86,16 +86,65 @@
         "additionalProperties": false
       }
     },
+    "structure_issues": {
+      "type": "array",
+      "description": "Structural evidence that the aligner retained one interpretation while recording discarded or malformed source structure.",
+      "items": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": ["type", "header", "column", "kept_header"],
+            "properties": {
+              "type": { "const": "duplicate_header" },
+              "header": { "type": "string" },
+              "column": { "type": "string" },
+              "kept_header": { "type": "string" }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": ["type", "row", "expected_columns", "actual_columns"],
+            "properties": {
+              "type": { "const": "row_width_mismatch" },
+              "row": { "type": "integer", "minimum": 1 },
+              "expected_columns": { "type": "integer", "minimum": 0 },
+              "actual_columns": { "type": "integer", "minimum": 0 }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": ["type", "tables_ignored"],
+            "properties": {
+              "type": { "const": "ignored_table" },
+              "tables_ignored": { "type": "integer", "minimum": 1 }
+            },
+            "additionalProperties": false
+          }
+        ]
+      }
+    },
     "metrics": {
       "type": "object",
       "required": ["row_count", "tables_found", "required_column_coverage", "column_coverage", "arithmetic_pass_rate", "coercion_error_count", "parse_error"],
       "properties": {
         "row_count": { "type": "integer", "minimum": 0 },
         "tables_found": { "type": "integer", "minimum": 0 },
+        "tables_ignored": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Markdown tables after the retained first table."
+        },
         "required_column_coverage": { "type": "number", "minimum": 0, "maximum": 1 },
         "column_coverage": { "type": "number", "minimum": 0, "maximum": 1 },
         "arithmetic_pass_rate": { "type": ["number", "null"], "minimum": 0, "maximum": 1 },
         "coercion_error_count": { "type": "integer", "minimum": 0 },
+        "structure_issue_count": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Number of entries in structure_issues; zero when the optional array is absent."
+        },
         "parse_error": {
           "type": ["string", "null"],
           "description": "Set when the structured payload could not be parsed (e.g. no_markdown_table_found, invalid_json). The page still gets a record: the failure is evidence."

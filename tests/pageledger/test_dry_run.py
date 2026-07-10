@@ -230,7 +230,7 @@ def test_dry_run_writes_auditable_artifacts(tmp_path):
 
 
 def test_package_exports_release_version():
-    assert pageledger.__version__ == "0.1.3"
+    assert pageledger.__version__ == "0.1.4"
 
 
 def test_dry_run_expands_directory_inputs_in_stable_order(tmp_path):
@@ -1608,6 +1608,9 @@ def test_custom_adapter_spec_loads_valid_adapter(monkeypatch):
         name = "custom-test"
         version = "0.1-test"
         deterministic = True
+        input_types = ("text",)
+        output_types = ("text",)
+        capabilities = ("custom",)
 
         def supports(self, action: str) -> bool:
             return action == "transcribe_text"

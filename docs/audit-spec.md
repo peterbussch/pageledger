@@ -29,9 +29,10 @@
 - `quarantine_queue` should contain pages or records excluded from rerun
   because they matched quarantine policy or exceeded `max_rerun_depth`.
 - `audit.md` should be generated from `audit.json`.
-- The current alpha queues dry-run pages and pages explicitly configured with
-  `default_action: review`. Future versions can add summary counts, quality
-  grades, and uncertainty bands, but the v0.1 alpha keeps the shape small.
+- The current alpha queues dry-run pages, pages explicitly configured with
+  `default_action: review`, pages with quality warnings, and optionally pages
+  below `run.grading.review_below_grade`. Queue entries carry grade evidence
+  when grading caused or informed the review decision.
 - The JSON Schema for this artifact is at `schemas/audit.schema.json`.
 - Schema validation tests are in `tests/pageledger/test_schemas.py`.
 

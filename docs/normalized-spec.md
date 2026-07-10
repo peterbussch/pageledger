@@ -37,13 +37,23 @@ and rewritten by `pageledger align`.
       "failures": [{"row": 7, "delta": 14}]
     }
   ],
+  "structure_issues": [
+    {
+      "type": "row_width_mismatch",
+      "row": 3,
+      "expected_columns": 4,
+      "actual_columns": 5
+    }
+  ],
   "metrics": {
     "row_count": 14,
     "tables_found": 1,
+    "tables_ignored": 0,
     "required_column_coverage": 1.0,
     "column_coverage": 0.75,
     "arithmetic_pass_rate": 0.9167,
     "coercion_error_count": 1,
+    "structure_issue_count": 1,
     "parse_error": null
   }
 }
@@ -69,8 +79,11 @@ and rewritten by `pageledger align`.
   grades the page's schema axis F.
 - `metrics.required_column_coverage` and `metrics.arithmetic_pass_rate`
   feed the schema axis of the page grade (see `quality.jsonl`).
-- When a raw page contains several tables, the first parsed table wins and
-  `metrics.tables_found` records the total.
+- `structure_issues` records duplicate mapped headers, rows whose cell count
+  differs from the header, and Markdown tables ignored after the first. The
+  first parsed table still wins for compatibility; PageLedger records the
+  discarded structure instead of guessing how to merge it. Any structural
+  issue caps the schema grade at B without lifting an already-worse grade.
 - The JSON Schema for this artifact is at `schemas/normalized-page.schema.json`.
 - Schema validation tests are in `tests/pageledger/test_schemas.py`.
 
@@ -88,14 +101,17 @@ and rewritten by `pageledger align`.
 | `columns.matched` | object | ✅ | no | Source header → declared column name. |
 | `columns.missing_required` | array | ✅ | no | Declared required columns with no matching header. |
 | `columns.missing_optional` | array | ✅ | no | Declared optional columns with no matching header. |
-| `columns.extra` | array | ✅ | no | Source headers matching no declared column or alias. |
+| `columns.extra` | array | ✅ | no | Source headers not retained as a unique declared mapping, including unmatched and duplicate-mapped headers. |
 | `records` | array | ✅ | no | One object per source row, keyed by declared columns. |
 | `coercion_errors` | array | ✅ | no | Cells that failed type coercion, with raw strings. |
 | `checks` | array | ✅ | no | Per-check row accounting and failures with deltas. |
+| `structure_issues` | array | ❌ | no | Duplicate-header, row-width, and ignored-table evidence. Absent when no structural loss was observed. |
 | `metrics.row_count` | integer | ✅ | no | Records extracted. |
 | `metrics.tables_found` | integer | ✅ | no | Tables detected in the raw payload. |
+| `metrics.tables_ignored` | integer | ❌ | no | Markdown tables after the retained first table. |
 | `metrics.required_column_coverage` | number | ✅ | no | Matched required / declared required (1.0 when none declared). |
 | `metrics.column_coverage` | number | ✅ | no | Matched declared / declared total. |
 | `metrics.arithmetic_pass_rate` | number | ✅ | yes | Passed / checked across all checks. Null when nothing was checkable. |
 | `metrics.coercion_error_count` | integer | ✅ | no | Total coercion failures. |
+| `metrics.structure_issue_count` | integer | ❌ | no | Number of recorded structural issues. |
 | `metrics.parse_error` | string | ✅ | yes | Why the payload could not be parsed; null on success. |

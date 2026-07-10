@@ -7,7 +7,8 @@ import os
 import subprocess
 import sys
 import textwrap
-from dataclasses import dataclass
+import types
+from dataclasses import FrozenInstanceError, dataclass
 from pathlib import Path
 
 import pytest
@@ -35,6 +36,33 @@ def test_builtin_text_adapter_passes_conformance() -> None:
 def test_builtin_pdf_text_adapter_passes_conformance() -> None:
     issues = adapter_conformance_check(PdfTextAdapter())
     assert issues == []
+
+
+@pytest.mark.parametrize("adapter", [TextAdapter(), PdfTextAdapter(), PdfOcrAdapter()])
+def test_builtin_adapter_identity_is_immutable(adapter) -> None:  # noqa: ANN001
+    with pytest.raises(FrozenInstanceError):
+        adapter.name = "renamed"
+
+
+@pytest.mark.parametrize(
+    ("name", "options"),
+    [
+        ("text", {"name": "renamed"}),
+        ("pdf_text", {"version": "renamed"}),
+        ("pdf_ocr", {"capabilities": ("renamed",)}),
+    ],
+)
+def test_builtin_adapter_metadata_is_not_constructor_configurable(
+    name: str, options: dict
+) -> None:
+    with pytest.raises(ValueError, match="run.adapter_options"):
+        load_adapter(name, options)
+
+
+def test_pdf_alias_is_preserved() -> None:
+    adapter = load_adapter("pdf")
+    assert isinstance(adapter, PdfTextAdapter)
+    assert adapter.name == "pdf_text"
 
 
 # =========================================================================
@@ -121,6 +149,95 @@ def test_conformance_reports_missing_extract() -> None:
 
     issues = adapter_conformance_check(NoExtractAdapter())
     assert any("extract" in i for i in issues)
+
+
+def test_conformance_and_loading_reject_noncallable_page_count(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class BadPageCountAdapter:
+        name = "bad-page-count"
+        version = "1.0"
+        deterministic = True
+        input_types = ("text",)
+        output_types = ("text",)
+        capabilities = ("local",)
+        page_count = 2
+
+        def supports(self, action: str) -> bool:
+            return True
+
+        def extract(self, **kw):  # noqa: ANN003
+            return ExtractionResult(
+                content="test", format="text", confidence=None,
+                model=None, warnings=[], usage={"pages": 1},
+            )
+
+    module = types.ModuleType("bad_page_count_adapter")
+    module.ADAPTER = BadPageCountAdapter()
+    monkeypatch.setitem(sys.modules, module.__name__, module)
+
+    assert any(
+        "page_count" in issue for issue in adapter_conformance_check(module.ADAPTER)
+    )
+    with pytest.raises(ValueError, match="page_count"):
+        load_adapter(f"{module.__name__}:ADAPTER")
+
+
+def test_custom_adapter_missing_metadata_is_not_filled_in(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class UnderSpecifiedAdapter:
+        def supports(self, action: str) -> bool:
+            return True
+
+        def extract(self, **kw):  # noqa: ANN003
+            return ExtractionResult(
+                content="test", format="text", confidence=None,
+                model=None, warnings=[], usage={"pages": 1},
+            )
+
+    module = types.ModuleType("under_specified_adapter")
+    module.ADAPTER = UnderSpecifiedAdapter()
+    monkeypatch.setitem(sys.modules, module.__name__, module)
+
+    with pytest.raises(ValueError, match="missing required attribute 'name'"):
+        load_adapter(f"{module.__name__}:ADAPTER")
+    assert not hasattr(module.ADAPTER, "name")
+
+
+def test_custom_factory_is_constructed_once(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls = 0
+
+    class FactoryAdapter:
+        name = "factory"
+        version = "1.0"
+        deterministic = True
+        input_types = ("text",)
+        output_types = ("text",)
+        capabilities = ("local",)
+
+        def supports(self, action: str) -> bool:
+            return True
+
+        def extract(self, **kw):  # noqa: ANN003
+            return ExtractionResult(
+                content="test", format="text", confidence=None,
+                model=None, warnings=[], usage={"pages": 1},
+            )
+
+    def build_adapter() -> FactoryAdapter:
+        nonlocal calls
+        calls += 1
+        return FactoryAdapter()
+
+    module = types.ModuleType("factory_adapter")
+    module.build_adapter = build_adapter
+    monkeypatch.setitem(sys.modules, module.__name__, module)
+
+    adapter = load_adapter(f"{module.__name__}:build_adapter")
+
+    assert adapter.name == "factory"
+    assert calls == 1
 
 
 def test_conformance_clean_adapter_empty_issues() -> None:
@@ -830,6 +947,45 @@ def test_tesseract_tsv_table_example_passes_conformance() -> None:
                 del sys.modules[mod]
 
 
+def test_tesseract_tsv_example_rejects_invalid_options() -> None:
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "examples"))
+    try:
+        from tesseract_tsv_table_adapter import TesseractTsvTableAdapter
+
+        with pytest.raises(ValueError, match="dpi"):
+            TesseractTsvTableAdapter(dpi=True)
+        with pytest.raises(ValueError, match="lang"):
+            TesseractTsvTableAdapter(lang="eng; command")
+        with pytest.raises(TypeError):
+            TesseractTsvTableAdapter(name="dishonest")
+    finally:
+        sys.path.pop(0)
+
+
+def test_tesseract_tsv_example_rejects_malformed_header() -> None:
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "examples"))
+    try:
+        from tesseract_tsv_table_adapter import _parse_tsv_words
+
+        with pytest.raises(ValueError, match="missing columns"):
+            _parse_tsv_words("level\ttext\n5\tword\n")
+    finally:
+        sys.path.pop(0)
+
+
+def test_local_llm_example_rejects_invalid_generation_options() -> None:
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "examples"))
+    try:
+        from local_llm_cleanup_adapter import LocalLlmCleanupAdapter
+
+        with pytest.raises(ValueError, match="max_tokens"):
+            LocalLlmCleanupAdapter(max_tokens=True)
+        with pytest.raises(ValueError, match="temperature"):
+            LocalLlmCleanupAdapter(temperature=float("nan"))
+    finally:
+        sys.path.pop(0)
+
+
 def test_tsv_table_clustering_builds_markdown_table() -> None:
     """Words on TSV lines become rows; wide horizontal gaps become columns."""
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "examples"))
@@ -857,6 +1013,21 @@ def test_tsv_table_clustering_builds_markdown_table() -> None:
         for mod in list(sys.modules):
             if "tesseract" in mod.lower():
                 del sys.modules[mod]
+
+
+def test_tsv_table_clustering_accepts_scaled_gap() -> None:
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "examples"))
+    try:
+        from tesseract_tsv_table_adapter import _cluster_table
+
+        words = [
+            {"row_key": (1, 1, 1), "top": 0, "left": 0, "right": 20, "text": "A"},
+            {"row_key": (1, 1, 1), "top": 0, "left": 51, "right": 70, "text": "B"},
+        ]
+        assert _cluster_table(words, column_gap_px=30).splitlines()[0] == "| A | B |"
+        assert _cluster_table(words, column_gap_px=40).splitlines()[0] == "| A B |"
+    finally:
+        sys.path.pop(0)
 
 
 def test_strip_thought_blocks_variants() -> None:

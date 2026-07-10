@@ -14,7 +14,10 @@ import csv
 import hashlib
 import io
 import json
+import math
+import os
 import re
+import tempfile
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -31,6 +34,11 @@ COLUMN_TYPES = frozenset({"string", "integer", "number"})
 
 # GFM table separator row cell: --- with optional alignment colons.
 _MD_SEPARATOR_CELL = re.compile(r"^:?-+:?$")
+
+_SCHEMA_KEYS = frozenset({"name", "columns", "checks", "quality"})
+_COLUMN_KEYS = frozenset({"name", "aliases", "type", "required"})
+_CHECK_KEYS = frozenset({"name", "expression", "tolerance"})
+_QUALITY_KEYS = frozenset({"minimum_required_column_coverage", "low_confidence_threshold"})
 
 
 @dataclass(frozen=True)
@@ -61,10 +69,6 @@ class SchemaSpec:
     checks: tuple[CheckSpec, ...]
     quality: QualitySpec
 
-    @property
-    def required_columns(self) -> tuple[ColumnSpec, ...]:
-        return tuple(column for column in self.columns if column.required)
-
 
 def load_schema_spec(config_data: dict[str, Any]) -> SchemaSpec | None:
     """Parse and validate the config ``schema`` section.
@@ -78,6 +82,7 @@ def load_schema_spec(config_data: dict[str, Any]) -> SchemaSpec | None:
         return None
     if not isinstance(section, dict):
         raise ValueError("schema must be a mapping")
+    _reject_unknown_keys(section, _SCHEMA_KEYS, "schema")
 
     name = section.get("name")
     if not isinstance(name, str) or not name.strip():
@@ -93,6 +98,7 @@ def load_schema_spec(config_data: dict[str, Any]) -> SchemaSpec | None:
         prefix = f"schema.columns[{index}]"
         if not isinstance(raw, dict):
             raise ValueError(f"{prefix} must be a mapping")
+        _reject_unknown_keys(raw, _COLUMN_KEYS, prefix)
         column_name = raw.get("name")
         if not isinstance(column_name, str) or not column_name.strip():
             raise ValueError(f"{prefix}.name must be a non-empty string")
@@ -103,9 +109,7 @@ def load_schema_spec(config_data: dict[str, Any]) -> SchemaSpec | None:
             raise ValueError(f"{prefix}.aliases must be a list of strings")
         column_type = raw.get("type", "string")
         if column_type not in COLUMN_TYPES:
-            raise ValueError(
-                f"{prefix}.type must be one of: {', '.join(sorted(COLUMN_TYPES))}"
-            )
+            raise ValueError(f"{prefix}.type must be one of: {', '.join(sorted(COLUMN_TYPES))}")
         required = raw.get("required", False)
         if not isinstance(required, bool):
             raise ValueError(f"{prefix}.required must be a bool")
@@ -127,33 +131,43 @@ def load_schema_spec(config_data: dict[str, Any]) -> SchemaSpec | None:
         )
 
     declared_names = {column.name for column in columns}
+    numeric_names = {column.name for column in columns if column.type in {"integer", "number"}}
     raw_checks = section.get("checks", [])
     if not isinstance(raw_checks, list):
         raise ValueError("schema.checks must be a list")
     checks: list[CheckSpec] = []
+    seen_check_names: set[str] = set()
     for index, raw in enumerate(raw_checks):
         prefix = f"schema.checks[{index}]"
         if not isinstance(raw, dict):
             raise ValueError(f"{prefix} must be a mapping")
+        _reject_unknown_keys(raw, _CHECK_KEYS, prefix)
         check_name = raw.get("name")
         if not isinstance(check_name, str) or not check_name.strip():
             raise ValueError(f"{prefix}.name must be a non-empty string")
+        if check_name in seen_check_names:
+            raise ValueError(f"{prefix}.name duplicate check name '{check_name}'")
+        seen_check_names.add(check_name)
         expression = raw.get("expression")
         if not isinstance(expression, str) or not expression.strip():
             raise ValueError(f"{prefix}.expression must be a non-empty string")
-        _parse_check_expression(expression, declared_names, key_path=f"{prefix}.expression")
         tolerance = raw.get("tolerance", 0)
         if isinstance(tolerance, bool) or not isinstance(tolerance, (int, float)):
             raise ValueError(f"{prefix}.tolerance must be a non-negative number")
-        if tolerance < 0:
+        if not math.isfinite(tolerance) or tolerance < 0:
             raise ValueError(f"{prefix}.tolerance must be a non-negative number")
-        checks.append(
-            CheckSpec(name=check_name, expression=expression, tolerance=float(tolerance))
+        _parse_check_expression(
+            expression,
+            declared_names,
+            numeric_names,
+            key_path=f"{prefix}.expression",
         )
+        checks.append(CheckSpec(name=check_name, expression=expression, tolerance=float(tolerance)))
 
     raw_quality = section.get("quality", {})
     if not isinstance(raw_quality, dict):
         raise ValueError("schema.quality must be a mapping")
+    _reject_unknown_keys(raw_quality, _QUALITY_KEYS, "schema.quality")
     quality = QualitySpec(
         minimum_required_column_coverage=_unit_interval(
             raw_quality.get("minimum_required_column_coverage"),
@@ -176,6 +190,12 @@ def load_schema_spec(config_data: dict[str, Any]) -> SchemaSpec | None:
 def normalize_header(header: str) -> str:
     """Casefold and collapse whitespace for exact header matching."""
     return " ".join(header.casefold().split())
+
+
+def _reject_unknown_keys(mapping: dict[str, Any], allowed: frozenset[str], key_path: str) -> None:
+    unknown = sorted(set(mapping) - allowed, key=str)
+    if unknown:
+        raise ValueError(f"{key_path} has unknown key '{unknown[0]}'")
 
 
 def align_page(
@@ -215,6 +235,7 @@ def align_page(
     matched: dict[str, str] = {}
     matched_columns: dict[str, int] = {}
     extra: list[str] = []
+    structure_issues: list[dict[str, Any]] = []
     for index, header in enumerate(headers):
         column = alias_map.get(normalize_header(header))
         if column is not None and column.name not in matched_columns:
@@ -222,6 +243,32 @@ def align_page(
             matched_columns[column.name] = index
         else:
             extra.append(header)
+            if column is not None:
+                kept_header = next(
+                    source for source, target in matched.items() if target == column.name
+                )
+                structure_issues.append(
+                    {
+                        "type": "duplicate_header",
+                        "header": header,
+                        "column": column.name,
+                        "kept_header": kept_header,
+                    }
+                )
+
+    for row_number, row in enumerate(rows, start=1):
+        if len(row) != len(headers):
+            structure_issues.append(
+                {
+                    "type": "row_width_mismatch",
+                    "row": row_number,
+                    "expected_columns": len(headers),
+                    "actual_columns": len(row),
+                }
+            )
+    tables_ignored = max(tables_found - 1, 0)
+    if tables_ignored:
+        structure_issues.append({"type": "ignored_table", "tables_ignored": tables_ignored})
 
     missing_required = [
         column.name
@@ -256,12 +303,12 @@ def align_page(
 
     check_results = [_run_check(check, records) for check in spec.checks]
 
-    required_total = len(spec.required_columns)
+    required_total = sum(column.required for column in spec.columns)
     required_matched = required_total - len(missing_required)
     total_checked = sum(result["rows_checked"] for result in check_results)
     total_passed = sum(result["rows_passed"] for result in check_results)
 
-    return {
+    result = {
         "schema_version": schema_version,
         "run_id": run_id,
         "page_id": page["page_id"],
@@ -281,33 +328,40 @@ def align_page(
         "metrics": {
             "row_count": len(records),
             "tables_found": tables_found,
+            "tables_ignored": tables_ignored,
             "required_column_coverage": (
                 1.0 if required_total == 0 else round(required_matched / required_total, 4)
             ),
             "column_coverage": (
-                0.0
-                if not spec.columns
-                else round(len(matched_columns) / len(spec.columns), 4)
+                round(len(matched_columns) / len(spec.columns), 4)
             ),
             "arithmetic_pass_rate": (
                 None if total_checked == 0 else round(total_passed / total_checked, 4)
             ),
             "coercion_error_count": len(coercion_errors),
+            "structure_issue_count": len(structure_issues),
             "parse_error": parse_error,
         },
     }
+    if structure_issues:
+        result["structure_issues"] = structure_issues
+    return result
 
 
-def align_run(run_dir: Path, *, schema_path: Path | None = None) -> dict[str, Any]:
-    """Re-align an existing run's raw pages and regrade, without re-extracting.
+def align_run(
+    run_dir: Path,
+    *,
+    schema_path: Path | None = None,
+    dry_run: bool = False,
+) -> dict[str, Any]:
+    """Re-align and regrade an existing run, optionally as a read-only preview.
 
-    This is the one sanctioned mutation of a run directory. Every rewrite is
-    atomic (temp file + rename); the manifest is written last as the commit
-    point, gaining an ``alignment`` block that records when and from which
-    schema the derived artifacts were re-computed. Grades and normalized
-    records are derived fields — overwriting them is re-derivation, not
-    history loss; the raw evidence is untouched.
+    Planning derives every replacement in memory. Applying first serializes
+    every artifact into a staging directory, then replaces derived artifacts
+    and writes ``manifest.json`` last as the commit indicator. Raw evidence is
+    never modified.
     """
+    from .artifacts import build_rerun_manifest, read_jsonl, render_audit_markdown
     from .config import load_config
     from .grading import grade_distribution, grade_is_below, grade_page
 
@@ -316,6 +370,7 @@ def align_run(run_dir: Path, *, schema_path: Path | None = None) -> dict[str, An
     if not manifest_path.is_file():
         raise ValueError(f"No manifest.json found in {out_dir}")
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    records_before = manifest["summary"].get("records_normalized", 0)
     run_id = manifest["run_id"]
     schema_version = manifest["schema_version"]
 
@@ -323,52 +378,34 @@ def align_run(run_dir: Path, *, schema_path: Path | None = None) -> dict[str, An
     if not snapshot_path.is_file():
         raise ValueError(f"No config-snapshot.yml found in {out_dir}")
     config = load_config(snapshot_path, validate_adapter=False)
-
-    spec, schema_source, schema_sha256 = _resolve_align_schema(
+    spec, schema_source, schema_sha256, schema_snapshot = _resolve_align_schema(
         out_dir, schema_path=schema_path, config_data=config.data
     )
 
-    provenance_entries = _read_jsonl(out_dir / "provenance.jsonl")
-    quality_entries = _read_jsonl(out_dir / "quality.jsonl")
-
-    # Re-align every structured page from its raw artifact.
+    provenance_entries = read_jsonl(out_dir / "provenance.jsonl")
+    quality_entries = read_jsonl(out_dir / "quality.jsonl")
+    grades_before = grade_distribution(quality_entries)
     alignments: dict[str, dict[str, Any]] = {}
     for entry in provenance_entries:
         fmt = entry["result"]["format"]
         if fmt not in ALIGNABLE_FORMATS:
             continue
-        raw_path = out_dir / entry["result"]["raw_artifact"]
-        content = raw_path.read_text(encoding="utf-8")
+        raw_artifact = entry["result"]["raw_artifact"]
         alignment = align_page(
-            content,
+            (out_dir / raw_artifact).read_text(encoding="utf-8"),
             fmt,
             spec,
-            page={"page_id": entry["page_id"], "page_number": entry["source"]["page_number"]},
+            page={
+                "page_id": entry["page_id"],
+                "page_number": entry["source"]["page_number"],
+            },
             run_id=run_id,
             schema_version=schema_version,
-            raw_artifact=entry["result"]["raw_artifact"],
+            raw_artifact=raw_artifact,
         )
         if alignment is not None:
             alignments[entry["page_id"]] = alignment
 
-    from .artifacts import (
-        build_rerun_manifest,
-        render_audit_markdown,
-        write_json,
-        write_jsonl,
-        write_yaml,
-    )
-
-    # normalized/: replace wholesale so repeated aligns are idempotent and
-    # records from a previous schema cannot linger.
-    normalized_dir = out_dir / "normalized"
-    normalized_dir.mkdir(exist_ok=True)
-    for stale in normalized_dir.glob("*.json"):
-        stale.unlink()
-    for page_id, alignment in alignments.items():
-        write_json(normalized_dir / f"{page_id}.json", alignment, atomic=True)
-
-    # quality.jsonl: recompute the derived grade fields on every line.
     for entry in quality_entries:
         entry.update(
             grade_page(
@@ -378,13 +415,11 @@ def align_run(run_dir: Path, *, schema_path: Path | None = None) -> dict[str, An
                 quality_floors=spec.quality,
             )
         )
-    write_jsonl(out_dir / "quality.jsonl", quality_entries, atomic=True)
     grades = {entry["page_id"]: entry for entry in quality_entries}
 
-    # audit.json: replace only the grade-derived entries; refresh stale
-    # grade fields on entries that stay; regenerate the markdown rendering.
     audit_path = out_dir / "audit.json"
     audit = json.loads(audit_path.read_text(encoding="utf-8"))
+    review_queue_before = len(audit.get("review_queue", []))
     review_queue = [
         item
         for item in audit.get("review_queue", [])
@@ -398,25 +433,26 @@ def align_run(run_dir: Path, *, schema_path: Path | None = None) -> dict[str, An
     if config.review_below_grade is not None:
         for entry in quality_entries:
             if grade_is_below(entry["grade"], config.review_below_grade):
-                review_queue.append({
-                    "page_id": entry["page_id"],
-                    "page_number": entry["page_number"],
-                    "type": config.default_review_type,
-                    "confidence": None,
-                    "action": "review",
-                    "reason": "grade_below_threshold",
-                    "grade": entry["grade"],
-                    "grade_basis": entry["grade_basis"],
-                })
+                review_queue.append(
+                    {
+                        "page_id": entry["page_id"],
+                        "page_number": entry["page_number"],
+                        "type": config.default_review_type,
+                        "confidence": None,
+                        "action": "review",
+                        "reason": "grade_below_threshold",
+                        "grade": entry["grade"],
+                        "grade_basis": entry["grade_basis"],
+                    }
+                )
     audit["review_queue"] = review_queue
-    write_json(audit_path, audit, atomic=True)
-    (out_dir / "audit.md").write_text(render_audit_markdown(audit), encoding="utf-8")
 
-    # rerun-manifest.yml: rebuild from the updated audit, preserving lineage.
     rerun_path = out_dir / "rerun-manifest.yml"
     previous_rerun = yaml.safe_load(rerun_path.read_text(encoding="utf-8"))
     route_map = yaml.safe_load((out_dir / "route-map.yml").read_text(encoding="utf-8"))
-    aligned_at = _utc_now()
+    aligned_at = (
+        datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+    )
     rerun_manifest = build_rerun_manifest(
         schema_version=schema_version,
         run_id=run_id,
@@ -429,21 +465,8 @@ def align_run(run_dir: Path, *, schema_path: Path | None = None) -> dict[str, An
         run_depth=previous_rerun["rerun_depth"],
         grades={page_id: entry["grade"] for page_id, entry in grades.items()},
     )
-    write_yaml(rerun_path, rerun_manifest, atomic=True)
 
-    # The mutation is itself ledgered.
-    records_normalized = sum(len(a["records"]) for a in alignments.values())
-    log_line = {
-        "schema_version": schema_version,
-        "timestamp": aligned_at,
-        "level": "INFO",
-        "run_id": run_id,
-        "status": "aligned",
-    }
-    with (out_dir / "run.log").open("a", encoding="utf-8") as handle:
-        handle.write(json.dumps(log_line, sort_keys=True) + "\n")
-
-    # manifest.json last: its alignment block is the commit point.
+    records_normalized = sum(len(alignment["records"]) for alignment in alignments.values())
     from pageledger import __version__
 
     manifest["summary"]["records_normalized"] = records_normalized
@@ -453,7 +476,40 @@ def align_run(run_dir: Path, *, schema_path: Path | None = None) -> dict[str, An
         "schema_sha256": schema_sha256,
         "pageledger_version": __version__,
     }
-    write_json(manifest_path, manifest, atomic=True)
+    log_line = {
+        "schema_version": schema_version,
+        "timestamp": aligned_at,
+        "level": "INFO",
+        "run_id": run_id,
+        "status": "aligned",
+    }
+    run_log = (out_dir / "run.log").read_text(encoding="utf-8")
+    if run_log and not run_log.endswith("\n"):
+        run_log += "\n"
+    run_log += json.dumps(log_line, sort_keys=True, allow_nan=False) + "\n"
+
+    before = {
+        "grade_distribution": grades_before,
+        "review_queue_count": review_queue_before,
+        "records_normalized": records_before,
+    }
+    after = {
+        "grade_distribution": grade_distribution(quality_entries),
+        "review_queue_count": len(review_queue),
+        "records_normalized": records_normalized,
+    }
+    if not dry_run:
+        _apply_alignment(
+            out_dir,
+            alignments=alignments,
+            quality_entries=quality_entries,
+            audit=audit,
+            audit_markdown=render_audit_markdown(audit),
+            rerun_manifest=rerun_manifest,
+            run_log=run_log,
+            manifest=manifest,
+            schema_snapshot=schema_snapshot,
+        )
 
     return {
         "run_id": run_id,
@@ -462,20 +518,77 @@ def align_run(run_dir: Path, *, schema_path: Path | None = None) -> dict[str, An
         "schema_source": schema_source,
         "pages_aligned": len(alignments),
         "records_normalized": records_normalized,
-        "grade_distribution": grade_distribution(quality_entries),
+        "grade_distribution": after["grade_distribution"],
         "review_queue_count": len(review_queue),
+        "applied": not dry_run,
+        "before": before,
+        "after": after,
     }
+
+
+def _apply_alignment(
+    out_dir: Path,
+    *,
+    alignments: dict[str, dict[str, Any]],
+    quality_entries: list[dict[str, Any]],
+    audit: dict[str, Any],
+    audit_markdown: str,
+    rerun_manifest: dict[str, Any],
+    run_log: str,
+    manifest: dict[str, Any],
+    schema_snapshot: str | None,
+) -> None:
+    """Serialize the complete plan before replacing any derived artifact."""
+    from .artifacts import write_json, write_jsonl, write_yaml
+
+    with tempfile.TemporaryDirectory(prefix=".align-", dir=out_dir) as temp_name:
+        stage = Path(temp_name)
+        staged_normalized = stage / "normalized"
+        staged_normalized.mkdir()
+        for page_id, alignment in alignments.items():
+            write_json(staged_normalized / f"{page_id}.json", alignment)
+        write_jsonl(stage / "quality.jsonl", quality_entries)
+        write_json(stage / "audit.json", audit)
+        (stage / "audit.md").write_text(audit_markdown, encoding="utf-8")
+        write_yaml(stage / "rerun-manifest.yml", rerun_manifest)
+        (stage / "run.log").write_text(run_log, encoding="utf-8")
+        if schema_snapshot is not None:
+            (stage / "align-schema-snapshot.yml").write_text(schema_snapshot, encoding="utf-8")
+        write_json(stage / "manifest.json", manifest)
+
+        normalized_dir = out_dir / "normalized"
+        normalized_dir.mkdir(exist_ok=True)
+        staged_names = {path.name for path in staged_normalized.glob("*.json")}
+        for path in staged_normalized.glob("*.json"):
+            os.replace(path, normalized_dir / path.name)
+        for stale in normalized_dir.glob("*.json"):
+            if stale.name not in staged_names:
+                stale.unlink()
+
+        for name in (
+            "quality.jsonl",
+            "audit.json",
+            "audit.md",
+            "rerun-manifest.yml",
+            "run.log",
+        ):
+            os.replace(stage / name, out_dir / name)
+        if schema_snapshot is not None:
+            os.replace(
+                stage / "align-schema-snapshot.yml",
+                out_dir / "align-schema-snapshot.yml",
+            )
+        else:
+            stale_snapshot = out_dir / "align-schema-snapshot.yml"
+            if stale_snapshot.is_file():
+                stale_snapshot.unlink()
+        os.replace(stage / "manifest.json", out_dir / "manifest.json")
 
 
 def _resolve_align_schema(
     out_dir: Path, *, schema_path: Path | None, config_data: dict[str, Any]
-) -> tuple[SchemaSpec, str, str]:
-    """Pick the schema for align_run and snapshot external schema files.
-
-    An external ``--schema`` file is copied to ``align-schema-snapshot.yml``
-    in the run directory so the manifest's hash stays reproducible after
-    the original file changes or disappears.
-    """
+) -> tuple[SchemaSpec, str, str, str | None]:
+    """Resolve a schema without writing its eventual external snapshot."""
     if schema_path is not None:
         schema_file = Path(schema_path).expanduser().resolve()
         if not schema_file.is_file():
@@ -490,39 +603,17 @@ def _resolve_align_schema(
         spec = load_schema_spec({"schema": section})
         if spec is None:
             raise ValueError(f"Schema file declares no columns: {schema_file}")
-        (out_dir / "align-schema-snapshot.yml").write_text(text, encoding="utf-8")
-        return spec, str(schema_file), _sha256_text(text)
+        return spec, str(schema_file), _sha256_text(text), text
 
     spec = load_schema_spec(config_data)
     if spec is None:
-        raise ValueError(
-            "Run config snapshot has no schema section; pass --schema <file.yml>"
-        )
+        raise ValueError("Run config snapshot has no schema section; pass --schema <file.yml>")
     snapshot_text = (out_dir / "config-snapshot.yml").read_text(encoding="utf-8")
-    return spec, "config_snapshot", _sha256_text(snapshot_text)
-
-
-def _read_jsonl(path: Path) -> list[dict[str, Any]]:
-    if not path.is_file():
-        return []
-    return [
-        json.loads(line)
-        for line in path.read_text(encoding="utf-8").splitlines()
-        if line.strip()
-    ]
+    return spec, "config_snapshot", _sha256_text(snapshot_text), None
 
 
 def _sha256_text(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
-
-
-def _utc_now() -> str:
-    return (
-        datetime.now(timezone.utc)
-        .replace(microsecond=0)
-        .isoformat()
-        .replace("+00:00", "Z")
-    )
 
 
 # ---------------------------------------------------------------------------
@@ -666,13 +757,15 @@ def _parse_number(value: Any) -> float | None:
     if isinstance(value, bool):
         return None
     if isinstance(value, (int, float)):
-        return float(value)
+        number = float(value)
+        return number if math.isfinite(number) else None
     if isinstance(value, str):
         cleaned = value.replace(",", "").replace(" ", "").replace("\xa0", "")
         try:
-            return float(cleaned)
+            number = float(cleaned)
         except ValueError:
             return None
+        return number if math.isfinite(number) else None
     return None
 
 
@@ -684,8 +777,12 @@ _ALLOWED_BINOPS = (ast.Add, ast.Sub, ast.Mult)
 
 
 def _parse_check_expression(
-    expression: str, declared: set[str], *, key_path: str
-) -> ast.Expression:
+    expression: str,
+    declared: set[str],
+    numeric: set[str],
+    *,
+    key_path: str,
+) -> None:
     """Validate a check expression against the AST whitelist.
 
     Only `column == arithmetic-of-columns-and-constants` shapes pass:
@@ -705,30 +802,45 @@ def _parse_check_expression(
         and len(root.comparators) == 1
     ):
         raise ValueError(f"{key_path} must be a single '==' comparison")
+    names = [
+        node.id
+        for side in (root.left, root.comparators[0])
+        for node in ast.walk(side)
+        if isinstance(node, ast.Name)
+    ]
+    for name in names:
+        if name not in declared:
+            raise ValueError(f"{key_path} references undeclared column '{name}'")
+    for name in names:
+        if name not in numeric:
+            raise ValueError(f"{key_path} references non-numeric column '{name}'")
     for node in (root.left, root.comparators[0]):
-        _validate_operand(node, declared, key_path=key_path)
-    return tree
+        _validate_operand(node, key_path=key_path)
 
 
-def _validate_operand(node: ast.AST, declared: set[str], *, key_path: str) -> None:
+def _validate_operand(
+    node: ast.AST,
+    *,
+    key_path: str,
+) -> None:
     if isinstance(node, ast.BinOp) and isinstance(node.op, _ALLOWED_BINOPS):
-        _validate_operand(node.left, declared, key_path=key_path)
-        _validate_operand(node.right, declared, key_path=key_path)
+        _validate_operand(node.left, key_path=key_path)
+        _validate_operand(node.right, key_path=key_path)
         return
     if isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.USub):
-        _validate_operand(node.operand, declared, key_path=key_path)
+        _validate_operand(node.operand, key_path=key_path)
         return
     if isinstance(node, ast.Name):
-        if node.id not in declared:
-            raise ValueError(
-                f"{key_path} references undeclared column '{node.id}'"
-            )
         return
-    if isinstance(node, ast.Constant) and isinstance(node.value, (int, float)) and not isinstance(node.value, bool):
+    if (
+        isinstance(node, ast.Constant)
+        and isinstance(node.value, (int, float))
+        and not isinstance(node.value, bool)
+    ):
+        if not math.isfinite(node.value):
+            raise ValueError(f"{key_path} numeric constants must be finite")
         return
-    raise ValueError(
-        f"{key_path} may only use declared columns, numbers, and + - * operators"
-    )
+    raise ValueError(f"{key_path} may only use declared columns, numbers, and + - * operators")
 
 
 def _run_check(check: CheckSpec, records: list[dict[str, Any]]) -> dict[str, Any]:
@@ -748,8 +860,11 @@ def _run_check(check: CheckSpec, records: list[dict[str, Any]]) -> dict[str, Any
             # A null operand is missing evidence, not a pass.
             rows_unchecked += 1
             continue
-        rows_checked += 1
         delta = lhs - rhs
+        if not math.isfinite(delta):
+            rows_unchecked += 1
+            continue
+        rows_checked += 1
         if abs(delta) <= check.tolerance:
             rows_passed += 1
         else:
@@ -774,16 +889,24 @@ def _eval_operand(node: ast.AST, record: dict[str, Any]) -> float | None:
         if left is None or right is None:
             return None
         if isinstance(node.op, ast.Add):
-            return left + right
-        if isinstance(node.op, ast.Sub):
-            return left - right
-        return left * right
+            result = left + right
+        elif isinstance(node.op, ast.Sub):
+            result = left - right
+        else:
+            result = left * right
+        return result if math.isfinite(result) else None
     if isinstance(node, ast.UnaryOp):
         operand = _eval_operand(node.operand, record)
-        return None if operand is None else -operand
+        if operand is None:
+            return None
+        result = -operand
+        return result if math.isfinite(result) else None
     if isinstance(node, ast.Name):
         value = record.get(node.id)
-        return float(value) if isinstance(value, (int, float)) and not isinstance(value, bool) else None
+        if not isinstance(value, (int, float)) or isinstance(value, bool):
+            return None
+        number = float(value)
+        return number if math.isfinite(number) else None
     assert isinstance(node, ast.Constant)
     return float(node.value)
 
@@ -793,6 +916,6 @@ def _unit_interval(value: Any, name: str) -> float | None:
         return None
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         raise ValueError(f"{name} must be a number between 0 and 1")
-    if value < 0 or value > 1:
+    if not math.isfinite(value) or value < 0 or value > 1:
         raise ValueError(f"{name} must be a number between 0 and 1")
     return float(value)

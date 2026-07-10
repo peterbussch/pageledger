@@ -52,7 +52,7 @@
       "required": ["format", "warnings", "raw_artifact"],
       "properties": {
         "format": { "type": "string" },
-        "confidence": { "type": ["number", "null"] },
+        "confidence": { "type": ["number", "null"], "minimum": 0, "maximum": 1 },
         "warnings": { "type": "array", "items": { "type": "string" } },
         "raw_artifact": { "type": "string" }
       },

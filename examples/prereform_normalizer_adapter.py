@@ -35,7 +35,6 @@ Russian rarely emit the abolished letters at all — check
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
 
 from pageledger.adapters import ExtractionResult, PdfOcrAdapter
 
@@ -115,7 +114,7 @@ class PrereformNormalizerAdapter:
             prompt=prompt,
         )
         normalized, replacements = normalize_orthography(str(result.content))
-        warnings: list[Any] = list(result.warnings)
+        warnings: list[str] = list(result.warnings)
         if replacements:
             warnings.append(f"prereform_normalization_applied:{replacements}")
         return ExtractionResult(

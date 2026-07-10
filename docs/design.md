@@ -7,7 +7,9 @@ as built in and what the JSON Schemas in
 **run controller** (budgets, retry/backoff, provenance, quality signals,
 audit queues, rerun execution, cross-run comparison) and the **adapter
 protocol**. `0.1.3` adds the **schema aligner** (§2) and **audit grading**
-(A–F per page, plus the `review_below_grade` policy subset). The
+(A–F per page, plus the `review_below_grade` policy subset). `0.1.4`
+hardens ledger verification, comparison identity, output-integrity signals,
+and structural-loss accounting without expanding the extraction boundary. The
 classifier-driven router and the full conditional-rerun policy grammar
 remain design targets.
 

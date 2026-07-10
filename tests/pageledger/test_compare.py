@@ -57,13 +57,16 @@ def test_compare_detects_resolved_warning(tmp_path):
     source_a = tmp_path / "doc.txt"
     source_a.write_text("short\fsecond page of clean text here\n", encoding="utf-8")
     out_a = _run([source_a], tmp_path, "a")
-
-    # Same page ids, but page 1 now has enough text (simulates stronger engine)
-    source_a.write_text(
-        "page one now has plenty of recovered text\fsecond page of clean text here\n",
-        encoding="utf-8",
-    )
     out_b = _run([source_a], tmp_path, "b")
+
+    # Simulate a stronger extraction without changing the source identity.
+    quality_path = out_b / "quality.jsonl"
+    quality = [json.loads(line) for line in quality_path.read_text().splitlines()]
+    quality[0]["warnings"] = []
+    quality[0]["character_count"] = 40
+    quality_path.write_text(
+        "".join(json.dumps(entry) + "\n" for entry in quality), encoding="utf-8"
+    )
 
     report = compare_runs(out_a, out_b)
     assert report["warning_pages_a"] == 1
@@ -156,12 +159,14 @@ def test_compare_reports_grade_changes(tmp_path):
     source.write_text("\fsecond page of clean text here\n", encoding="utf-8")
     out_a = _run([source], tmp_path, "a")
 
-    # Page 1 recovers in run B
-    source.write_text(
-        "page one now has plenty of recovered text\fsecond page of clean text here\n",
-        encoding="utf-8",
-    )
     out_b = _run([source], tmp_path, "b")
+    quality_path = out_b / "quality.jsonl"
+    quality = [json.loads(line) for line in quality_path.read_text().splitlines()]
+    quality[0]["grade"] = "A"
+    quality[0]["warnings"] = []
+    quality_path.write_text(
+        "".join(json.dumps(entry) + "\n" for entry in quality), encoding="utf-8"
+    )
 
     report = compare_runs(out_a, out_b)
     assert report["grades_improved_total"] == 1
@@ -205,3 +210,105 @@ def test_compare_tolerates_ungraded_runs(tmp_path):
     assert page["grade_a"] is None
     assert page["grade_b"] == "A"
     render_comparison(report)  # must not raise
+
+
+def test_compare_source_identity_ignores_copied_path(tmp_path):
+    """The same bytes and source page remain comparable after a file move."""
+    from pageledger.compare import compare_runs
+
+    source_a = tmp_path / "original.txt"
+    source_b = tmp_path / "copied.txt"
+    content = "one clean page of copied text\n"
+    source_a.write_text(content, encoding="utf-8")
+    source_b.write_text(content, encoding="utf-8")
+    out_a = _run([source_a], tmp_path, "a")
+    out_b = _run([source_b], tmp_path, "b")
+
+    report = compare_runs(out_a, out_b)
+
+    assert report["pages_comparable_total"] == 1
+    assert report["pages_incomparable_total"] == 0
+    assert report["pages"][0]["source_status"] == "same"
+    assert report["pages"][0]["comparability"] == "comparable"
+
+
+def test_compare_page_id_collision_is_visible_but_not_ranked(tmp_path):
+    """A reused page_id cannot make a changed source look improved."""
+    from pageledger.compare import compare_runs
+
+    source = tmp_path / "doc.txt"
+    source.write_text("short\n", encoding="utf-8")
+    out_a = _run([source], tmp_path, "a")
+    source.write_text("a replacement source with much more recovered text\n", encoding="utf-8")
+    out_b = _run([source], tmp_path, "b")
+
+    report = compare_runs(out_a, out_b)
+
+    assert report["pages_compared"] == 1
+    assert report["pages_comparable_total"] == 0
+    assert report["pages_incomparable_total"] == 1
+    assert report["page_identity_mismatches"] == ["doc_0001_page_0001"]
+    page = report["pages"][0]
+    assert page["source_status"] == "changed"
+    assert page["comparability"] == "incomparable_source"
+    assert "short_text" in page["warnings_resolved"]
+    assert report["warnings_resolved_total"] == 0
+    assert report["grades_improved_total"] == 0
+
+
+def test_compare_unrelated_sources_with_same_page_id_are_incomparable(tmp_path):
+    from pageledger.compare import compare_runs
+
+    source_a = tmp_path / "first.txt"
+    source_b = tmp_path / "unrelated.txt"
+    source_a.write_text("short\n", encoding="utf-8")
+    source_b.write_text("an unrelated source with a reused generated page id\n", encoding="utf-8")
+    out_a = _run([source_a], tmp_path, "a")
+    out_b = _run([source_b], tmp_path, "b")
+
+    report = compare_runs(out_a, out_b)
+
+    assert report["page_identity_mismatches"] == ["doc_0001_page_0001"]
+    assert report["pages"][0]["source_status"] == "different"
+    assert report["pages"][0]["comparability"] == "incomparable_source"
+    assert report["pages_comparable_total"] == 0
+
+
+def test_compare_cross_adapter_changes_are_unranked(tmp_path):
+    from pageledger.compare import compare_runs
+
+    source = tmp_path / "doc.txt"
+    source.write_text("short\n", encoding="utf-8")
+    out_a = _run([source], tmp_path, "a")
+    out_b = _run([source], tmp_path, "b")
+
+    quality_path = out_b / "quality.jsonl"
+    quality = [json.loads(line) for line in quality_path.read_text().splitlines()]
+    quality[0].update(adapter="other", warnings=[], grade="A")
+    quality_path.write_text(json.dumps(quality[0]) + "\n", encoding="utf-8")
+
+    report = compare_runs(out_a, out_b)
+
+    page = report["pages"][0]
+    assert page["adapter_a"] == "text"
+    assert page["adapter_b"] == "other"
+    assert page["comparability"] == "incomparable_adapter"
+    assert report["pages_comparable_total"] == 0
+    assert report["warnings_resolved_total"] == 0
+    assert report["grades_improved_total"] == 0
+
+
+def test_compare_legacy_missing_provenance_is_unknown(tmp_path):
+    from pageledger.compare import compare_runs
+
+    source = tmp_path / "doc.txt"
+    source.write_text("one clean page of text\n", encoding="utf-8")
+    out_a = _run([source], tmp_path, "a")
+    out_b = _run([source], tmp_path, "b")
+    (out_a / "provenance.jsonl").write_text("", encoding="utf-8")
+
+    report = compare_runs(out_a, out_b)
+
+    assert report["pages"][0]["source_status"] == "unknown"
+    assert report["pages"][0]["comparability"] == "incomparable_unknown"
+    assert report["pages_incomparable_total"] == 1

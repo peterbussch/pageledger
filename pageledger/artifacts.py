@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 import json
-import os
-import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -27,54 +25,44 @@ ARTIFACT_PATHS = {
 }
 
 
-def write_json(
-    path: Path, data: dict[str, Any], *, sort_keys: bool = True, atomic: bool = False
-) -> None:
-    _write_text(
-        path,
-        json.dumps(data, ensure_ascii=False, indent=2, sort_keys=sort_keys) + "\n",
-        atomic=atomic,
+def write_json(path: Path, data: dict[str, Any]) -> None:
+    path.write_text(
+        json.dumps(
+            data,
+            ensure_ascii=False,
+            indent=2,
+            sort_keys=True,
+            allow_nan=False,
+        )
+        + "\n",
+        encoding="utf-8",
     )
 
 
-def write_jsonl(path: Path, entries: list[dict[str, Any]], *, atomic: bool = False) -> None:
+def write_jsonl(path: Path, entries: list[dict[str, Any]]) -> None:
     """Write a list of dicts as JSONL (one JSON object per line)."""
-    _write_text(
-        path,
-        "".join(json.dumps(e, sort_keys=True) + "\n" for e in entries),
-        atomic=atomic,
+    path.write_text(
+        "".join(json.dumps(e, sort_keys=True, allow_nan=False) + "\n" for e in entries),
+        encoding="utf-8",
     )
 
 
-def write_yaml(path: Path, data: dict[str, Any], *, atomic: bool = False) -> None:
-    _write_text(
-        path,
+def read_jsonl(path: Path) -> list[dict[str, Any]]:
+    """Read JSONL objects, ignoring blank lines."""
+    if not path.is_file():
+        return []
+    return [
+        json.loads(line)
+        for line in path.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+
+
+def write_yaml(path: Path, data: dict[str, Any]) -> None:
+    path.write_text(
         yaml.safe_dump(data, allow_unicode=True, sort_keys=False),
-        atomic=atomic,
+        encoding="utf-8",
     )
-
-
-def _write_text(path: Path, text: str, *, atomic: bool) -> None:
-    """Write text, optionally via temp-file-and-replace.
-
-    Atomic mode is for `pageledger align`, which rewrites artifacts inside
-    an existing run directory: a crash mid-write must never leave a
-    half-written artifact behind.
-    """
-    if not atomic:
-        path.write_text(text, encoding="utf-8")
-        return
-    fd, temp_name = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.")
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as handle:
-            handle.write(text)
-        os.replace(temp_name, path)
-    except BaseException:
-        try:
-            os.unlink(temp_name)
-        except OSError:
-            pass
-        raise
 
 
 def build_route_map(

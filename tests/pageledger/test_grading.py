@@ -40,6 +40,7 @@ def _alignment(
     required_column_coverage=1.0,
     arithmetic_pass_rate=None,
     coercion_error_count=0,
+    structure_issue_count=0,
     missing_required=(),
 ):
     return {
@@ -50,6 +51,7 @@ def _alignment(
             "required_column_coverage": required_column_coverage,
             "arithmetic_pass_rate": arithmetic_pass_rate,
             "coercion_error_count": coercion_error_count,
+            "structure_issue_count": structure_issue_count,
         },
     }
 
@@ -65,7 +67,17 @@ def _grade(entry, alignment=None, thresholds=THRESHOLDS, **kwargs):
 
 @pytest.mark.parametrize(
     "confidence, expected",
-    [(0.95, "A"), (0.90, "A"), (0.89, "B"), (0.80, "B"), (0.79, "C"), (0.70, "C"), (0.69, "D"), (0.55, "D"), (0.54, "F")],
+    [
+        (0.95, "A"),
+        (0.90, "A"),
+        (0.89, "B"),
+        (0.80, "B"),
+        (0.79, "C"),
+        (0.70, "C"),
+        (0.69, "D"),
+        (0.55, "D"),
+        (0.54, "F"),
+    ],
 )
 def test_confidence_band_boundaries(confidence, expected):
     result = _grade(_entry(confidence=confidence))
@@ -76,7 +88,12 @@ def test_confidence_band_boundaries(confidence, expected):
 
 @pytest.mark.parametrize(
     "warnings, expected",
-    [((), "A"), (("short_text",), "B"), (("short_text", "fragmented_text"), "C"), (("a", "b", "c"), "D")],
+    [
+        ((), "A"),
+        (("short_text",), "B"),
+        (("short_text", "fragmented_text"), "C"),
+        (("a", "b", "c"), "D"),
+    ],
 )
 def test_warning_count_bands(warnings, expected):
     result = _grade(_entry(warnings=warnings))
@@ -150,6 +167,18 @@ def test_coercion_errors_cap_schema_grade_at_b():
     assert worse["grade_detail"]["schema_grade"] == "D"
 
 
+def test_structure_issues_cap_schema_grade_at_b_without_lifting_worse_grade():
+    result = _grade(_entry(), _alignment(structure_issue_count=2))
+    assert result["grade_detail"]["schema_grade"] == "B"
+    assert "2 structural issues cap schema grade at B" in result["grade_detail"]["reasons"]
+
+    worse = _grade(
+        _entry(),
+        _alignment(arithmetic_pass_rate=0.5, structure_issue_count=2),
+    )
+    assert worse["grade_detail"]["schema_grade"] == "D"
+
+
 def test_final_grade_is_worst_of_axes():
     result = _grade(_entry(confidence=0.6), _alignment())
     assert result["grade_detail"]["signals_grade"] == "D"
@@ -207,6 +236,8 @@ def test_threshold_overrides_merge_over_defaults():
         ({"unknown_axis": {}}, "not a known axis"),
         ({"confidence": {"F": 0.1}}, "grade letters A-D"),
         ({"confidence": {"A": 2}}, "between 0 and 1"),
+        ({"confidence": {"A": float("nan")}}, "between 0 and 1"),
+        ({"confidence": {"A": float("inf")}}, "between 0 and 1"),
         ({"confidence": {"A": 0.5}}, "non-increasing"),
     ],
 )

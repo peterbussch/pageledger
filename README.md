@@ -46,6 +46,7 @@ engine is one command, and comparing the two runs is another:
 ```bash
 pageledger rerun runs/first --config stronger.yml --out runs/second
 pageledger compare-runs runs/first runs/second
+pageledger verify-run runs/second
 ```
 
 Other first moves:
@@ -90,7 +91,8 @@ Every box on the right is a plain file in the run directory.
   protocol for wrapping anything else, from OCRmyPDF to a cloud VLM.
 - Quality signals per page: shape heuristics, Tesseract word confidence
   with a `low_confidence` warning, and pre-1918 Russian orthography
-  detection that tells a historian *why* the OCR degraded.
+  detection that tells a historian *why* the OCR degraded, plus conservative
+  chat-template leakage and rerun-inflation warnings for model adapters.
 - Budgets denominated in pages, the one unit every backend shares, with
   tokens and dollars on top when they exist.
 - Cost records that name their basis, so a derived estimate is never
@@ -98,14 +100,15 @@ Every box on the right is a plain file in the run directory.
 - Schema alignment: declare columns, aliases, types, and arithmetic checks
   once, and structured extractor output (markdown tables, JSON, CSV)
   becomes normalized records — with coercion failures and failed checks
-  recorded, never silently fixed. `pageledger align` re-aligns an existing
-  run against a revised schema without re-extracting (or re-paying).
+  recorded, never silently fixed. Structural loss such as duplicate headers,
+  uneven rows, and ignored tables is recorded too. `pageledger align` can
+  preview or apply a revised schema without re-extracting (or re-paying).
 - Per-page grades (A–F) that combine text signals with schema evidence and
   always name their basis — `A (signals)` and `A (schema)` are different
   claims. `review_below_grade: C` turns grades into an actionable review
   queue.
-- Page-scoped reruns with lineage, cross-run diffs (including grade
-  changes), CSV export, and a `doctor` command for environment diagnostics.
+- Page-scoped reruns with lineage, provenance-aware cross-run diffs, runtime
+  ledger verification, CSV export, and environment diagnostics.
 - JSON Schemas for every artifact, enforced in CI, and an
   [`AGENTS.md`](AGENTS.md) so AI coding agents can operate the tool and
   validate their own output.
@@ -130,7 +133,7 @@ the quality signals flagged page by page. Synthetic stress runs cover
 
 | | |
 |---|---|
-| [`docs/cli.md`](docs/cli.md) | All seven commands, flags, and config keys |
+| [`docs/cli.md`](docs/cli.md) | All eight commands, flags, and config keys |
 | [`docs/artifacts.md`](docs/artifacts.md) | What each file in a run directory answers |
 | [`docs/capabilities-and-limits.md`](docs/capabilities-and-limits.md) | What works, what you supply, what is design |
 | [`docs/ocr-options.md`](docs/ocr-options.md) | Choosing local, cloud, or hybrid extraction |

@@ -11,7 +11,7 @@ import time
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, ClassVar, Literal
 
 # The classic plain-text page break. Splitting on it lets a single text file
 # carry multiple pages without any new dependency.
@@ -81,21 +81,14 @@ def adapter_page_count(adapter: Any, source: Path) -> int:
     return paginate(source, allow_pdf=getattr(adapter, "name", None) in PDF_ADAPTER_NAMES)
 
 
-def _page_text(source: Path, page_number: int) -> str:
-    pages = source.read_text(encoding="utf-8").split(PAGE_DELIMITER)
-    if page_number < 1 or page_number > len(pages):
-        raise ValueError(f"page_number {page_number} out of range for {source}")
-    return pages[page_number - 1]
-
-
 @dataclass(frozen=True)
 class TextAdapter:
-    name: str = "text"
-    version: str = "0.1"
-    deterministic: bool = True
-    input_types: tuple[str, ...] = ("text",)
-    output_types: tuple[str, ...] = ("text",)
-    capabilities: tuple[str, ...] = ("embedded_text", "local")
+    name: ClassVar[str] = "text"
+    version: ClassVar[str] = "0.1"
+    deterministic: ClassVar[bool] = True
+    input_types: ClassVar[tuple[str, ...]] = ("text",)
+    output_types: ClassVar[tuple[str, ...]] = ("text",)
+    capabilities: ClassVar[tuple[str, ...]] = ("embedded_text", "local")
 
     def supports(self, action: str) -> bool:
         return action == "transcribe_text"
@@ -116,8 +109,11 @@ class TextAdapter:
             raise ValueError(f"Text adapter does not support action: {action}")
 
         _ = page_id, prompt
+        pages = source.read_text(encoding="utf-8").split(PAGE_DELIMITER)
+        if page_number < 1 or page_number > len(pages):
+            raise ValueError(f"page_number {page_number} out of range for {source}")
         return ExtractionResult(
-            content=_page_text(source, page_number),
+            content=pages[page_number - 1],
             format="text",
             confidence=None,
             model=None,
@@ -128,12 +124,12 @@ class TextAdapter:
 
 @dataclass(frozen=True)
 class PdfTextAdapter:
-    name: str = "pdf_text"
-    version: str = "0.1"
-    deterministic: bool = True
-    input_types: tuple[str, ...] = ("pdf",)
-    output_types: tuple[str, ...] = ("text",)
-    capabilities: tuple[str, ...] = ("embedded_text", "local")
+    name: ClassVar[str] = "pdf_text"
+    version: ClassVar[str] = "0.1"
+    deterministic: ClassVar[bool] = True
+    input_types: ClassVar[tuple[str, ...]] = ("pdf",)
+    output_types: ClassVar[tuple[str, ...]] = ("text",)
+    capabilities: ClassVar[tuple[str, ...]] = ("embedded_text", "local")
 
     def supports(self, action: str) -> bool:
         return action == "transcribe_text"
@@ -184,12 +180,12 @@ class PdfOcrAdapter:
 
     dpi: int = 300
     lang: str = "eng"
-    name: str = "pdf_ocr"
-    version: str = "0.1"
-    deterministic: bool = True
-    input_types: tuple[str, ...] = ("pdf",)
-    output_types: tuple[str, ...] = ("text",)
-    capabilities: tuple[str, ...] = ("ocr", "local")
+    name: ClassVar[str] = "pdf_ocr"
+    version: ClassVar[str] = "0.1"
+    deterministic: ClassVar[bool] = True
+    input_types: ClassVar[tuple[str, ...]] = ("pdf",)
+    output_types: ClassVar[tuple[str, ...]] = ("text",)
+    capabilities: ClassVar[tuple[str, ...]] = ("ocr", "local")
 
     def __post_init__(self) -> None:
         if not isinstance(self.dpi, int) or isinstance(self.dpi, bool):
@@ -494,7 +490,10 @@ def load_adapter(name: str, options: dict[str, Any] | None = None) -> Any:
     else:
         valid = ", ".join(["text", "pdf_text", "pdf_ocr", "module.path:object"])
         raise ValueError(f"Unsupported adapter '{name}'. Valid adapters: {valid}")
-    _validate_adapter_metadata(adapter)
+    issues = _adapter_contract_issues(adapter)
+    if issues:
+        prefix = f"Adapter '{getattr(adapter, 'name', 'unknown')}':"
+        raise ValueError(f"{prefix} {issues[0]}")
     return adapter
 
 
@@ -508,60 +507,45 @@ def _construct_builtin(cls: type, name: str, opts: dict[str, Any]) -> Any:
         ) from exc
 
 
-def _validate_adapter_metadata(adapter: Any) -> None:
-    """Validate that an adapter exposes required metadata fields with correct types."""
-    prefix = f"Adapter '{getattr(adapter, 'name', 'unknown')}':"
-
-    for attr, expected_type, description in _ADAPTER_META_CHECKS:
-        value = getattr(adapter, attr, None)
-        if value is None:
-            raise ValueError(f"{prefix} missing required attribute '{attr}'")
-        if not isinstance(value, expected_type):
-            raise ValueError(f"{prefix} '{attr}' {description}, got {type(value).__name__}")
-
-    for attr in ["input_types", "output_types", "capabilities"]:
-        seq = getattr(adapter, attr)
-        for i, item in enumerate(seq):
-            if not isinstance(item, str):
-                raise ValueError(f"{prefix} '{attr}' item {i} must be a string, got {type(item).__name__}")
-
-    if not callable(getattr(adapter, "supports", None)):
-        raise ValueError(f"{prefix} missing required method 'supports(action)'")
-    if not callable(getattr(adapter, "extract", None)):
-        raise ValueError(f"{prefix} missing required method 'extract(...)'")
-
-
 def adapter_conformance_check(adapter: Any) -> list[str]:
     """Validate an adapter against the PageLedger protocol contract.
 
     Returns a list of conformance issues (empty list means the adapter passes).
     Adapter authors can call this from pytest or a script.
     """
-    issues: list[str] = []
+    return _adapter_contract_issues(adapter)
 
-    for attr, expected_type, _desc in _ADAPTER_META_CHECKS:
+
+def _adapter_contract_issues(adapter: Any) -> list[str]:
+    """Collect protocol issues without invoking adapter code."""
+    issues: list[str] = []
+    for attr, expected_type, description in _ADAPTER_META_CHECKS:
         value = getattr(adapter, attr, None)
         if value is None:
-            issues.append(f"Missing attribute '{attr}'")
+            issues.append(f"missing required attribute '{attr}'")
         elif not isinstance(value, expected_type):
-            issues.append(f"'{attr}' is {type(value).__name__}, expected {getattr(expected_type, '__name__', str(expected_type))}")
+            issues.append(
+                f"'{attr}' {description}, got {type(value).__name__}"
+            )
 
-    for attr in ["input_types", "output_types", "capabilities"]:
-        seq = getattr(adapter, attr, None)
-        if isinstance(seq, (tuple, list)):
-            for i, item in enumerate(seq):
+    for attr in ("input_types", "output_types", "capabilities"):
+        value = getattr(adapter, attr, None)
+        if isinstance(value, (tuple, list)):
+            for index, item in enumerate(value):
                 if not isinstance(item, str):
-                    issues.append(f"'{attr}'[{i}] is {type(item).__name__}, expected str")
+                    issues.append(
+                        f"'{attr}' item {index} must be a string, "
+                        f"got {type(item).__name__}"
+                    )
 
     if not callable(getattr(adapter, "supports", None)):
-        issues.append("Missing method 'supports(action)'")
+        issues.append("missing required method 'supports(action)'")
     if not callable(getattr(adapter, "extract", None)):
-        issues.append("Missing method 'extract(...)'")
+        issues.append("missing required method 'extract(...)'")
 
     page_count = getattr(adapter, "page_count", None)
     if page_count is not None and not callable(page_count):
         issues.append("'page_count' must be callable or absent")
-
     return issues
 
 
@@ -611,20 +595,6 @@ def _load_custom_adapter(spec: str, opts: dict[str, Any] | None = None) -> Any:
             f"Custom adapter '{spec}' must expose supports(action) and extract(...)"
         )
 
-    defaults = {
-        "name": spec,
-        "version": "custom",
-        "deterministic": False,
-        "input_types": ("text", "pdf", "image"),
-        "output_types": ("text",),
-        "capabilities": ("custom",),
-    }
-    for attr, default in defaults.items():
-        if not hasattr(adapter, attr):
-            try:
-                setattr(adapter, attr, default)
-            except Exception:
-                pass
     return adapter
 
 

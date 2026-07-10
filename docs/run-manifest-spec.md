@@ -159,18 +159,19 @@ Artifacts are written in this order, which matters for interrupted-run recovery:
 
 1. `config-snapshot.yml` — copied before any extraction
 2. `route-map.yml` — written immediately after extraction loop exits (even on failure)
-3. `manifest.json` — always written, `status: "failed"` when appropriate
+3. Raw artifacts (`raw/*`) and normalized artifacts — written per-page as extraction succeeds
 4. `audit.json` + `audit.md` — written from the review queue as it stood at failure
 5. `provenance.jsonl` — only successful pages; empty on pre-extraction failure
 6. `quality.jsonl` — only successful pages; empty on pre-extraction failure
 7. `cost.json` — partial data when only some pages succeeded
-8. `run.log` — all logged events including the failure entry
-9. `rerun-manifest.yml` — review queue items at the point of failure
-10. Raw artifacts (`raw/*.txt`) — written per-page as extraction succeeds
+8. `rerun-manifest.yml` — review queue items at the point of failure
+9. `run.log` — all logged events including the failure entry
+10. `manifest.json` — written last, with `status: "failed"` when appropriate
 
 If the process is killed during artifact writing, artifacts written earlier
-may survive while later ones do not. The presence of `manifest.json` with
-`"status": "failed"` is the canonical signal that writing completed.
+may survive while later ones do not. The presence of `manifest.json` is the
+canonical signal that PageLedger finished writing every artifact it points to;
+`pageledger verify-run` diagnoses an interrupted or manually altered directory.
 
 ### Failure scenarios
 

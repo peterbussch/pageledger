@@ -10,11 +10,13 @@ import tempfile
 import textwrap
 from pathlib import Path
 
+from . import __version__
 from .aligner import align_run
 from .compare import compare_runs, render_comparison
 from .doctor import build_doctor_report
 from .grading import GRADES
 from .runner import inspect_run, rerun, run, run_pages_csv
+from .verify import render_verification, verify_run
 
 MINIMAL_CONFIG = textwrap.dedent("""\
     schema_version: "0.1"
@@ -47,6 +49,7 @@ def _config_template(adapter: str) -> str:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="pageledger")
+    parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     run_parser = subparsers.add_parser(
@@ -173,6 +176,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Schema YAML (bare schema mapping or a config with a schema: section); defaults to the run's config-snapshot.yml",
     )
     align_parser.add_argument("--json", action="store_true", dest="json_output")
+    align_parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Preview normalized records, grades, and audit changes without writing",
+    )
 
     compare_parser = subparsers.add_parser(
         "compare-runs",
@@ -182,11 +190,18 @@ def build_parser() -> argparse.ArgumentParser:
     compare_parser.add_argument("run_b", type=Path, help="Second run directory")
     compare_parser.add_argument("--json", action="store_true", dest="json_output")
 
+    verify_parser = subparsers.add_parser(
+        "verify-run",
+        help="Verify cross-artifact ledger coherence without judging extraction accuracy",
+    )
+    verify_parser.add_argument("run_dir", type=Path, help="Path to a run output directory")
+    verify_parser.add_argument("--json", action="store_true", dest="json_output")
+
     return parser
 
 
 def _print_error_json(exc: Exception, args: argparse.Namespace) -> None:
-    if args.json_output:
+    if getattr(args, "json_output", False):
         print(json.dumps({"status": "error", "error": str(exc)}, ensure_ascii=False))
 
 
@@ -201,6 +216,9 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "compare-runs":
         return _cmd_compare_runs(args)
+
+    if args.command == "verify-run":
+        return _cmd_verify_run(args)
 
     if args.command == "align":
         return _cmd_align(args)
@@ -278,7 +296,7 @@ def _print_inspect_report(report: dict) -> None:
 
 def _cmd_align(args: argparse.Namespace) -> int:
     try:
-        report = align_run(args.run_dir, schema_path=args.schema)
+        report = align_run(args.run_dir, schema_path=args.schema, dry_run=args.dry_run)
     except (RuntimeError, ValueError, FileNotFoundError) as exc:
         _print_error_json(exc, args)
         print(f"pageledger: error: {exc}", file=sys.stderr)
@@ -286,7 +304,8 @@ def _cmd_align(args: argparse.Namespace) -> int:
     if args.json_output:
         print(json.dumps(report, ensure_ascii=False, sort_keys=True))
     else:
-        print(f"Aligned run {report['run_id']} against schema '{report['schema_name']}'")
+        verb = "Aligned" if report["applied"] else "Previewed"
+        print(f"{verb} run {report['run_id']} against schema '{report['schema_name']}'")
         print(f"Schema source: {report['schema_source']}")
         print(f"Pages aligned: {report['pages_aligned']}")
         print(f"Records normalized: {report['records_normalized']}")
@@ -294,6 +313,17 @@ def _cmd_align(args: argparse.Namespace) -> int:
         print("Grades: " + " ".join(f"{g}={distribution[g]}" for g in GRADES))
         print(f"Review queue: {report['review_queue_count']}")
     return 0
+
+
+# -- verify-run ---------------------------------------------------------------
+
+def _cmd_verify_run(args: argparse.Namespace) -> int:
+    report = verify_run(args.run_dir)
+    if args.json_output:
+        print(json.dumps(report, ensure_ascii=False, sort_keys=True))
+    else:
+        sys.stdout.write(render_verification(report))
+    return 0 if report["status"] == "pass" else 1
 
 
 # -- compare-runs --------------------------------------------------------------

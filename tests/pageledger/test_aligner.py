@@ -14,9 +14,12 @@ Covers:
 
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 import pytest
 
-from pageledger.aligner import align_page, load_schema_spec
+from pageledger.aligner import align_page, align_run, load_schema_spec
 
 PAGE = {"page_id": "doc_0001_page_0001", "page_number": 1}
 
@@ -79,7 +82,10 @@ def test_no_schema_section_returns_none():
 def test_spec_parses_columns_checks_quality():
     spec = _spec(quality={"minimum_required_column_coverage": 1.0, "low_confidence_threshold": 0.7})
     assert spec.name == "demographic_table"
-    assert [c.name for c in spec.required_columns] == ["place_name", "population_total"]
+    assert [c.name for c in spec.columns if c.required] == [
+        "place_name",
+        "population_total",
+    ]
     assert spec.columns[2].type == "integer"
     assert spec.columns[2].required is False
     assert spec.checks[0].tolerance == 2.0
@@ -102,11 +108,19 @@ def test_spec_parses_columns_checks_quality():
             "collides",
         ),
         (
-            {"name": "x", "columns": [{"name": "a"}], "checks": [{"name": "c", "expression": "a == b"}]},
+            {
+                "name": "x",
+                "columns": [{"name": "a"}],
+                "checks": [{"name": "c", "expression": "a == b"}],
+            },
             "undeclared column 'b'",
         ),
         (
-            {"name": "x", "columns": [{"name": "a"}], "checks": [{"name": "c", "expression": "a == 1", "tolerance": -1}]},
+            {
+                "name": "x",
+                "columns": [{"name": "a"}],
+                "checks": [{"name": "c", "expression": "a == 1", "tolerance": -1}],
+            },
             "tolerance",
         ),
         (
@@ -149,6 +163,84 @@ def test_negative_constant_and_subtraction_allowed():
         "checks": [{"name": "c", "expression": "a - b == -1"}],
     }
     assert load_schema_spec({"schema": schema}) is not None
+
+
+@pytest.mark.parametrize(
+    "schema, message",
+    [
+        (
+            {"name": "x", "columns": [{"name": "a"}], "surprise": True},
+            "schema has unknown key 'surprise'",
+        ),
+        (
+            {"name": "x", "columns": [{"name": "a", "surprise": True}]},
+            r"schema.columns\[0\] has unknown key 'surprise'",
+        ),
+        (
+            {
+                "name": "x",
+                "columns": [{"name": "a", "type": "number"}],
+                "checks": [{"name": "c", "expression": "a == 1", "surprise": True}],
+            },
+            r"schema.checks\[0\] has unknown key 'surprise'",
+        ),
+        (
+            {
+                "name": "x",
+                "columns": [{"name": "a"}],
+                "quality": {"surprise": True},
+            },
+            "schema.quality has unknown key 'surprise'",
+        ),
+    ],
+)
+def test_owned_schema_mappings_reject_unknown_keys(schema, message):
+    with pytest.raises(ValueError, match=message):
+        load_schema_spec({"schema": schema})
+
+
+def test_duplicate_check_names_are_rejected():
+    schema = {
+        "name": "x",
+        "columns": [{"name": "a", "type": "number"}],
+        "checks": [
+            {"name": "same", "expression": "a == 1"},
+            {"name": "same", "expression": "a == 2"},
+        ],
+    }
+    with pytest.raises(ValueError, match="duplicate check name 'same'"):
+        load_schema_spec({"schema": schema})
+
+
+def test_arithmetic_checks_reject_string_columns():
+    schema = {
+        "name": "x",
+        "columns": [
+            {"name": "label", "type": "string"},
+            {"name": "amount", "type": "number"},
+        ],
+        "checks": [{"name": "bad", "expression": "amount == label + 1"}],
+    }
+    with pytest.raises(ValueError, match="non-numeric column 'label'"):
+        load_schema_spec({"schema": schema})
+
+
+@pytest.mark.parametrize("value", [float("nan"), float("inf"), float("-inf")])
+def test_nonfinite_schema_numbers_are_rejected(value):
+    with pytest.raises(ValueError, match="tolerance"):
+        _spec(checks=[{"name": "c", "expression": "population_total == 1", "tolerance": value}])
+    with pytest.raises(ValueError, match="between 0 and 1"):
+        _spec(quality={"minimum_required_column_coverage": value})
+
+
+def test_nonfinite_expression_constants_are_rejected():
+    schema = {
+        "name": "x",
+        "columns": [{"name": "a", "type": "number"}],
+        "checks": [{"name": "c", "expression": "a == 1e309"}],
+    }
+    with pytest.raises(ValueError, match="finite"):
+        load_schema_spec({"schema": schema})
 
 
 # =========================================================================
@@ -210,7 +302,12 @@ def test_json_records_alignment():
     content = '[{"place": "Minsk", "total": 300, "male": 150, "female": 149}]'
     result = _align(content, "json")
     assert result["records"] == [
-        {"place_name": "Minsk", "population_total": 300, "population_male": 150, "population_female": 149}
+        {
+            "place_name": "Minsk",
+            "population_total": 300,
+            "population_male": 150,
+            "population_female": 149,
+        }
     ]
     # 300 != 299 exceeds nothing: tolerance 2 covers delta 1.
     assert result["checks"][0]["rows_passed"] == 1
@@ -276,13 +373,69 @@ def test_parse_error_still_writes_record():
 
 
 def test_multiple_tables_first_wins():
-    md = (
-        "| place | total |\n| - | - |\n| A | 5 |\n\n"
-        "| other | headers |\n| - | - |\n| x | y |\n"
-    )
+    md = "| place | total |\n| - | - |\n| A | 5 |\n\n| other | headers |\n| - | - |\n| x | y |\n"
     result = _align(md, "markdown_table")
     assert result["metrics"]["tables_found"] == 2
     assert result["records"][0]["place_name"] == "A"
+    assert result["metrics"]["tables_ignored"] == 1
+    assert result["structure_issues"] == [{"type": "ignored_table", "tables_ignored": 1}]
+
+
+def test_structure_issues_record_duplicate_headers_and_row_widths():
+    md = "| place | total | total |\n| - | - | - |\n| A | 5 | 6 | extra |\n| B | 7 |\n"
+    result = _align(md, "markdown_table")
+    assert result["records"] == [
+        {
+            "place_name": "A",
+            "population_total": 5,
+            "population_male": None,
+            "population_female": None,
+        },
+        {
+            "place_name": "B",
+            "population_total": 7,
+            "population_male": None,
+            "population_female": None,
+        },
+    ]
+    assert result["structure_issues"] == [
+        {
+            "type": "duplicate_header",
+            "header": "total",
+            "column": "population_total",
+            "kept_header": "total",
+        },
+        {
+            "type": "row_width_mismatch",
+            "row": 1,
+            "expected_columns": 3,
+            "actual_columns": 4,
+        },
+        {
+            "type": "row_width_mismatch",
+            "row": 2,
+            "expected_columns": 3,
+            "actual_columns": 2,
+        },
+    ]
+    assert result["metrics"]["structure_issue_count"] == 3
+
+
+def test_nonfinite_numeric_cells_are_recorded_not_emitted():
+    spec = _spec(
+        columns=[
+            {"name": "amount", "type": "number"},
+            {"name": "count", "type": "integer"},
+        ],
+        checks=[],
+    )
+    result = _align('[{"amount": NaN, "count": Infinity}]', "json", spec)
+    assert result["records"] == [{"amount": None, "count": None}]
+    assert [error["error"] for error in result["coercion_errors"]] == [
+        "not_number",
+        "not_integer",
+    ]
+    json.dumps(result, allow_nan=False)
 
 
 def test_text_and_markdown_formats_not_aligned():
@@ -327,3 +480,189 @@ def test_period_thousands_grouping_coerces_for_integers():
     result = _align(md, "markdown_table")
     assert result["records"][0]["population_total"] is None
     assert result["coercion_errors"][0]["error"] == "not_integer"
+
+
+# =========================================================================
+# Existing-run preview/apply
+# =========================================================================
+
+
+def _write_json(path: Path, data: dict) -> None:
+    path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+
+
+def _existing_run(tmp_path: Path) -> Path:
+    out = tmp_path / "run"
+    (out / "raw").mkdir(parents=True)
+    (out / "normalized").mkdir()
+    (out / "raw" / "page-1.md").write_text(
+        "| town | total |\n| - | - |\n| Kazan | 400000 |\n", encoding="utf-8"
+    )
+    (out / "config-snapshot.yml").write_text(
+        "schema_version: '0.1'\n"
+        "schema:\n"
+        "  name: old\n"
+        "  columns:\n"
+        "    - {name: place, type: string, required: true}\n"
+        "    - {name: total, type: integer, required: true}\n",
+        encoding="utf-8",
+    )
+    _write_json(
+        out / "manifest.json",
+        {
+            "schema_version": "0.1",
+            "run_id": "run-test",
+            "summary": {"records_normalized": 0},
+        },
+    )
+    provenance = {
+        "page_id": "page-1",
+        "source": {"page_number": 1},
+        "result": {"format": "markdown_table", "raw_artifact": "raw/page-1.md"},
+    }
+    (out / "provenance.jsonl").write_text(json.dumps(provenance) + "\n", encoding="utf-8")
+    quality = {
+        "schema_version": "0.1",
+        "run_id": "run-test",
+        "page_id": "page-1",
+        "page_number": 1,
+        "confidence": 0.95,
+        "warnings": [],
+    }
+    (out / "quality.jsonl").write_text(json.dumps(quality) + "\n", encoding="utf-8")
+    _write_json(
+        out / "audit.json",
+        {
+            "schema_version": "0.1",
+            "run_id": "run-test",
+            "review_queue": [],
+            "quarantine_queue": [],
+        },
+    )
+    (out / "audit.md").write_text("old audit\n", encoding="utf-8")
+    (out / "rerun-manifest.yml").write_text(
+        "schema_version: '0.1'\n"
+        "run_id: run-test-rerun\n"
+        "parent_run_id: run-test\n"
+        "rerun_depth: 0\n"
+        "max_rerun_depth: 2\n"
+        "reason: audit_queue\n",
+        encoding="utf-8",
+    )
+    (out / "route-map.yml").write_text(
+        "documents:\n"
+        "  - source: {path: doc.txt, sha256: abc}\n"
+        "    pages:\n"
+        "      - {page_id: page-1}\n",
+        encoding="utf-8",
+    )
+    (out / "run.log").write_text("", encoding="utf-8")
+    _write_json(out / "normalized" / "stale.json", {"stale": True})
+    return out
+
+
+def _tree_contents(root: Path) -> dict[str, bytes]:
+    return {
+        str(path.relative_to(root)): path.read_bytes()
+        for path in sorted(root.rglob("*"))
+        if path.is_file()
+    }
+
+
+def test_align_run_dry_run_previews_without_writes(tmp_path):
+    out = _existing_run(tmp_path)
+    schema = tmp_path / "schema.yml"
+    schema.write_text(
+        "name: new\n"
+        "columns:\n"
+        "  - {name: place, aliases: [town], type: string, required: true}\n"
+        "  - {name: total, type: integer, required: true}\n",
+        encoding="utf-8",
+    )
+    before = _tree_contents(out)
+
+    report = align_run(out, schema_path=schema, dry_run=True)
+
+    assert report["applied"] is False
+    assert report["before"]["records_normalized"] == 0
+    assert report["after"]["records_normalized"] == 1
+    assert report["after"]["grade_distribution"]["A"] == 1
+    assert _tree_contents(out) == before
+    assert not (out / "align-schema-snapshot.yml").exists()
+
+
+def test_align_run_applies_staged_results_and_manifest_last(tmp_path, monkeypatch):
+    out = _existing_run(tmp_path)
+    manifest_before = (out / "manifest.json").read_bytes()
+
+    import pageledger.artifacts as artifacts
+
+    original_write_json = artifacts.write_json
+
+    def fail_staging(path, data, **kwargs):
+        if path.name == "page-1.json" and path.parent.name == "normalized":
+            raise RuntimeError("forced staging failure")
+        return original_write_json(path, data, **kwargs)
+
+    monkeypatch.setattr(artifacts, "write_json", fail_staging)
+    with pytest.raises(RuntimeError, match="forced staging failure"):
+        align_run(out)
+
+    assert (out / "manifest.json").read_bytes() == manifest_before
+    assert json.loads((out / "normalized" / "stale.json").read_text())["stale"] is True
+    assert not list(out.glob(".align-*"))
+
+    monkeypatch.setattr(artifacts, "write_json", original_write_json)
+    report = align_run(out)
+    assert report["applied"] is True
+    assert report["records_normalized"] == 1
+    assert not (out / "normalized" / "stale.json").exists()
+    assert (out / "normalized" / "page-1.json").is_file()
+    manifest = json.loads((out / "manifest.json").read_text())
+    assert manifest["summary"]["records_normalized"] == 1
+    assert manifest["alignment"]["schema_source"] == "config_snapshot"
+
+
+def test_align_preview_matches_apply_and_repeated_derivation_is_idempotent(tmp_path):
+    out = _existing_run(tmp_path)
+    schema = tmp_path / "schema.yml"
+    schema.write_text(
+        "name: new\n"
+        "columns:\n"
+        "  - {name: place, aliases: [town], type: string, required: true}\n"
+        "  - {name: total, type: integer, required: true}\n",
+        encoding="utf-8",
+    )
+
+    preview = align_run(out, schema_path=schema, dry_run=True)
+    applied = align_run(out, schema_path=schema)
+
+    assert preview["before"] == applied["before"]
+    assert preview["after"] == applied["after"]
+    stable_paths = [
+        out / "normalized" / "page-1.json",
+        out / "quality.jsonl",
+        out / "audit.json",
+        out / "rerun-manifest.yml",
+    ]
+    first_derivation = {path: path.read_bytes() for path in stable_paths}
+
+    repeated = align_run(out, schema_path=schema)
+
+    assert repeated["after"] == applied["after"]
+    assert {path: path.read_bytes() for path in stable_paths} == first_derivation
+
+
+def test_align_removes_obsolete_external_schema_snapshot(tmp_path):
+    out = _existing_run(tmp_path)
+    schema = tmp_path / "schema.yml"
+    schema.write_text(
+        "name: external\ncolumns:\n  - {name: total, type: integer}\n",
+        encoding="utf-8",
+    )
+    align_run(out, schema_path=schema)
+    assert (out / "align-schema-snapshot.yml").is_file()
+
+    align_run(out)
+
+    assert not (out / "align-schema-snapshot.yml").exists()

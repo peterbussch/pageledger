@@ -26,7 +26,9 @@ authoritative scope list.
 | Full config run | `pageledger run inputs/ --config pageledger.yml --out runs/a` |
 | Re-extract flagged pages | `pageledger rerun runs/a --config stronger.yml --out runs/b` |
 | Re-align/regrade without re-extracting | `pageledger align runs/a --schema table-v2.yml` |
-| Diff two runs | `pageledger compare-runs runs/a runs/b` (includes grade changes) |
+| Preview re-alignment | add `--dry-run` (no run artifacts change) |
+| Diff two runs | `pageledger compare-runs runs/a runs/b` (ranks only same-source, same-adapter evidence) |
+| Verify ledger coherence | `pageledger verify-run runs/a` |
 | Summarize a run | `pageledger inspect-run runs/a` (`--csv` for per-page rows, `--json` for scripts) |
 | Write a starter config | `pageledger init-config --adapter pdf_ocr --out pageledger.yml` |
 | Check environment | `pageledger doctor --json` (includes installed OCR languages) |
@@ -43,7 +45,8 @@ a missing language pack.
 2. Run cheap extraction first (`pdf_text` or `pdf_ocr`).
 3. Read the evidence: `inspect-run` (grade distribution, records
    normalized), then `quality.jsonl` warnings and grades (`empty_text`,
-   `low_confidence`, `historical_orthography`, five more; grades A–F with
+   `low_confidence`, `historical_orthography`, `instruction_echo`,
+   `output_inflation`, and others; grades A–F with
    a basis label — `A (signals)` is weaker evidence than `A (schema)` and
    grades only compare within one adapter), `cost.json` (check
    `cost_basis` — derived rates are not billed spend), and `audit.json`'s
@@ -51,13 +54,15 @@ a missing language pack.
 4. For tabular work, declare a `schema` section (columns, aliases,
    arithmetic checks) so structured adapter output lands in `normalized/`
    and grades gain column/check evidence. Iterating on aliases is free:
-   `pageledger align runs/a --schema v2.yml` re-derives records and
-   grades from raw/ without re-extracting.
+   `pageledger align runs/a --schema v2.yml --dry-run` previews the change;
+   remove `--dry-run` to re-derive records and grades from raw/.
 5. `rerun` with a stronger adapter re-extracts exactly the flagged pages
    (set `run.grading.review_below_grade: C` to queue low-graded pages),
-   preserving page ids and lineage; `compare-runs` shows what improved,
-   warnings and grades both.
-6. Merging parent and rerun output into a corpus is the project's call —
+   preserving page ids and lineage; `compare-runs` ranks improvement only
+   when source identity and adapter match.
+6. Run `verify-run` before publishing or archiving a ledger. It checks
+   cross-artifact coherence, not OCR correctness.
+7. Merging parent and rerun output into a corpus is the project's call —
    present the compare-runs evidence rather than deciding silently.
 
 ## Configuration essentials

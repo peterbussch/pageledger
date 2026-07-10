@@ -6,6 +6,7 @@ import csv
 import hashlib
 import io
 import json
+import math
 import re
 import sys
 import time
@@ -32,6 +33,7 @@ from .artifacts import (
     build_manifest,
     build_rerun_manifest,
     build_route_map,
+    read_jsonl,
     render_audit_markdown,
     write_json,
     write_jsonl,
@@ -41,6 +43,16 @@ from .config import load_config
 from .grading import grade_distribution, grade_is_below, grade_page
 
 LOG_LEVELS = {"DEBUG": 10, "INFO": 20, "WARNING": 30, "ERROR": 40}
+
+_INSTRUCTION_MARKERS = (
+    "<think>",
+    "</think>",
+    "<|channel",
+    "<|im_start|>",
+    "<|im_end|>",
+    "[INST]",
+    "[/INST]",
+)
 
 
 class BudgetExceededError(RuntimeError):
@@ -105,6 +117,93 @@ def _make_log_entry(
     }
 
 
+def _extract_adapter_page(
+    *,
+    adapter: Any,
+    source: Path,
+    page: dict[str, Any],
+    prompt: str | None,
+    config: Any,
+    run_id: str,
+    log_entries: list[dict[str, Any]],
+) -> tuple[Any | None, float | None, str, int, AdapterExecutionError | None]:
+    """Extract and validate one page, preserving retry evidence."""
+    page_id = page["page_id"]
+    extraction_started_at = _utc_now()
+    attempt = 1
+    result: Any | None = None
+    extraction_seconds: float | None = None
+    for attempt in range(1, config.max_retries + 2):
+        extraction_started_at = _utc_now()
+        attempt_started = time.perf_counter()
+        try:
+            result = adapter.extract(
+                source,
+                page_id=page_id,
+                page_number=page["page_number"],
+                action=page["action"],
+                prompt=prompt,
+            )
+            extraction_seconds = round(time.perf_counter() - attempt_started, 3)
+            break
+        except Exception as exc:
+            final_attempt = attempt > config.max_retries
+            adapter_error = AdapterExecutionError(
+                adapter=adapter.name,
+                page_id=page_id,
+                status="failed" if final_attempt else "retry",
+                message=f"{type(exc).__name__}: {exc}",
+                stdout=getattr(exc, "stdout", None),
+                stderr=getattr(exc, "stderr", None),
+            )
+            log_entries.append(
+                _make_log_entry(
+                    schema_version=config.schema_version,
+                    run_id=run_id,
+                    page_id=page_id,
+                    adapter_name=adapter.name,
+                    level="ERROR" if final_attempt else "WARNING",
+                    status="failed" if final_attempt else "retry",
+                    error=adapter_error.to_dict(),
+                    attempt=attempt,
+                    max_retries=config.max_retries,
+                )
+            )
+            if final_attempt:
+                return None, None, extraction_started_at, attempt, adapter_error
+            delay = _backoff_seconds(config.retry_backoff, attempt)
+            if delay > 0:
+                time.sleep(delay)
+
+    try:
+        _validate_extraction_result(adapter.name, result)
+    except Exception as exc:
+        adapter_error = AdapterExecutionError(
+            adapter=adapter.name,
+            page_id=page_id,
+            status="invalid_result",
+            message=f"{type(exc).__name__}: {exc}",
+            stdout=getattr(exc, "stdout", None),
+            stderr=getattr(exc, "stderr", None),
+        )
+        log_entries.append(
+            _make_log_entry(
+                schema_version=config.schema_version,
+                run_id=run_id,
+                page_id=page_id,
+                adapter_name=adapter.name,
+                level="ERROR",
+                status="failed",
+                error=adapter_error.to_dict(),
+                attempt=attempt,
+                max_retries=config.max_retries,
+            )
+        )
+        return None, None, extraction_started_at, attempt, adapter_error
+
+    return result, extraction_seconds, extraction_started_at, attempt, None
+
+
 def run(
     *,
     inputs: list[Path],
@@ -115,6 +214,7 @@ def run(
     pages: str | None = None,
     page_selection: list[dict[str, Any]] | None = None,
     parent_run_id: str | None = None,
+    parent_quality_by_page: dict[str, dict[str, Any]] | None = None,
     run_depth: int = 0,
     adapter_path: Path | None = None,
 ) -> dict[str, Any]:
@@ -136,7 +236,9 @@ def run(
     log_level = _normalize_log_level(log_level)
     execution_mode = "dry_run" if dry_run else "execute"
     _apply_adapter_path(adapter_path)
-    config = load_config(config_path, validate_adapter=not dry_run)
+    # Construct adapters once in the execution path. Direct callers of
+    # load_config retain its validation behavior.
+    config = load_config(config_path, validate_adapter=False)
     adapter = None
     if not dry_run and _requires_adapter(config.default_action):
         if config.adapter_name is None:
@@ -272,82 +374,27 @@ def run(
         page_id = page["page_id"]
 
         if adapter is not None:
-            result = None
-            extraction_seconds: float | None = None
-            for attempt in range(1, config.max_retries + 2):
-                extraction_started_at = _utc_now()
-                attempt_started = time.perf_counter()
-                try:
-                    result = adapter.extract(
-                        source,
-                        page_id=page_id,
-                        page_number=page["page_number"],
-                        action=action,
-                        prompt=prompt,
-                    )
-                    extraction_seconds = round(time.perf_counter() - attempt_started, 3)
-                    break
-                except Exception as exc:
-                    error = f"{type(exc).__name__}: {exc}"
-                    final_attempt = attempt > config.max_retries
-                    adapter_error = AdapterExecutionError(
-                        adapter=adapter.name,
-                        page_id=page_id,
-                        status="failed" if final_attempt else "retry",
-                        message=error,
-                        stdout=getattr(exc, "stdout", None),
-                        stderr=getattr(exc, "stderr", None),
-                    )
-                    log_entries.append(_make_log_entry(
-                        schema_version=config.schema_version,
-                        run_id=run_id,
-                        page_id=page_id,
-                        adapter_name=adapter.name,
-                        level="ERROR" if final_attempt else "WARNING",
-                        status="failed" if final_attempt else "retry",
-                        error=adapter_error.to_dict(),
-                        attempt=attempt,
-                        max_retries=config.max_retries,
-                    ))
-                    if final_attempt:
-                        failure_error = adapter_error
-                        break
-                    delay = _backoff_seconds(config.retry_backoff, attempt)
-                    if delay > 0:
-                        time.sleep(delay)
-            if failure_error is not None:
-                break
-            try:
-                _validate_extraction_result(adapter.name, result)
-            except Exception as exc:
-                error = f"{type(exc).__name__}: {exc}"
-                adapter_error = AdapterExecutionError(
-                    adapter=adapter.name,
-                    page_id=page_id,
-                    status="invalid_result",
-                    message=error,
-                    stdout=getattr(exc, "stdout", None),
-                    stderr=getattr(exc, "stderr", None),
-                )
-                log_entries.append(_make_log_entry(
-                    schema_version=config.schema_version,
+            result, extraction_seconds, extraction_started_at, attempt, adapter_error = (
+                _extract_adapter_page(
+                    adapter=adapter,
+                    source=source,
+                    page=page,
+                    prompt=prompt,
+                    config=config,
                     run_id=run_id,
-                    page_id=page_id,
-                    adapter_name=adapter.name,
-                    level="ERROR",
-                    status="failed",
-                    error=adapter_error.to_dict(),
-                    attempt=attempt,
-                    max_retries=config.max_retries,
-                ))
+                    log_entries=log_entries,
+                )
+            )
+            if adapter_error is not None:
                 failure_error = adapter_error
                 break
+            assert result is not None
             usage = _canonical_usage(result.usage)
             raw_artifact = Path("raw") / f"{page_id}.{_artifact_extension(result.format)}"
             raw_text = (
                 result.content
                 if isinstance(result.content, str)
-                else json.dumps(result.content, ensure_ascii=False)
+                else json.dumps(result.content, ensure_ascii=False, allow_nan=False)
             )
             (out_dir / raw_artifact).write_text(raw_text, encoding="utf-8")
             page_tokens = usage.get("tokens")
@@ -421,6 +468,7 @@ def run(
                     source=source,
                     result=result,
                     adapter=adapter,
+                    parent_quality=(parent_quality_by_page or {}).get(page_id),
                 )
             )
             if schema_spec is not None and result.format in ALIGNABLE_FORMATS:
@@ -526,8 +574,6 @@ def run(
         status=status,
         extractors=extractor_entries,
     )
-    write_json(out_dir / "manifest.json", manifest)
-
     audit = build_audit(
         schema_version=config.schema_version,
         run_id=run_id,
@@ -591,6 +637,9 @@ def run(
     )
     log_event = [entry for entry in log_event if _should_log(entry["level"], log_level)]
     write_jsonl(out_dir / "run.log", log_event)
+    # The manifest is the commit indicator for a fully written run directory.
+    # Write it only after every artifact it points to exists.
+    write_json(out_dir / "manifest.json", manifest)
     if failure_error is not None:
         raise failure_error
 
@@ -645,7 +694,7 @@ def rerun(
         raise ValueError(f"Invalid rerun manifest: {rerun_path}")
 
     _apply_adapter_path(adapter_path)
-    config = load_config(config_path, validate_adapter=not dry_run)
+    config = load_config(config_path, validate_adapter=False)
     child_depth = int(parent_rerun.get("rerun_depth", 0)) + 1
     if child_depth > config.max_rerun_depth:
         raise ValueError(
@@ -685,6 +734,9 @@ def rerun(
         log_level=log_level,
         page_selection=items,
         parent_run_id=parent_manifest["run_id"],
+        parent_quality_by_page={
+            entry["page_id"]: entry for entry in read_jsonl(parent / "quality.jsonl")
+        },
         run_depth=child_depth,
     )
     if integrity_warnings:
@@ -1162,10 +1214,24 @@ def _validate_extraction_result(adapter_name: str, result: Any) -> None:
         raise ValueError(
             f"Adapter '{adapter_name}' format must contain only letters, numbers, and underscores"
         )
-    if result.confidence is not None and not isinstance(result.confidence, (int, float)):
-        raise ValueError(f"Adapter '{adapter_name}' confidence must be a number or null")
+    _validate_optional_finite_number(adapter_name, "confidence", result.confidence)
+    if result.confidence is not None and not 0 <= result.confidence <= 1:
+        raise ValueError(f"Adapter '{adapter_name}' confidence must be between 0 and 1")
+    if result.model is not None and not isinstance(result.model, str):
+        raise ValueError(f"Adapter '{adapter_name}' model must be a string or null")
     if not isinstance(result.warnings, list):
         raise ValueError(f"Adapter '{adapter_name}' warnings must be a list")
+    if not all(isinstance(warning, str) for warning in result.warnings):
+        raise ValueError(f"Adapter '{adapter_name}' warnings must contain only strings")
+    confidence_detail = getattr(result, "confidence_detail", None)
+    if confidence_detail is not None and not isinstance(confidence_detail, dict):
+        raise ValueError(
+            f"Adapter '{adapter_name}' confidence_detail must be a mapping or null"
+        )
+    _require_json_serializable(
+        f"Adapter '{adapter_name}' confidence_detail must be JSON-serializable",
+        confidence_detail,
+    )
     if not isinstance(result.usage, dict):
         raise ValueError(f"Adapter '{adapter_name}' usage must be a mapping")
     _require_json_serializable(
@@ -1173,7 +1239,7 @@ def _validate_extraction_result(adapter_name: str, result: Any) -> None:
         result.usage,
     )
     pages = result.usage.get("pages")
-    if pages != 1:
+    if not isinstance(pages, int) or isinstance(pages, bool) or pages != 1:
         raise ValueError(
             f"Adapter '{adapter_name}' usage.pages must be exactly 1 "
             f"(the page is the canonical unit; each extract() call handles one page). "
@@ -1183,13 +1249,26 @@ def _validate_extraction_result(adapter_name: str, result: Any) -> None:
     if tokens is not None and (not isinstance(tokens, int) or isinstance(tokens, bool)):
         raise ValueError(f"Adapter '{adapter_name}' usage.tokens must be an integer or null")
     compute_seconds = result.usage.get("compute_seconds")
-    if compute_seconds is not None and not isinstance(compute_seconds, (int, float)):
-        raise ValueError(
-            f"Adapter '{adapter_name}' usage.compute_seconds must be a number or null"
-        )
+    _validate_optional_finite_number(
+        adapter_name, "usage.compute_seconds", compute_seconds
+    )
     cost_usd = result.usage.get("cost_usd")
-    if cost_usd is not None and not isinstance(cost_usd, (int, float)):
-        raise ValueError(f"Adapter '{adapter_name}' usage.cost_usd must be a number or null")
+    _validate_optional_finite_number(adapter_name, "usage.cost_usd", cost_usd)
+
+
+def _validate_optional_finite_number(
+    adapter_name: str, field: str, value: Any
+) -> None:
+    if value is None:
+        return
+    if (
+        isinstance(value, bool)
+        or not isinstance(value, (int, float))
+        or not math.isfinite(value)
+    ):
+        raise ValueError(
+            f"Adapter '{adapter_name}' {field} must be a finite number or null"
+        )
 
 
 def _canonical_usage(usage: dict[str, Any]) -> dict[str, Any]:
@@ -1203,7 +1282,7 @@ def _canonical_usage(usage: dict[str, Any]) -> dict[str, Any]:
 
 def _require_json_serializable(message: str, value: Any) -> None:
     try:
-        json.dumps(value)
+        json.dumps(value, allow_nan=False)
     except (TypeError, ValueError) as exc:
         raise ValueError(message) from exc
 
@@ -1281,6 +1360,7 @@ def _build_quality_entry(
     source: Path,
     result: Any,
     adapter: Any,
+    parent_quality: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     text = _quality_text(result.content)
     character_count = len(text)
@@ -1302,6 +1382,8 @@ def _build_quality_entry(
             if warning not in {"suspicious_symbol_density", "fragmented_text"}
         ]
     warnings.extend(shape_warnings)
+    output_integrity, integrity_warnings = _output_integrity(text, parent_quality)
+    warnings.extend(integrity_warnings)
     confidence_detail = getattr(result, "confidence_detail", None)
     if _has_low_confidence_tail(confidence_detail):
         warnings.append("low_confidence")
@@ -1330,6 +1412,7 @@ def _build_quality_entry(
         "warnings": warnings,
         "text_quality": text_quality,
         "embedded_text_comparison": delta,
+        "output_integrity": output_integrity,
     }
 
 
@@ -1355,7 +1438,44 @@ def _has_low_confidence_tail(detail: Any) -> bool:
 def _quality_text(content: Any) -> str:
     if isinstance(content, str):
         return content
-    return json.dumps(content, ensure_ascii=False, sort_keys=True)
+    return json.dumps(content, ensure_ascii=False, sort_keys=True, allow_nan=False)
+
+
+def _output_integrity(
+    text: str, parent_quality: dict[str, Any] | None
+) -> tuple[dict[str, Any], list[str]]:
+    """Return conservative chat-leak and rerun-size evidence for one page."""
+    folded = text.casefold()
+    markers = [marker for marker in _INSTRUCTION_MARKERS if marker.casefold() in folded]
+    warnings = ["instruction_echo"] if markers else []
+
+    parent_count: int | None = None
+    if parent_quality is not None:
+        candidate = parent_quality.get("character_count")
+        if isinstance(candidate, int) and not isinstance(candidate, bool) and candidate >= 0:
+            parent_count = candidate
+
+    character_delta: int | None = None
+    character_ratio: float | None = None
+    if parent_count is not None:
+        character_delta = len(text) - parent_count
+        if parent_count > 0:
+            raw_ratio = len(text) / parent_count
+            character_ratio = round(raw_ratio, 4)
+            if raw_ratio >= 4.0 and character_delta >= 1000:
+                warnings.append("output_inflation")
+        elif character_delta >= 1000:
+            warnings.append("output_inflation")
+
+    return (
+        {
+            "instruction_markers": markers,
+            "parent_character_count": parent_count,
+            "character_delta": character_delta,
+            "character_ratio": character_ratio,
+        },
+        warnings,
+    )
 
 
 # Letters abolished by the 1918 Russian orthographic reform. \u0456 is deliberately
