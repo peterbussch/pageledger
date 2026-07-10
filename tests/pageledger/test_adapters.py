@@ -986,6 +986,94 @@ def test_local_llm_example_rejects_invalid_generation_options() -> None:
         sys.path.pop(0)
 
 
+def _load_ollama_example():
+    examples_dir = Path(__file__).resolve().parents[2] / "examples"
+    sys.path.insert(0, str(examples_dir))
+    try:
+        import ollama_cleanup_adapter
+
+        return ollama_cleanup_adapter
+    finally:
+        sys.path.pop(0)
+
+
+def test_ollama_cleanup_example_passes_conformance() -> None:
+    module = _load_ollama_example()
+    assert adapter_conformance_check(module.OllamaCleanupAdapter()) == []
+
+
+def test_ollama_cleanup_extract_strips_thoughts_and_records_tokens(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    module = _load_ollama_example()
+    _fake_ocr_binaries(monkeypatch, tsv_body=None, txt="ClA controlled\n")
+    adapter = module.OllamaCleanupAdapter(model="test-model")
+    monkeypatch.setattr(
+        adapter,
+        "_generate",
+        lambda prompt: ("<think>fix letters</think>CIA-controlled\n", 37),
+    )
+
+    result = _extract_one(adapter, tmp_path)
+
+    assert result.content == "CIA-controlled"
+    assert result.usage["tokens"] == 37
+    assert "thought_block_stripped" in result.warnings
+    assert result.model.endswith("ollama:test-model")
+
+
+def test_ollama_generate_uses_non_streaming_api_and_real_token_counts(
+    monkeypatch,
+) -> None:
+    module = _load_ollama_example()
+    captured: dict = {}
+
+    class Response:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return None
+
+        def read(self):
+            return json.dumps(
+                {
+                    "response": "Clean text",
+                    "prompt_eval_count": 11,
+                    "eval_count": 7,
+                }
+            ).encode("utf-8")
+
+    def fake_urlopen(request, *, timeout):
+        captured["url"] = request.full_url
+        captured["payload"] = json.loads(request.data)
+        captured["timeout"] = timeout
+        return Response()
+
+    monkeypatch.setattr(module, "urlopen", fake_urlopen)
+    adapter = module.OllamaCleanupAdapter(
+        model="test-model",
+        base_url="http://ollama.test/",
+        max_tokens=123,
+        temperature=0.2,
+        timeout_seconds=9,
+    )
+
+    completion, tokens = adapter._generate("OCR text")
+
+    assert (completion, tokens) == ("Clean text", 18)
+    assert captured["url"] == "http://ollama.test/api/generate"
+    assert captured["payload"] == {
+        "model": "test-model",
+        "prompt": "OCR text",
+        "stream": False,
+        "think": False,
+        "options": {"num_predict": 123, "temperature": 0.2},
+    }
+    assert captured["timeout"] == 9.0
+
+
 def test_tsv_table_clustering_builds_markdown_table() -> None:
     """Words on TSV lines become rows; wide horizontal gaps become columns."""
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "examples"))

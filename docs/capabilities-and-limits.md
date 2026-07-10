@@ -90,7 +90,9 @@ stays short because this exists.
 - Local document-conversion engines (Docling, Marker, Surya) through custom
   adapters.
 - Local-LLM cleanup of OCR output (see
-  [`examples/local_llm_cleanup_adapter.py`](../examples/local_llm_cleanup_adapter.py)).
+  [`examples/local_llm_cleanup_adapter.py`](../examples/local_llm_cleanup_adapter.py)
+  and
+  [`examples/ollama_cleanup_adapter.py`](../examples/ollama_cleanup_adapter.py)).
 - PDF page counting for custom adapters that expose `page_count(source)`.
 
 ## Documented design, not yet implemented
