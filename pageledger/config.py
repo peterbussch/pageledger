@@ -13,6 +13,7 @@ import yaml
 from .adapters import load_adapter
 from .aligner import load_schema_spec
 from .grading import GRADES, merge_thresholds, validate_thresholds
+from .policy import validate_policy_rules
 
 # ---------------------------------------------------------------------------
 # Known top-level keys for v0.1.  Unknown keys trigger a warning so users
@@ -33,6 +34,8 @@ _KNOWN_RUN_KEYS = frozenset({
     "grading",
     "max_rerun_depth",
     "pricing",
+    "quarantine_if",
+    "rerun_if",
     "retry",
 })
 
@@ -197,6 +200,20 @@ class PageLedgerConfig:
         return merge_thresholds(overrides)
 
     @property
+    def rerun_rules(self) -> list[dict[str, Any]]:
+        return validate_policy_rules(
+            _walk(self.data, "run", "rerun_if"),
+            "run.rerun_if",
+        )
+
+    @property
+    def quarantine_rules(self) -> list[dict[str, Any]]:
+        return validate_policy_rules(
+            _walk(self.data, "run", "quarantine_if"),
+            "run.quarantine_if",
+        )
+
+    @property
     def dataset_citation(self) -> dict[str, str] | None:
         citation = self.data.get("dataset_citation")
         if citation is None:
@@ -257,6 +274,8 @@ def _validate_config(config: PageLedgerConfig, *, validate_adapter: bool) -> Non
         "adapter_options",
         "review_below_grade",
         "grading_thresholds",
+        "rerun_rules",
+        "quarantine_rules",
     ):
         getattr(config, prop)
     if validate_adapter and config.adapter_name is not None:

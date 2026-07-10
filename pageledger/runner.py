@@ -42,6 +42,7 @@ from .artifacts import (
 )
 from .config import load_config
 from .grading import grade_is_below, grade_page
+from .policy import evaluate_policies
 
 LOG_LEVELS = {"DEBUG": 10, "INFO": 20, "WARNING": 30, "ERROR": 40}
 
@@ -281,6 +282,7 @@ def run(
     input_entries: list[dict[str, Any]] = []
     source_sha256_map: dict[Path, str] = {}
     review_queue: list[dict[str, Any]] = []
+    quarantine_queue: list[dict[str, Any]] = []
     provenance_entries: list[dict[str, Any]] = []
     extractor_entries: list[dict[str, Any]] = []
     log_entries: list[dict[str, Any]] = []
@@ -538,32 +540,54 @@ def run(
     # Wire quality-warning pages into the review queue so users can triage
     # flagged pages without scanning quality.jsonl by hand.
     for entry in quality_entries:
+        queue_entry = {
+            "page_id": entry["page_id"],
+            "page_number": entry["page_number"],
+            "type": config.default_review_type,
+            "confidence": None,
+            "grade": entry["grade"],
+            "grade_basis": entry["grade_basis"],
+        }
         if entry.get("warnings"):
             review_queue.append({
-                "page_id": entry["page_id"],
-                "page_number": entry["page_number"],
-                "type": config.default_review_type,
-                "confidence": None,
+                **queue_entry,
                 "action": "review",
                 "reason": "quality_warning",
-                "grade": entry["grade"],
-                "grade_basis": entry["grade_basis"],
             })
         if config.review_below_grade is not None and grade_is_below(
             entry["grade"], config.review_below_grade
         ):
             review_queue.append({
-                "page_id": entry["page_id"],
-                "page_number": entry["page_number"],
-                "type": config.default_review_type,
-                "confidence": None,
+                **queue_entry,
                 "action": "review",
                 "reason": "grade_below_threshold",
-                "grade": entry["grade"],
-                "grade_basis": entry["grade_basis"],
+            })
+        alignment = alignments.get(entry["page_id"])
+        for predicate in evaluate_policies(
+            config.rerun_rules,
+            grade=entry["grade"],
+            alignment=alignment,
+        ):
+            review_queue.append({
+                **queue_entry,
+                "action": "review",
+                "reason": f"rerun_if:{predicate}",
+            })
+        for predicate in evaluate_policies(
+            config.quarantine_rules,
+            grade=entry["grade"],
+            alignment=alignment,
+        ):
+            quarantine_queue.append({
+                **queue_entry,
+                "action": "quarantine",
+                "reason": f"quarantine_if:{predicate}",
             })
 
     status = "failed" if failure_error else "completed" if not dry_run else "partial"
+    quarantined_page_ids = {
+        item["page_id"] for item in quarantine_queue
+    }
     manifest = build_manifest(
         schema_version=config.schema_version,
         run_id=run_id,
@@ -578,7 +602,7 @@ def run(
         pages_total=pages_total,
         pages_extracted=pages_extracted,
         pages_skipped=pages_skipped,
-        pages_quarantined=0,
+        pages_quarantined=len(quarantined_page_ids),
         records_normalized=sum(
             len(alignment["records"]) for alignment in alignments.values()
         ),
@@ -591,6 +615,7 @@ def run(
         schema_version=config.schema_version,
         run_id=run_id,
         review_queue=review_queue,
+        quarantine_queue=quarantine_queue,
     )
     write_json(out_dir / "audit.json", audit)
 
@@ -626,6 +651,7 @@ def run(
         reason="dry_run" if dry_run else "audit_policy",
         audit=audit,
         route_map=route_map,
+        quarantined_page_ids=quarantined_page_ids,
         run_depth=run_depth,
         grades={entry["page_id"]: entry["grade"] for entry in quality_entries},
     )

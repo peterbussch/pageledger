@@ -141,12 +141,13 @@ def build_audit(
     schema_version: str,
     run_id: str,
     review_queue: list[dict[str, Any]],
+    quarantine_queue: list[dict[str, Any]],
 ) -> dict[str, Any]:
     return {
         "schema_version": schema_version,
         "run_id": run_id,
         "review_queue": review_queue,
-        "quarantine_queue": [],
+        "quarantine_queue": quarantine_queue,
     }
 
 
@@ -160,6 +161,7 @@ def build_rerun_manifest(
     reason: str,
     audit: dict[str, Any],
     route_map: dict[str, Any],
+    quarantined_page_ids: set[str] | None = None,
     run_depth: int = 0,
     grades: dict[str, str] | None = None,
 ) -> dict[str, Any]:
@@ -185,6 +187,10 @@ def build_rerun_manifest(
         for page in document["pages"]
     }
     allowed = run_depth < max_rerun_depth
+    quarantined = set(quarantined_page_ids or ())
+    quarantined.update(
+        item["page_id"] for item in audit.get("quarantine_queue", [])
+    )
     items: list[dict[str, Any]] = []
     if allowed:
         # A page can sit in the review queue once per reason (e.g. both
@@ -193,6 +199,8 @@ def build_rerun_manifest(
         by_page: dict[str, dict[str, Any]] = {}
         for page in audit["review_queue"]:
             page_id = page["page_id"]
+            if page_id in quarantined:
+                continue
             existing = by_page.get(page_id)
             if existing is not None:
                 if page["reason"] not in existing["reason"].split("+"):

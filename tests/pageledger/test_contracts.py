@@ -56,7 +56,7 @@ run:
     provider_private:
       any_shape: [is, allowed]
   future_switch: true
-  rerun_if: {}
+  future_policy: {}
 """,
     )
 
@@ -64,7 +64,7 @@ run:
         "provider_private": {"any_shape": ["is", "allowed"]}
     }
     assert any("Unknown run key 'future_switch'" in item for item in config.warnings)
-    assert any("Unknown run key 'rerun_if'" in item for item in config.warnings)
+    assert any("Unknown run key 'future_policy'" in item for item in config.warnings)
     assert not any("provider_private" in item for item in config.warnings)
 
 

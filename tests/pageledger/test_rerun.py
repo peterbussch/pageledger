@@ -85,6 +85,32 @@ def test_rerun_manifest_empty_queue_not_executable(tmp_path):
     assert rerun["rerun_status"] == "empty_queue"
 
 
+def test_quarantine_excludes_page_from_rerun_but_preserves_review_evidence(
+    tmp_path,
+):
+    source = tmp_path / "doc.txt"
+    source.write_text("short", encoding="utf-8")
+    config = MINIMAL + """\
+  rerun_if:
+    - grade_below: A
+  quarantine_if:
+    - grade_below: A
+"""
+    out_dir = _run([source], config, tmp_path)
+
+    audit = json.loads((out_dir / "audit.json").read_text(encoding="utf-8"))
+    assert {item["reason"] for item in audit["review_queue"]} == {
+        "quality_warning",
+        "rerun_if:grade_below",
+    }
+    assert [item["reason"] for item in audit["quarantine_queue"]] == [
+        "quarantine_if:grade_below"
+    ]
+    assert _load_rerun(out_dir)["items"] == []
+    manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
+    assert manifest["summary"]["pages_quarantined"] == 1
+
+
 def test_rerun_manifest_dry_run_is_executable(tmp_path):
     """Dry-run review items are rerun candidates, so the manifest is executable."""
     source = tmp_path / "doc.txt"
