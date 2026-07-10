@@ -12,7 +12,7 @@ from collections.abc import Sequence
 from datetime import datetime, timezone
 from pathlib import Path
 from shutil import copyfile
-from typing import Any
+from typing import Any, cast
 
 import yaml
 
@@ -383,10 +383,10 @@ def run(
         adapter_capabilities = list(getattr(adapter, "capabilities", ()))
 
     for source, page in planned_pages:
-        action = page["action"]
+        action = cast(str, page["action"])
         if action in {"review", "skip"}:
             continue
-        page_id = page["page_id"]
+        page_id = cast(str, page["page_id"])
 
         if adapter is not None:
             result, extraction_seconds, extraction_started_at, attempt, adapter_error = (
@@ -426,6 +426,7 @@ def run(
             if page_cost is None:
                 cost_is_partial = True
             else:
+                assert page_cost_basis is not None
                 cost_bases.add(page_cost_basis)
                 estimated_cost_usd = _round_cost(estimated_cost_usd + page_cost)
             usage_entries.append(usage)
@@ -674,7 +675,11 @@ def run(
             }
         ]
     )
-    log_event = [entry for entry in log_event if _should_log(entry["level"], log_level)]
+    log_event = [
+        entry
+        for entry in log_event
+        if _should_log(cast(str, entry["level"]), log_level)
+    ]
     write_jsonl(out_dir / "run.log", log_event)
     # The manifest is the commit indicator for a fully written run directory.
     # Write it only after every artifact it points to exists.

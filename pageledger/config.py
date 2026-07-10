@@ -379,6 +379,7 @@ def _nonneg_number(value: Any, name: str, *, cast: Any = float) -> Any:
     if isinstance(value, bool):
         raise ValueError(f"{name} must be {kind}")
 
+    number: int | float
     if cast is int:
         if isinstance(value, int):
             number = value

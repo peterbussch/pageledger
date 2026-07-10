@@ -40,9 +40,11 @@ dependencies = [
 dev = [
   "build>=1.2",
   "jsonschema>=4.0",
+  "mypy>=1.15",
   "pytest>=8.0",
   "ruff>=0.9",
   "twine>=6.0",
+  "types-PyYAML>=6.0",
 ]
 pdf = [
   "pypdf>=6",
@@ -78,3 +80,12 @@ ignore = [
 markers = [
     "stress: Stress/performance tests that generate large synthetic inputs (skipped in default CI)",
 ]
+
+[tool.mypy]
+python_version = "3.10"
+files = ["pageledger"]
+warn_unused_configs = true
+
+[[tool.mypy.overrides]]
+module = ["pypdf", "pypdf.*"]
+ignore_missing_imports = true

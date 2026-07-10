@@ -573,7 +573,7 @@ def _check_normalized(
             )
         else:
             counts["normalized_records"] += len(records)
-        prov = provenance.get(page_id)
+        prov = provenance.get(page_id) if isinstance(page_id, str) else None
         result = prov.get("result") if isinstance(prov, dict) else None
         raw_artifact = result.get("raw_artifact") if isinstance(result, dict) else None
         if prov is not None and entry.get("raw_artifact") != raw_artifact:
@@ -601,7 +601,7 @@ def _check_references(
 ) -> None:
     for entry in entries:
         page_id = entry.get("page_id") if isinstance(entry, dict) else None
-        route_page = route_pages.get(page_id)
+        route_page = route_pages.get(page_id) if isinstance(page_id, str) else None
         if route_page is None:
             _add(
                 errors,

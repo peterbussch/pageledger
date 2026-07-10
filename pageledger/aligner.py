@@ -237,21 +237,23 @@ def align_page(
     extra: list[str] = []
     structure_issues: list[dict[str, Any]] = []
     for index, header in enumerate(headers):
-        column = alias_map.get(normalize_header(header))
-        if column is not None and column.name not in matched_columns:
-            matched[header] = column.name
-            matched_columns[column.name] = index
+        matched_column = alias_map.get(normalize_header(header))
+        if matched_column is not None and matched_column.name not in matched_columns:
+            matched[header] = matched_column.name
+            matched_columns[matched_column.name] = index
         else:
             extra.append(header)
-            if column is not None:
+            if matched_column is not None:
                 kept_header = next(
-                    source for source, target in matched.items() if target == column.name
+                    source
+                    for source, target in matched.items()
+                    if target == matched_column.name
                 )
                 structure_issues.append(
                     {
                         "type": "duplicate_header",
                         "header": header,
-                        "column": column.name,
+                        "column": matched_column.name,
                         "kept_header": kept_header,
                     }
                 )
@@ -286,8 +288,12 @@ def align_page(
     for row_number, row in enumerate(rows, start=1):
         record: dict[str, Any] = {}
         for column in spec.columns:
-            index = matched_columns.get(column.name)
-            raw_value = row[index] if index is not None and index < len(row) else None
+            column_index = matched_columns.get(column.name)
+            raw_value = (
+                row[column_index]
+                if column_index is not None and column_index < len(row)
+                else None
+            )
             value, error = _coerce(raw_value, column.type)
             if error is not None:
                 coercion_errors.append(
@@ -909,6 +915,7 @@ def _eval_operand(node: ast.AST, record: dict[str, Any]) -> float | None:
         number = float(value)
         return number if math.isfinite(number) else None
     assert isinstance(node, ast.Constant)
+    assert isinstance(node.value, (int, float)) and not isinstance(node.value, bool)
     return float(node.value)
 
 
