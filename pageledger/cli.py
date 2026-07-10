@@ -15,7 +15,8 @@ from .aligner import align_run
 from .compare import compare_runs, render_comparison
 from .doctor import build_doctor_report
 from .grading import GRADES
-from .runner import inspect_run, rerun, run, run_pages_csv
+from .reports import inspect_run, run_pages_csv
+from .runner import rerun, run
 from .verify import render_verification, verify_run
 
 MINIMAL_CONFIG = textwrap.dedent("""\
