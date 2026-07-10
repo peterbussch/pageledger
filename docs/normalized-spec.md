@@ -1,4 +1,4 @@
-# Normalized Page Specification
+# Normalized page specification
 
 `normalized/{page_id}.json` is the schema aligner's output for one
 structured page: extractor output mapped to the columns declared in the
@@ -6,7 +6,7 @@ config `schema` section. One file per aligned page; plain-text pages
 produce no file. Written by `pageledger run` when a schema is configured,
 and rewritten by `pageledger align`.
 
-## Minimal Shape
+## Minimal shape
 
 ```json
 {
@@ -59,19 +59,19 @@ and rewritten by `pageledger align`.
 }
 ```
 
-## Design Notes
+## Design notes
 
 - Header matching is exact after normalization (casefold, collapsed
   whitespace) against declared column names and aliases. There is no
   fuzzy matching: an unmatched header is recorded in `columns.extra`, not
   guessed at.
 - Every declared column appears in every record. `null` means the column
-  was unmatched, the cell was empty, or coercion failed — the distinction
+  was unmatched, the cell was empty, or coercion failed. The distinction
   is recoverable from `columns` and `coercion_errors`.
 - Coercion (`integer`/`number`) tolerates thousand separators (`,`, space,
   NBSP). A non-empty cell that fails to parse becomes `null` and the raw
   string is preserved in `coercion_errors`. Nothing is silently fixed.
-- Check rows with a `null` operand are counted as `rows_unchecked` —
+- Check rows with a `null` operand are counted as `rows_unchecked` -
   missing evidence, neither pass nor fail.
 - Unparseable structured content (e.g. an adapter declared
   `markdown_table` but no table was found) still writes the file, with
@@ -87,7 +87,7 @@ and rewritten by `pageledger align`.
 - The JSON Schema for this artifact is at `schemas/normalized-page.schema.json`.
 - Schema validation tests are in `tests/pageledger/test_schemas.py`.
 
-## Field Table
+## Field table
 
 | Field | Type | Required | Nullable | Meaning |
 |---|---|---|---|---|

@@ -58,7 +58,7 @@ pageledger align runs/run-001/ --schema table-v2.yml --dry-run
 ```
 
 Re-aligns an existing run's structured raw pages against a schema and
-regrades every page — without re-extracting, so iterating on column
+regrades every page without re-extracting, so iterating on column
 aliases costs nothing even when the extraction was paid OCR or a VLM.
 Without `--schema` the run's own `config-snapshot.yml` schema is used;
 with it, the file (a bare schema mapping or any config with a `schema:`
@@ -160,8 +160,28 @@ run:
     cost_per_page: 0.0015       # only if you want derived cost estimates
   grading:
     review_below_grade: C       # queue pages graded below C (off by default)
+  rerun_if:
+    - grade_below: C
+    - missing_required_columns: true
+    - arithmetic_failure_rate_above: 0.05
+  quarantine_if:
+    - grade_below: D
   max_rerun_depth: 2
 ```
+
+`rerun_if` adds matching pages to the review queue and rerun manifest.
+`quarantine_if` records matching pages in the quarantine queue and excludes
+them from rerun items. Rules are evaluated after grading. Each list item must
+be a single-key mapping. The predicates are:
+
+- `grade_below` with one of `A, B, C, D, F`. The comparison is strict.
+- `missing_required_columns: true`. It only matches aligned pages.
+- `arithmetic_failure_rate_above` with a number from 0 to 1. It only
+  matches aligned pages with an arithmetic pass rate.
+
+The older `run.grading.review_below_grade` setting still works and can be
+used with `rerun_if`. Overlapping reasons are kept in `audit.json` and
+joined on the single rerun item.
 
 Split config examples (`page-taxonomy.yml`, `table-schema.yml`,
 `run-policy.yml`) live in [`examples/`](examples/) for larger projects.

@@ -1,9 +1,9 @@
-# Run Manifest Specification
+# Run manifest specification
 
 Every PageLedger run should produce a canonical `manifest.json`. The manifest
 is the durable pointer to every other artifact in the run directory.
 
-## Minimal Shape
+## Minimal shape
 
 ```json
 {
@@ -67,7 +67,7 @@ is the durable pointer to every other artifact in the run directory.
 }
 ```
 
-## Required Fields
+## Required fields
 
 | Field | Type | Meaning |
 |---|---|---|
@@ -77,8 +77,8 @@ is the durable pointer to every other artifact in the run directory.
 | `execution_mode` | string | `dry_run` or `execute`. |
 | `started_at` | ISO timestamp | Run start time in UTC. |
 | `completed_at` | ISO timestamp or null | Run completion time in UTC. |
-| `status` | string | `running`, `completed`, `failed`, or `partial`. |
-| `inputs` | array | Source files and checksums. Each entry carries `path`, `sha256`, `page_count` (the source's full size), and — when `--pages` limited the run — the selection expression as `pages` (e.g. `"1-8,81"`). |
+| `status` | string | `completed`, `failed`, or `partial`. |
+| `inputs` | array | Source files and checksums. Each entry carries `path`, `sha256`, and `page_count` (the source's full size). When `--pages` limits the run, the entry also carries the selection expression as `pages` (e.g. `"1-8,81"`). |
 | `config` | object | Run-directory config snapshot path, checksum, and source config paths. |
 | `extractors` | array | Extractor adapters and model/version metadata. |
 | `dataset_citation` | object or null | Optional user-provided source citation for the input collection. |
@@ -91,10 +91,13 @@ Required `summary` keys are `pages_total`, `pages_extracted`,
 to `normalized/` by the schema aligner), `estimated_cost_usd`, and
 `quality_warning_pages`.
 
+`pages_quarantined` counts distinct pages that matched at least one
+`quarantine_if` rule.
+
 Use `partial` for dry runs and other runs that intentionally produce only part
 of the extraction lifecycle.
 
-## Design Notes
+## Design notes
 
 - Keep the v0.1 manifest JSON-native and tool-friendly. DDI, DataCite, TEI,
   PAGE, and ALTO integrations can be exporters later.
@@ -121,7 +124,7 @@ of the extraction lifecycle.
   `compute_seconds`. Per-page `cost_usd` values remain in provenance usage;
   aggregate dollar cost is an estimate, not a provider invoice.
 
-## Compatibility Policy
+## Compatibility policy
 
 PageLedger artifacts carry `schema_version: "0.1"` as their release contract.
 
@@ -148,7 +151,7 @@ Additions that do NOT require a schema-version bump:
 - New keys in the `budget` object of `cost.json` when no cap is configured.
 - New `reason` values in the `rerun-manifest.yml` or route map.
 
-## Failure Recovery and Partial-Run Guarantees
+## Failure recovery and partial-run guarantees
 
 PageLedger is designed to produce inspectable artifacts even when a run fails.
 The following guarantees hold for all failure paths:
@@ -157,16 +160,16 @@ The following guarantees hold for all failure paths:
 
 Artifacts are written in this order, which matters for interrupted-run recovery:
 
-1. `config-snapshot.yml` — copied before any extraction
-2. `route-map.yml` — written immediately after extraction loop exits (even on failure)
-3. Raw artifacts (`raw/*`) and normalized artifacts — written per-page as extraction succeeds
-4. `audit.json` + `audit.md` — written from the review queue as it stood at failure
-5. `provenance.jsonl` — only successful pages; empty on pre-extraction failure
-6. `quality.jsonl` — only successful pages; empty on pre-extraction failure
-7. `cost.json` — partial data when only some pages succeeded
-8. `rerun-manifest.yml` — review queue items at the point of failure
-9. `run.log` — all logged events including the failure entry
-10. `manifest.json` — written last, with `status: "failed"` when appropriate
+1. `config-snapshot.yml` is copied before extraction.
+2. Raw and normalized page artifacts are written as each page succeeds.
+3. `route-map.yml` is written after the extraction loop exits, including on
+   failure.
+4. `audit.json` and `audit.md` are written from the queues at that point.
+5. `provenance.jsonl` and `quality.jsonl` contain successful pages only.
+6. `cost.json` records partial totals when only some pages succeeded.
+7. `rerun-manifest.yml` records the eligible review pages.
+8. `run.log` includes the failure entry.
+9. `manifest.json` is written last, with `status: "failed"` when needed.
 
 If the process is killed during artifact writing, artifacts written earlier
 may survive while later ones do not. The presence of `manifest.json` is the
@@ -177,8 +180,8 @@ canonical signal that PageLedger finished writing every artifact it points to;
 
 | Scenario | manifest.status | pages_extracted | provenance | raw/*.txt | run.log |
 |---|---|---|---|---|---|
-| Preflight budget exceeded | *no run dir created* | — | — | — | — |
-| Pre-extraction config error | *no run dir created* | — | — | — | — |
+| Preflight budget exceeded | *no run dir created* | n/a | n/a | n/a | n/a |
+| Pre-extraction config error | *no run dir created* | n/a | n/a | n/a | n/a |
 | Adapter fails on page 1 | `"failed"` | 0 | empty | none | error entry |
 | Adapter fails on page N (>1) | `"failed"` | N−1 | N−1 lines | N−1 files | error entry |
 | Invalid adapter result | `"failed"` | prior pages | prior pages only | prior pages only | error entry |

@@ -1,4 +1,4 @@
-# Extractor Adapter Protocol
+# Extractor adapter protocol
 
 PageLedger calls existing OCR/VLM tools through a small adapter interface.
 This keeps the package focused on routing, provenance, audit queues, and
@@ -8,7 +8,7 @@ The protocol is frozen for the 0.1 schema version. Patch releases may add
 optional attributes; minor releases may add required attributes after a
 `schema_version` bump.
 
-## Call Sequence
+## Call sequence
 
 ```mermaid
 sequenceDiagram
@@ -32,7 +32,7 @@ sequenceDiagram
     end
 ```
 
-## Python Sketch
+## Python sketch
 
 ```python
 from dataclasses import dataclass
@@ -85,7 +85,7 @@ class ExtractorAdapter:
         """Extract one routed page.
 
         Called once per attempt for a page; configured retries may call it
-        again after an exception. usage.pages MUST be 1 — the canonical unit
+        again after an exception. usage.pages MUST be 1: the canonical unit
         is the page, and each successful call handles one page.
         """
 ```
@@ -94,7 +94,7 @@ The run controller computes `prompt_hash` from the resolved prompt before
 calling the adapter. Adapters receive the resolved prompt string; they should
 not invent their own prompt hashes.
 
-## The `usage.pages` Contract
+## The `usage.pages` contract
 
 `usage.pages` **must be exactly 1** for every `extract()` call. PageLedger
 calls `extract()` once per page, so the page count is always known from the
@@ -117,7 +117,7 @@ it `null` and PageLedger derives cost from configured unit rates
 (`run.pricing.cost_per_page` / `cost_per_1k_tokens`), falling back to `null`
 when no rate is known.
 
-## Loading Custom Adapters
+## Loading custom adapters
 
 The built-in adapters are named `text`, `pdf_text`, and `pdf_ocr`.
 Project-specific OCR or VLM wrappers can be loaded with a Python import
@@ -158,7 +158,7 @@ run:
 An adapter that does not accept a given option fails config validation with
 the offending keys named. Options used in a run are recorded in
 `manifest.extractors[].options`. Import strings that resolve to an already
-constructed *instance* cannot take options — pass a class or factory instead.
+constructed *instance* cannot take options: pass a class or factory instead.
 
 ### Finding the adapter module
 
@@ -178,7 +178,7 @@ The directory is prepended to `sys.path` before the config is validated.
 - Async extraction is not supported (the runner is synchronous).
 - One adapter instance is shared across the whole run.
 
-## Timeout and Subprocess Guidance
+## Timeout and subprocess guidance
 
 Adapters that shell out to external commands (e.g. `pdftoppm`, `tesseract`,
 `docling`, `marker`, `surya`) must handle subprocess failures explicitly:
@@ -211,7 +211,7 @@ def extract(self, source, *, page_id, page_number, action, prompt=None):
     )
 ```
 
-## Adapter Conformance Helper
+## Adapter conformance helper
 
 Adapter authors can validate their adapter against the protocol contract:
 
@@ -227,12 +227,12 @@ if issues:
 The checker returns a list of conformance issues (empty = passes). It validates:
 required attributes and their types, sequence item types, required methods, and
 optional `page_count` callability. It does NOT call `extract()` or `supports()`
-— those should be tested in project-specific tests.
+- those should be tested in project-specific tests.
 
 This function is importable from `pageledger.adapters` and has no dependencies
 beyond the Python standard library.
 
-## Result Fields
+## Result fields
 
 Adapters should return `ExtractionResult` instances with:
 
@@ -246,7 +246,7 @@ Adapters should return `ExtractionResult` instances with:
 | `usage` | object | **`pages` must be 1**; `tokens`, `compute_seconds`, `cost_usd` optional/nullable. |
 | `confidence_detail` | object or null | Optional engine-native confidence evidence, adapter-defined shape; recorded into `quality.jsonl` verbatim. `pdf_ocr` fills Tesseract per-word statistics (`scale`, `word_count`, `mean`, `min`, `below_60_count`, `below_60_ratio`). |
 
-## Adapter Candidates
+## Adapter candidates
 
 - Tesseract / pytesseract for cheap OCR fallback.
 - Docling for PDF/document conversion.
@@ -263,7 +263,7 @@ Copy-paste examples live in `examples/`:
 
 - `tesseract_pdftoppm_adapter.py`
 - `cloud_vlm_adapter_skeleton.py`
-- `prereform_normalizer_adapter.py` — OCR plus pre-1918 Russian orthography
+- `prereform_normalizer_adapter.py`: OCR plus pre-1918 Russian orthography
   canonicalization, with the rewrite recorded as a result warning
 
 For a provider-agnostic tier guide, see `docs/ocr-options.md`.

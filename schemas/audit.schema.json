@@ -33,7 +33,7 @@
     },
     "quarantine_queue": {
       "type": "array",
-      "description": "Pages excluded from rerun (quarantine policy, max depth, etc.). Empty in alpha.",
+      "description": "Pages excluded from rerun because they matched a quarantine policy.",
       "items": {
         "type": "object",
         "required": ["page_id", "page_number", "type", "action", "reason"],

@@ -24,23 +24,18 @@ run:
 
   retry:
     # The runner honors max_retries and backoff ("none" or "exponential":
-    # 0.5s base, doubling, capped at 8s). retry_on is a documented policy
-    # placeholder for project code and future runtime support.
+    # 0.5s base, doubling, capped at 8s).
     max_retries: 3
     backoff: exponential
-    # retry_on:
-    #   - rate_limit
-    #   - transient_provider_error
-    #   - timeout
 
-  # The full rerun_if/quarantine_if grammar is a design target, not runtime
-  # configuration. PageLedger warns when these keys are present. The shipped
-  # grade policy is run.grading.review_below_grade (see pageledger.yml).
-  # rerun_if:
-  #   - grade_below: C
-  #   - missing_required_columns: true
-  # quarantine_if:
-  #   - grade_below: D
+  rerun_if:
+    - grade_below: C
+    - missing_required_columns: true
+    - arithmetic_failure_rate_above: 0.05
+
+  # A quarantined page stays in audit.json but cannot enter the rerun items.
+  quarantine_if:
+    - grade_below: D
 
 # Artifact path overrides are a future feature. The alpha uses fixed artifact
 # names and paths (manifest.json, route-map.yml, raw/, normalized/, etc.).

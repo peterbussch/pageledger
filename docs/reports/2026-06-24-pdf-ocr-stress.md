@@ -1,4 +1,4 @@
-# PageLedger PDF/OCR Stress Report
+# PageLedger PDF/OCR stress report
 
 Date: 2026-06-24
 
@@ -6,7 +6,7 @@ Sample PDF: `~/Downloads/2023-fraud-and-financial-crime-report.pdf`
 
 Stress artifacts: `<repo>/.stress/pdf-ocr-20260624T162100Z/`
 
-## Executive Summary
+## Executive summary
 
 The clean-install stress run passed the critical PageLedger checks after the
 patches in this branch. A wheel built successfully, installed into a fresh venv
@@ -20,7 +20,7 @@ quality. OCRmyPDF forced OCR and the custom Tesseract adapter both ran, but
 their output reinforces that PageLedger needs quality/audit layers around OCR
 engines rather than treating OCR text as automatically trustworthy.
 
-## What Was Patched
+## What was patched
 
 - Fixed `pdf_text` dry-run pagination. Before this work, dry-running the
   72-page PDF with `run.adapter: pdf_text` reported one page because PDF page
@@ -40,7 +40,7 @@ engines rather than treating OCR text as automatically trustworthy.
   builds PageLedger, installs it into clean venvs, runs the PDF/OCR matrix, and
   writes ignored stress artifacts under `.stress/`.
 
-## Stress Results
+## Stress results
 
 | Area | Result | Classification |
 |---|---|---|
@@ -65,7 +65,7 @@ installed. The package itself built successfully with the repo venv and again
 inside the stress script's isolated builder venv. This is environment friction,
 not a PageLedger package failure.
 
-## Lessons Learned
+## Lessons learned
 
 - Page accounting must be exact before extraction. A dry run that reports one
   page for a 72-page PDF destroys the value of a page-denominated ledger.
@@ -87,7 +87,7 @@ not a PageLedger package failure.
   were present in this shell, and the doctor correctly reported only
   `set: false` with redacted placeholders.
 
-## Improvements To Make Next
+## Improvements to make next
 
 1. Add an adapter page-count hook.
    Custom adapters should be able to expose `page_count(source)` or a

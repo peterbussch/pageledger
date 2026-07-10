@@ -1,11 +1,13 @@
+# PageLedger: auditable OCR and document extraction runs
+
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/peterbussch/pageledger/main/assets/pageledger-lockup-horizontal-reversed.png">
-    <img src="https://raw.githubusercontent.com/peterbussch/pageledger/main/assets/pageledger-lockup-horizontal.png" alt="PageLedger — the tallied page" width="440">
+    <img src="https://raw.githubusercontent.com/peterbussch/pageledger/main/assets/pageledger-lockup-horizontal.png" alt="PageLedger: the tallied page" width="440">
   </picture>
 </p>
 
-<p align="center"><em>Record, route, and review document extraction — one page at a time.</em></p>
+<p align="center"><em>Record, route, and review document extraction: one page at a time.</em></p>
 
 You OCR'd three thousand archive pages last spring. Which engine did page
 341 go through, what did the run cost, which pages were too noisy to
@@ -99,24 +101,25 @@ Every box on the right is a plain file in the run directory.
   mistaken for provider-billed spend.
 - Schema alignment: declare columns, aliases, types, and arithmetic checks
   once, and structured extractor output (markdown tables, JSON, CSV)
-  becomes normalized records — with coercion failures and failed checks
+  becomes normalized records. Coercion failures and failed checks are
   recorded, never silently fixed. Structural loss such as duplicate headers,
   uneven rows, and ignored tables is recorded too. `pageledger align` can
   preview or apply a revised schema without re-extracting (or re-paying).
 - Per-page grades (A–F) that combine text signals with schema evidence and
-  always name their basis — `A (signals)` and `A (schema)` are different
-  claims. `review_below_grade: C` turns grades into an actionable review
-  queue.
+  always name their basis. `A (signals)` and `A (schema)` are different
+  claims. `review_below_grade: C` turns grades into a review queue.
+- Conditional page policies under `run.rerun_if` and `run.quarantine_if`
+  act on grades, missing required columns, and arithmetic failure rates.
+  Quarantined pages keep their audit evidence but stay out of rerun plans.
 - Page-scoped reruns with lineage, provenance-aware cross-run diffs, runtime
   ledger verification, CSV export, and environment diagnostics.
 - JSON Schemas for every artifact, enforced in CI, and an
   [`AGENTS.md`](AGENTS.md) so AI coding agents can operate the tool and
   validate their own output.
 
-Every page still routes to one configured action; automatic page
-classification and the full conditional-rerun policy grammar are
-documented design targets, not shipped features. The full honest-scope
-list is in
+Every page still routes to one configured action. Automatic page
+classification and multi-adapter fallback chains remain design targets.
+The full honest-scope list is in
 [`docs/capabilities-and-limits.md`](docs/capabilities-and-limits.md).
 
 ## Tested on
@@ -133,6 +136,7 @@ the quality signals flagged page by page. Synthetic stress runs cover
 
 | | |
 |---|---|
+| [`docs/README.md`](docs/README.md) | Documentation index |
 | [`docs/cli.md`](docs/cli.md) | All eight commands, flags, and config keys |
 | [`docs/artifacts.md`](docs/artifacts.md) | What each file in a run directory answers |
 | [`docs/capabilities-and-limits.md`](docs/capabilities-and-limits.md) | What works, what you supply, what is design |

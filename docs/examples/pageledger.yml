@@ -59,8 +59,8 @@ schema:
     low_confidence_threshold: 0.70
 
 run:
-  # Fixture adapter for plain UTF-8 text inputs. Install pageledger[pdf] and use
-  # pdf_text for born-digital PDF text extraction. Real OCR/VLM adapters come later.
+  # Fixture adapter for plain UTF-8 text inputs. Use pdf_text for born-digital
+  # PDFs or pdf_ocr for scanned PDFs.
   adapter: text
   budget:
     # The page is the canonical unit and always enforceable. Dollar/token caps
@@ -82,14 +82,15 @@ run:
     #   confidence: {A: 0.90, B: 0.80, C: 0.70, D: 0.55}
     #   required_column_coverage: {A: 1.0, B: 0.9, C: 0.7}
     #   arithmetic_pass_rate: {A: 0.98, B: 0.90, C: 0.75}
-  # The full rerun_if/quarantine_if policy grammar is a documented design
-  # target; review_below_grade above is the shipped subset.
-  # rerun_if:
-  #   - grade_below: C
-  #   - missing_required_columns: true
-  # quarantine_if:
-  #   - grade_below: D
-  #   - route_confidence_below: 0.60
+  # Add pages matching these rules to the review queue and rerun manifest.
+  rerun_if:
+    - grade_below: C
+    - missing_required_columns: true
+    - arithmetic_failure_rate_above: 0.05
+  # Quarantine wins over rerun. Matching pages remain visible in audit.json
+  # but are left out of rerun-manifest.yml.
+  quarantine_if:
+    - grade_below: D
   pricing:
     # Unit rates. PageLedger derives cost_usd from pages (and tokens, for
     # model-backed adapters); adapters never have to know dollar prices.

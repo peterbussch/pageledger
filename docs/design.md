@@ -1,17 +1,13 @@
-# PageLedger Design Targets
+# PageLedger design and targets
 
 This document holds the intended architecture beyond the current alpha.
 Nothing here is a promise: the release contract is what `capabilities-and-limits.md` lists
 as built in and what the JSON Schemas in
-[`../schemas/`](../schemas/) validate. The `0.1.0` alpha implements the
-**run controller** (budgets, retry/backoff, provenance, quality signals,
-audit queues, rerun execution, cross-run comparison) and the **adapter
-protocol**. `0.1.3` adds the **schema aligner** (§2) and **audit grading**
-(A–F per page, plus the `review_below_grade` policy subset). `0.1.4`
-hardens ledger verification, comparison identity, output-integrity signals,
-and structural-loss accounting without expanding the extraction boundary. The
-classifier-driven router and the full conditional-rerun policy grammar
-remain design targets.
+[`../schemas/`](../schemas/) validate. The `0.1.x` alpha has the run
+controller, adapter protocol, schema aligner, per-page grading, audit queues,
+rerun execution, cross-run comparison, and ledger verification. `0.1.5` adds
+the `rerun_if` and `quarantine_if` policy grammar. The classifier-driven
+router and multi-adapter fallback chains remain design targets.
 
 ```mermaid
 flowchart LR
@@ -20,19 +16,20 @@ flowchart LR
         AP["Adapter protocol<br/>text · pdf_text · custom import strings"]
         SA["Schema aligner (0.1.3)<br/>normalized/ records · pageledger align"]
         AG["Audit grading (0.1.3)<br/>A–F · review_below_grade"]
+        RIF["Page policy grammar (0.1.5)<br/>rerun_if · quarantine_if"]
         RR["pageledger rerun<br/>page-scoped re-extraction"]
         CMP["pageledger compare-runs"]
     end
     subgraph Targets["Design targets"]
         CL["Page classifier / router"]
-        RIF["Full rerun_if policy grammar"]
+        CHAIN["Multi-adapter fallback chains"]
     end
     CL -. "would feed" .-> RC
     RC --> RR --> CMP
     AP --> RC
     SA -- "consumes raw/" --> AG
-    AG --> RR
-    AG -. "would feed" .-> RIF -. "would feed" .-> RR
+    AG --> RIF --> RR
+    CHAIN -. "would feed" .-> RC
 ```
 
 ## The canonical unit: pages
@@ -57,7 +54,7 @@ everything else is optional:
 
 ```python
 usage = {
-    "pages": 1,              # REQUIRED — the portable unit
+    "pages": 1,              # REQUIRED: the portable unit
     "tokens": None,          # VLM/LLM paths only
     "compute_seconds": None, # self-hosted engines
     "cost_usd": None,        # optional adapter-reported passthrough
@@ -66,7 +63,7 @@ usage = {
 
 Dollar cost is derived by PageLedger, never required of the adapter, in
 priority order: (1) adapter-reported `cost_usd`, (2) configured unit rates
-(`cost_per_page` / `cost_per_1k_tokens`), (3) otherwise `null` — the run
+(`cost_per_page` / `cost_per_1k_tokens`), (3) otherwise `null`: the run
 still reports raw page counts. Budgets cap on pages, tokens, or dollars,
 whichever the config sets, because the page count is the only value always
 present.
@@ -83,7 +80,7 @@ present.
   running service or database.
 - Preserve separate citations for software and source data.
 
-## 1. Page Router *(design target)*
+## 1. Page router *(design target)*
 
 The router classifies pages before extraction. It emits a route map that
 decides which pages should be skipped, sent to cheap OCR, sent to a VLM table
@@ -120,14 +117,14 @@ sources stays unambiguous. In the current alpha, every page routes to the
 configured `default_action` (or `review` in dry-run mode); no classifier
 ships.
 
-## 2. Schema Aligner *(shipped in 0.1.3)*
+## 2. Schema aligner *(shipped in 0.1.3)*
 
 The aligner maps OCR/VLM output to a declared schema. The schema defines
 columns, aliases, required fields, type coercions, and arithmetic checks.
-It consumes structured page formats — `markdown_table`, `json`, `csv` —
-and writes one normalized record file per page to `normalized/`
+It consumes structured page formats such as `markdown_table`, `json`,
+and `csv`, then writes one normalized record file per page to `normalized/`
 (see the normalized-page JSON Schema). Plain `text`/`markdown` pages are
-not aligned: without declared structure in the payload there is nothing
+not aligned. Without declared structure in the payload there is nothing
 to map, and guessing would violate the record-uncertainty principle.
 Header matching is exact (casefold, collapsed whitespace) against names
 and aliases; coercion failures and failed checks are recorded, never
@@ -171,37 +168,42 @@ The `quality` keys are floors for grading: coverage below
 `minimum_required_column_coverage` forces the schema axis to F, and a page
 confidence under `low_confidence_threshold` caps its grade at C.
 
-## 3. Run Controller *(mostly implemented)*
+## 3. Run controller
 
 The controller manages long extraction runs. The current alpha implements
 budgets (pages/tokens/dollars, preflight and mid-run), retry with optional
 exponential backoff, per-page provenance with measured extraction time,
 quality signals, audit/review queues, rerun execution (`pageledger rerun`
 consumes the rerun manifest, enforcing `max_rerun_depth`), and cross-run
-comparison (`pageledger compare-runs`). Conditional rerun *policies* are the
-unimplemented remainder:
+comparison (`pageledger compare-runs`).
 
-Grading shipped in 0.1.3 with one policy knob:
+Grading also has the older policy knob
 `run.grading.review_below_grade: C` queues pages graded strictly below the
 threshold (reason `grade_below_threshold`) and fills `previous_grade` in
-the rerun manifest. The full policy grammar remains a design target:
+the rerun manifest. `0.1.5` adds rules under `run.rerun_if` and
+`run.quarantine_if`:
 
 ```yaml
-# Future (not yet enforced by the runner):
-rerun_if:
-  - grade_below: C
-  - missing_required_columns: true
-  - arithmetic_failure_rate_above: 0.05
-extractors:
-  vlm_table:
-    adapter_order:
-      - qwen-local
-      - gemini-api
-      - claude-api
+run:
+  rerun_if:
+    - grade_below: C
+    - missing_required_columns: true
+    - arithmetic_failure_rate_above: 0.05
+  quarantine_if:
+    - grade_below: D
 ```
 
-Today the rerun queue is whatever landed in `audit.json → review_queue`
-(quality warnings, configured-review pages, and grade-threshold pages).
+Each list contains single-key rules. `grade_below` is strict, so a C page
+does not match `grade_below: C`. Missing-column and arithmetic rules only
+match pages with schema-alignment evidence. A page with no alignment does not
+match either rule.
+
+Matching `rerun_if` rules add reasons such as
+`rerun_if:missing_required_columns` to the review queue. Matching
+`quarantine_if` rules add the page to the quarantine queue. A quarantined
+page can remain in the review queue for other reasons, but it is excluded from
+`rerun-manifest.yml`. Multi-adapter `adapter_order` chains are still a
+design target.
 
 ## 4. Staged CLI *(design target)*
 
@@ -216,9 +218,9 @@ pageledger audit runs/run-001/ --out runs/run-001/audit.md
 (`rerun` graduated from this list in the alpha; `align` graduated in
 0.1.3 as `pageledger align <run-dir> --schema table.yml`.) The staged
 commands are useful for debugging and advanced composition, but they should
-not be the default first-use experience — that stays `pageledger run`.
+not be the default first-use experience. That stays `pageledger run`.
 
-## What It Should Not Do First
+## What it should not do first
 
 - It should not train OCR models.
 - It should not replace Docling, Marker, Surya, olmOCR, OCR-D, or Tesseract.
@@ -231,7 +233,7 @@ not be the default first-use experience — that stays `pageledger run`.
 - It should not silently fix uncertain data. Uncertainty should be recorded,
   rerouted, or quarantined for review.
 
-## Open Research Questions
+## Open research questions
 
 - How should region-level extraction be modeled when a page contains mixed
   content?
@@ -242,6 +244,6 @@ not be the default first-use experience — that stays `pageledger run`.
 - Should schemas be pure YAML or Python/Pydantic first?
 - How should quality scores be calibrated across extractors that do not
   expose comparable confidences? (0.1.3 answers this by *labeling*, not
-  calibrating: every rendered grade carries its basis — `A (signals)` vs
-  `A (schema)` — and the docs state grades are only comparable within one
-  adapter. True cross-extractor calibration remains open.)
+  calibrating. Every rendered grade carries its basis, `A (signals)` or
+  `A (schema)`, and the docs state that grades are only comparable within
+  one adapter. True cross-extractor calibration remains open.)

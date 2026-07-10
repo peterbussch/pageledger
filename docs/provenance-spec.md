@@ -1,10 +1,10 @@
-# Provenance JSONL Specification
+# Provenance JSONL specification
 
 `provenance.jsonl` records the evidence trail for a PageLedger run. The run
 manifest points to this file; each line records one extractor activity and the
 metadata needed to understand or reproduce it.
 
-## Minimal Per-Page Line
+## Minimal per-page line
 
 ```json
 {
@@ -54,7 +54,7 @@ metadata needed to understand or reproduce it.
 }
 ```
 
-## Optional Per-Record Links
+## Optional per-record links
 
 Normalized records should preserve links back to provenance lines:
 
@@ -71,7 +71,7 @@ Normalized records should preserve links back to provenance lines:
 }
 ```
 
-## Required Fields
+## Required fields
 
 | Field | Type | Meaning |
 |---|---|---|
@@ -87,7 +87,7 @@ Normalized records should preserve links back to provenance lines:
 | `extraction_seconds` | number or null | Wall-clock seconds for the successful extraction attempt, measured by the runner (independent of adapter-reported `compute_seconds`). |
 | `timestamp` | ISO timestamp | Extraction time in UTC. |
 
-## Design Notes
+## Design notes
 
 - `record_id` should join `run_id`, `page_id`, and a row or record index with
   colon separators.
@@ -104,7 +104,7 @@ Normalized records should preserve links back to provenance lines:
 - The JSON Schema for this artifact is at `schemas/provenance-line.schema.json`.
 - Schema validation tests are in `tests/pageledger/test_schemas.py`.
 
-## Companion Artifact: quality.jsonl
+## Companion artifact: quality.jsonl
 
 `quality.jsonl` records per-page diagnostic signals alongside provenance. It is
 not a calibrated accuracy score. Fields:
@@ -123,19 +123,19 @@ not a calibrated accuracy score. Fields:
 | `text_quality` | object | ✅ | no | Sub-metrics (see below). |
 | `embedded_text_comparison` | object | ❌ | yes | Comparison with PDF embedded text layer. Null for non-PDF sources. |
 | `output_integrity` | object | ❌ | no | Conservative chat-template-marker and parent-rerun size evidence. Present on new 0.1.4 quality lines; optional so older lines remain valid. |
-| `grade` | string | ✅ | no | `A`–`F`. Deterministic summary of this line's evidence — worst of the signal and schema axes. Only comparable within one adapter. |
+| `grade` | string | ✅ | no | `A`–`F`. Deterministic summary of this line's evidence: worst of the signal and schema axes. Only comparable within one adapter. |
 | `grade_basis` | string | ✅ | no | `signals_only` (no alignment for this page) or `schema_aware` (schema column/check evidence contributed). Rendered surfaces always show it: `A (signals)` and `A (schema)` are different claims. |
 | `grade_detail` | object | ✅ | no | `signals_grade`, `schema_grade`, `confidence_band`, `warning_count`, `required_column_coverage`, `arithmetic_pass_rate`, and human-readable `reasons`. |
 
-### Grade Bands
+### Grade bands
 
 Grades combine two axes, taking the worst letter of the two:
 
-- **Signals axis** — worst of the confidence band (defaults: A ≥ 0.90,
+- **Signals axis**: worst of the confidence band (defaults: A ≥ 0.90,
   B ≥ 0.80, C ≥ 0.70, D ≥ 0.55, else F; skipped when the adapter reports
   no confidence) and the warning-count band (0 → A, 1 → B, 2 → C, 3+ → D).
   `empty_text` forces F.
-- **Schema axis** (only when a normalized record exists) — worst of the
+- **Schema axis** (only when a normalized record exists): worst of the
   required-column-coverage band (A ≥ 1.0, B ≥ 0.9, C ≥ 0.7, else D; F when
   parsing failed, no rows, or all required columns missing) and the
   arithmetic-pass-rate band (A ≥ 0.98, B ≥ 0.90, C ≥ 0.75, else D).
@@ -148,10 +148,10 @@ coverage below `minimum_required_column_coverage` forces the schema axis
 to F, and page confidence under `low_confidence_threshold` caps the final
 grade at C. The structured-format prose heuristics
 (`suspicious_symbol_density`, `fragmented_text`) do not fire on
-`markdown_table`/`json`/`csv` pages — pipes and braces are construction,
+`markdown_table`/`json`/`csv` pages: pipes and braces are construction,
 not garble.
 
-### text_quality Fields
+### text_quality fields
 
 | Field | Type | Meaning |
 |---|---|---|
@@ -163,9 +163,9 @@ not garble.
 | `mean_token_length` | number or null | Mean alphabetic token length; null with no tokens. Fragment noise collapses toward 1, tested prose sits above 4. |
 | `short_token_ratio` | number (0–1) or null | Share of alphabetic tokens with 1–2 characters. |
 | `prereform_letter_count` | integer | Cyrillic letters abolished by the 1918 Russian reform (ѣ, ѳ, ѵ). Modern Ukrainian/Belarusian і is deliberately not counted. |
-| `terminal_hard_sign_count` | integer | Word-final hard signs (ъ) — mandatory before 1918, absent from modern Russian. This is the pre-reform signal that survives OCR: engines trained on modern text destroy the abolished letters but keep ъ. |
+| `terminal_hard_sign_count` | integer | Word-final hard signs (ъ): mandatory before 1918, absent from modern Russian. This is the pre-reform signal that survives OCR: engines trained on modern text destroy the abolished letters but keep ъ. |
 
-### Warning Taxonomy
+### Warning taxonomy
 
 | Warning | Trigger |
 |---|---|
@@ -181,7 +181,7 @@ not garble.
 | `instruction_echo` | Output contains one of the high-specificity chat-template markers `<think>`, `</think>`, `<|channel`, `<|im_start|>`, `<|im_end|>`, `[INST]`, or `[/INST]`. Generic words such as “instructions” or “channel” do not trigger it. |
 | `output_inflation` | On a rerun, output is at least 4× and at least 1,000 characters longer than the same parent page. Parent counts, delta, and ratio are recorded in `output_integrity`; this is review evidence, not proof of hallucination. |
 
-### output_integrity Fields
+### output_integrity fields
 
 | Field | Type | Meaning |
 |---|---|---|

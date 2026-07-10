@@ -1,4 +1,4 @@
-# OCR and VLM Options
+# OCR and VLM options
 
 PageLedger is provider-agnostic. It records page routing, adapter metadata,
 provenance, quality signals, usage, cost rollups, and failure evidence. The OCR
@@ -7,7 +7,7 @@ or VLM engine is a pluggable choice made by the user.
 Use this guide to choose a path. Treat tool names as examples, not blessed
 providers.
 
-## Decision Matrix
+## Decision matrix
 
 | Tier | Example path | Runs local | Typical cost | Good fit | PageLedger integration |
 |---|---|---:|---|---|---|
@@ -22,7 +22,7 @@ providers.
 | Cloud VLM | User-chosen model/API | no | provider-defined | Hard pages, multimodal reasoning, messy forms/tables | Custom adapter, usually capped by page/token/dollar budgets. |
 | Hybrid | Local first, cloud only for weak pages | mixed | controlled | Large collections with a small hard subset | Use `quality.jsonl` and review queues to decide reruns. |
 
-## Recommended Workflow
+## Recommended workflow
 
 1. Run `pageledger doctor` to see local commands, optional packages, PATH, and
    redacted cloud environment status.
@@ -60,7 +60,7 @@ mapping with the run so each half still points back to its source spread.
 The script also shows an optional `qpdf --split-pages` command for inspecting
 one source spread at a time. qpdf does not perform the half-page crop.
 
-## Adapter Capability Hints
+## Adapter capability hints
 
 Adapters should declare what they can do:
 
@@ -88,7 +88,7 @@ Do not hard-code provider pricing in adapters. Prefer this order:
 2. Configure project-local unit rates such as `run.pricing.cost_per_page`.
 3. Leave cost unknown and still report pages, tokens, and compute seconds.
 
-## Trust Model
+## Trust model
 
 No OCR/VLM path is automatically trustworthy. PageLedger treats output as
 evidence:

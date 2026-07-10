@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "pageledger"
 version = "0.1.4"
-description = "Page-denominated document extraction run ledger"
+description = "Auditable page-level run ledger for OCR and document extraction"
 readme = "README.md"
 requires-python = ">=3.10"
 license = "MIT"
@@ -27,10 +27,13 @@ classifiers = [
 ]
 keywords = [
   "document-ai",
+  "document-extraction",
+  "document-processing",
+  "data-provenance",
   "ocr",
+  "ocr-pipeline",
   "vlm",
   "digital-humanities",
-  "provenance",
 ]
 dependencies = [
   "PyYAML>=6.0.2",
@@ -52,7 +55,8 @@ pdf = [
 
 [project.urls]
 Homepage = "https://github.com/peterbussch/pageledger"
-Documentation = "https://github.com/peterbussch/pageledger#readme"
+Documentation = "https://github.com/peterbussch/pageledger/blob/main/docs/README.md"
+"Artifact Reference" = "https://github.com/peterbussch/pageledger/blob/main/docs/artifacts.md"
 "PDF/OCR First Run" = "https://github.com/peterbussch/pageledger/blob/main/docs/pdf-ocr-first-run.md"
 "OCR Options" = "https://github.com/peterbussch/pageledger/blob/main/docs/ocr-options.md"
 Issues = "https://github.com/peterbussch/pageledger/issues"

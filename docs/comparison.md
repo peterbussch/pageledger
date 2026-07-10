@@ -1,4 +1,4 @@
-# PageLedger Comparison
+# PageLedger comparison
 
 PageLedger should be positioned as a control plane around extraction tools,
 not as a replacement for them.
@@ -16,7 +16,7 @@ not as a replacement for them.
 | OCR-D | Mature OCR workflow model with METS/PAGE/ALTO conventions. | PageLedger aims to be lighter, VLM-aware, and friendlier to local research workflows that need JSON/YAML artifacts before full library infrastructure. |
 | Unstructured | Document partitioning and preprocessing for downstream use. | PageLedger focuses on extraction run control: what ran, what passed, what failed, what cost money, and what should be rerun. |
 
-## 2026 Threat Model
+## 2026 threat model
 
 The short answer is: modern OCR is swallowing the naive version of this niche,
 but not the whole PageLedger niche.
@@ -47,7 +47,7 @@ runs. PageLedger's alpha should emphasize:
 - Research and archive workflows where source citation, reproducibility, and
   selective reruns matter more than one-shot conversion.
 
-## Competitor Workflow Features
+## Competitor workflow features
 
 Several competitors already reach beyond raw OCR:
 
@@ -67,7 +67,7 @@ as a workflow category owner. Its first public release is strongest when it says
 bring your extractor; PageLedger records the run, the route, the cost evidence,
 and the review/rerun queue.
 
-## Distinctive Claim
+## Distinctive claim
 
 Most document-AI packages optimize for extraction output. PageLedger optimizes
 for the extraction process:
@@ -81,14 +81,14 @@ for the extraction process:
 That process orientation is the reason the package could be interesting to
 archives, libraries, digital-humanities labs, and research projects.
 
-## Non-Goal
+## Non-goal
 
 PageLedger is not an OCR engine, PDF converter, layout detector, or hosted
 document-AI platform. It is useful when a project needs to decide what to run,
 check whether outputs meet project rules, record what happened, and rerun only
 the uncertain parts.
 
-## Sources Checked
+## Sources checked
 
 - [Mistral OCR 3](https://mistral.ai/news/mistral-ocr-3/)
 - [Ai2 olmOCR 2](https://allenai.org/blog/olmocr-2)

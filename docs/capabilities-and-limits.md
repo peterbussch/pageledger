@@ -47,8 +47,8 @@ stays short because this exists.
   required fields, arithmetic `checks` with tolerance) maps structured
   extraction output (`markdown_table`, `json`, `csv`) to normalized
   records in `normalized/{page_id}.json`. Header matching is exact
-  (casefold + collapsed whitespace) against declared names and aliases —
-  never fuzzy. Coercion failures and failed checks are recorded evidence,
+  (casefold + collapsed whitespace) against declared names and aliases.
+  It is never fuzzy. Coercion failures and failed checks are recorded evidence,
   never silent fixes. Plain-text pages are not aligned.
 - Per-page quality grades (A–F) in `quality.jsonl`, `audit.json`/`audit.md`,
   `inspect-run`, its CSV, and `compare-runs`. Grades combine text signals
@@ -59,8 +59,12 @@ stays short because this exists.
 - `run.grading.review_below_grade: C` adds pages graded below the
   threshold to the review queue (reason `grade_below_threshold`) and the
   rerun manifest, which now records `previous_grade`. Off by default.
+- `run.rerun_if` and `run.quarantine_if` evaluate page grades and
+  schema-alignment evidence after grading. Rerun rules add review reasons.
+  Quarantine rules keep their audit evidence and exclude matching pages from
+  `rerun-manifest.yml`.
 - `pageledger align <run-dir> [--schema file.yml]`: re-align and regrade
-  an existing run from its raw pages without re-extracting — iterate on a
+  an existing run from its raw pages without re-extracting. Iterate on a
   schema without paying for OCR/VLM again. The manifest records the
   re-alignment (`alignment` block, schema hash); external schemas are
   snapshotted into the run directory. `--dry-run` previews the complete
@@ -100,10 +104,8 @@ stays short because this exists.
 - Automatic page classification. The alpha routes every page to the
   configured `default_action` (`review` in dry-run mode); no classifier
   ships.
-- Multi-adapter routing chains and the full `rerun_if`/`quarantine_if`
-  policy grammar (`review_below_grade` is the shipped subset), and the
-  remaining staged CLI commands (`classify`, `extract`, `audit` — `align`
-  ships in 0.1.3).
+- Multi-adapter routing chains and the remaining staged CLI commands
+  (`classify`, `extract`, `audit`). `align` already ships.
 
 Details and examples live in [`design.md`](design.md).
 
@@ -129,7 +131,7 @@ Details and examples live in [`design.md`](design.md).
   A grade is only comparable within one adapter: confidence is
   uncalibrated across engines, so an `A` from one extractor and a `B`
   from another are not orderable claims. A `signals_only` grade from an
-  adapter that reports no confidence rests on warning counts alone — the
+  adapter that reports no confidence rests on warning counts alone. The
   `(signals)`/`(schema)` label exists so that weaker evidence is never
   mistaken for schema-checked records.
 - Schema alignment consumes structured output only. `pdf_ocr` and other

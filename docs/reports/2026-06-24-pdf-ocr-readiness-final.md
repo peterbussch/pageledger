@@ -1,4 +1,4 @@
-# PageLedger PDF/OCR Readiness Final Report
+# PageLedger PDF/OCR readiness final report
 
 Date: 2026-06-24
 
@@ -7,7 +7,7 @@ Sample PDF: `~/Downloads/2023-fraud-and-financial-crime-report.pdf`
 Latest stress artifacts:
 `<repo>/.stress/pdf-ocr-20260624T164549Z/`
 
-## Capability Summary
+## Capability summary
 
 - Born-digital PDF text extraction: working end-to-end. 72-page test PDF passes
   dry-run, execute, provenance, quality diagnostics, and cost rollup.
@@ -24,7 +24,7 @@ Latest stress artifacts:
   OCRmyPDF preprocessing roundtrip passes. Cloud/heavy probes skipped when tools
   absent.
 
-## What Changed
+## What changed
 
 - Added generic adapter capability metadata: `input_types`, `output_types`,
   `capabilities`, `deterministic`, and optional `page_count(source)`.
@@ -52,7 +52,7 @@ Latest stress artifacts:
   optional heavy-probe skipping, redacted cloud status, and capped custom
   Tesseract probing.
 
-## Why The Package Is Still Lean
+## Why the package is still lean
 
 Runtime dependencies are unchanged in spirit: core still depends on PyYAML, and
 PDF support remains optional through `pageledger[pdf]`. No OCR engines, cloud
@@ -60,7 +60,7 @@ SDKs, pricing tables, Docling, Marker, Surya, or Tesseract bindings were added
 as runtime dependencies. PageLedger records and audits those tools when users
 choose them.
 
-## Human Workflow Readiness
+## Human workflow readiness
 
 A technical user can now:
 
@@ -127,7 +127,7 @@ Key stress checks:
 - Docling, Marker, Surya: skipped because commands were not found.
 - Cloud/VLM OCR: skipped because no supported cloud OCR/VLM env var was set.
 
-## Remaining Weaknesses
+## Remaining weaknesses
 
 | Item | Classification | Reason |
 |---|---|---|
@@ -137,7 +137,7 @@ Key stress checks:
 | Docling/Marker/Surya unavailable in this shell | External environment | Optional tools are not required for PageLedger core readiness. |
 | No cloud/VLM probe in this shell | External environment | No supported cloud keys were present; doctor and stress output stayed redacted. |
 
-## Readiness Judgment
+## Readiness judgment
 
 PageLedger's `0.1.0a1` alpha meets the release-readiness criteria defined in
 the backlog: a technical user can install the package, run it on local

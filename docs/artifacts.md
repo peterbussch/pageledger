@@ -28,33 +28,33 @@ on what basis, which pages failed or need review, and what should be rerun.
 
 ## What each file answers
 
-**manifest.json** — what ran. Run id, status, inputs with checksums and
+`manifest.json` answers what ran. Run id, status, inputs with checksums and
 page counts (plus the `--pages` selection when one was used), the config
 snapshot's checksum, extractor identities (engine, version, options), and
 summary counts. This is the canonical artifact; start here.
 Spec: [`run-manifest-spec.md`](run-manifest-spec.md).
 
-**config-snapshot.yml** — what you asked for. A verbatim copy of the
+`config-snapshot.yml` records what you asked for. It is a verbatim copy of the
 config, including one synthesized by `run --adapter`. Reproducing the run
 starts from this file.
 
-**route-map.yml** — where each page went. Page ids, types, actions, and
+`route-map.yml` records where each page went. It contains page ids, types, actions, and
 reasons. In the alpha every page follows the configured default action;
 the route map is where a future classifier would record its decisions.
 Spec: [`route-map-spec.md`](route-map-spec.md).
 
-**raw/** — extractor output, one file per page, named by page id. Page ids
+`raw/` holds extractor output, one file per page, named by page id. Page ids
 carry the source page number (`doc_0001_page_0081` is page 81 of the first
 document), including under `--pages` selection and across reruns.
 
-**provenance.jsonl** — what produced each page. Source path and checksum,
+`provenance.jsonl` records what produced each page: source path and checksum,
 engine and version, prompt hash, measured extraction seconds, usage, and
 the raw artifact path. Months later,
 `grep doc_0001_page_0042 runs/run-001/provenance.jsonl` answers what made
 that page and how long it took.
 Spec: [`provenance-spec.md`](provenance-spec.md).
 
-**quality.jsonl** — how each page looks. Character and word counts,
+`quality.jsonl` records how each page looks: character and word counts,
 engine-reported confidence with per-word statistics, lexical shape,
 script/orthography evidence, conservative LLM-output integrity evidence,
 a warning list (`empty_text`, `low_confidence`, `instruction_echo`,
@@ -64,7 +64,7 @@ for a human, not accuracy scores; a grade is a deterministic summary of
 this evidence, comparable only within one adapter.
 Spec: [`provenance-spec.md`](provenance-spec.md) (companion section).
 
-**normalized/** — what the schema aligner extracted, one
+`normalized/` holds what the schema aligner extracted, one
 `{page_id}.json` per structured page: records keyed by declared columns,
 matched/missing/extra headers, coercion errors with the raw strings,
 structural-loss issues, and arithmetic-check results. Written during
@@ -73,25 +73,28 @@ has a `schema` section, and rewritten by `pageledger align`. Plain-text
 pages produce no normalized file.
 Spec: [`normalized-spec.md`](normalized-spec.md).
 
-**cost.json** — what it cost, and how we know. Usage totals plus
+`cost.json` records what it cost and how we know. It has usage totals plus
 `cost_basis`: `adapter_reported` (the provider said so), `configured_rate`
 (derived from your configured prices), `mixed`, or `none` (a free local
 engine; PageLedger refuses to invent dollars for it).
 
-**run.log** — what happened, in order. One JSON line per extractor call
+`run.log` records what happened in order. It has one JSON line per extractor call
 with timestamp, page id, adapter, status, and any error, so partial or
 failed runs stay greppable.
 
-**audit.json / audit.md** — what needs human eyes. Pages queued for review
-(with reasons) and quarantined pages. `audit.md` is a rendering of
+`audit.json` and `audit.md` record what needs human eyes. They contain pages queued for review
+and pages held out of reruns by `quarantine_if`. Policy reasons use stable
+strings such as `rerun_if:grade_below` and
+`quarantine_if:missing_required_columns`. `audit.md` is a rendering of
 `audit.json`, never a second source of truth.
 Spec: [`audit-spec.md`](audit-spec.md).
 
-**rerun-manifest.yml** — what to do next. An executable list of flagged
+`rerun-manifest.yml` records what to do next. It is an executable list of flagged
 pages that `pageledger rerun` re-extracts with the config you give it,
 preserving page ids and lineage. Each item records `previous_grade`; a
 page flagged for more than one reason appears once, reasons joined
-(`quality_warning+grade_below_threshold`).
+(`quality_warning+grade_below_threshold`). Pages in the quarantine queue
+do not appear in rerun items, even if they also have review reasons.
 Spec: [`rerun-manifest-spec.md`](rerun-manifest-spec.md).
 
 ## Re-alignment

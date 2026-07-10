@@ -1,10 +1,10 @@
-# Route Map Specification
+# Route map specification
 
 The route map records page-level or region-level routing decisions before
 extraction. It is reviewable evidence: a human can inspect what will be
 extracted before money or model calls are spent.
 
-## Minimal Shape
+## Minimal shape
 
 ```yaml
 schema_version: "0.1"
@@ -37,7 +37,7 @@ documents:
         reason: configured_review
 ```
 
-## Top-Level Fields
+## Top-level fields
 
 | Field | Type | Required | Nullable | Meaning |
 |---|---|---|---|---|
@@ -47,7 +47,7 @@ documents:
 | `classifier` | object | ✅ | no | Classifier metadata (all null in alpha). |
 | `documents` | array | ✅ | no | One entry per input source. |
 
-### classifier Fields
+### classifier fields
 
 | Field | Type | Required | Nullable | Meaning |
 |---|---|---|---|---|
@@ -55,7 +55,7 @@ documents:
 | `model` | string or null | ✅ | yes | Classifier model. Null in alpha. |
 | `prompt_hash` | string or null | ✅ | yes | Classifier prompt hash. Null in alpha. |
 
-## Required Page Fields
+## Required page fields
 
 | Field | Type | Meaning |
 |---|---|---|
@@ -66,13 +66,13 @@ documents:
 | `action` | string | Extraction action from the project config, or `review` during dry runs. |
 | `reason` | string | Current alpha route explanation, such as `no_classifier_available`, `configured_adapter`, `configured_skip`, or `configured_review`. |
 
-## Optional Page Fields
+## Optional page fields
 
 | Field | Type | Meaning |
 |---|---|---|
 | `prompt` | string | Prompt profile to use for extraction. |
 
-## Design Notes
+## Design notes
 
 - Each route map entry's `page_id` joins to the matching `provenance.jsonl`
   line's `page_id`.

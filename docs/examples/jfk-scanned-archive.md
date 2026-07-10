@@ -1,8 +1,8 @@
-# Worked Example: OCR a Scanned Government Archive
+# Worked example: OCR a scanned government archive
 
 This walkthrough runs a real declassified document through PageLedger:
 HSCA record 180-10147-10163 from the JFK Assassination Records Collection.
-107 pages of scanned typescript, no text layer at all — every page is one
+107 pages of scanned typescript, no text layer at all: every page is one
 TIFF image. The workflow: a cheap first pass, quality signals that catch
 what it missed, and a page-scoped OCR rerun, all recorded as plain files.
 
@@ -66,7 +66,7 @@ Pages: 107 extracted / 107 total
 Quality warning pages: 107
 ```
 
-Every page "succeeded" — and every page came back empty. Without quality
+Every page "succeeded," but every page came back empty. Without quality
 signals this would look like a completed run. Instead, all 107 pages are
 flagged `empty_text`, land in `audit.json → review_queue`, and
 `rerun-manifest.yml` lists them as an executable rerun plan.
@@ -158,7 +158,7 @@ tiers, measured on the same pages:
 | Tier | Engine | Speed | Cost | What it fixes |
 |---|---|---|---|---|
 | 1 | `pdf_ocr` (Tesseract) | 1.25 s/page | free | Gets legible typescript mostly right. |
-| 2 | Tesseract + local LLM cleanup | ~70 s/page | free, local | Character errors and noise: "ClA—<ontrolled" → "CIA-controlled". |
+| 2 | Tesseract + local LLM cleanup | ~70 s/page | free, local | Character errors and noise: "ClA-<ontrolled" → "CIA-controlled". |
 | 3 | Cloud vision model | ~11 s/page | paid tokens | Reads the image itself; clean transcription of pages tier 1 garbled. |
 
 **Tier 2** wraps Tesseract output with a locally served model
@@ -179,7 +179,7 @@ custom adapter (the cloud-VLM skeleton in
 [`examples/`](../../examples/cloud_vlm_adapter_skeleton.py) is the
 starting point). On a 4-page slice: 4/4 pages, 14,579 real tokens,
 `cost_usd: 0.044` with `cost_basis: configured_rate`, and a $0.25 budget
-cap standing guard. One detail from `compare-runs` worth repeating: the
+cap standing guard. One `compare-runs` detail matters here: the
 model marked unreadable words `[illegible]`, the brackets tripped
 `suspicious_symbol_density`, and those pages went straight back to the
 review queue. The pages the VLM itself could not fully read are exactly
@@ -190,7 +190,7 @@ just the flagged pages with something stronger, compare.
 
 ## Honest limits
 
-- Tesseract output on 1960s–70s typescript is usable but rough — stamps,
+- Tesseract output on 1960s–70s typescript is usable but rough: stamps,
   handwriting, and degraded pages come back garbled. The ledger records the
   extraction; it does not make it correct. Route hard pages to a stronger
   engine (see `docs/ocr-options.md`).
@@ -201,6 +201,6 @@ just the flagged pages with something stronger, compare.
 - Zero quality warnings on the OCR run means none of the seven heuristics
   tripped, not that the text is accurate. This run's output contains
   word-level misrecognitions ("matericl" for "material") that no shape-based
-  heuristic can catch — `quality.jsonl` records each page's lexical shape
+  heuristic can catch: `quality.jsonl` records each page's lexical shape
   (`mean_token_length`, `short_token_ratio`) as sortable evidence, but
   sampling raw pages against the scan is still on you.
