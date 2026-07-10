@@ -453,11 +453,12 @@ def align_run(
     aligned_at = (
         datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
     )
+    rerun_created_at = previous_rerun.get("created_at", aligned_at)
     rerun_manifest = build_rerun_manifest(
         schema_version=schema_version,
         run_id=run_id,
         parent_run_id=previous_rerun["parent_run_id"],
-        created_at=aligned_at,
+        created_at=rerun_created_at,
         max_rerun_depth=previous_rerun["max_rerun_depth"],
         reason=previous_rerun["reason"],
         audit=audit,
