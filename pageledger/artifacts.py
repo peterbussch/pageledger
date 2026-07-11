@@ -71,12 +71,13 @@ def build_route_map(
     run_id: str,
     generated_at: str,
     documents: list[dict[str, Any]],
+    classifier: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     return {
         "schema_version": schema_version,
         "run_id": run_id,
         "generated_at": generated_at,
-        "classifier": {
+        "classifier": classifier or {
             "adapter": None,
             "model": None,
             "prompt_hash": None,
@@ -99,6 +100,8 @@ def build_manifest(
     pages_total: int,
     parent_run_id: str | None = None,
     pages_extracted: int = 0,
+    pages_failed: int = 0,
+    pages_not_attempted: int = 0,
     pages_skipped: int = 0,
     pages_quarantined: int = 0,
     records_normalized: int = 0,
@@ -106,8 +109,9 @@ def build_manifest(
     quality_warning_pages: int = 0,
     status: str = "partial",
     extractors: list[dict[str, Any]] | None = None,
+    routing: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    return {
+    manifest: dict[str, Any] = {
         "schema_version": schema_version,
         "run_id": run_id,
         "parent_run_id": parent_run_id,
@@ -134,6 +138,13 @@ def build_manifest(
             "quality_warning_pages": quality_warning_pages,
         },
     }
+    if pages_failed:
+        manifest["summary"]["pages_failed"] = pages_failed
+    if pages_not_attempted:
+        manifest["summary"]["pages_not_attempted"] = pages_not_attempted
+    if routing is not None:
+        manifest["routing"] = routing
+    return manifest
 
 
 def build_audit(

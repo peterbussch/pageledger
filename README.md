@@ -57,6 +57,7 @@ Other first moves:
 pageledger run report.pdf --adapter pdf_text --out runs/text   # born-digital PDF (pip install "pageledger[pdf]")
 pageledger run scan.pdf --adapter pdf_ocr --out runs/sample --pages "1-10"   # sample before committing
 pageledger run scan.pdf --config pageledger.yml --out runs/tuned --dry-run   # inspect routing, spend nothing
+pageledger run scan.pdf --config pageledger.yml --routes reviewed-routes.yml --out runs/routed
 pageledger inspect-run runs/first --csv > pages.csv            # triage in a spreadsheet
 ```
 
@@ -111,13 +112,20 @@ Every box on the right is a plain file in the run directory.
 - Conditional page policies under `run.rerun_if` and `run.quarantine_if`
   act on grades, missing required columns, and arithmetic failure rates.
   Quarantined pages keep their audit evidence but stay out of rerun plans.
+- Reviewed route-map execution: feed per-page type/action/prompt decisions from
+  a human or external classifier back into `run --routes`; PageLedger validates
+  complete source coverage and preserves the routing evidence.
+- Optional continue-on-page-error behavior with a consecutive-failure circuit
+  breaker. Failed and unattempted pages become auditable rerun work rather than
+  disappearing behind the first exception.
 - Page-scoped reruns with lineage, provenance-aware cross-run diffs, runtime
   ledger verification, CSV export, and environment diagnostics.
-- JSON Schemas for every artifact, enforced in CI, and an
+- JSON Schemas for JSON/JSONL artifacts plus field-contract tests for YAML,
+  enforced in CI, and an
   [`AGENTS.md`](AGENTS.md) so AI coding agents can operate the tool and
   validate their own output.
 
-Every page still routes to one configured action. Automatic page
+Without `--routes`, every page still uses one configured action. Automatic
 classification and multi-adapter fallback chains remain design targets.
 The full honest-scope list is in
 [`docs/capabilities-and-limits.md`](docs/capabilities-and-limits.md).

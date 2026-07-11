@@ -57,6 +57,29 @@ def _validate_jsonl(path: Path, schema: dict, label: str) -> list[dict]:
     return entries
 
 
+def test_quality_schema_accepts_original_0_1_lines() -> None:
+    _validate(
+        _quality_schema,
+        {
+            "schema_version": "0.1",
+            "page_id": "doc_0001_page_0001",
+            "page_number": 1,
+            "adapter": "text",
+            "character_count": 4,
+            "word_count": 1,
+            "warnings": [],
+            "text_quality": {
+                "replacement_character_count": 0,
+                "control_character_count": 0,
+                "suspicious_symbol_count": 0,
+                "suspicious_symbol_ratio": 0,
+            },
+            "embedded_text_comparison": None,
+        },
+        "PageLedger 0.1.0 quality line",
+    )
+
+
 def _run_pageledger(
     tmp_path: Path,
     *,

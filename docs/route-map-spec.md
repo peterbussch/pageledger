@@ -1,6 +1,6 @@
 # Route map specification
 
-The route map records page-level or region-level routing decisions before
+The route map records page-level routing decisions before
 extraction. It is reviewable evidence: a human can inspect what will be
 extracted before money or model calls are spent.
 
@@ -16,6 +16,8 @@ classifier:
   prompt_hash: null
 documents:
   - source: scans/volume_01.pdf
+    source_sha256: abc123
+    page_count: 3
     pages:
       - page_id: doc_0001_page_0001
         page_number: 1
@@ -44,16 +46,20 @@ documents:
 | `schema_version` | string | ✅ | no | Route map schema version. `"0.1"`. |
 | `run_id` | string | ✅ | no | Run identifier from `manifest.json`. |
 | `generated_at` | string | ✅ | no | UTC ISO 8601 timestamp. |
-| `classifier` | object | ✅ | no | Classifier metadata (all null in alpha). |
+| `classifier` | object | ✅ | no | Classifier metadata. Null values mean no classifier ran; imported maps preserve supplied identity. |
 | `documents` | array | ✅ | no | One entry per input source. |
+
+Each document requires `source` and `pages`. New maps also record optional
+`source_sha256` and `page_count`; they remain optional so older 0.1 maps are
+readable.
 
 ### classifier fields
 
 | Field | Type | Required | Nullable | Meaning |
 |---|---|---|---|---|
-| `adapter` | string or null | ✅ | yes | Classifier adapter. Null in alpha. |
-| `model` | string or null | ✅ | yes | Classifier model. Null in alpha. |
-| `prompt_hash` | string or null | ✅ | yes | Classifier prompt hash. Null in alpha. |
+| `adapter` | string or null | ✅ | yes | External classifier adapter identity, when supplied. |
+| `model` | string or null | ✅ | yes | External classifier model, when supplied. |
+| `prompt_hash` | string or null | ✅ | yes | External classifier prompt hash, when supplied. |
 
 ## Required page fields
 
@@ -74,6 +80,20 @@ documents:
 
 ## Design notes
 
+- `pageledger run --routes FILE` executes a complete reviewed map. The map must
+  cover every source page exactly once, use deterministic
+  `doc_{NNNN}_page_{MMMM}` IDs, and reference exactly the CLI inputs. Relative
+  source paths resolve from the map's directory.
+- Imported page types must exist in `taxonomy.page_types`; every extraction
+  action must be supported by the configured adapter. `skip` and `review` do
+  not call the adapter.
+- If document hashes or page counts are present, PageLedger verifies them
+  before creating the output directory. Missing legacy values produce warnings
+  and the executed map records current values.
+- The output `route-map.yml` is rebound to the extraction run ID while
+  classifier metadata and the original `generated_at` are preserved. The
+  manifest `routing` block records the input map's path, hash, and run ID.
+
 - Each route map entry's `page_id` joins to the matching `provenance.jsonl`
   line's `page_id`.
 - Route map page `confidence` should be copied to provenance as
@@ -88,9 +108,9 @@ documents:
   but projects should not inherit Soviet Corpus labels by accident.
 - Example taxonomies are not calibrated or domain-appropriate until a project
   reviews them against its own documents.
-- Confidence is currently `null` because no classifier ships in the alpha.
-  Future classifiers should record confidence even when not calibrated, and
-  audit policies can decide how to interpret it.
+- Built-in routing uses null confidence because no classifier ships. Imported
+  classifiers should record confidence even when not calibrated, and audit
+  policy should treat it as evidence rather than probability.
 - The route map should be generated before extraction and preserved after
   extraction.
 - Since route-map.yml is YAML, its field contract is documented in this spec

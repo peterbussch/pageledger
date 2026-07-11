@@ -24,6 +24,7 @@ authoritative scope list.
 | Sample pages first | add `--pages "1-10,50-60"` (page ids keep source numbering) |
 | Plan without extracting | add `--dry-run` |
 | Full config run | `pageledger run inputs/ --config pageledger.yml --out runs/a` |
+| Execute reviewed routes | add `--routes route-map.yml` to a config run |
 | Re-extract flagged pages | `pageledger rerun runs/a --config stronger.yml --out runs/b` |
 | Re-align/regrade without re-extracting | `pageledger align runs/a --schema table-v2.yml` |
 | Preview re-alignment | add `--dry-run` (no run artifacts change) |
@@ -37,6 +38,10 @@ authoritative scope list.
 exclusive; no config file is ever read implicitly. `pdf_ocr` needs poppler
 and Tesseract installed and refuses to run if `adapter_options.lang` names
 a missing language pack.
+
+`--routes` requires `--config` and a complete map covering every input page.
+It preserves decisions from a human or external classifier; PageLedger does
+not ship a classifier.
 
 ## Operating loop
 
@@ -72,7 +77,9 @@ One `pageledger.yml` with `taxonomy`, `schema`, and `run` sections
 `run`: `adapter`, `adapter_options` (`dpi`, `lang` for pdf_ocr),
 `budget` (`max_pages`, `max_tokens`, `max_usd` — preflight refuses
 over-budget runs before writing anything), `retry`, `pricing`,
-`grading` (`review_below_grade`, `thresholds`), and `max_rerun_depth`.
+`on_page_error`, `max_consecutive_failures`, `grading`
+(`review_below_grade`, `thresholds`), `rerun_if`, `quarantine_if`, and
+`max_rerun_depth`.
 The `schema` section (columns/aliases/types/checks) is active: it is
 strictly validated at load and drives the aligner for structured page
 formats (`markdown_table`, `json`, `csv`; plain text is never aligned).
@@ -96,9 +103,9 @@ Custom adapters load from `module.path:Object` import strings plus
 - Grades are deterministic evidence summaries, never calibrated accuracy;
   do not compare grades across adapters or drop the basis label.
 - Not yet implemented (do not claim otherwise): automatic page
-  classification, the full `rerun_if`/`quarantine_if` policy grammar
-  (`review_below_grade` is the shipped subset), and the `classify`/
-  `extract`/`audit` staged commands (`align` ships).
+  classification, multi-adapter fallback chains, and the `classify`/
+  `extract`/`audit` staged commands (`align` ships and `run --routes` consumes
+  externally prepared routes).
 
 ## Where to read more
 

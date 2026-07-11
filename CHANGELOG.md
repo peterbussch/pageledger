@@ -6,6 +6,38 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to the artifact compatibility policy documented in
 `docs/run-manifest-spec.md` → Compatibility Policy.
 
+## 0.1.6 - 2026-07-10
+
+### Added
+
+- **Executable external routing:** `pageledger run --routes route-map.yml`
+  validates and executes complete per-page type, action, confidence, and prompt
+  decisions from a human or external classifier. Source coverage, page IDs,
+  taxonomy types, hashes, and adapter action support are checked before output
+  is created; the executed map and its source hash remain in the ledger.
+- **Long-run page failure policy:** `run.on_page_error: continue` finishes
+  independent later pages after retry exhaustion. A configurable consecutive-
+  failure breaker stops dead services, while failed and not-attempted pages
+  enter the audit queue and executable rerun manifest.
+- Optional manifest failure counters, route source identity, route document
+  hashes/page counts, and per-page derived cost evidence.
+
+### Fixed
+
+- `pageledger align` now re-evaluates `rerun_if` and `quarantine_if` instead of
+  leaving policy decisions stale after schema evidence changes.
+- Token-priced runs no longer report a known zero cost when an adapter omits
+  token usage. Configured per-page rates now appear in `inspect-run --csv`.
+- `verify-run` checks route/provenance agreement and failure accounting.
+- The current quality schema once again accepts original 0.1 lines that predate
+  confidence details and grading; current runs continue to emit those fields.
+
+### Changed
+
+- Release publishing now runs tests, Ruff, and mypy before building or
+  publishing. Python 3.14 joins the tested matrix.
+- Artifact schema version remains `0.1`; all new artifact fields are optional.
+
 ## 0.1.5 - 2026-07-10
 
 ### Added

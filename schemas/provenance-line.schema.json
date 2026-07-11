@@ -81,6 +81,19 @@
       },
       "additionalProperties": false
     },
+    "cost": {
+      "type": "object",
+      "description": "Per-page cost derived by PageLedger; adapter-reported usage remains unchanged.",
+      "required": ["usd", "basis"],
+      "properties": {
+        "usd": { "type": ["number", "null"] },
+        "basis": {
+          "type": ["string", "null"],
+          "enum": ["adapter_reported", "configured_rate", null]
+        }
+      },
+      "additionalProperties": false
+    },
     "extraction_seconds": {
       "type": ["number", "null"],
       "description": "Wall-clock seconds for the successful extraction attempt, measured by the runner. Null in artifacts predating this field."

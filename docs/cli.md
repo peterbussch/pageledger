@@ -11,6 +11,7 @@ inspect, compare, or scaffold.
 ```bash
 pageledger run scans/ --config pageledger.yml --out runs/run-001/
 pageledger run scan.pdf --adapter pdf_ocr --out runs/run-001/
+pageledger run scan.pdf --config pageledger.yml --routes reviewed-routes.yml --out runs/run-002/
 ```
 
 Extracts every routed page of the inputs into a new run directory. Inputs
@@ -31,10 +32,19 @@ Other flags:
 | Flag | Effect |
 |---|---|
 | `--pages "1-8,81,100-110"` | Extract only these source pages (single input). Page ids keep the source numbering, so provenance stays truthful when you sample a large volume. Recorded in `manifest.inputs[].pages`. |
+| `--routes FILE` | Execute a complete reviewed route map from a human or external classifier. Requires `--config`; cannot be combined with `--adapter` or `--pages`. |
 | `--dry-run` | Write the route map and planning artifacts without calling extractors. Inspect routing before spending money. |
 | `--json` | Machine-readable result on stdout; errors as JSON too. |
 | `--log-level LEVEL` | Minimum `run.log` event level: DEBUG, INFO, WARNING, ERROR. |
 | `--adapter-path DIR` | Add a directory to `sys.path` so a custom `run.adapter` module can be imported. |
+
+An imported route map must cover every page of every supplied input exactly
+once, use the configured taxonomy, and contain only actions supported by the
+configured adapter. Relative source paths resolve from the route-map directory.
+Hashes and page counts are checked when supplied; older maps without them are
+accepted with warnings and the current values are recorded.
+`--dry-run --routes` preserves the proposed decisions without calling
+`extract()`.
 
 ## rerun
 
@@ -156,6 +166,8 @@ run:
   retry:
     max_retries: 2
     backoff: exponential
+  on_page_error: continue         # stop (default) | continue
+  max_consecutive_failures: 3     # circuit breaker; 0 disables
   pricing:
     cost_per_page: 0.0015       # only if you want derived cost estimates
   grading:
@@ -168,6 +180,12 @@ run:
     - grade_below: D
   max_rerun_depth: 2
 ```
+
+With `on_page_error: continue`, exhausted page failures are recorded and the
+run continues. Any failed page makes the final run `partial` and the CLI exits
+nonzero after writing complete artifacts. The circuit breaker halts after the
+configured number of consecutive failed pages. Failed pages and pages not
+attempted after a halt are written to the rerun manifest.
 
 `rerun_if` adds matching pages to the review queue and rerun manifest.
 `quarantine_if` records matching pages in the quarantine queue and excludes

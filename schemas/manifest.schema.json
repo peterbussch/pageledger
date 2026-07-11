@@ -143,6 +143,8 @@
       "properties": {
         "pages_total": { "type": "integer", "minimum": 0 },
         "pages_extracted": { "type": "integer", "minimum": 0 },
+        "pages_failed": { "type": "integer", "minimum": 0 },
+        "pages_not_attempted": { "type": "integer", "minimum": 0 },
         "pages_skipped": { "type": "integer", "minimum": 0 },
         "pages_quarantined": { "type": "integer", "minimum": 0 },
         "records_normalized": { "type": "integer", "minimum": 0 },
@@ -160,6 +162,17 @@
         "schema_source": { "type": "string", "description": "'config_snapshot' or the path of the external schema file passed via --schema (snapshotted as align-schema-snapshot.yml)." },
         "schema_sha256": { "type": "string" },
         "pageledger_version": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "routing": {
+      "type": "object",
+      "description": "Present when the run executed a supplied route map.",
+      "required": ["source_path", "sha256", "source_run_id"],
+      "properties": {
+        "source_path": { "type": "string" },
+        "sha256": { "type": "string" },
+        "source_run_id": { "type": "string" }
       },
       "additionalProperties": false
     }

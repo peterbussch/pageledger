@@ -76,6 +76,12 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Only extract these source pages, e.g. '1-8,81,100-110'; page ids keep the source numbering",
     )
+    run_parser.add_argument(
+        "--routes",
+        type=Path,
+        default=None,
+        help="Execute a complete reviewed route-map.yml (requires --config)",
+    )
     run_parser.add_argument("--dry-run", action="store_true")
     run_parser.add_argument("--json", action="store_true", dest="json_output")
     run_parser.add_argument(
@@ -276,6 +282,8 @@ def _print_inspect_report(report: dict) -> None:
           f"{report['pages_skipped']} skipped")
     print(f"Quality warnings: {report['quality_warning_pages']}")
     print(f"Failed pages: {report['failed_page_count']}")
+    if report["pages_not_attempted"]:
+        print(f"Pages not attempted: {report['pages_not_attempted']}")
     print(f"Review queue: {report['review_queue_count']}")
     print(f"Records normalized: {report['records_normalized']}")
     distribution = report["grade_distribution"]
@@ -346,6 +354,11 @@ def _cmd_compare_runs(args: argparse.Namespace) -> int:
 # -- run ---------------------------------------------------------------------
 
 def _cmd_run(args: argparse.Namespace) -> int:
+    if args.routes is not None and args.config is None:
+        exc = ValueError("--routes requires --config; it cannot be used with --adapter")
+        _print_error_json(exc, args)
+        print(f"pageledger: error: {exc}", file=sys.stderr)
+        return 1
     config_path = args.config
     temp_config: str | None = None
     if config_path is None:
@@ -364,6 +377,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
             log_level=args.log_level,
             pages=args.pages,
             adapter_path=args.adapter_path,
+            routes_path=args.routes,
         )
     except (RuntimeError, ValueError) as exc:
         _print_error_json(exc, args)
@@ -389,7 +403,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
             print(f"Config warnings ({len(config_warnings)}):")
             for w in config_warnings:
                 print(f"  - {w}")
-    return 0
+    return 1 if result["status"] == "partial" and not result["dry_run"] else 0
 
 
 # -- rerun ---------------------------------------------------------------------
@@ -422,7 +436,7 @@ def _cmd_rerun(args: argparse.Namespace) -> int:
         print(f"Estimated cost USD: {summary['estimated_cost_usd']}")
         for warning in result.get("source_integrity_warnings", []):
             print(f"WARNING: {warning}")
-    return 0
+    return 1 if result["status"] == "partial" and not result["dry_run"] else 0
 
 
 # -- doctor -------------------------------------------------------------------

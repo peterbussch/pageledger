@@ -11,7 +11,23 @@ permissions:
   contents: read
 
 jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.14"
+      - name: Install verification tools
+        run: pip install ".[dev,pdf]"
+      - name: Verify release source
+        run: |
+          ruff check pageledger/ tests/ examples/
+          mypy pageledger/
+          python -m pytest tests/pageledger/ -q -m "not stress"
+
   build:
+    needs: verify
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7

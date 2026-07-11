@@ -97,6 +97,19 @@ run:
     assert math.isclose(config.cost_per_1k_tokens or 0, 0.01)
 
 
+def test_page_error_policy_defaults_and_overrides(tmp_path: Path) -> None:
+    default = _load(tmp_path, "run: {}\n")
+    assert default.on_page_error == "stop"
+    assert default.max_consecutive_failures == 3
+
+    configured = _load(
+        tmp_path,
+        "run:\n  on_page_error: continue\n  max_consecutive_failures: 0\n",
+    )
+    assert configured.on_page_error == "continue"
+    assert configured.max_consecutive_failures == 0
+
+
 @pytest.mark.parametrize(
     ("yaml_text", "message"),
     [
@@ -105,6 +118,8 @@ run:
         ("run: {budget: {max_pages: true}}\n", "must be an integer"),
         ("run: {budget: {max_pages: 1.5}}\n", "must be an integer"),
         ("run: {retry: {max_retries: true}}\n", "must be an integer"),
+        ("run: {max_consecutive_failures: true}\n", "must be an integer"),
+        ("run: {on_page_error: skip}\n", "must be 'stop' or 'continue'"),
         ("run: {budget: {max_usd: .nan}}\n", "must be a finite number"),
         ("run: {budget: {max_usd: .inf}}\n", "must be a finite number"),
         ("run: {pricing: {cost_per_page: .inf}}\n", "must be a finite number"),

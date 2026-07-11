@@ -85,11 +85,16 @@ is the durable pointer to every other artifact in the run directory.
 | `artifacts` | object | Relative paths to route, raw, normalized, audit, and provenance artifacts. |
 | `summary` | object | Counts and cost summary for quick inspection. |
 | `alignment` | object | Optional. Present only after `pageledger align` re-derived the run's normalized/grade artifacts: `aligned_at`, `schema_source` (`config_snapshot` or the external schema path, snapshotted as `align-schema-snapshot.yml`), `schema_sha256`, `pageledger_version`. |
+| `routing` | object | Optional. Present when `--routes` supplied a reviewed map: `source_path`, `sha256`, and the source map's `source_run_id`. |
 
 Required `summary` keys are `pages_total`, `pages_extracted`,
 `pages_skipped`, `pages_quarantined`, `records_normalized` (rows written
 to `normalized/` by the schema aligner), `estimated_cost_usd`, and
 `quality_warning_pages`.
+
+Runs with failures add `pages_failed`; runs halted before every extraction
+action was attempted add `pages_not_attempted`. They are omitted when zero so
+older successful 0.1 artifacts keep their compact shape.
 
 `pages_quarantined` counts distinct pages that matched at least one
 `quarantine_if` rule.
@@ -121,8 +126,9 @@ of the extraction lifecycle.
   `page_id`, adapter, status, and any error. It is an operational log, not a
   second audit source.
 - `cost.json` reports generated usage rollups with `pages`, `tokens`, and
-  `compute_seconds`. Per-page `cost_usd` values remain in provenance usage;
-  aggregate dollar cost is an estimate, not a provider invoice.
+  `compute_seconds`. Provenance `usage.cost_usd` remains adapter-reported;
+  the separate per-page `cost` object records the resolved accounting value.
+  Aggregate dollar cost is an estimate, not a provider invoice.
 
 ## Compatibility policy
 
@@ -131,6 +137,10 @@ PageLedger artifacts carry `schema_version: "0.1"` as their release contract.
 - **Patch releases** (e.g. 0.1.0 → 0.1.1) may add new nullable or optional
   fields to any artifact. Existing fields must not be renamed, removed, or
   have their type or nullability changed.
+- Compatibility is reader-forward: current schemas and commands accept older
+  0.1 artifacts. An older schema file with `additionalProperties: false`
+  cannot know fields introduced by a later patch, so consumers should validate
+  with the PageLedger version that reads the artifact.
 - **Minor releases** (e.g. 0.1 → 0.2) may add required fields, remove fields,
   or change field types after a `schema_version` bump. The previous schema
   version's artifacts remain readable but are treated as legacy.
@@ -187,6 +197,8 @@ canonical signal that PageLedger finished writing every artifact it points to;
 | Invalid adapter result | `"failed"` | prior pages | prior pages only | prior pages only | error entry |
 | Budget mid-run | `"failed"` | pages up to cap | pages up to cap | pages up to cap | budget entry |
 | Retry exhausted, adapter still fails | `"failed"` | prior pages | prior pages only | prior pages only | retry+error entries |
+| Page fails with `on_page_error: continue` | `"partial"` | all other successful pages | successful pages only | successful pages only | error + later entries |
+| Consecutive-failure breaker opens | `"failed"` | successes before halt | successful pages only | successful pages only | page errors |
 | Dry-run (always succeeds) | `"partial"` | 0 | empty | none | summary entry |
 
 ### Key invariants
@@ -195,6 +207,9 @@ canonical signal that PageLedger finished writing every artifact it points to;
   a budget cap always has `"failed"` or `"partial"` in `manifest.status`.
 - **Provenance is written only for successfully extracted pages.** Failed,
   skipped, and review-only pages do not appear in `provenance.jsonl`.
+- **Failures remain executable work.** Failed pages enter the audit and rerun
+  manifests as `extraction_failed`. Pages left after an adapter or budget halt
+  use `not_attempted_after_failure` or `not_attempted_after_budget`.
 - **Raw artifacts exist only for successful pages.** The `raw/` directory
   contains output for pages that completed extraction without error.
 - **`run.log` always has the failure entry.** Even if only one page failed, the

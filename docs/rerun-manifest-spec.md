@@ -82,8 +82,10 @@ The `items` list in `rerun-manifest.yml` is populated from
 execution mode:
 
 **Dry-run (`reason: dry_run`):**
-- Every page routes to `review` with `reason: no_classifier_available`
-  because no page classifier ships.
+- Built-in dry-runs route every page to `review` with
+  `reason: no_classifier_available` because no page classifier ships.
+- `--routes` dry-runs preserve imported actions; only pages explicitly routed
+  to review enter the queue.
 - Pages with `default_action: review` also appear (with `reason: configured_review`).
 
 **Execute (`reason: audit_policy`):**
@@ -96,6 +98,9 @@ execution mode:
 - Any page in `quarantine_queue` is excluded from `items`, even when the
   review queue keeps other reasons for that page.
 - Pages with `default_action: skip` do NOT appear (they are skipped entirely).
+- Exhausted page failures use `extraction_failed`; remaining pages after a
+  failure or budget halt use `not_attempted_after_failure` or
+  `not_attempted_after_budget`.
 - Clean pages with no warnings and a non-review action do NOT appear.
 
 ## max_rerun_depth enforcement
@@ -115,7 +120,9 @@ manifests.
   the parent manifest.
 - Top-level `reason` values: `dry_run` or `audit_policy`.
 - Item-level `reason` values: `no_classifier_available`, `configured_review`,
-  `quality_warning`, `grade_below_threshold`, and `rerun_if:<predicate>`
+  `quality_warning`, `grade_below_threshold`, `extraction_failed`,
+  `not_attempted_after_failure`, `not_attempted_after_budget`, and
+  `rerun_if:<predicate>`
   (joined with `+` when a page matches several).
 - `previous_grade` is the page grade at generation time; `null` only for
   pages without a quality entry (e.g. dry-run manifests).

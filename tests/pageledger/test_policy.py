@@ -259,3 +259,51 @@ def test_run_policies_populate_queues_and_quarantine_beats_rerun(
     audit_markdown = (out_dir / "audit.md").read_text(encoding="utf-8")
     assert "quarantine_if:missing_required_columns" in audit_markdown
     assert verify_run(out_dir)["status"] == "pass"
+
+
+def test_align_recomputes_rerun_and_quarantine_policies(tmp_path: Path) -> None:
+    from pageledger.aligner import align_run
+    from pageledger.runner import run
+
+    (tmp_path / "policy_adapter.py").write_text(_TABLE_ADAPTER, encoding="utf-8")
+    source = tmp_path / "table.txt"
+    source.write_text(
+        "| place | male | female |\n| - | - | - |\n| B | 4 | 6 |\n",
+        encoding="utf-8",
+    )
+    config_path = tmp_path / "policy.yml"
+    config_path.write_text(_POLICY_CONFIG, encoding="utf-8")
+    out_dir = tmp_path / "run"
+    run(
+        inputs=[source],
+        config_path=config_path,
+        out_dir=out_dir,
+        dry_run=False,
+        adapter_path=tmp_path,
+    )
+    before = json.loads((out_dir / "audit.json").read_text(encoding="utf-8"))
+    assert before["quarantine_queue"]
+
+    schema_path = tmp_path / "schema-v2.yml"
+    schema_path.write_text(
+        """\
+name: population_v2
+columns:
+  - {name: place, type: string, required: true}
+  - {name: male, type: integer}
+  - {name: female, type: integer}
+""",
+        encoding="utf-8",
+    )
+    align_run(out_dir, schema_path=schema_path)
+
+    after = json.loads((out_dir / "audit.json").read_text(encoding="utf-8"))
+    assert after["quarantine_queue"] == []
+    assert not any(
+        item["reason"] == "rerun_if:missing_required_columns"
+        for item in after["review_queue"]
+    )
+    manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
+    assert manifest["summary"]["pages_quarantined"] == 0
+    from pageledger.verify import verify_run
+    assert verify_run(out_dir)["status"] == "pass"

@@ -369,7 +369,8 @@ def align_run(
     """
     from .artifacts import build_rerun_manifest, read_jsonl, render_audit_markdown
     from .config import load_config
-    from .grading import grade_distribution, grade_is_below, grade_page
+    from .grading import grade_distribution, grade_page
+    from .policy import rebuild_policy_queues
 
     out_dir = Path(run_dir).expanduser().resolve()
     manifest_path = out_dir / "manifest.json"
@@ -421,41 +422,31 @@ def align_run(
                 quality_floors=spec.quality,
             )
         )
-    grades = {entry["page_id"]: entry for entry in quality_entries}
-
     audit_path = out_dir / "audit.json"
     audit = json.loads(audit_path.read_text(encoding="utf-8"))
     review_queue_before = len(audit.get("review_queue", []))
-    review_queue = [
-        item
-        for item in audit.get("review_queue", [])
-        if item.get("reason") != "grade_below_threshold"
-    ]
-    for item in review_queue:
-        graded = grades.get(item.get("page_id"))
-        if graded is not None and "grade" in item:
-            item["grade"] = graded["grade"]
-            item["grade_basis"] = graded["grade_basis"]
-    if config.review_below_grade is not None:
-        for entry in quality_entries:
-            if grade_is_below(entry["grade"], config.review_below_grade):
-                review_queue.append(
-                    {
-                        "page_id": entry["page_id"],
-                        "page_number": entry["page_number"],
-                        "type": config.default_review_type,
-                        "confidence": None,
-                        "action": "review",
-                        "reason": "grade_below_threshold",
-                        "grade": entry["grade"],
-                        "grade_basis": entry["grade_basis"],
-                    }
-                )
-    audit["review_queue"] = review_queue
-
     rerun_path = out_dir / "rerun-manifest.yml"
     previous_rerun = yaml.safe_load(rerun_path.read_text(encoding="utf-8"))
     route_map = yaml.safe_load((out_dir / "route-map.yml").read_text(encoding="utf-8"))
+    routes = {
+        page["page_id"]: page
+        for document in route_map["documents"]
+        for page in document["pages"]
+    }
+    review_queue, quarantine_queue = rebuild_policy_queues(
+        config=config,
+        quality_entries=quality_entries,
+        alignments=alignments,
+        routes=routes,
+        review_queue=audit.get("review_queue", []),
+        quarantine_queue=audit.get("quarantine_queue", []),
+    )
+    audit["review_queue"] = review_queue
+    audit["quarantine_queue"] = quarantine_queue
+    manifest["summary"]["pages_quarantined"] = len({
+        item["page_id"] for item in quarantine_queue
+    })
+    grades = {entry["page_id"]: entry for entry in quality_entries}
     aligned_at = (
         datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
     )

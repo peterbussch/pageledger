@@ -4,7 +4,7 @@
   "title": "PageLedger Quality Line (JSONL)",
   "description": "One line of quality.jsonl — per-page diagnostic signals, not calibrated accuracy. Schema version 0.1.",
   "type": "object",
-  "required": ["schema_version", "page_id", "page_number", "adapter", "character_count", "word_count", "confidence", "confidence_detail", "warnings", "text_quality", "embedded_text_comparison", "grade", "grade_basis", "grade_detail"],
+  "required": ["schema_version", "page_id", "page_number", "adapter", "character_count", "word_count", "warnings", "text_quality", "embedded_text_comparison"],
   "properties": {
     "schema_version": { "type": "string", "const": "0.1" },
     "page_id": { "type": "string" },

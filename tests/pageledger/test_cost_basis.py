@@ -11,6 +11,8 @@ Verifies:
 
 from __future__ import annotations
 
+import csv
+import io
 import json
 from pathlib import Path
 
@@ -93,6 +95,22 @@ def test_cost_basis_configured_rate(tmp_path):
     assert cost["cost_basis"] == "configured_rate"
     assert cost["cost_usd"] == 0.002
     assert cost["cost_known"] is True
+    from pageledger.reports import run_pages_csv
+    row = next(csv.DictReader(io.StringIO(run_pages_csv(out_dir))))
+    assert row["cost_usd"] == "0.002"
+
+
+def test_token_pricing_without_token_usage_is_unknown() -> None:
+    from pageledger.budget import _derive_cost
+
+    cost, basis = _derive_cost(
+        {"pages": 1, "tokens": None, "cost_usd": None},
+        cost_per_page=None,
+        cost_per_1k_tokens=0.50,
+    )
+
+    assert cost is None
+    assert basis is None
 
 
 def test_cost_basis_adapter_reported(tmp_path):

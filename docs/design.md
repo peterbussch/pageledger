@@ -5,9 +5,10 @@ Nothing here is a promise: the release contract is what `capabilities-and-limits
 as built in and what the JSON Schemas in
 [`../schemas/`](../schemas/) validate. The `0.1.x` alpha has the run
 controller, adapter protocol, schema aligner, per-page grading, audit queues,
-rerun execution, cross-run comparison, and ledger verification. `0.1.5` adds
-the `rerun_if` and `quarantine_if` policy grammar. The classifier-driven
-router and multi-adapter fallback chains remain design targets.
+rerun execution, cross-run comparison, ledger verification, and execution of
+reviewed external route maps. `0.1.6` also adds page-failure continuation and a
+consecutive-failure breaker. The built-in classifier and multi-adapter fallback
+chains remain design targets.
 
 ```mermaid
 flowchart LR
@@ -17,6 +18,7 @@ flowchart LR
         SA["Schema aligner (0.1.3)<br/>normalized/ records · pageledger align"]
         AG["Audit grading (0.1.3)<br/>A–F · review_below_grade"]
         RIF["Page policy grammar (0.1.5)<br/>rerun_if · quarantine_if"]
+        ER["Executable routing (0.1.6)<br/>reviewed external route maps"]
         RR["pageledger rerun<br/>page-scoped re-extraction"]
         CMP["pageledger compare-runs"]
     end
@@ -25,6 +27,7 @@ flowchart LR
         CHAIN["Multi-adapter fallback chains"]
     end
     CL -. "would feed" .-> RC
+    ER --> RC
     RC --> RR --> CMP
     AP --> RC
     SA -- "consumes raw/" --> AG
@@ -113,9 +116,11 @@ documents:
 ```
 
 Page ids follow `doc_{NNNN}_page_{MMMM}`, so a run over many multi-page
-sources stays unambiguous. In the current alpha, every page routes to the
-configured `default_action` (or `review` in dry-run mode); no classifier
-ships.
+sources stays unambiguous. Without `--routes`, every page uses the configured
+`default_action` (or `review` in dry-run mode); no classifier ships. `0.1.6`
+can instead validate and execute a complete route map produced by a human or
+external classifier, preserving type, action, prompt, confidence, and
+classifier metadata.
 
 ## 2. Schema aligner *(shipped in 0.1.3)*
 

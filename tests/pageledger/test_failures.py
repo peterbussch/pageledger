@@ -262,6 +262,115 @@ def test_retry_exhausted_writes_retry_and_error_entries(tmp_path):
     assert manifest["summary"]["pages_extracted"] == 0
 
 
+def test_continue_policy_finishes_later_pages_and_queues_failure(tmp_path):
+    from pageledger.verify import verify_run
+
+    source = tmp_path / "multi.txt"
+    source.write_text("one\ftwo\fthree", encoding="utf-8")
+    module = tmp_path / "fail_second.py"
+    module.write_text(textwrap.dedent("""\
+        from pageledger.adapters import ExtractionResult
+
+        class Adapter:
+            name = "fail-second"
+            version = "1"
+            deterministic = True
+            input_types = ("text",)
+            output_types = ("text",)
+            capabilities = ("test",)
+            def supports(self, action): return action == "transcribe_text"
+            def page_count(self, source): return 3
+            def extract(self, source, *, page_id, page_number, action, prompt=None):
+                if page_number == 2:
+                    raise RuntimeError("page two failed")
+                return ExtractionResult(
+                    content=f"page {page_number}", format="text", confidence=None,
+                    model=None, warnings=[], usage={"pages": 1, "tokens": None,
+                    "compute_seconds": None, "cost_usd": None})
+        """), encoding="utf-8")
+    config = tmp_path / "config.yml"
+    config.write_text(textwrap.dedent("""\
+        schema_version: "0.1"
+        taxonomy:
+          page_types:
+            prose: {default_action: transcribe_text}
+        run:
+          adapter: fail_second:Adapter
+          on_page_error: continue
+        """), encoding="utf-8")
+    out_dir = tmp_path / "out"
+
+    result = run(
+        inputs=[source], config_path=config, out_dir=out_dir, dry_run=False,
+        adapter_path=tmp_path,
+    )
+
+    assert result["status"] == "partial"
+    assert result["summary"]["pages_extracted"] == 2
+    assert result["summary"]["pages_failed"] == 1
+    assert result["summary"].get("pages_not_attempted", 0) == 0
+    audit = json.loads((out_dir / "audit.json").read_text(encoding="utf-8"))
+    assert any(
+        item["page_number"] == 2 and item["reason"] == "extraction_failed"
+        for item in audit["review_queue"]
+    )
+    import yaml
+    rerun = yaml.safe_load((out_dir / "rerun-manifest.yml").read_text(encoding="utf-8"))
+    failed_items = [
+        item for item in rerun["items"] if "extraction_failed" in item["reason"]
+    ]
+    assert [item["page_number"] for item in failed_items] == [2]
+    assert verify_run(out_dir)["status"] == "pass"
+
+
+def test_consecutive_failure_breaker_queues_unattempted_pages(tmp_path):
+    from pageledger.verify import verify_run
+
+    source = tmp_path / "multi.txt"
+    source.write_text("one\ftwo\fthree\ffour", encoding="utf-8")
+    module = tmp_path / "always_fail.py"
+    module.write_text(textwrap.dedent("""\
+        class Adapter:
+            name = "always-fail"
+            version = "1"
+            deterministic = True
+            input_types = ("text",)
+            output_types = ("text",)
+            capabilities = ("test",)
+            def supports(self, action): return action == "transcribe_text"
+            def page_count(self, source): return 4
+            def extract(self, source, *, page_id, page_number, action, prompt=None):
+                raise RuntimeError("service unavailable")
+        """), encoding="utf-8")
+    config = tmp_path / "config.yml"
+    config.write_text(textwrap.dedent("""\
+        schema_version: "0.1"
+        taxonomy:
+          page_types:
+            prose: {default_action: transcribe_text}
+        run:
+          adapter: always_fail:Adapter
+          on_page_error: continue
+          max_consecutive_failures: 2
+        """), encoding="utf-8")
+    out_dir = tmp_path / "out"
+
+    with pytest.raises(RuntimeError, match="Circuit breaker opened"):
+        run(
+            inputs=[source], config_path=config, out_dir=out_dir, dry_run=False,
+            adapter_path=tmp_path,
+        )
+
+    manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
+    assert manifest["summary"]["pages_failed"] == 2
+    assert manifest["summary"]["pages_not_attempted"] == 2
+    audit = json.loads((out_dir / "audit.json").read_text(encoding="utf-8"))
+    reasons = [item["reason"] for item in audit["review_queue"]]
+    assert reasons.count("extraction_failed") == 2
+    assert reasons.count("not_attempted_after_failure") == 2
+    assert verify_run(out_dir)["status"] == "pass"
+
+
 # =========================================================================
 # Dry-run never fails
 # =========================================================================

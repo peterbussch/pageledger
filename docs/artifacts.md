@@ -1,8 +1,9 @@
 # Run artifacts
 
 A run is a directory of plain files. No service, no database; everything
-is inspectable with `cat`, `grep`, and `jq`, and every artifact validates
-against a JSON Schema in [`schemas/`](../schemas/).
+is inspectable with `cat`, `grep`, and `jq`. JSON/JSONL artifacts validate
+against schemas in [`schemas/`](../schemas/); YAML artifacts use documented
+field contracts, also tested in CI.
 
 ```text
 runs/run-001/
@@ -38,9 +39,10 @@ Spec: [`run-manifest-spec.md`](run-manifest-spec.md).
 config, including one synthesized by `run --adapter`. Reproducing the run
 starts from this file.
 
-`route-map.yml` records where each page went. It contains page ids, types, actions, and
-reasons. In the alpha every page follows the configured default action;
-the route map is where a future classifier would record its decisions.
+`route-map.yml` records where each page went. It contains page ids, source
+hashes, types, actions, prompts, and reasons. Built-in routing uses the
+configured default action; `run --routes` executes and preserves reviewed
+decisions from a human or external classifier.
 Spec: [`route-map-spec.md`](route-map-spec.md).
 
 `raw/` holds extractor output, one file per page, named by page id. Page ids

@@ -79,3 +79,87 @@ def evaluate_policies(
         if matched:
             matches.append(predicate)
     return matches
+
+
+def rebuild_policy_queues(
+    *,
+    config: Any,
+    quality_entries: list[dict[str, Any]],
+    alignments: dict[str, dict[str, Any]],
+    routes: dict[str, dict[str, Any]],
+    review_queue: list[dict[str, Any]] | None = None,
+    quarantine_queue: list[dict[str, Any]] | None = None,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Rebuild evidence-derived queues while preserving operational entries."""
+    grades = {entry["page_id"]: entry for entry in quality_entries}
+    review = []
+    for item in review_queue or []:
+        reason = str(item.get("reason", ""))
+        if reason in {"quality_warning", "grade_below_threshold"}:
+            continue
+        if reason.startswith("rerun_if:"):
+            continue
+        review.append(_refresh_grade(item, grades))
+    quarantine = [
+        _refresh_grade(item, grades)
+        for item in quarantine_queue or []
+        if not str(item.get("reason", "")).startswith("quarantine_if:")
+    ]
+
+    for entry in quality_entries:
+        route = routes.get(entry["page_id"], {})
+        queue_entry = {
+            "page_id": entry["page_id"],
+            "page_number": entry["page_number"],
+            "type": route.get("type", config.default_review_type),
+            "confidence": route.get("confidence"),
+            "grade": entry["grade"],
+            "grade_basis": entry["grade_basis"],
+        }
+        if entry.get("warnings"):
+            review.append({
+                **queue_entry,
+                "action": "review",
+                "reason": "quality_warning",
+            })
+        if config.review_below_grade is not None and grade_is_below(
+            entry["grade"], config.review_below_grade
+        ):
+            review.append({
+                **queue_entry,
+                "action": "review",
+                "reason": "grade_below_threshold",
+            })
+        alignment = alignments.get(entry["page_id"])
+        for predicate in evaluate_policies(
+            config.rerun_rules,
+            grade=entry["grade"],
+            alignment=alignment,
+        ):
+            review.append({
+                **queue_entry,
+                "action": "review",
+                "reason": f"rerun_if:{predicate}",
+            })
+        for predicate in evaluate_policies(
+            config.quarantine_rules,
+            grade=entry["grade"],
+            alignment=alignment,
+        ):
+            quarantine.append({
+                **queue_entry,
+                "action": "quarantine",
+                "reason": f"quarantine_if:{predicate}",
+            })
+    return review, quarantine
+
+
+def _refresh_grade(
+    item: dict[str, Any], grades: dict[str, dict[str, Any]]
+) -> dict[str, Any]:
+    refreshed = dict(item)
+    graded = grades.get(str(item.get("page_id")))
+    if graded is not None and "grade" in item:
+        refreshed["grade"] = graded["grade"]
+        refreshed["grade_basis"] = graded["grade_basis"]
+    return refreshed

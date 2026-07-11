@@ -190,6 +190,27 @@ def verify_run(run_dir: Path) -> dict[str, Any]:
                     if isinstance(manifest_input, dict)
                     else None
                 )
+                if (
+                    document.get("source_sha256") is not None
+                    and document.get("source_sha256") != source_sha256
+                ):
+                    _add(
+                        errors,
+                        "source_identity_mismatch",
+                        "Route document source hash differs from the manifest input",
+                        artifact=paths["route_map"].name,
+                    )
+                if (
+                    document.get("page_count") is not None
+                    and isinstance(manifest_input, dict)
+                    and document.get("page_count") != manifest_input.get("page_count")
+                ):
+                    _add(
+                        errors,
+                        "route_page_count_mismatch",
+                        "Route document page_count differs from the manifest input",
+                        artifact=paths["route_map"].name,
+                    )
                 for page in document["pages"]:
                     counts["routed_pages"] += 1
                     if not isinstance(page, dict) or not isinstance(page.get("page_id"), str):
@@ -208,6 +229,9 @@ def verify_run(run_dir: Path) -> dict[str, Any]:
                         "page_number": page.get("page_number"),
                         "source": source,
                         "source_sha256": source_sha256,
+                        "type": page.get("type"),
+                        "action": page.get("action"),
+                        "confidence": page.get("confidence"),
                     }
     if summary.get("pages_total") != counts["routed_pages"]:
         _add(
@@ -274,6 +298,20 @@ def verify_run(run_dir: Path) -> dict[str, Any]:
                     "provenance.jsonl",
                 )
         result = entry.get("result")
+        recorded_route = entry.get("route")
+        if isinstance(recorded_route, dict) and route_page is not None:
+            expected_route = {
+                "type": route_page["type"],
+                "action": route_page["action"],
+                "route_confidence": route_page["confidence"],
+            }
+            if recorded_route != expected_route:
+                _add(
+                    errors,
+                    "route_evidence_mismatch",
+                    f"Provenance route differs from route-map.yml for {page_id}",
+                    page_id=page_id,
+                )
         raw_name = result.get("raw_artifact") if isinstance(result, dict) else None
         if not isinstance(raw_name, str):
             _add(
@@ -385,6 +423,21 @@ def verify_run(run_dir: Path) -> dict[str, Any]:
                 continue
             counts["audit_references"] += len(queue)
             _check_references(queue, route_pages, errors, f"audit.json:{queue_name}")
+        quarantine_queue = audit.get("quarantine_queue")
+        if isinstance(quarantine_queue, list):
+            quarantined = {
+                item.get("page_id")
+                for item in quarantine_queue
+                if isinstance(item, dict) and isinstance(item.get("page_id"), str)
+            }
+            if summary.get("pages_quarantined") != len(quarantined):
+                _add(
+                    errors,
+                    "quarantine_count_mismatch",
+                    "Manifest quarantine count differs from audit.json",
+                    expected=summary.get("pages_quarantined"),
+                    actual=len(quarantined),
+                )
 
     rerun = loaded.get("rerun_manifest")
     if isinstance(rerun, dict):
@@ -433,6 +486,41 @@ def verify_run(run_dir: Path) -> dict[str, Any]:
 
     log_entries = loaded.get("run_log")
     if isinstance(log_entries, list):
+        failed_page_ids = {
+            entry.get("page_id")
+            for entry in log_entries
+            if entry.get("status") in {"failed", "invalid_result"}
+            and isinstance(entry.get("page_id"), str)
+        }
+        if (
+            "pages_failed" in summary
+            and summary["pages_failed"] != len(failed_page_ids)
+        ):
+            _add(
+                errors,
+                "failed_page_count_mismatch",
+                "Manifest failed-page count differs from run.log",
+                expected=summary["pages_failed"],
+                actual=len(failed_page_ids),
+            )
+        extraction_routes = {
+            page_id
+            for page_id, page in route_pages.items()
+            if page.get("action") not in {"review", "skip"}
+        }
+        not_attempted = extraction_routes - set(provenance) - failed_page_ids
+        if (
+            manifest.get("execution_mode") != "dry_run"
+            and "pages_not_attempted" in summary
+            and summary["pages_not_attempted"] != len(not_attempted)
+        ):
+            _add(
+                errors,
+                "not_attempted_count_mismatch",
+                "Manifest not-attempted count differs from route and log evidence",
+                expected=summary["pages_not_attempted"],
+                actual=len(not_attempted),
+            )
         for line_number, entry in enumerate(log_entries, start=1):
             _check_identity(
                 entry,

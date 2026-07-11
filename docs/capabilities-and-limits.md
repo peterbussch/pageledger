@@ -16,6 +16,10 @@ stays short because this exists.
 - `--pages "1-8,81,100-110"` extracts a page selection from one source
   while keeping the source page numbering in every artifact. Sampling a
   large volume no longer means splitting the PDF and losing page identity.
+- `--routes route-map.yml` executes complete, reviewed per-page decisions from
+  a human or external classifier. It validates source coverage, page identity,
+  taxonomy types, confidence, prompts, and adapter action support before
+  extraction, then records the source route-map hash.
 - Adapter options (`run.adapter_options`) passed to built-in and custom
   adapter constructors, and `--adapter-path` for loading custom adapter
   modules without touching PYTHONPATH.
@@ -39,6 +43,8 @@ stays short because this exists.
 - Page-denominated budget enforcement (pages, tokens, dollars) with
   preflight refusal and per-page caps.
 - Retry with configurable `max_retries` and optional exponential backoff.
+- Optional continuation after exhausted page failures, with a consecutive-
+  failure circuit breaker and failed/not-attempted pages added to rerun work.
 - `pageledger rerun`: re-extracts exactly the pages listed in a previous
   run's rerun manifest (typically with a stronger adapter), preserving page
   ids, recording parent lineage, enforcing `max_rerun_depth`, and warning
@@ -101,9 +107,9 @@ stays short because this exists.
 
 ## Documented design, not yet implemented
 
-- Automatic page classification. The alpha routes every page to the
-  configured `default_action` (`review` in dry-run mode); no classifier
-  ships.
+- Automatic page classification. Without `--routes`, the alpha routes every
+  page to the configured `default_action` (`review` in dry-run mode). No
+  classifier ships; users can execute decisions from one with `--routes`.
 - Multi-adapter routing chains and the remaining staged CLI commands
   (`classify`, `extract`, `audit`). `align` already ships.
 
@@ -149,9 +155,9 @@ Details and examples live in [`design.md`](design.md).
   verify them against the page images.
 - Quality-warning pages land in `audit.json → review_queue` with reason
   `quality_warning`. Dry-run review entries use route-based reasons.
-- No automatic page routing. Every page follows the configured
-  `default_action`. Projects that need page-type-aware routing must
-  classify pages outside PageLedger for now.
+- No built-in automatic classifier. Projects can classify pages externally or
+  review a map by hand, then execute those page-type-aware decisions with
+  `run --routes`.
 - Reruns re-extract listed pages; they do not merge results. Combining
   parent and rerun outputs into one corpus is the project's decision, and
   `pageledger compare-runs` shows the per-page evidence for making it.

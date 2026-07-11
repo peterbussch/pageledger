@@ -186,7 +186,8 @@ Adapters that shell out to external commands (e.g. `pdftoppm`, `tesseract`,
 - Use `subprocess.run(..., timeout=...)` to avoid hanging indefinitely.
 - Catch `subprocess.TimeoutExpired` and re-raise as an `AdapterExecutionError`
   or a descriptive `RuntimeError` so PageLedger can record the failure in
-  `run.log` and continue to the next page.
+  `run.log`. The default stops the run; `run.on_page_error: continue` proceeds
+  to the next page, subject to `max_consecutive_failures`.
 - Capture `stdout` and `stderr` so the error envelope has diagnostic content.
 - Do not pass secrets or environment variables to subprocess stdout/stderr
   capture without redaction.

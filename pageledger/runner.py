@@ -41,8 +41,9 @@ from .artifacts import (
     write_yaml,
 )
 from .config import load_config
-from .grading import grade_is_below, grade_page
-from .policy import evaluate_policies
+from .grading import grade_page
+from .policy import rebuild_policy_queues
+from .routing import load_route_map
 
 LOG_LEVELS = {"DEBUG": 10, "INFO": 20, "WARNING": 30, "ERROR": 40}
 
@@ -231,6 +232,7 @@ def run(
     parent_quality_by_page: dict[str, dict[str, Any]] | None = None,
     run_depth: int = 0,
     adapter_path: Path | None = None,
+    routes_path: Path | None = None,
 ) -> dict[str, Any]:
     """Run the alpha PageLedger loop.
 
@@ -253,11 +255,15 @@ def run(
     # Construct adapters once in the execution path. Direct callers of
     # load_config retain its validation behavior.
     config = load_config(config_path, validate_adapter=False)
+    if routes_path is not None and (pages is not None or page_selection is not None):
+        raise ValueError("--routes cannot be combined with --pages or rerun page selection")
     adapter = None
-    if not dry_run and _requires_adapter(config.default_action):
+    if (not dry_run or routes_path is not None) and config.adapter_name is not None:
+        adapter = load_adapter(config.adapter_name, config.adapter_options)
+    if not dry_run and routes_path is None and _requires_adapter(config.default_action):
         if config.adapter_name is None:
             raise ValueError("No configured adapter; set run.adapter in the config")
-        adapter = load_adapter(config.adapter_name, config.adapter_options)
+        assert adapter is not None
         action = config.default_action
         if _requires_adapter(action) and not adapter.supports(action):
             raise ValueError(f"Adapter '{adapter.name}' does not support action '{action}'")
@@ -278,6 +284,35 @@ def run(
     _validate_adapter_inputs(input_paths, adapter_name=config.adapter_name)
     _validate_out_dir(out_dir)
 
+    imported_routes: dict[str, Any] | None = None
+    route_warnings: list[str] = []
+    page_counts: dict[Path, int] = {}
+    if routes_path is not None:
+        for source in input_paths:
+            page_counts[source.resolve()] = _planned_page_count(
+                source, adapter=adapter, adapter_name=config.adapter_name
+            )
+        taxonomy = config.data.get("taxonomy") or {}
+        page_types = set((taxonomy.get("page_types") or {}).keys())
+        imported_routes, route_warnings = load_route_map(
+            routes_path,
+            inputs=input_paths,
+            page_counts=page_counts,
+            page_types=page_types,
+        )
+        actions = {
+            page["action"]
+            for document in imported_routes["documents"]
+            for page in document["pages"]
+            if _requires_adapter(page["action"])
+        }
+        if actions and adapter is None:
+            raise ValueError("No configured adapter; set run.adapter in the config")
+        for action in sorted(actions):
+            assert adapter is not None
+            if not adapter.supports(action):
+                raise ValueError(f"Adapter '{adapter.name}' does not support action '{action}'")
+
     documents: list[dict[str, Any]] = []
     input_entries: list[dict[str, Any]] = []
     source_sha256_map: dict[Path, str] = {}
@@ -292,6 +327,8 @@ def run(
     alignments: dict[str, dict[str, Any]] = {}
     pages_total = 0
     pages_extracted = 0
+    pages_failed = 0
+    pages_not_attempted = 0
     pages_skipped = 0
     tokens_total = 0
     estimated_cost_usd = 0.0
@@ -299,13 +336,23 @@ def run(
     cost_bases: set[str] = set()
     extraction_seconds_values: list[float] = []
     failure_error: RuntimeError | None = None
+    halt_reason: str | None = None
+    attempted_page_ids: set[str] = set()
+    consecutive_failures = 0
 
     prompt = config.default_prompt
-    prompt_hash = _sha256_text(prompt or "")
     planned_pages: list[tuple[Path, dict[str, Any]]] = []
+    imported_by_source = {
+        Path(document["source"]): document
+        for document in (imported_routes or {}).get("documents", [])
+    }
     for document_index, source in enumerate(input_paths, start=1):
         resolved_source = source.resolve()
-        if selection_by_source is None:
+        if imported_routes is not None:
+            imported_document = imported_by_source[resolved_source]
+            page_count = page_counts[resolved_source]
+            routed_pages = [dict(page) for page in imported_document["pages"]]
+        elif selection_by_source is None:
             page_count = _planned_page_count(
                 source, adapter=adapter, adapter_name=config.adapter_name
             )
@@ -326,28 +373,30 @@ def run(
             selected = selection_by_source[source]
             page_count = len(selected)
             planned = [(item["page_id"], int(item["page_number"])) for item in selected]
-        routed_pages: list[dict[str, Any]] = []
-        for page_id, page_number in planned:
-            action = "review" if dry_run else config.default_action
-            reason = _route_reason(action=action, dry_run=dry_run)
-            page = {
-                "page_id": page_id,
-                "page_number": page_number,
-                "type": config.default_review_type,
-                "confidence": None,
-                "action": action,
-                "reason": reason,
-            }
-            if prompt is not None:
-                page["prompt"] = prompt
+        if imported_routes is None:
+            routed_pages = []
+            for page_id, page_number in planned:
+                action = "review" if dry_run else config.default_action
+                reason = _route_reason(action=action, dry_run=dry_run)
+                page = {
+                    "page_id": page_id,
+                    "page_number": page_number,
+                    "type": config.default_review_type,
+                    "confidence": None,
+                    "action": action,
+                    "reason": reason,
+                }
+                if prompt is not None:
+                    page["prompt"] = prompt
+                routed_pages.append(page)
+        for page in routed_pages:
+            action = cast(str, page["action"])
             if action == "review":
-                review_queue.append(page)
+                review_queue.append(_review_queue_entry(page))
             if action == "skip":
                 pages_skipped += 1
-            routed_pages.append(page)
             planned_pages.append((source, page))
             pages_total += 1
-        documents.append({"source": str(resolved_source), "pages": routed_pages})
         try:
             source_sha256 = _sha256_path(source)
             source_sha256_map[source] = source_sha256
@@ -361,6 +410,19 @@ def run(
         if selected_page_numbers is not None:
             input_entry["pages"] = pages
         input_entries.append(input_entry)
+        declared_sha256 = (
+            imported_by_source[resolved_source].get("source_sha256")
+            if imported_routes is not None
+            else None
+        )
+        if declared_sha256 is not None and declared_sha256 != source_sha256:
+            raise ValueError(f"Route map source_sha256 does not match input: {source}")
+        documents.append({
+            "source": str(resolved_source),
+            "source_sha256": source_sha256,
+            "page_count": page_count,
+            "pages": routed_pages,
+        })
 
     preflight_error = _preflight_budget_error(config=config, pages_total=pages_total)
     if preflight_error is not None:
@@ -386,7 +448,12 @@ def run(
         action = cast(str, page["action"])
         if action in {"review", "skip"}:
             continue
+        if dry_run:
+            continue
         page_id = cast(str, page["page_id"])
+        attempted_page_ids.add(page_id)
+        page_prompt = cast(str | None, page.get("prompt"))
+        prompt_hash = _sha256_text(page_prompt or "")
 
         if adapter is not None:
             result, extraction_seconds, extraction_started_at, attempt, adapter_error = (
@@ -394,16 +461,33 @@ def run(
                     adapter=adapter,
                     source=source,
                     page=page,
-                    prompt=prompt,
+                    prompt=page_prompt,
                     config=config,
                     run_id=run_id,
                     log_entries=log_entries,
                 )
             )
             if adapter_error is not None:
-                failure_error = adapter_error
-                break
+                pages_failed += 1
+                consecutive_failures += 1
+                review_queue.append(_review_queue_entry(page, "extraction_failed"))
+                if config.on_page_error == "stop":
+                    failure_error = adapter_error
+                    halt_reason = "failure"
+                    break
+                if (
+                    config.max_consecutive_failures > 0
+                    and consecutive_failures >= config.max_consecutive_failures
+                ):
+                    failure_error = RuntimeError(
+                        "Circuit breaker opened after "
+                        f"{consecutive_failures} consecutive page failures"
+                    )
+                    halt_reason = "failure"
+                    break
+                continue
             assert result is not None
+            consecutive_failures = 0
             usage = _canonical_usage(result.usage)
             raw_artifact = Path("raw") / f"{page_id}.{_artifact_extension(result.format)}"
             raw_text = (
@@ -475,6 +559,8 @@ def run(
                     adapter_input_types=adapter_input_types,
                     adapter_output_types=adapter_output_types,
                     adapter_capabilities=adapter_capabilities,
+                    page_cost=page_cost,
+                    page_cost_basis=page_cost_basis,
                 )
             )
             quality_entries.append(
@@ -516,13 +602,29 @@ def run(
             )
             if budget_error is not None:
                 failure_error = BudgetExceededError(budget_error)
+                halt_reason = "budget"
                 break
+
+    if halt_reason is not None:
+        reason = (
+            "not_attempted_after_budget"
+            if halt_reason == "budget"
+            else "not_attempted_after_failure"
+        )
+        for _source, page in planned_pages:
+            if (
+                _requires_adapter(cast(str, page["action"]))
+                and page["page_id"] not in attempted_page_ids
+            ):
+                pages_not_attempted += 1
+                review_queue.append(_review_queue_entry(page, reason))
 
     route_map = build_route_map(
         schema_version=config.schema_version,
         run_id=run_id,
-        generated_at=started_at,
+        generated_at=(imported_routes or {}).get("generated_at", started_at),
         documents=documents,
+        classifier=(imported_routes or {}).get("classifier"),
     )
     write_yaml(out_dir / "route-map.yml", route_map)
 
@@ -538,54 +640,26 @@ def run(
 
     quality_warning_pages = sum(1 for entry in quality_entries if entry.get("warnings"))
 
-    # Wire quality-warning pages into the review queue so users can triage
-    # flagged pages without scanning quality.jsonl by hand.
-    for entry in quality_entries:
-        queue_entry = {
-            "page_id": entry["page_id"],
-            "page_number": entry["page_number"],
-            "type": config.default_review_type,
-            "confidence": None,
-            "grade": entry["grade"],
-            "grade_basis": entry["grade_basis"],
-        }
-        if entry.get("warnings"):
-            review_queue.append({
-                **queue_entry,
-                "action": "review",
-                "reason": "quality_warning",
-            })
-        if config.review_below_grade is not None and grade_is_below(
-            entry["grade"], config.review_below_grade
-        ):
-            review_queue.append({
-                **queue_entry,
-                "action": "review",
-                "reason": "grade_below_threshold",
-            })
-        alignment = alignments.get(entry["page_id"])
-        for predicate in evaluate_policies(
-            config.rerun_rules,
-            grade=entry["grade"],
-            alignment=alignment,
-        ):
-            review_queue.append({
-                **queue_entry,
-                "action": "review",
-                "reason": f"rerun_if:{predicate}",
-            })
-        for predicate in evaluate_policies(
-            config.quarantine_rules,
-            grade=entry["grade"],
-            alignment=alignment,
-        ):
-            quarantine_queue.append({
-                **queue_entry,
-                "action": "quarantine",
-                "reason": f"quarantine_if:{predicate}",
-            })
+    routes = {
+        page["page_id"]: page
+        for document in documents
+        for page in document["pages"]
+    }
+    review_queue, quarantine_queue = rebuild_policy_queues(
+        config=config,
+        quality_entries=quality_entries,
+        alignments=alignments,
+        routes=routes,
+        review_queue=review_queue,
+        quarantine_queue=quarantine_queue,
+    )
 
-    status = "failed" if failure_error else "completed" if not dry_run else "partial"
+    if failure_error:
+        status = "failed"
+    elif dry_run or pages_failed:
+        status = "partial"
+    else:
+        status = "completed"
     quarantined_page_ids = {
         item["page_id"] for item in quarantine_queue
     }
@@ -602,6 +676,8 @@ def run(
         dataset_citation=config.dataset_citation,
         pages_total=pages_total,
         pages_extracted=pages_extracted,
+        pages_failed=pages_failed,
+        pages_not_attempted=pages_not_attempted,
         pages_skipped=pages_skipped,
         pages_quarantined=len(quarantined_page_ids),
         records_normalized=sum(
@@ -611,6 +687,15 @@ def run(
         quality_warning_pages=quality_warning_pages,
         status=status,
         extractors=extractor_entries,
+        routing=(
+            {
+                "source_path": str(routes_path.expanduser().resolve()),
+                "sha256": _sha256_path(routes_path),
+                "source_run_id": imported_routes["run_id"],
+            }
+            if routes_path is not None and imported_routes is not None
+            else None
+        ),
     )
     audit = build_audit(
         schema_version=config.schema_version,
@@ -697,7 +782,7 @@ def run(
         "summary": manifest["summary"],
         "quality_warning_pages": quality_warning_pages,
         "raw_artifact_count": len(provenance_entries),
-        "config_warnings": list(config_warnings),
+        "config_warnings": [*config_warnings, *route_warnings],
     }
     if parent_run_id is not None:
         result["parent_run_id"] = parent_run_id
@@ -830,6 +915,19 @@ def _route_reason(*, action: str, dry_run: bool) -> str:
     if action == "review":
         return "configured_review"
     return "configured_adapter"
+
+
+def _review_queue_entry(
+    page: dict[str, Any], reason: str | None = None
+) -> dict[str, Any]:
+    return {
+        "page_id": page["page_id"],
+        "page_number": page["page_number"],
+        "type": page["type"],
+        "confidence": page.get("confidence"),
+        "action": "review",
+        "reason": reason or page["reason"],
+    }
 
 
 def _requires_adapter(action: str) -> bool:
@@ -1025,6 +1123,8 @@ def _build_provenance_entry(
     adapter_input_types: list[str],
     adapter_output_types: list[str],
     adapter_capabilities: list[str],
+    page_cost: float | None,
+    page_cost_basis: str | None,
 ) -> dict[str, Any]:
     return {
         "schema_version": schema_version,
@@ -1058,6 +1158,7 @@ def _build_provenance_entry(
         },
         "usage": usage,
         "metrics": usage,
+        "cost": {"usd": page_cost, "basis": page_cost_basis},
         "extraction_seconds": extraction_seconds,
         "timestamp": timestamp,
     }

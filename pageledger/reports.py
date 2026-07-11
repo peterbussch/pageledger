@@ -29,16 +29,19 @@ def inspect_run(run_dir: Path) -> dict[str, Any]:
     provenance_count = summary.get("pages_extracted", 0)
     quality_warning_pages = summary.get("quality_warning_pages", 0)
 
-    # Count failed pages from run.log (not in manifest summary)
-    failed_page_count = 0
+    # New manifests record failure counts directly; legacy runs fall back to logs.
+    failed_page_count = summary.get("pages_failed")
     run_log_path = out_dir / "run.log"
-    if run_log_path.is_file():
+    if failed_page_count is None and run_log_path.is_file():
+        failed_page_count = 0
         for line in run_log_path.read_text(encoding="utf-8").splitlines():
             if not line.strip():
                 continue
             entry = json.loads(line)
-            if entry.get("status") in ("failed", "budget_exceeded"):
+            if entry.get("status") in {"failed", "invalid_result"}:
                 failed_page_count += 1
+    if failed_page_count is None:
+        failed_page_count = 0
 
     # Determine which artifacts are present
     expected_artifacts = [
@@ -91,6 +94,7 @@ def inspect_run(run_dir: Path) -> dict[str, Any]:
         "pages_total": summary.get("pages_total", 0),
         "pages_extracted": summary.get("pages_extracted", 0),
         "pages_skipped": summary.get("pages_skipped", 0),
+        "pages_not_attempted": summary.get("pages_not_attempted", 0),
         "provenance_count": provenance_count,
         "quality_warning_pages": quality_warning_pages,
         "failed_page_count": failed_page_count,
@@ -136,6 +140,12 @@ def run_pages_csv(run_dir: Path) -> str:
             continue
         quality = json.loads(line)
         page_provenance = provenance.get(quality["page_id"], {})
+        cost = page_provenance.get("cost")
+        page_cost = (
+            cost.get("usd")
+            if isinstance(cost, dict)
+            else page_provenance.get("usage", {}).get("cost_usd")
+        )
         writer.writerow({
             "page_id": quality["page_id"],
             "page_number": quality["page_number"],
@@ -146,7 +156,7 @@ def run_pages_csv(run_dir: Path) -> str:
             "warnings": ";".join(quality["warnings"]),
             "grade": quality.get("grade"),
             "grade_basis": quality.get("grade_basis"),
-            "cost_usd": page_provenance.get("usage", {}).get("cost_usd"),
+            "cost_usd": page_cost,
             "extraction_seconds": page_provenance.get("extraction_seconds"),
         })
     return buffer.getvalue()

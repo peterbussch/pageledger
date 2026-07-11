@@ -33,6 +33,8 @@ _KNOWN_RUN_KEYS = frozenset({
     "budget",
     "grading",
     "max_rerun_depth",
+    "max_consecutive_failures",
+    "on_page_error",
     "pricing",
     "quarantine_if",
     "rerun_if",
@@ -160,6 +162,26 @@ class PageLedgerConfig:
         return backoff
 
     @property
+    def on_page_error(self) -> str:
+        value = _walk(self.data, "run", "on_page_error")
+        if value is None:
+            return "stop"
+        if value not in {"stop", "continue"}:
+            raise ValueError("run.on_page_error must be 'stop' or 'continue'")
+        return value
+
+    @property
+    def max_consecutive_failures(self) -> int:
+        value = _walk(self.data, "run", "max_consecutive_failures")
+        if value is None:
+            return 3
+        return _nonneg_number(
+            value,
+            "run.max_consecutive_failures",
+            cast=int,
+        )
+
+    @property
     def default_action(self) -> str:
         page_types = _mapping_at(self.data, "taxonomy", "page_types")
 
@@ -270,6 +292,8 @@ def _validate_config(config: PageLedgerConfig, *, validate_adapter: bool) -> Non
         "cost_per_1k_tokens",
         "max_retries",
         "retry_backoff",
+        "on_page_error",
+        "max_consecutive_failures",
         "adapter_name",
         "adapter_options",
         "review_below_grade",

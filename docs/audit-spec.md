@@ -45,6 +45,10 @@
   below `run.grading.review_below_grade`, and pages matching `run.rerun_if`.
   Queue entries carry grade evidence when grading caused or informed the
   decision.
+- Exhausted extraction failures use `extraction_failed`. If a global failure,
+  circuit breaker, or budget cap halts the loop, remaining extraction pages use
+  `not_attempted_after_failure` or `not_attempted_after_budget`. These entries
+  flow into `rerun-manifest.yml` unless quarantined or depth-capped.
 - The JSON Schema for this artifact is at `schemas/audit.schema.json`.
 - Schema validation tests are in `tests/pageledger/test_schemas.py`.
 

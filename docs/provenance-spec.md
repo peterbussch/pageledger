@@ -49,6 +49,10 @@ metadata needed to understand or reproduce it.
     "compute_seconds": null,
     "cost_usd": 0.04
   },
+  "cost": {
+    "usd": 0.04,
+    "basis": "adapter_reported"
+  },
   "extraction_seconds": 21.833,
   "timestamp": "2026-06-19T19:34:00Z"
 }
@@ -84,6 +88,7 @@ Normalized records should preserve links back to provenance lines:
 | `result` | object | Output format, confidence, warnings, and raw artifact path. |
 | `usage` | object | Canonical usage fields: `pages`, `tokens`, `compute_seconds`, and `cost_usd`. |
 | `metrics` | object | Flat copy of `usage` for analytical workflows. |
+| `cost` | object | Optional PageLedger-resolved per-page cost: `usd` plus `basis` (`adapter_reported`, `configured_rate`, or null). |
 | `extraction_seconds` | number or null | Wall-clock seconds for the successful extraction attempt, measured by the runner (independent of adapter-reported `compute_seconds`). |
 | `timestamp` | ISO timestamp | Extraction time in UTC. |
 
@@ -101,6 +106,9 @@ Normalized records should preserve links back to provenance lines:
 - `metrics` is a reference copy of `usage` for analytical workflows. It
   shares the same keys and values as `usage` in the current alpha; future
   versions may diverge `metrics` to exclude cost or add derived fields.
+- `usage.cost_usd` remains adapter-reported evidence. `cost.usd` is the value
+  PageLedger actually uses after applying adapter-reported cost first and then
+  configured unit rates. Missing token usage never becomes a known zero cost.
 - The JSON Schema for this artifact is at `schemas/provenance-line.schema.json`.
 - Schema validation tests are in `tests/pageledger/test_schemas.py`.
 
@@ -117,15 +125,15 @@ not a calibrated accuracy score. Fields:
 | `adapter` | string | ✅ | no | Adapter name for diagnostics attribution. |
 | `character_count` | integer | ✅ | no | Total characters in extractor output. |
 | `word_count` | integer | ✅ | no | Regex word count (`\w+`). |
-| `confidence` | number or null | ✅ | yes | Adapter-reported page confidence, 0–1. Evidence, not calibrated probability. |
-| `confidence_detail` | object or null | ✅ | yes | Engine-native confidence evidence, adapter-defined shape. `pdf_ocr` reports Tesseract per-word statistics: `scale`, `word_count`, `mean`, `min`, `below_60_count`, `below_60_ratio` (0–100 scale). |
+| `confidence` | number or null | ❌ | yes | Adapter-reported page confidence, 0–1. Emitted by current runs; optional so original 0.1 lines remain valid. |
+| `confidence_detail` | object or null | ❌ | yes | Engine-native confidence evidence. Emitted by current runs; optional for original 0.1 compatibility. |
 | `warnings` | array of strings | ✅ | no | Quality warnings (see taxonomy below). |
 | `text_quality` | object | ✅ | no | Sub-metrics (see below). |
 | `embedded_text_comparison` | object | ❌ | yes | Comparison with PDF embedded text layer. Null for non-PDF sources. |
 | `output_integrity` | object | ❌ | no | Conservative chat-template-marker and parent-rerun size evidence. Present on new 0.1.4 quality lines; optional so older lines remain valid. |
-| `grade` | string | ✅ | no | `A`–`F`. Deterministic summary of this line's evidence: worst of the signal and schema axes. Only comparable within one adapter. |
-| `grade_basis` | string | ✅ | no | `signals_only` (no alignment for this page) or `schema_aware` (schema column/check evidence contributed). Rendered surfaces always show it: `A (signals)` and `A (schema)` are different claims. |
-| `grade_detail` | object | ✅ | no | `signals_grade`, `schema_grade`, `confidence_band`, `warning_count`, `required_column_coverage`, `arithmetic_pass_rate`, and human-readable `reasons`. |
+| `grade` | string | ❌ | no | `A`–`F`. Emitted by current runs; absent from pre-0.1.3 lines. |
+| `grade_basis` | string | ❌ | no | `signals_only` or `schema_aware`. Emitted by current runs; absent from pre-0.1.3 lines. |
+| `grade_detail` | object | ❌ | no | Grade evidence detail. Emitted by current runs; absent from pre-0.1.3 lines. |
 
 ### Grade bands
 

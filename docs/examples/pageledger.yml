@@ -72,6 +72,10 @@ run:
   retry:
     max_retries: 3
     backoff: exponential
+  # Continue independent later pages after retries are exhausted. The final
+  # run is partial and exits nonzero if any page failed.
+  on_page_error: continue
+  max_consecutive_failures: 3
   grading:
     # Pages graded strictly below this letter join the review queue
     # (reason grade_below_threshold) and the rerun manifest. Omit to keep

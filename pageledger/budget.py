@@ -31,7 +31,9 @@ def _derive_cost(
         cost += cost_per_page * int(usage.get("pages") or 0)
     if cost_per_1k_tokens is not None:
         tokens = usage.get("tokens")
-        cost += cost_per_1k_tokens * ((tokens or 0) / 1000)
+        if tokens is None:
+            return None, None
+        cost += cost_per_1k_tokens * (tokens / 1000)
     return cost, "configured_rate"
 
 

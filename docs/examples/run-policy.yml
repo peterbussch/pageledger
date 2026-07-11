@@ -28,6 +28,11 @@ run:
     max_retries: 3
     backoff: exponential
 
+  # "stop" is the backward-compatible default. "continue" records the failed
+  # page, finishes independent later pages, and returns a partial run.
+  on_page_error: continue
+  max_consecutive_failures: 3  # 0 disables the circuit breaker
+
   rerun_if:
     - grade_below: C
     - missing_required_columns: true
