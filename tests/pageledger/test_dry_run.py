@@ -1924,6 +1924,14 @@ def test_docs_examples_smoke_without_heavy_ocr_installs():
     assert "recursive-include examples" in manifest
 
 
+def test_wheel_configuration_includes_schema_contracts():
+    root = runner_module.Path(__file__).resolve().parents[2]
+    pyproject = (root / "pyproject.toml").read_text(encoding="utf-8")
+
+    assert '"share/pageledger/schemas"' in pyproject
+    assert '"schemas/*.json"' in pyproject
+
+
 def test_doctor_reports_ocr_languages(monkeypatch):
     import subprocess as subprocess_module
 

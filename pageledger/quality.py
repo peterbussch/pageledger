@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import re
+import unicodedata
 from pathlib import Path
 from typing import Any
 
@@ -31,13 +32,18 @@ def _build_quality_entry(
 ) -> dict[str, Any]:
     text = _quality_text(result.content)
     character_count = len(text)
-    word_count = len(re.findall(r"\w+", text))
+    token_lengths = _alphabetic_token_lengths(text)
+    word_count = len(token_lengths)
     warnings: list[str] = []
     if character_count == 0:
         warnings.append("empty_text")
     elif character_count < 10:
         warnings.append("short_text")
-    text_quality = _text_quality_metrics(text, character_count=character_count)
+    text_quality = _text_quality_metrics(
+        text,
+        character_count=character_count,
+        token_lengths=token_lengths,
+    )
     shape_warnings = _text_quality_warnings(text_quality)
     if result.format in ALIGNABLE_FORMATS:
         # The symbol/shape heuristics are calibrated on prose. Structured
@@ -154,13 +160,42 @@ _PREREFORM_LETTERS = frozenset("\u0463\u0462\u0473\u0472\u0475\u0474")
 _TERMINAL_HARD_SIGN = re.compile(r"[\u044a\u042a](?![^\W\d_])")
 
 
-def _text_quality_metrics(text: str, *, character_count: int) -> dict[str, Any]:
+def _alphabetic_token_lengths(text: str) -> list[int]:
+    r"""Lengths of Unicode letter tokens, including combining marks.
+
+    Python's ``\w`` does not include combining marks, so it splits many Indic
+    words into one-character fragments. Join controls preserve a token but do
+    not contribute to its measured length.
+    """
+    lengths: list[int] = []
+    current_length = 0
+    for char in text:
+        category = unicodedata.category(char)
+        if category.startswith("L") or (category.startswith("M") and current_length):
+            current_length += 1
+        elif char in {"\u200c", "\u200d"} and current_length:
+            continue
+        elif current_length:
+            lengths.append(current_length)
+            current_length = 0
+    if current_length:
+        lengths.append(current_length)
+    return lengths
+
+
+def _text_quality_metrics(
+    text: str,
+    *,
+    character_count: int,
+    token_lengths: list[int] | None = None,
+) -> dict[str, Any]:
     replacement_character_count = text.count("\ufffd")
     control_character_count = sum(
         1 for char in text if ord(char) < 32 and char not in {"\n", "\r", "\t", "\f"}
     )
     suspicious_symbol_count = sum(1 for char in text if _is_suspicious_symbol(char))
-    token_lengths = [len(token) for token in re.findall(r"[^\W\d_]+", text)]
+    if token_lengths is None:
+        token_lengths = _alphabetic_token_lengths(text)
     alpha_token_count = len(token_lengths)
     return {
         "replacement_character_count": replacement_character_count,
@@ -227,10 +262,12 @@ def _is_suspicious_symbol(char: str) -> bool:
         return True
     if char.isalnum() or char.isspace():
         return False
+    if unicodedata.category(char)[0] in {"L", "M", "N", "P", "Z"}:
+        return False
     if char in ".,;:!?()'\"-$%&+=*#@<>":
         return False
     if char in "«»„“”‘’‚—–…·§№°":
-        # Standard European/Cyrillic typography, not extraction garble.
+        # Common typography and symbols, not extraction garble.
         return False
     return not char.isascii()
 

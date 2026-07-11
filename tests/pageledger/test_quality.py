@@ -82,6 +82,63 @@ def test_clean_text_produces_no_warnings(tmp_path):
     assert audit["review_queue"] == []
 
 
+def test_clean_multiscript_prose_produces_no_shape_warnings(tmp_path):
+    """Clean text in tested scripts is prose, not OCR garble."""
+    samples = [
+        "भारत एक विशाल और विविध देश है जहाँ अनेक भाषाएँ बोली जाती हैं। "
+        "यह स्वच्छ हिंदी गद्य का एक उदाहरण है।",
+        "ভারত একটি বৃহৎ এবং বৈচিত্র্যময় দেশ যেখানে অনেক ভাষা বলা হয়। "
+        "এটি পরিষ্কার বাংলা গদ্যের একটি উদাহরণ।",
+        "ભારત એક વિશાળ અને વિવિધ દેશ છે જ્યાં ઘણી ભાષાઓ બોલાય છે. "
+        "આ સ્વચ્છ ગુજરાતી ગદ્યનું ઉદાહરણ છે.",
+        "ਭਾਰਤ ਇੱਕ ਵਿਸ਼ਾਲ ਅਤੇ ਵਿਭਿੰਨ ਦੇਸ਼ ਹੈ ਜਿੱਥੇ ਕਈ ਭਾਸ਼ਾਵਾਂ ਬੋਲੀਆਂ ਜਾਂਦੀਆਂ ਹਨ। "
+        "ਇਹ ਸਾਫ਼ ਪੰਜਾਬੀ ਗੱਦ ਦੀ ਉਦਾਹਰਨ ਹੈ।",
+        "இந்தியா பல மொழிகள் பேசப்படும் ஒரு பெரிய மற்றும் பல்வகை நாடாகும். "
+        "இது தெளிவான தமிழ் உரையின் ஒரு எடுத்துக்காட்டு.",
+        "భారతదేశం అనేక భాషలు మాట్లాడే విశాలమైన మరియు వైవిధ్యమైన దేశం. "
+        "ఇది స్పష్టమైన తెలుగు వచనానికి ఒక ఉదాహరణ.",
+        "ಭಾರತವು ಅನೇಕ ಭಾಷೆಗಳನ್ನು ಮಾತನಾಡುವ ವಿಶಾಲ ಮತ್ತು ವೈವಿಧ್ಯಮಯ ದೇಶವಾಗಿದೆ. "
+        "ಇದು ಸ್ಪಷ್ಟ ಕನ್ನಡ ಗದ್ಯದ ಒಂದು ಉದಾಹರಣೆ.",
+        "ഇന്ത്യ നിരവധി ഭാഷകൾ സംസാരിക്കുന്ന വിശാലവും വൈവിധ്യമാർന്നതുമായ രാജ്യമാണ്. "
+        "ഇത് വ്യക്തമായ മലയാള ഗദ്യത്തിന്റെ ഉദാഹരണമാണ്.",
+        "هذا مثال على نص عربي واضح وسليم للاختبار في مشروع بحثي متعدد اللغات "
+        "دون رموز غريبة أو تشويش.",
+        "Қазақстан көп тілді және мәдениеті бай ел. Бұл зерттеу жобасына арналған "
+        "таза қазақша мәтіннің мысалы.",
+    ]
+    source = tmp_path / "indic-prose.txt"
+    source.write_text("\f".join(sample * 3 for sample in samples), encoding="utf-8")
+
+    out_dir = _run(
+        [source],
+        textwrap.dedent("""\
+            schema_version: "0.1"
+            taxonomy:
+              page_types:
+                prose:
+                  default_action: transcribe_text
+            run:
+              adapter: text
+            """),
+        tmp_path,
+    )
+    entries = [
+        json.loads(line)
+        for line in (out_dir / "quality.jsonl").read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+
+    assert len(entries) == len(samples)
+    for entry in entries:
+        assert entry["warnings"] == []
+        assert entry["word_count"] > 0
+        assert entry["text_quality"]["suspicious_symbol_count"] == 0
+        assert entry["text_quality"]["mean_token_length"] >= 3.0
+
+    audit = json.loads((out_dir / "audit.json").read_text(encoding="utf-8"))
+    assert audit["review_queue"] == []
+
+
 # =========================================================================
 # Empty text
 # =========================================================================

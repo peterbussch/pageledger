@@ -70,6 +70,9 @@ pageledger = "pageledger.cli:main"
 where = ["."]
 include = ["pageledger*"]
 
+[tool.setuptools.data-files]
+"share/pageledger/schemas" = ["schemas/*.json"]
+
 [tool.ruff]
 line-length = 100
 target-version = "py310"
