@@ -11,7 +11,11 @@
     "page_number": { "type": "integer", "minimum": 1 },
     "adapter": { "type": "string" },
     "character_count": { "type": "integer", "minimum": 0 },
-    "word_count": { "type": "integer", "minimum": 0 },
+    "word_count": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Count of Unicode letter tokens; combining marks remain attached to their base-letter token."
+    },
     "confidence": {
       "type": ["number", "null"],
       "description": "Adapter-reported page confidence, 0–1. Evidence, not calibrated probability. Null when the engine reports none."
@@ -36,13 +40,13 @@
         "alpha_token_count": { "type": "integer", "minimum": 0 },
         "mean_token_length": {
           "type": ["number", "null"],
-          "description": "Mean length of alphabetic tokens. Null when the page has none. Fragment noise collapses toward 1; tested prose sits above 4."
+          "description": "Mean Unicode letter-plus-mark token length. Null when the page has none. The <3 boundary is a fragment-noise heuristic, not a cross-language quality score."
         },
         "short_token_ratio": {
           "type": ["number", "null"],
           "minimum": 0,
           "maximum": 1,
-          "description": "Share of alphabetic tokens with 1-2 characters. Null when the page has none."
+          "description": "Share of Unicode letter-plus-mark tokens with 1-2 code points. Null when the page has none."
         },
         "prereform_letter_count": {
           "type": "integer",

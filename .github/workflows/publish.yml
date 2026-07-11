@@ -39,6 +39,7 @@ jobs:
           pip install build twine
           python -m build
           twine check dist/*
+          python -c 'from pathlib import Path; from zipfile import ZipFile; wheel=next(Path("dist").glob("*.whl")); names=ZipFile(wheel).namelist(); assert any(name.endswith(".data/data/share/pageledger/schemas/manifest.schema.json") for name in names)'
       - uses: actions/upload-artifact@v7
         with:
           name: dist

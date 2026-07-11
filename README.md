@@ -11,11 +11,12 @@
 
 You OCR'd three thousand archive pages last spring. Which engine did page
 341 go through, what did the run cost, which pages were too noisy to
-trust, and did anyone ever review them? PageLedger is a run ledger for
+trust, and which ones still needed review? PageLedger is a run ledger for
 document extraction that keeps those answers on disk: you bring the
-engine (Tesseract, Docling, Marker, a cloud VLM), it routes pages,
-enforces page/token/dollar budgets, and writes the evidence as plain
-files you can grep, cite, and reproduce. No service, no database.
+engine (Tesseract, Docling, Marker, a cloud VLM), it applies configured or
+reviewed page routes, enforces page/token/dollar budgets, and writes the
+evidence as plain files you can grep, cite, and use to reconstruct the
+recorded methodology. No service, no database.
 
 It grew out of a Soviet census digitization project, where "the model
 returned JSON" was the beginning of the work, not the end. It is built
@@ -40,9 +41,9 @@ pageledger inspect-run runs/first
 ```
 
 `runs/first/` now holds the extracted text plus the ledger: a manifest,
-per-page provenance, quality warnings, word-level OCR confidence, cost
-evidence, and a review queue. Weak pages are already listed in an
-executable rerun plan, so escalating just those pages to a stronger
+per-page provenance, quality warnings, aggregate word-level OCR confidence
+evidence, cost evidence, and a review queue. Flagged pages are already listed
+in an executable rerun plan, so escalating just those pages to a stronger
 engine is one command, and comparing the two runs is another:
 
 ```bash
@@ -94,7 +95,7 @@ Every box on the right is a plain file in the run directory.
   protocol for wrapping anything else, from OCRmyPDF to a cloud VLM.
 - Quality signals per page: shape heuristics, Tesseract word confidence
   with a `low_confidence` warning, and pre-1918 Russian orthography
-  detection that tells a historian *why* the OCR degraded, plus conservative
+  detection that flags a likely historical-model mismatch, plus conservative
   chat-template leakage and rerun-inflation warnings for model adapters.
 - Budgets denominated in pages, the one unit every backend shares, with
   tokens and dollars on top when they exist.
@@ -120,8 +121,8 @@ Every box on the right is a plain file in the run directory.
   disappearing behind the first exception.
 - Page-scoped reruns with lineage, provenance-aware cross-run diffs, runtime
   ledger verification, CSV export, and environment diagnostics.
-- JSON Schemas for JSON/JSONL artifacts plus field-contract tests for YAML,
-  enforced in CI, and an
+- JSON Schemas for JSON/JSONL artifacts, shipped in source and wheel
+  distributions, plus field-contract tests for YAML, enforced in CI, and an
   [`AGENTS.md`](AGENTS.md) so AI coding agents can operate the tool and
   validate their own output.
 

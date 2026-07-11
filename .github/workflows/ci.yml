@@ -57,6 +57,7 @@ jobs:
           /tmp/venv-wheel/bin/pip install "$(ls dist/pageledger-*.whl)[pdf]"
           /tmp/venv-wheel/bin/pageledger init-config
           /tmp/venv-wheel/bin/pageledger doctor --json
+          (cd /tmp && /tmp/venv-wheel/bin/python -c 'from importlib.metadata import files; assert any(str(p).endswith("share/pageledger/schemas/manifest.schema.json") for p in (files("pageledger") or []))')
           echo "first page" > /tmp/smoke.txt
           /tmp/venv-wheel/bin/pageledger init-config --out /tmp/smoke-config.yml
           /tmp/venv-wheel/bin/pageledger run /tmp/smoke.txt --config /tmp/smoke-config.yml --out /tmp/smoke-run --json

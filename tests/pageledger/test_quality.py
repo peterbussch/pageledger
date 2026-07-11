@@ -106,7 +106,7 @@ def test_clean_multiscript_prose_produces_no_shape_warnings(tmp_path):
         "Қазақстан көп тілді және мәдениеті бай ел. Бұл зерттеу жобасына арналған "
         "таза қазақша мәтіннің мысалы.",
     ]
-    source = tmp_path / "indic-prose.txt"
+    source = tmp_path / "multiscript-prose.txt"
     source.write_text("\f".join(sample * 3 for sample in samples), encoding="utf-8")
 
     out_dir = _run(
@@ -129,9 +129,9 @@ def test_clean_multiscript_prose_produces_no_shape_warnings(tmp_path):
     ]
 
     assert len(entries) == len(samples)
-    for entry in entries:
+    for entry, sample in zip(entries, samples, strict=True):
         assert entry["warnings"] == []
-        assert entry["word_count"] > 0
+        assert entry["word_count"] == len(sample.split()) * 3
         assert entry["text_quality"]["suspicious_symbol_count"] == 0
         assert entry["text_quality"]["mean_token_length"] >= 3.0
 

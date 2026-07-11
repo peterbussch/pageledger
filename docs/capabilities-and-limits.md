@@ -40,6 +40,11 @@ stays short because this exists.
 - Conservative output-integrity signals: `instruction_echo` detects leaked
   chat-template markers, and reruns record parent character evidence with an
   `output_inflation` warning at the fixed 4× / 1,000-character boundary.
+- Unicode-category lexical metrics keep combining marks attached to their
+  base-letter tokens. Clean-prose regression fixtures cover Latin, Cyrillic,
+  Arabic, Devanagari, Bengali, Gujarati, Gurmukhi, Tamil, Telugu, Kannada, and
+  Malayalam scripts; this guards against known shape-warning false positives,
+  not OCR errors or language-specific accuracy.
 - Page-denominated budget enforcement (pages, tokens, dollars) with
   preflight refusal and per-page caps.
 - Retry with configurable `max_retries` and optional exponential backoff.

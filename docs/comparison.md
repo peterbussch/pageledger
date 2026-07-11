@@ -35,8 +35,8 @@ conversion, table detection, or generic OCR workflow orchestration are its core
 defensible wedge. Those claims age quickly.
 
 The remaining wedge is narrower and more useful: a local, provider-neutral run
-ledger for projects that need to compare and reproduce heterogeneous extraction
-runs. PageLedger's alpha should emphasize:
+ledger for projects that need to compare heterogeneous extraction runs and
+reconstruct their recorded methodology. PageLedger's alpha should emphasize:
 
 - Page-denominated routing and budgeting across tools with incompatible native
   usage metrics.

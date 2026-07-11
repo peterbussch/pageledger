@@ -77,8 +77,9 @@ Spec: [`normalized-spec.md`](normalized-spec.md).
 
 `cost.json` records what it cost and how we know. It has usage totals plus
 `cost_basis`: `adapter_reported` (the provider said so), `configured_rate`
-(derived from your configured prices), `mixed`, or `none` (a free local
-engine; PageLedger refuses to invent dollars for it).
+(derived from your configured prices), `mixed`, or `none` (cost is unknown or
+unreported; this can be a free local engine or an adapter that omitted cost
+evidence). PageLedger refuses to invent dollars.
 
 `run.log` records what happened in order. It has one JSON line per extractor call
 with timestamp, page id, adapter, status, and any error, so partial or
@@ -128,4 +129,5 @@ Artifact fields follow the compatibility policy in
 [`run-manifest-spec.md`](run-manifest-spec.md): additions are backward
 compatible within a schema version, and the schemas in
 [`schemas/`](../schemas/) are the machine-readable authority, enforced by
-`tests/pageledger/test_schemas.py`.
+`tests/pageledger/test_schemas.py`. Built wheels install the same contracts
+under the environment's `share/pageledger/schemas/` directory.

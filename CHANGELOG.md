@@ -6,6 +6,39 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to the artifact compatibility policy documented in
 `docs/run-manifest-spec.md` → Compatibility Policy.
 
+## 0.1.7 - 2026-07-11
+
+### Fixed
+
+- **Unicode-script quality correctness:** lexical metrics now tokenize Unicode
+  letters together with their combining marks. Clean Devanagari, Bengali,
+  Gujarati, Gurmukhi, Tamil, Telugu, Kannada, and Malayalam prose no longer
+  looks like one-character OCR fragments or suspicious symbol noise. Arabic,
+  Kazakh Cyrillic, Latin, and Russian regression coverage protects the same
+  script-safe boundary while existing OCR-fragment fixtures still warn.
+- Per-page `word_count` now uses the same Unicode letter-plus-mark tokens as the
+  lexical quality metrics instead of disagreeing with them on combining-mark
+  scripts.
+
+### Changed
+
+- Built wheels now include the machine-readable JSON Schema contracts under
+  `share/pageledger/schemas`; CI and the publish workflow inspect the installed
+  or built wheel for them.
+- Multilingual documentation now names the clean scripts under regression
+  coverage instead of claiming universal language neutrality. README routing,
+  review, confidence, historical-model, and reproducibility language is more
+  precise.
+- `cost_basis: none` is documented as unknown or unreported cost evidence, not
+  proof that an adapter was free.
+
+### Compatibility
+
+- Artifact schema version remains `0.1`; no field was added, removed, renamed,
+  or retyped. Corrected `word_count`, `suspicious_symbol_count`, and lexical
+  metrics can differ from 0.1.6 for scripts that use combining marks or
+  non-ASCII punctuation.
+
 ## 0.1.6 - 2026-07-10
 
 ### Added

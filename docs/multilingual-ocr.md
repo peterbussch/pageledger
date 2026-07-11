@@ -1,11 +1,13 @@
 # Non-English and historical OCR
 
-PageLedger's quality signals are language-neutral by construction (the
-tokenizer is Unicode-aware, and standard European typography like
-«guillemets» and em dashes is not treated as garble). This page walks two
-real Russian documents through the tool: a modern born-digital report and
-an 1850 scan in pre-reform orthography. The commands and numbers are from
-actual runs; substitute your own files.
+PageLedger's lexical shape signals use Unicode letter and combining-mark
+categories rather than an ASCII-oriented tokenizer. Clean-prose regression
+fixtures cover Latin, Cyrillic, Arabic, Devanagari, Bengali, Gujarati,
+Gurmukhi, Tamil, Telugu, Kannada, and Malayalam scripts. That coverage guards
+against known false warnings; it is not language-specific calibration or an
+OCR-accuracy claim. This page walks two real Russian documents through the
+tool: a modern born-digital report and an 1850 scan in pre-reform orthography.
+The commands and numbers are from actual runs; substitute your own files.
 
 ## Language packs come first
 
@@ -138,11 +140,11 @@ adapter does the full canonicalization.
 
 ## What to expect elsewhere
 
-Nothing here is Russian-specific except the orthography tables. The
-confidence signals, `--pages` sampling, language preflight, and the
+The confidence signals, `--pages` sampling, language preflight, and the
 escalate-what-failed loop (see
 [`examples/jfk-scanned-archive.md`](examples/jfk-scanned-archive.md))
-apply to any Tesseract-supported script. Pre-reform detection has obvious
-siblings (long s and Fraktur in German, for instance); they are not built
-in, but `quality.jsonl` carries the raw per-page evidence a custom check
-would need.
+apply across Tesseract-supported scripts. The lexical heuristics have only the
+clean-script regression coverage listed above; validate their usefulness on a
+sample of your own collection. Pre-reform detection has obvious siblings
+(long s and Fraktur in German, for instance); they are not built in, but
+`quality.jsonl` carries the raw per-page evidence a custom check would need.

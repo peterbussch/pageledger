@@ -2,7 +2,7 @@
 
 `provenance.jsonl` records the evidence trail for a PageLedger run. The run
 manifest points to this file; each line records one extractor activity and the
-metadata needed to understand or reproduce it.
+metadata needed to understand and reconstruct the recorded method.
 
 ## Minimal per-page line
 
@@ -165,11 +165,11 @@ not garble.
 |---|---|---|
 | `replacement_character_count` | integer | Count of `\ufffd` replacement characters. |
 | `control_character_count` | integer | Non-whitespace control characters below U+0020. |
-| `suspicious_symbol_count` | integer | Characters flagged as suspicious (non-ASCII, non-alphanumeric, non-common punctuation). |
+| `suspicious_symbol_count` | integer | Explicit extraction-garble markers plus Unicode symbols outside letter, mark, number, punctuation, and separator categories, except documented common typography. |
 | `suspicious_symbol_ratio` | number (0–1) | `suspicious_symbol_count / character_count`. |
-| `alpha_token_count` | integer | Alphabetic tokens on the page. |
-| `mean_token_length` | number or null | Mean alphabetic token length; null with no tokens. Fragment noise collapses toward 1, tested prose sits above 4. |
-| `short_token_ratio` | number (0–1) or null | Share of alphabetic tokens with 1–2 characters. |
+| `alpha_token_count` | integer | Unicode letter tokens on the page; combining marks remain attached to their base-letter token. |
+| `mean_token_length` | number or null | Mean Unicode letter-plus-mark token length; null with no tokens. The `<3` warning boundary is a fragment-noise heuristic, not a cross-language quality score. |
+| `short_token_ratio` | number (0–1) or null | Share of Unicode letter-plus-mark tokens with 1–2 code points. |
 | `prereform_letter_count` | integer | Cyrillic letters abolished by the 1918 Russian reform (ѣ, ѳ, ѵ). Modern Ukrainian/Belarusian і is deliberately not counted. |
 | `terminal_hard_sign_count` | integer | Word-final hard signs (ъ): mandatory before 1918, absent from modern Russian. This is the pre-reform signal that survives OCR: engines trained on modern text destroy the abolished letters but keep ъ. |
 
