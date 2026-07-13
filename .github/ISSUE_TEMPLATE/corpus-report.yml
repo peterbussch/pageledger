@@ -1,0 +1,53 @@
+name: Corpus / script report
+description: PageLedger misjudged a collection — false warnings, missed noise, or script-specific problems
+title: "[corpus] "
+labels: ["corpus-report"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Real collections are how the quality signals improve. Redact anything sensitive — a few lines of raw text is plenty.
+  - type: input
+    id: script
+    attributes:
+      label: Script / language
+      description: Include the time period if the material is historical.
+      placeholder: "e.g. Bengali, pre-reform Russian, Kazakh Cyrillic"
+    validations:
+      required: true
+  - type: input
+    id: adapter
+    attributes:
+      label: Adapter and engine
+      placeholder: "e.g. pdf_ocr with Tesseract 5.4, custom Docling adapter"
+    validations:
+      required: true
+  - type: input
+    id: pages
+    attributes:
+      label: Page count
+      placeholder: "e.g. 536 pages, problem visible on ~40"
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What PageLedger reported vs. what you expected
+      description: Warnings, grades, or counts that look wrong — and why.
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Redacted evidence
+      description: A few lines of the raw extracted text and the quality.jsonl line(s) for that page.
+      render: text
+    validations:
+      required: false
+  - type: input
+    id: version
+    attributes:
+      label: PageLedger version
+      placeholder: "output of: pageledger --version"
+    validations:
+      required: true

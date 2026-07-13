@@ -1,0 +1,28 @@
+name: Adapter request
+description: An OCR engine or extraction service the built-in adapters and examples don't cover
+labels: ["enhancement"]
+body:
+  - type: input
+    id: engine
+    attributes:
+      label: Engine or service
+      placeholder: "e.g. Ollama vision model, Azure Document Intelligence"
+    validations:
+      required: true
+  - type: textarea
+    id: gap
+    attributes:
+      label: Why the adapter protocol or existing examples don't cover it
+      description: See docs/adapter-protocol.md — adapters are thin wrappers, so many engines can be wrapped without core changes.
+    validations:
+      required: true
+  - type: dropdown
+    id: testing
+    attributes:
+      label: Can you test against the real engine?
+      options:
+        - "Yes, I have access and can test"
+        - "Partially"
+        - "No"
+    validations:
+      required: true

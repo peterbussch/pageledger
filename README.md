@@ -9,6 +9,13 @@
 
 <p align="center"><em>Record, route, and review document extraction: one page at a time.</em></p>
 
+<p align="center">
+  <a href="https://pypi.org/project/pageledger/"><img src="https://img.shields.io/pypi/v/pageledger" alt="PyPI"></a>
+  <a href="https://github.com/peterbussch/pageledger/actions/workflows/ci.yml"><img src="https://github.com/peterbussch/pageledger/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://pypi.org/project/pageledger/"><img src="https://img.shields.io/pypi/pyversions/pageledger" alt="Python versions"></a>
+  <a href="https://github.com/peterbussch/pageledger/blob/main/LICENSE"><img src="https://img.shields.io/pypi/l/pageledger" alt="License"></a>
+</p>
+
 You OCR'd three thousand archive pages last spring. Which engine did page
 341 go through, what did the run cost, which pages were too noisy to
 trust, and which ones still needed review? PageLedger is a run ledger for
@@ -156,6 +163,14 @@ the quality signals flagged page by page. Synthetic stress runs cover
 | [`docs/design.md`](docs/design.md) | Why pages, design principles, and what comes next |
 | [`docs/comparison.md`](docs/comparison.md) | Positioning against the 2026 extraction ecosystem |
 | [`schemas/`](schemas/) | JSON Schemas, the machine-readable artifact contract |
+
+## Contributing
+
+Testing a collection we haven't seen? [Open a corpus
+report](https://github.com/peterbussch/pageledger/issues/new?template=corpus-report.yml)
+with the script, adapter, page count, and a redacted sample — real
+collections are how the quality signals improve. Development setup and
+guidelines are in [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Citing
 
