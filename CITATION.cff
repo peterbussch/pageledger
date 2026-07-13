@@ -5,6 +5,7 @@ type: software
 authors:
   - family-names: Busscher
     given-names: Peter
+    orcid: "https://orcid.org/0000-0002-0902-8195"
 abstract: "PageLedger is an alpha toolkit for routing, auditing, budgeting, and preserving filesystem-native provenance around OCR/VLM document extraction workflows."
 keywords:
   - document extraction
