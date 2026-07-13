@@ -14,6 +14,10 @@ keywords:
   - provenance
   - corpus infrastructure
 license: MIT
+identifiers:
+  - type: doi
+    value: 10.5281/zenodo.21340651
+    description: "Concept DOI resolving to the latest archived version of PageLedger."
 repository-code: "https://github.com/peterbussch/pageledger"
 version: "0.1.7"
 date-released: "2026-07-11"
