@@ -1,8 +1,8 @@
 # CLI reference
 
-Eight commands ship. `run` and `rerun` are the ones that extract; `align`
-re-derives normalized records and grades from an existing run; the rest
-inspect, compare, or scaffold.
+Nine commands ship. `run` and `rerun` extract; `classify` produces an
+inspectable route map; `align` re-derives normalized records and grades from
+an existing run; the rest inspect, compare, diagnose, or scaffold.
 
 `pageledger --version` prints the installed release.
 
@@ -32,11 +32,11 @@ Other flags:
 | Flag | Effect |
 |---|---|
 | `--pages "1-8,81,100-110"` | Extract only these source pages (single input). Page ids keep the source numbering, so provenance stays truthful when you sample a large volume. Recorded in `manifest.inputs[].pages`. |
-| `--routes FILE` | Execute a complete reviewed route map from a human or external classifier. Requires `--config`; cannot be combined with `--adapter` or `--pages`. |
+| `--routes FILE` | Execute a complete route map from `pageledger classify`, a human, or an external classifier. Requires `--config`; cannot be combined with `--adapter` or `--pages`. |
 | `--dry-run` | Write the route map and planning artifacts without calling extractors. Inspect routing before spending money. |
 | `--json` | Machine-readable result on stdout; errors as JSON too. |
 | `--log-level LEVEL` | Minimum `run.log` event level: DEBUG, INFO, WARNING, ERROR. |
-| `--adapter-path DIR` | Add a directory to `sys.path` so a custom `run.adapter` module can be imported. |
+| `--adapter-path DIR` | Add a directory to `sys.path` so custom adapters named by `run.adapter` or `run.adapter_order` can be imported. |
 
 An imported route map must cover every page of every supplied input exactly
 once, use the configured taxonomy, and contain only actions supported by the
@@ -46,6 +46,47 @@ accepted with warnings and the current values are recorded.
 `--dry-run --routes` preserves the proposed decisions without calling
 `extract()`.
 
+## classify
+
+```bash
+pageledger classify scans/ --config pageledger.yml --out route-map.yml
+pageledger classify report.pdf --adapter pdf_text --out route-map.yml --json
+pageledger classify --from-run runs/run-001/ --config pageledger.yml --out route-map-v2.yml
+```
+
+Probes every page and writes an executable route map plus
+`<out-stem>.evidence.jsonl`. The built-in rules classify structural page
+shape (`blank`, `sparse`, `prose`, `table_likely`, `unknown`); a configured
+hook can replace the decision for a domain taxonomy. This is a separate
+stage: `run` never invokes it automatically. Review the evidence, edit the
+map if needed, then pass it unchanged to `run --routes`.
+
+Exactly one input mode is allowed:
+
+- Positional files/directories run a cheap probe. Probe precedence is
+  `--adapter`, then `classify.adapter`, then `pdf_text` for PDFs or `text` for
+  other supported inputs.
+- `--from-run DIR` reclassifies retained raw evidence without paying for
+  extraction again. The parent must be a complete, executed, original run;
+  dry runs, reruns, and `--pages` samples are rejected. It cannot be combined
+  with positional inputs or `--adapter`.
+
+Flags:
+
+| Flag | Effect |
+|---|---|
+| `--config FILE` | Optional taxonomy, action mapping, thresholds, probe adapter, hook, and minimum confidence. |
+| `--out FILE` | Required route-map YAML path; the evidence sidecar is written beside it. |
+| `--from-run DIR` | Use a parent run's manifest, routes, quality, provenance, and raw artifacts instead of probing inputs. |
+| `--adapter SPEC` | Probe adapter name or `module.path:Object`; overrides `classify.adapter`. |
+| `--adapter-path DIR` | Add a directory to `sys.path` for custom probe adapters or classifier hooks. |
+| `--json` | Print the classification summary as JSON. |
+
+A configured taxonomy must contain every type the active classifier can emit;
+this upfront gate is what guarantees the emitted map can round-trip through
+`run --routes`. An empty taxonomy is allowed and conservatively routes every
+page to review. See [classifier.md](classifier.md).
+
 ## rerun
 
 ```bash
@@ -54,10 +95,19 @@ pageledger rerun runs/run-001/ --config stronger.yml --out runs/run-002/
 
 Re-extracts exactly the pages listed in the parent run's
 `rerun-manifest.yml` (the pages that were flagged for review), preserving
-their page ids and recording parent lineage. Pass a config with a stronger
-adapter to escalate just the weak pages. Enforces `run.max_rerun_depth`
-and warns when a source file changed since the parent run. Takes the same
-`--dry-run`, `--json`, `--log-level`, and `--adapter-path` flags as `run`.
+their page ids and recording parent lineage. A plain `run.adapter` config can
+select a stronger engine, or one `run.adapter_order` can define the whole
+generation-indexed chain: entry 0 is the original run, entry 1 the first
+rerun, and so on. Each entry can carry its own options.
+
+Chain exhaustion with pending pages produces `rerun_status:
+chain_exhausted`; those pages stay in human review and no items are marked
+executable. `run.max_rerun_depth` is an independent cap and takes precedence
+when both limits are reached. The supplied config
+is authoritative: if it disagrees with the parent's recorded next adapter,
+PageLedger prints an escalation warning and uses the config. Source-integrity
+changes are warned separately. `rerun` takes the same `--dry-run`, `--json`,
+`--log-level`, and `--adapter-path` flags as `run`.
 
 ## align
 
@@ -149,20 +199,42 @@ OCR/VLM keys are present, without printing their values.
 
 ## Configuration
 
-The recommended starting point is one `pageledger.yml` with `taxonomy`,
-`schema`, and `run` sections; `init-config` writes it and
+The recommended starting point is one `pageledger.yml` with optional
+`classify`, plus `taxonomy`, `schema`, and `run` sections; `init-config` writes
+the minimal form and
 [`examples/pageledger.yml`](examples/pageledger.yml) is a commented copy.
 Common `run` settings:
 
 ```yaml
+taxonomy:
+  page_types:
+    blank: {default_action: skip}
+    sparse: {default_action: review}
+    prose: {default_action: transcribe_text}
+    table_likely: {default_action: review}
+    unknown: {default_action: review}
+
+classify:
+  min_confidence: 0.5
+  # adapter: pdf_ocr             # omit for per-suffix probe defaults
+  # hook: my_project.routes:Classifier
+  thresholds:
+    table_column_line_ratio: 0.015
+
 run:
-  adapter: pdf_ocr              # text | pdf_text | pdf_ocr | module.path:Object
-  adapter_options:
-    dpi: 400
-    lang: rus                   # pageledger doctor lists installed packs
+  # adapter_order is mutually exclusive with run.adapter/adapter_options.
+  adapter_order:
+    - adapter: pdf_ocr
+      adapter_options: {dpi: 400, lang: rus}
+    - adapter: my_project.adapters:StrongerAdapter
+      adapter_options: {model: stronger-model}
   budget:
-    max_pages: 500              # refuse before extracting page 501
+    max_pages: 500              # refuse before extraction if the plan is larger
     max_usd: 5.00
+    warn_pages: 400             # alerts do not require a matching cap
+    warn_tokens: 500000
+    warn_usd: 4.00
+    warn_at_percent: 80         # cap-relative warning remains supported
   retry:
     max_retries: 2
     backoff: exponential
@@ -180,6 +252,12 @@ run:
     - grade_below: D
   max_rerun_depth: 2
 ```
+
+Each budget unit records one structured first crossing. If absolute and
+cap-relative thresholds coexist, the lower effective value wins; an exact tie
+is labeled `absolute`. `cost.json` also groups extracted-page usage and
+resolved cost under `by_adapter` and `by_page_type`; skipped/review-only pages
+do not appear in those rollups.
 
 With `on_page_error: continue`, exhausted page failures are recorded and the
 run continues. Any failed page makes the final run `partial` and the CLI exits

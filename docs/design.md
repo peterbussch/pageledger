@@ -1,38 +1,34 @@
 # PageLedger design and targets
 
-This document holds the intended architecture beyond the current alpha.
-Nothing here is a promise: the release contract is what `capabilities-and-limits.md` lists
-as built in and what the JSON Schemas in
-[`../schemas/`](../schemas/) validate. The `0.1.x` alpha has the run
-controller, adapter protocol, schema aligner, per-page grading, audit queues,
-rerun execution, cross-run comparison, ledger verification, and execution of
-reviewed external route maps. `0.1.6` also adds page-failure continuation and a
-consecutive-failure breaker. The built-in classifier and multi-adapter fallback
-chains remain design targets.
+This document explains the shipped architecture and the remaining targets.
+The release contract is what `capabilities-and-limits.md` lists as built in
+and what the JSON Schemas in [`../schemas/`](../schemas/) validate. PageLedger
+0.2.0 has the run controller, adapter protocol, structural classifier, route
+executor, generation-indexed adapter chains, schema aligner, per-page grading,
+audit queues, rerun execution, comparison, and ledger verification.
 
 ```mermaid
 flowchart LR
     subgraph Shipped["Implemented"]
-        RC["Run controller<br/>budgets · retry/backoff · provenance<br/>quality signals · audit queues"]
-        AP["Adapter protocol<br/>text · pdf_text · custom import strings"]
+        RC["Run controller<br/>budgets/alerts · retry/backoff · provenance<br/>quality signals · audit queues"]
+        AP["Adapter protocol<br/>text · pdf_text · pdf_ocr · custom import strings"]
+        CL["Structural classifier (0.2.0)<br/>route map · evidence sidecar · hooks"]
+        CHAIN["Adapter escalation chains (0.2.0)<br/>one entry per rerun generation"]
         SA["Schema aligner (0.1.3)<br/>normalized/ records · pageledger align"]
         AG["Audit grading (0.1.3)<br/>A–F · review_below_grade"]
         RIF["Page policy grammar (0.1.5)<br/>rerun_if · quarantine_if"]
-        ER["Executable routing (0.1.6)<br/>reviewed external route maps"]
+        ER["Executable routing (0.1.6)<br/>classified/reviewed route maps"]
         RR["pageledger rerun<br/>page-scoped re-extraction"]
         CMP["pageledger compare-runs"]
     end
-    subgraph Targets["Design targets"]
-        CL["Page classifier / router"]
-        CHAIN["Multi-adapter fallback chains"]
-    end
-    CL -. "would feed" .-> RC
+    CL --> ER
     ER --> RC
     RC --> RR --> CMP
     AP --> RC
+    CHAIN --> RC
+    CHAIN --> RR
     SA -- "consumes raw/" --> AG
     AG --> RIF --> RR
-    CHAIN -. "would feed" .-> RC
 ```
 
 ## The canonical unit: pages
@@ -83,11 +79,14 @@ present.
   running service or database.
 - Preserve separate citations for software and source data.
 
-## 1. Page router *(design target)*
+## 1. Page router *(shipped in 0.2.0)*
 
-The router classifies pages before extraction. It emits a route map that
-decides which pages should be skipped, sent to cheap OCR, sent to a VLM table
-extractor, sent to prose transcription, or queued for review.
+`pageledger classify` is an explicit pre-extraction stage. Its built-in,
+dependency-free rules propose one of five structural types: `blank`, `sparse`,
+`prose`, `table_likely`, or `unknown`. The config taxonomy maps each type to an
+action and optional prompt; uncertain or unmapped decisions go to review.
+Domain labels are supplied by an importable classifier hook, not hardcoded in
+core. Confidences are fixed heuristic evidence, not calibrated probabilities.
 
 Example route map:
 
@@ -97,30 +96,32 @@ documents:
     pages:
       - page_id: doc_0001_page_0001
         page_number: 1
-        type: structural_metadata
+        type: blank
         action: skip
       - page_id: doc_0001_page_0002
         page_number: 2
-        type: table_data
-        action: vlm_table
-        prompt: table-default-v1
+        type: table_likely
+        action: review
+        confidence: 0.85
       - page_id: doc_0001_page_0003
         page_number: 3
-        type: index
-        action: reference_entry
+        type: prose
+        action: transcribe_text
       - page_id: doc_0001_page_0004
         page_number: 4
-        type: blank
+        type: unknown
         confidence: null
-        action: skip
+        action: review
 ```
 
 Page ids follow `doc_{NNNN}_page_{MMMM}`, so a run over many multi-page
-sources stays unambiguous. Without `--routes`, every page uses the configured
-`default_action` (or `review` in dry-run mode); no classifier ships. `0.1.6`
-can instead validate and execute a complete route map produced by a human or
-external classifier, preserving type, action, prompt, confidence, and
-classifier metadata.
+sources stays unambiguous. Classification writes the route map and a JSONL
+evidence sidecar without retaining raw page text. The route map passes
+unchanged through the existing `run --routes` validator/executor. Without
+`--routes`, every page still uses the configured `default_action` (or `review`
+in dry-run mode); `run` never classifies implicitly. PDF embedded-text probes
+cannot distinguish a truly blank page from an image-only page, so empty probe
+output is recorded as `unknown` rather than guessed blank.
 
 ## 2. Schema aligner *(shipped in 0.1.3)*
 
@@ -175,12 +176,14 @@ confidence under `low_confidence_threshold` caps its grade at C.
 
 ## 3. Run controller
 
-The controller manages long extraction runs. The current alpha implements
-budgets (pages/tokens/dollars, preflight and mid-run), retry with optional
+The controller manages long extraction runs. It implements budgets
+(pages/tokens/dollars, preflight and mid-run), capless absolute warnings and
+first-crossing alerts, retry with optional
 exponential backoff, per-page provenance with measured extraction time,
 quality signals, audit/review queues, rerun execution (`pageledger rerun`
 consumes the rerun manifest, enforcing `max_rerun_depth`), and cross-run
-comparison (`pageledger compare-runs`).
+comparison (`pageledger compare-runs`). Cost reports group extracted-page
+usage and resolved dollars by adapter and routed page type.
 
 Grading also has the older policy knob
 `run.grading.review_below_grade: C` queues pages graded strictly below the
@@ -207,21 +210,27 @@ Matching `rerun_if` rules add reasons such as
 `rerun_if:missing_required_columns` to the review queue. Matching
 `quarantine_if` rules add the page to the quarantine queue. A quarantined
 page can remain in the review queue for other reasons, but it is excluded from
-`rerun-manifest.yml`. Multi-adapter `adapter_order` chains are still a
-design target.
+`rerun-manifest.yml`.
 
-## 4. Staged CLI *(design target)*
+`run.adapter_order` is a non-empty escalation chain indexed by generation:
+entry 0 runs the original extraction and entry N runs rerun generation N.
+Each entry can carry its own adapter options. Chain exhaustion and
+`max_rerun_depth` are independent terminal gates. Pending pages remain in the
+review queue when the chain ends; PageLedger does not silently quarantine
+them or try another adapter inside the same run.
 
-Later versions can expose the internal stages as separate commands:
+## 4. Staged CLI *(partially shipped)*
+
+Classification is now separately inspectable; extraction and audit remain
+future stage commands:
 
 ```bash
-pageledger classify scans/ --taxonomy page-types.yml --out route-map.yml
+pageledger classify scans/ --config pageledger.yml --out route-map.yml
 pageledger extract scans/ --routes route-map.yml --out runs/run-001/
 pageledger audit runs/run-001/ --out runs/run-001/audit.md
 ```
 
-(`rerun` graduated from this list in the alpha; `align` graduated in
-0.1.3 as `pageledger align <run-dir> --schema table.yml`.) The staged
+(`rerun` and `align` graduated earlier; `classify` graduated in 0.2.0.) The staged
 commands are useful for debugging and advanced composition, but they should
 not be the default first-use experience. That stays `pageledger run`.
 
@@ -231,7 +240,7 @@ not be the default first-use experience. That stays `pageledger run`.
 - It should not replace Docling, Marker, Surya, olmOCR, OCR-D, or Tesseract.
 - It should not start with a web UI.
 - It should not assume one content domain, language, archive, or schema.
-- It should not ship hardcoded provider pricing, page taxonomies, or
+- It should not ship hardcoded provider pricing, domain taxonomies, or
   column/header dictionaries.
 - It should not include computer-vision fallback heuristics, GIS export,
   dashboards, or ensemble voting in core.

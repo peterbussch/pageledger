@@ -23,8 +23,10 @@ authoritative scope list.
 | Born-digital PDF | `pageledger run doc.pdf --adapter pdf_text --out runs/a` (needs `pageledger[pdf]`) |
 | Sample pages first | add `--pages "1-10,50-60"` (page ids keep source numbering) |
 | Plan without extracting | add `--dry-run` |
+| Classify pages into a route map | `pageledger classify inputs/ --config pageledger.yml --out routes.yml` |
+| Reclassify retained run evidence | `pageledger classify --from-run runs/a --config pageledger.yml --out routes-v2.yml` |
 | Full config run | `pageledger run inputs/ --config pageledger.yml --out runs/a` |
-| Execute reviewed routes | add `--routes route-map.yml` to a config run |
+| Execute classified/reviewed routes | add `--routes route-map.yml` to a config run |
 | Re-extract flagged pages | `pageledger rerun runs/a --config stronger.yml --out runs/b` |
 | Re-align/regrade without re-extracting | `pageledger align runs/a --schema table-v2.yml` |
 | Preview re-alignment | add `--dry-run` (no run artifacts change) |
@@ -34,19 +36,22 @@ authoritative scope list.
 | Write a starter config | `pageledger init-config --adapter pdf_ocr --out pageledger.yml` |
 | Check environment | `pageledger doctor --json` (includes installed OCR languages) |
 
-`--out` must be a new directory. `--config` and `--adapter` are mutually
-exclusive; no config file is ever read implicitly. `pdf_ocr` needs poppler
+`run --out` and `rerun --out` must name a new directory; `classify --out` and
+`init-config --out` name files. `--config` and the `run --adapter` shortcut are
+mutually exclusive; no config file is ever read implicitly. `pdf_ocr` needs poppler
 and Tesseract installed and refuses to run if `adapter_options.lang` names
 a missing language pack.
 
 `--routes` requires `--config` and a complete map covering every input page.
-It preserves decisions from a human or external classifier; PageLedger does
-not ship a classifier.
+It executes decisions from `pageledger classify`, a human, or an external
+classifier after validating complete coverage and adapter action support.
 
 ## Operating loop
 
-1. `pageledger doctor` to check tools, then dry-run to inspect routing
-   before spending anything.
+1. `pageledger doctor` to check tools. When pages need different actions,
+   run `classify`, review its route map and evidence sidecar, then pass the
+   map unchanged to `run --routes`. Classification is explicit; `run` does
+   not invoke it automatically.
 2. Run cheap extraction first (`pdf_text` or `pdf_ocr`).
 3. Read the evidence: `inspect-run` (grade distribution, records
    normalized), then `quality.jsonl` warnings and grades (`empty_text`,
@@ -61,10 +66,11 @@ not ship a classifier.
    and grades gain column/check evidence. Iterating on aliases is free:
    `pageledger align runs/a --schema v2.yml --dry-run` previews the change;
    remove `--dry-run` to re-derive records and grades from raw/.
-5. `rerun` with a stronger adapter re-extracts exactly the flagged pages
-   (set `run.grading.review_below_grade: C` to queue low-graded pages),
-   preserving page ids and lineage; `compare-runs` ranks improvement only
-   when source identity and adapter match.
+5. `rerun` re-extracts exactly the flagged pages. Either supply a stronger
+   plain `run.adapter` config or define `run.adapter_order`; chain entry N is
+   used by rerun generation N. Exhausted chains leave pages in review.
+   `compare-runs` ranks improvement only when source identity and adapter
+   match.
 6. Run `verify-run` before publishing or archiving a ledger. It checks
    cross-artifact coherence, not OCR correctness.
 7. Merging parent and rerun output into a corpus is the project's call —
@@ -72,19 +78,21 @@ not ship a classifier.
 
 ## Configuration essentials
 
-One `pageledger.yml` with `taxonomy`, `schema`, and `run` sections
+One `pageledger.yml` with optional `classify`, plus `taxonomy`, `schema`, and `run` sections
 (`init-config` writes it). The knobs that matter in practice live under
-`run`: `adapter`, `adapter_options` (`dpi`, `lang` for pdf_ocr),
-`budget` (`max_pages`, `max_tokens`, `max_usd` — preflight refuses
-over-budget runs before writing anything), `retry`, `pricing`,
+`run`: either `adapter`/`adapter_options` or generation-indexed
+`adapter_order`; `budget` (`max_pages`, `max_tokens`, `max_usd` caps plus
+capless `warn_pages`, `warn_tokens`, `warn_usd` alerts), `retry`, `pricing`,
 `on_page_error`, `max_consecutive_failures`, `grading`
 (`review_below_grade`, `thresholds`), `rerun_if`, `quarantine_if`, and
 `max_rerun_depth`.
 The `schema` section (columns/aliases/types/checks) is active: it is
 strictly validated at load and drives the aligner for structured page
 formats (`markdown_table`, `json`, `csv`; plain text is never aligned).
-Custom adapters load from `module.path:Object` import strings plus
-`--adapter-path DIR`.
+Custom adapters and classifier hooks load from `module.path:Object` import
+strings plus `--adapter-path DIR`. The built-in classifier emits only the
+structural types `blank`, `sparse`, `prose`, `table_likely`, and `unknown`;
+domain types belong in a hook.
 
 ## Boundaries the design enforces
 
@@ -97,21 +105,22 @@ Custom adapters load from `module.path:Object` import strings plus
   recorded run so the original remains evidence.
 - Confidence values are evidence, not calibrated probability.
 - Core stays PyYAML-only (`pypdf` behind the `[pdf]` extra). Domain
-  taxonomies, provider pricing catalogs, header dictionaries, CV
-  heuristics, exporters (TEI/PAGE/ALTO/GIS), dashboards, and ensemble
+  taxonomies, provider pricing catalogs, header dictionaries, CV heuristics,
+  exporters (TEI/PAGE/ALTO/GIS), dashboards, and ensemble
   voting stay out of core.
 - Grades are deterministic evidence summaries, never calibrated accuracy;
   do not compare grades across adapters or drop the basis label.
-- Not yet implemented (do not claim otherwise): automatic page
-  classification, multi-adapter fallback chains, and the `classify`/
-  `extract`/`audit` staged commands (`align` ships and `run --routes` consumes
-  externally prepared routes).
+- Still out of scope: classification invoked implicitly inside `run`, the
+  `extract` and `audit` staged commands, region-level routing, or same-run
+  adapter fallback. Explicit `classify` and generation-indexed rerun chains
+  ship in 0.2.0.
 
 ## Where to read more
 
 | Need | Read |
 |---|---|
 | Exact scope of this version | `docs/capabilities-and-limits.md` |
+| Classifier signals, hooks, and evidence | `docs/classifier.md` |
 | All flags and config keys | `docs/cli.md` |
 | What each run artifact means | `docs/artifacts.md`, `docs/*-spec.md`, `schemas/` |
 | Writing an adapter | `docs/adapter-protocol.md`, `examples/*.py` |

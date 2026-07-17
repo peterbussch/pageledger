@@ -21,8 +21,9 @@ You OCR'd three thousand archive pages last spring. Which engine did page
 341 go through, what did the run cost, which pages were too noisy to
 trust, and which ones still needed review? PageLedger is a run ledger for
 document extraction that keeps those answers on disk: you bring the
-engine (Tesseract, Docling, Marker, a cloud VLM), it applies configured or
-reviewed page routes, enforces page/token/dollar budgets, and writes the
+engine (Tesseract, Docling, Marker, a cloud VLM), it produces structural
+page routes or applies configured/reviewed ones, enforces page/token/dollar
+budgets, and writes the
 evidence as plain files you can grep, cite, and use to reconstruct the
 recorded methodology. No service, no database.
 
@@ -66,6 +67,7 @@ Other first moves:
 pageledger run report.pdf --adapter pdf_text --out runs/text   # born-digital PDF (pip install "pageledger[pdf]")
 pageledger run scan.pdf --adapter pdf_ocr --out runs/sample --pages "1-10"   # sample before committing
 pageledger run scan.pdf --config pageledger.yml --out runs/tuned --dry-run   # inspect routing, spend nothing
+pageledger classify scan.pdf --config pageledger.yml --adapter pdf_ocr --out routes.yml  # route proposal + evidence
 pageledger run scan.pdf --config pageledger.yml --routes reviewed-routes.yml --out runs/routed
 pageledger inspect-run runs/first --csv > pages.csv            # triage in a spreadsheet
 ```
@@ -101,14 +103,19 @@ Every box on the right is a plain file in the run directory.
 
 - Three built-in adapters (`text`, `pdf_text`, `pdf_ocr`) and a thin
   protocol for wrapping anything else, from OCRmyPDF to a cloud VLM.
+- A dependency-free structural classifier that emits executable route maps
+  plus per-page evidence for `blank`, `sparse`, `prose`, `table_likely`, and
+  `unknown`. Importable hooks supply domain-specific taxonomies.
 - Quality signals per page: shape heuristics, Tesseract word confidence
   with a `low_confidence` warning, and pre-1918 Russian orthography
   detection that flags a likely historical-model mismatch, plus conservative
   chat-template leakage and rerun-inflation warnings for model adapters.
 - Budgets denominated in pages, the one unit every backend shares, with
-  tokens and dollars on top when they exist.
+  tokens and dollars on top when they exist. Absolute warn thresholds fire
+  without a cap and record their first crossing without stopping the run.
 - Cost records that name their basis, so a derived estimate is never
-  mistaken for provider-billed spend.
+  mistaken for provider-billed spend, plus extracted-page rollups by adapter
+  and routed page type.
 - Schema alignment: declare columns, aliases, types, and arithmetic checks
   once, and structured extractor output (markdown tables, JSON, CSV)
   becomes normalized records. Coercion failures and failed checks are
@@ -121,21 +128,24 @@ Every box on the right is a plain file in the run directory.
 - Conditional page policies under `run.rerun_if` and `run.quarantine_if`
   act on grades, missing required columns, and arithmetic failure rates.
   Quarantined pages keep their audit evidence but stay out of rerun plans.
-- Reviewed route-map execution: feed per-page type/action/prompt decisions from
-  a human or external classifier back into `run --routes`; PageLedger validates
-  complete source coverage and preserves the routing evidence.
+- Classify/review/execute routing: `pageledger classify` produces per-page
+  type/action/prompt decisions, and `run --routes` accepts that map unchanged
+  (or one from a human/external classifier), validates complete source
+  coverage, and preserves the routing evidence.
 - Optional continue-on-page-error behavior with a consecutive-failure circuit
   breaker. Failed and unattempted pages become auditable rerun work rather than
   disappearing behind the first exception.
-- Page-scoped reruns with lineage, provenance-aware cross-run diffs, runtime
-  ledger verification, CSV export, and environment diagnostics.
+- Page-scoped reruns with lineage and optional generation-indexed adapter
+  chains; provenance-aware cross-run diffs, runtime ledger verification, CSV
+  export, and environment diagnostics.
 - JSON Schemas for JSON/JSONL artifacts, shipped in source and wheel
   distributions, plus field-contract tests for YAML, enforced in CI, and an
   [`AGENTS.md`](AGENTS.md) so AI coding agents can operate the tool and
   validate their own output.
 
-Without `--routes`, every page still uses one configured action. Automatic
-classification and multi-adapter fallback chains remain design targets.
+Classification is an explicit, inspectable stage: ordinary `run` commands do
+not invoke it automatically. Adapter chains escalate across rerun generations,
+not as same-run exception fallback.
 The full honest-scope list is in
 [`docs/capabilities-and-limits.md`](docs/capabilities-and-limits.md).
 
@@ -154,7 +164,8 @@ the quality signals flagged page by page. Synthetic stress runs cover
 | | |
 |---|---|
 | [`docs/README.md`](docs/README.md) | Documentation index |
-| [`docs/cli.md`](docs/cli.md) | All eight commands, flags, and config keys |
+| [`docs/cli.md`](docs/cli.md) | All nine commands, flags, and config keys |
+| [`docs/classifier.md`](docs/classifier.md) | Structural signals, thresholds, hooks, and route evidence |
 | [`docs/artifacts.md`](docs/artifacts.md) | What each file in a run directory answers |
 | [`docs/capabilities-and-limits.md`](docs/capabilities-and-limits.md) | What works, what you supply, what is design |
 | [`docs/ocr-options.md`](docs/ocr-options.md) | Choosing local, cloud, or hybrid extraction |

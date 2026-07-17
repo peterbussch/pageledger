@@ -7,6 +7,7 @@ the [first OCR run guide](pdf-ocr-first-run.md) for a scanned PDF.
 ## Guides
 
 - [Choose an OCR or VLM adapter](ocr-options.md)
+- [Classify pages and review route evidence](classifier.md)
 - [Run OCR on non-English and historical documents](multilingual-ocr.md)
 - [Work through a scanned government archive](examples/jfk-scanned-archive.md)
 - [Write a custom extraction adapter](adapter-protocol.md)
