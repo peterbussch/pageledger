@@ -1,8 +1,9 @@
 # Example PageLedger page taxonomy.
 #
 # A taxonomy names page types and maps them to default extraction actions.
-# Projects can add domain-specific labels, but the default set should stay
-# small enough for humans to review.
+# This file is deliberately domain-specific: use it with a matching
+# `classify.hook` or with a human/external route map. The built-in structural
+# classifier emits only blank, sparse, prose, table_likely, and unknown.
 
 schema_version: "0.1"  # Config file format version.
 taxonomy:
@@ -24,4 +25,7 @@ taxonomy:
       default_action: reference_entry
     figure:
       description: Visual pages where text extraction is secondary.
+      default_action: review
+    unknown:
+      description: Required fallback for probe failures or missing evidence.
       default_action: review

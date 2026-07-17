@@ -15,7 +15,7 @@ scope list.
 
 | Path | Purpose |
 |---|---|
-| `pageledger/` | The package: `cli.py`, `config.py`, `runner.py`, `adapters.py`, `artifacts.py`, `doctor.py` |
+| `pageledger/` | The package: CLI/config/runner plus classifier, routing, budget, adapters, artifacts, and verification modules |
 | `schemas/` | JSON Schemas for every generated artifact — the output contract |
 | `docs/` | User docs and per-artifact specs (`*-spec.md`), adapter protocol |
 | `docs/examples/` | Config examples (`pageledger.yml` is the recommended starting point) |
@@ -29,7 +29,9 @@ scope list.
 pip install -e ".[dev,pdf]"
 pageledger init-config --out pageledger.yml
 printf 'first page\fsecond page\n' > sample.txt
+pageledger classify sample.txt --config pageledger.yml --out routes.yml --json
 pageledger run sample.txt --config pageledger.yml --out runs/demo --json
+pageledger run sample.txt --config pageledger.yml --routes routes.yml --out runs/routed
 pageledger inspect-run runs/demo
 pageledger rerun runs/demo --config pageledger.yml --out runs/demo-2  # if flagged pages exist
 pageledger compare-runs runs/demo runs/demo-2
@@ -56,7 +58,8 @@ Three assertions that bite during routine changes:
 
 - The release version is pinned in `test_dry_run.py`
   (`test_package_exports_release_version`) — bump it with
-  `pyproject.toml`, `pageledger/__init__.py`, and `CITATION.cff`.
+  `pyproject.toml`, `pageledger/__init__.py`, `CITATION.cff`, and the editable
+  package entry in `uv.lock`.
 - `test_docs_examples_smoke_without_heavy_ocr_installs` pins strings in
   README, `docs/ocr-options.md`, `MANIFEST.in`, and `examples/` — docs
   restructuring can fail the suite.

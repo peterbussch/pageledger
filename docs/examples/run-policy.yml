@@ -6,21 +6,31 @@ run:
   # Current built-in adapters are `text`, `pdf_text`, and `pdf_ocr`; project
   # adapters can be loaded as `module.path:object`.
   adapter: text
+  # Alternative: remove `adapter` and select one adapter per rerun generation.
+  # adapter_order:
+  #   - text
+  #   - adapter: module.path:StrongerAdapter
+  #     adapter_options: {model: stronger-model}
 
   budget:
-    # Pages are the canonical, always-available unit. Any configured cap that
-    # is hit stops the run.
+    # Pages are the canonical, always-available unit. Exceeding a configured
+    # cap stops the run; equality is still within budget.
     max_pages: 5000
     max_usd: 25
     warn_at_percent: 80
+    warn_pages: 4000   # absolute warnings do not require a matching cap
+    warn_tokens: 500000
+    warn_usd: 20
 
   pricing:
     # Unit rates. PageLedger derives dollar cost from pages and tokens when
     # the adapter reports those units. Omit to run with pages-only accounting.
     cost_per_page: 0.0015
-    cost_per_1k_tokens: 0.50
+    # cost_per_1k_tokens: 0.50  # enable only for token-reporting adapters
 
   max_rerun_depth: 2
+  # Chain length and max_rerun_depth are independent caps. Extra chain steps
+  # beyond this depth are reported as unreachable at config load.
 
   retry:
     # The runner honors max_retries and backoff ("none" or "exponential":

@@ -1,4 +1,4 @@
-# Combined PageLedger v0.1-style config.
+# Combined PageLedger config (artifact/config schema 0.1, package 0.2.0).
 #
 # The split files in this examples directory are easier to read in docs. This
 # single-file form is the recommended first-use shape.
@@ -10,20 +10,26 @@ dataset_citation:
   text: Replace this with the archive, collection, DOI, or source-image citation.
 
 taxonomy:
-  # Example only. Replace with your project's page types.
+  # The built-in classifier can emit exactly these five structural types.
+  # Domain types require a classify.hook (see docs/classifier.md).
   page_types:
-    structural_metadata:
-      default_action: skip
     blank:
       default_action: skip
-    table_data:
-      default_action: vlm_table
+    sparse:
+      default_action: review
     prose:
       default_action: transcribe_text
-    index:
-      default_action: reference_entry
-    figure:
+    table_likely:
       default_action: review
+    unknown:
+      default_action: review
+
+classify:
+  # Omit for per-suffix defaults: pdf_text for PDF, text otherwise.
+  # adapter: pdf_ocr
+  min_confidence: 0.5
+  # thresholds:
+  #   table_column_line_ratio: 0.015
 
 # The schema aligner maps structured extractor output (markdown_table,
 # json, csv) to these columns, writing normalized/{page_id}.json records.
@@ -62,12 +68,23 @@ run:
   # Fixture adapter for plain UTF-8 text inputs. Use pdf_text for born-digital
   # PDFs or pdf_ocr for scanned PDFs.
   adapter: text
+  # For generation-indexed escalation, remove `adapter` above and use a
+  # non-empty chain. Entry 0 runs first; rerun generation 1 uses entry 1.
+  # adapter_order:
+  #   - text
+  #   - adapter: module.path:StrongerAdapter
+  #     adapter_options: {model: stronger-model}
   budget:
-    # The page is the canonical unit and always enforceable. Dollar/token caps
-    # apply only when a pricing rate is configured (see `pricing` below).
+    # The page is canonical and always available. Token caps need adapter token
+    # usage; dollar caps need adapter-reported cost or rates under `pricing`.
     max_pages: 5000
     max_usd: 25
     warn_at_percent: 80
+    # Absolute warnings fire without requiring a cap. When both forms exist,
+    # the lower threshold wins and an exact tie is attributed to the absolute.
+    warn_pages: 4000
+    warn_tokens: 500000
+    warn_usd: 20
   # max_rerun_depth: 2  # generations of `pageledger rerun` allowed (default 2)
   retry:
     max_retries: 3
@@ -100,4 +117,4 @@ run:
     # model-backed adapters); adapters never have to know dollar prices.
     # Omit these entirely to run with pages-only accounting and no dollar cost.
     cost_per_page: 0.0015
-    cost_per_1k_tokens: 0.50
+    # cost_per_1k_tokens: 0.50  # enable only when the adapter reports tokens
