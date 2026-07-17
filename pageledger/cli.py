@@ -64,7 +64,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     run_parser = subparsers.add_parser(
         "run",
-        help="Run extraction with run.adapter: text, pdf_text, pdf_ocr, or module.path:Object",
+        help="Run extraction with a built-in/custom adapter or configured adapter chain",
     )
     run_parser.add_argument(
         "inputs",
@@ -102,7 +102,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--adapter-path",
         type=Path,
         default=None,
-        help="Directory added to sys.path so a custom run.adapter module can be imported",
+        help="Directory added to sys.path so custom adapter modules can be imported",
     )
 
     rerun_parser = subparsers.add_parser(
@@ -118,7 +118,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--config",
         required=True,
         type=Path,
-        help="PageLedger YAML config for the rerun (may name a different adapter)",
+        help="PageLedger YAML config for the rerun (plain adapter or adapter chain)",
     )
     rerun_parser.add_argument("--out", required=True, type=Path, help="New empty run directory")
     rerun_parser.add_argument("--dry-run", action="store_true")
@@ -132,7 +132,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--adapter-path",
         type=Path,
         default=None,
-        help="Directory added to sys.path so a custom run.adapter module can be imported",
+        help="Directory added to sys.path so custom adapter modules can be imported",
     )
 
     classify_parser = subparsers.add_parser(

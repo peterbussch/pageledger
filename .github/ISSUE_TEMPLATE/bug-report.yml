@@ -6,7 +6,7 @@ body:
     id: version
     attributes:
       label: Version and environment
-      placeholder: "e.g. pageledger 0.1.7, Python 3.12, macOS 15"
+      placeholder: "e.g. pageledger 0.2.0, Python 3.12, macOS 15"
     validations:
       required: true
   - type: textarea
