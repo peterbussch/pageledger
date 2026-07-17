@@ -441,6 +441,11 @@ def _cmd_run(args: argparse.Namespace) -> int:
         print(f"Raw artifacts: {result['raw_artifact_count']}")
         print(f"Quality warning pages: {result['quality_warning_pages']}")
         print(f"Estimated cost USD: {summary['estimated_cost_usd']}")
+        escalation = result.get("escalation")
+        if escalation is not None:
+            step = escalation["step"]
+            adapter = escalation["adapter_order"][step]
+            print(f"Escalation step: {step} ({adapter})")
         config_warnings = result.get("config_warnings", [])
         if config_warnings:
             print(f"Config warnings ({len(config_warnings)}):")
@@ -504,7 +509,16 @@ def _cmd_rerun(args: argparse.Namespace) -> int:
         )
         print(f"Quality warning pages: {result['quality_warning_pages']}")
         print(f"Estimated cost USD: {summary['estimated_cost_usd']}")
+        escalation = result.get("escalation")
+        if escalation is not None:
+            step = escalation["step"]
+            adapter = escalation["adapter_order"][step]
+            print(f"Escalation step: {step} ({adapter})")
+        for warning in result.get("config_warnings", []):
+            print(f"WARNING: {warning}")
         for warning in result.get("source_integrity_warnings", []):
+            print(f"WARNING: {warning}")
+        for warning in result.get("escalation_warnings", []):
             print(f"WARNING: {warning}")
     return 1 if result["status"] == "partial" and not result["dry_run"] else 0
 

@@ -18,6 +18,7 @@ import json
 from pathlib import Path
 
 import pytest
+import yaml
 
 from pageledger.aligner import align_page, align_run, load_schema_spec
 
@@ -651,6 +652,23 @@ def test_align_preview_matches_apply_and_repeated_derivation_is_idempotent(tmp_p
 
     assert repeated["after"] == applied["after"]
     assert {path: path.read_bytes() for path in stable_paths} == first_derivation
+
+
+def test_align_preserves_adapter_chain_escalation(tmp_path):
+    out = _existing_run(tmp_path)
+    rerun_path = out / "rerun-manifest.yml"
+    rerun = yaml.safe_load(rerun_path.read_text(encoding="utf-8"))
+    rerun["escalation"] = {
+        "adapter_order": ["weak", "strong"],
+        "step": 0,
+        "next_adapter": "strong",
+    }
+    rerun_path.write_text(yaml.safe_dump(rerun, sort_keys=False), encoding="utf-8")
+
+    align_run(out)
+
+    aligned_rerun = yaml.safe_load(rerun_path.read_text(encoding="utf-8"))
+    assert aligned_rerun["escalation"] == rerun["escalation"]
 
 
 def test_align_removes_obsolete_external_schema_snapshot(tmp_path):

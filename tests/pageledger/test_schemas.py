@@ -252,6 +252,26 @@ def test_manifest_records_adapter_options(tmp_path: Path) -> None:
     assert manifest["extractors"][0]["options"] == {"suffix": "!"}
 
 
+def test_manifest_schema_accepts_adapter_chain_escalation(tmp_path: Path) -> None:
+    source = tmp_path / "sample.txt"
+    source.write_text("page with enough clean text for extraction", encoding="utf-8")
+    config = MINIMAL_CONFIG.replace(
+        "  adapter: text",
+        "  adapter_order:\n    - text\n    - text",
+    )
+    out_dir = _run_pageledger(tmp_path, config_yaml=config, inputs=[str(source)])
+
+    manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
+    _validate(_manifest_schema, manifest, "manifest.json (adapter chain)")
+    assert manifest["escalation"] == {"adapter_order": ["text", "text"], "step": 0}
+    rerun = yaml.safe_load((out_dir / "rerun-manifest.yml").read_text(encoding="utf-8"))
+    assert rerun["escalation"] == {
+        "adapter_order": ["text", "text"],
+        "step": 0,
+        "next_adapter": "text",
+    }
+
+
 def test_manifest_budget_failure(tmp_path: Path) -> None:
     """Budget failure still produces a valid partial manifest."""
     source = tmp_path / "sample.txt"

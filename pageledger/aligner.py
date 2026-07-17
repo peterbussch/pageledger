@@ -462,6 +462,11 @@ def align_run(
         route_map=route_map,
         run_depth=previous_rerun["rerun_depth"],
         grades={page_id: entry["grade"] for page_id, entry in grades.items()},
+        escalation=(
+            previous_rerun.get("escalation")
+            if isinstance(previous_rerun.get("escalation"), dict)
+            else None
+        ),
     )
 
     records_normalized = sum(len(alignment["records"]) for alignment in alignments.values())
