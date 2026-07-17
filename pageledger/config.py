@@ -233,6 +233,29 @@ class PageLedgerConfig:
         )
 
     @property
+    def budget_warn_pages(self) -> int | None:
+        return _nonneg_number(
+            _walk(self.data, "run", "budget", "warn_pages"),
+            "run.budget.warn_pages",
+            cast=int,
+        )
+
+    @property
+    def budget_warn_tokens(self) -> int | None:
+        return _nonneg_number(
+            _walk(self.data, "run", "budget", "warn_tokens"),
+            "run.budget.warn_tokens",
+            cast=int,
+        )
+
+    @property
+    def budget_warn_usd(self) -> float | None:
+        return _nonneg_number(
+            _walk(self.data, "run", "budget", "warn_usd"),
+            "run.budget.warn_usd",
+        )
+
+    @property
     def budget_warn_at_percent(self) -> float | None:
         warn_at_percent = _nonneg_number(
             _walk(self.data, "run", "budget", "warn_at_percent"),
@@ -386,6 +409,9 @@ def _validate_config(config: PageLedgerConfig, *, validate_adapter: bool) -> Non
     for prop in (
         "max_rerun_depth",
         "budget_max_usd",
+        "budget_warn_pages",
+        "budget_warn_tokens",
+        "budget_warn_usd",
         "budget_warn_at_percent",
         "budget_max_pages",
         "budget_max_tokens",
@@ -513,6 +539,17 @@ def _warn_impossible_budget(config: PageLedgerConfig) -> None:
         config.warnings.append(
             "run.budget.max_usd is 0 — dollar budget will be exceeded immediately"
         )
+    for unit, warning, cap in (
+        ("pages", config.budget_warn_pages, config.budget_max_pages),
+        ("tokens", config.budget_warn_tokens, config.budget_max_tokens),
+        ("usd", config.budget_warn_usd, config.budget_max_usd),
+    ):
+        if warning is not None and cap is not None and warning > cap:
+            config.warnings.append(
+                f"run.budget.warn_{unit}={warning} exceeds "
+                f"run.budget.max_{unit}={cap} — it cannot provide advance "
+                "warning before cap enforcement"
+            )
 
 
 def _warn_unreachable_adapter_steps(config: PageLedgerConfig) -> None:

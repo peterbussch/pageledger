@@ -411,6 +411,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
         with os.fdopen(fd, "w", encoding="utf-8") as handle:
             handle.write(_config_template(args.adapter))
         config_path = Path(temp_config)
+    cost_existed = (args.out / "cost.json").exists()
     try:
         result = run(
             inputs=args.inputs,
@@ -423,6 +424,8 @@ def _cmd_run(args: argparse.Namespace) -> int:
             routes_path=args.routes,
         )
     except (RuntimeError, ValueError) as exc:
+        if not args.json_output and not cost_existed:
+            _print_persisted_budget_alerts(args.out)
         _print_error_json(exc, args)
         print(f"pageledger: error: {exc}", file=sys.stderr)
         return 1
@@ -446,6 +449,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
             step = escalation["step"]
             adapter = escalation["adapter_order"][step]
             print(f"Escalation step: {step} ({adapter})")
+        _print_budget_alerts(result)
         config_warnings = result.get("config_warnings", [])
         if config_warnings:
             print(f"Config warnings ({len(config_warnings)}):")
@@ -484,6 +488,7 @@ def _cmd_classify(args: argparse.Namespace) -> int:
 # -- rerun ---------------------------------------------------------------------
 
 def _cmd_rerun(args: argparse.Namespace) -> int:
+    cost_existed = (args.out / "cost.json").exists()
     try:
         result = rerun(
             parent_dir=args.parent_dir,
@@ -494,6 +499,8 @@ def _cmd_rerun(args: argparse.Namespace) -> int:
             adapter_path=args.adapter_path,
         )
     except (RuntimeError, ValueError) as exc:
+        if not args.json_output and not cost_existed:
+            _print_persisted_budget_alerts(args.out)
         _print_error_json(exc, args)
         print(f"pageledger: error: {exc}", file=sys.stderr)
         return 1
@@ -514,6 +521,7 @@ def _cmd_rerun(args: argparse.Namespace) -> int:
             step = escalation["step"]
             adapter = escalation["adapter_order"][step]
             print(f"Escalation step: {step} ({adapter})")
+        _print_budget_alerts(result)
         for warning in result.get("config_warnings", []):
             print(f"WARNING: {warning}")
         for warning in result.get("source_integrity_warnings", []):
@@ -521,6 +529,24 @@ def _cmd_rerun(args: argparse.Namespace) -> int:
         for warning in result.get("escalation_warnings", []):
             print(f"WARNING: {warning}")
     return 1 if result["status"] == "partial" and not result["dry_run"] else 0
+
+
+def _print_budget_alerts(result: dict) -> None:
+    for alert in result.get("budget_alerts", result.get("alerts", [])):
+        print(
+            "WARNING: Budget alert at "
+            f"{alert['page_id']}: {alert['unit']}={alert['current']} reached "
+            f"{alert['kind']} threshold {alert['threshold']}"
+        )
+
+
+def _print_persisted_budget_alerts(out_dir: Path) -> None:
+    try:
+        report = json.loads((out_dir / "cost.json").read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return
+    if isinstance(report, dict):
+        _print_budget_alerts(report)
 
 
 # -- doctor -------------------------------------------------------------------

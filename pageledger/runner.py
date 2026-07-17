@@ -55,6 +55,7 @@ _budget_caps = _budget._budget_caps
 _budget_error = _budget._budget_error
 _budget_report = _budget._budget_report
 _budget_warning = _budget._budget_warning
+_new_budget_alerts = _budget._new_budget_alerts
 _build_cost_report = _budget._build_cost_report
 _cost_basis = _budget._cost_basis
 _derive_cost = _budget._derive_cost
@@ -356,6 +357,8 @@ def run(
     cost_is_partial = False
     cost_bases: set[str] = set()
     extraction_seconds_values: list[float] = []
+    budget_alerts: list[dict[str, Any]] = []
+    alerted_budget_units: set[str] = set()
     failure_error: RuntimeError | None = None
     halt_reason: str | None = None
     attempted_page_ids: set[str] = set()
@@ -542,6 +545,22 @@ def run(
                 tokens_total=tokens_total,
                 estimated_cost_usd=estimated_cost_usd,
             )
+            new_budget_alerts = _new_budget_alerts(
+                config=config,
+                page_id=page_id,
+                timestamp=extraction_started_at,
+                pages_total=pages_extracted,
+                tokens_total=tokens_total,
+                estimated_cost_usd=estimated_cost_usd,
+                alerted_units=alerted_budget_units,
+            )
+            budget_alerts.extend(new_budget_alerts)
+            alerted_budget_units.update(
+                str(alert["unit"]) for alert in new_budget_alerts
+            )
+            # Preserve the v0.1 per-page log contract: once a threshold is
+            # reached, later pages retain the scalar warning. The structured
+            # alert list above separately records one first crossing per unit.
             budget_warning = _budget_warning(
                 config=config,
                 pages_total=pages_extracted,
@@ -747,6 +766,8 @@ def run(
             cost_is_partial=cost_is_partial,
             cost_bases=cost_bases,
             extraction_seconds_values=extraction_seconds_values,
+            provenance_entries=provenance_entries,
+            budget_alerts=budget_alerts,
         ),
     )
 
@@ -820,6 +841,8 @@ def run(
     }
     if escalation is not None:
         result["escalation"] = escalation
+    if budget_alerts:
+        result["budget_alerts"] = budget_alerts
     if parent_run_id is not None:
         result["parent_run_id"] = parent_run_id
         result["rerun_depth"] = run_depth

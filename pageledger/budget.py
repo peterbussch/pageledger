@@ -83,6 +83,8 @@ def _build_cost_report(
     cost_is_partial: bool,
     cost_bases: set[str],
     extraction_seconds_values: list[float],
+    provenance_entries: list[dict[str, Any]] | None = None,
+    budget_alerts: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     report = {
         "schema_version": schema_version,
@@ -106,7 +108,47 @@ def _build_cost_report(
     )
     if budget:
         report["budget"] = budget
+    if budget_alerts:
+        report["alerts"] = [dict(alert) for alert in budget_alerts]
+    if provenance_entries:
+        report["by_adapter"] = _provenance_rollups(
+            provenance_entries, section="extractor", field="adapter"
+        )
+        report["by_page_type"] = _provenance_rollups(
+            provenance_entries, section="route", field="type"
+        )
     return report
+
+
+def _provenance_rollups(
+    entries: list[dict[str, Any]], *, section: str, field: str
+) -> dict[str, dict[str, Any]]:
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    for entry in entries:
+        key = str(entry[section][field])
+        grouped.setdefault(key, []).append(entry)
+    return {key: _provenance_rollup(grouped[key]) for key in sorted(grouped)}
+
+
+def _provenance_rollup(entries: list[dict[str, Any]]) -> dict[str, Any]:
+    usage_entries = [entry["usage"] for entry in entries]
+    known_costs: list[float] = []
+    cost_is_partial = False
+    for entry in entries:
+        cost = entry.get("cost")
+        value = cost.get("usd") if isinstance(cost, dict) else None
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            known_costs.append(float(value))
+        else:
+            cost_is_partial = True
+    cost_total = _round_cost(sum(known_costs))
+    return {
+        "pages": sum(int(usage["pages"]) for usage in usage_entries),
+        "tokens": _sum_usage_field(usage_entries, "tokens"),
+        "compute_seconds": _sum_usage_field(usage_entries, "compute_seconds"),
+        "cost_usd": None if cost_is_partial and not known_costs else cost_total,
+        "cost_known": not cost_is_partial,
+    }
 
 
 # Budget caps, in (config attr, label, current-value) form. Pages is the
@@ -178,19 +220,83 @@ def _budget_warning(
     tokens_total: int,
     estimated_cost_usd: float,
 ) -> str | None:
-    warn_at_percent = config.budget_warn_at_percent
-    if warn_at_percent is None:
-        return None
-    for unit, cap, current in _budget_caps(
+    for unit, threshold, _kind, current in _budget_warning_thresholds(
         config,
         pages_total=pages_total,
         tokens_total=tokens_total,
         estimated_cost_usd=estimated_cost_usd,
     ):
-        warn_at = cap * (warn_at_percent / 100)
-        if current >= warn_at:
-            return f"{unit}={current} warn_at_{unit}={warn_at}"
+        if current >= threshold:
+            return f"{unit}={current} warn_at_{unit}={threshold}"
     return None
+
+
+def _new_budget_alerts(
+    *,
+    config: Any,
+    page_id: str,
+    timestamp: str,
+    pages_total: int,
+    tokens_total: int,
+    estimated_cost_usd: float,
+    alerted_units: set[str],
+) -> list[dict[str, Any]]:
+    """Return each unit whose effective warning threshold crossed now.
+
+    Absolute and cap-relative thresholds can coexist. The lower threshold is
+    the useful first warning; an exact tie is attributed to the explicit
+    absolute setting. ``alerted_units`` makes the first-crossing policy
+    visible to the caller without hidden mutable state.
+    """
+    alerts: list[dict[str, Any]] = []
+    for unit, threshold, kind, current in _budget_warning_thresholds(
+        config,
+        pages_total=pages_total,
+        tokens_total=tokens_total,
+        estimated_cost_usd=estimated_cost_usd,
+    ):
+        if unit in alerted_units or current < threshold:
+            continue
+        alerts.append(
+            {
+                "unit": unit,
+                "threshold": threshold,
+                "kind": kind,
+                "current": current,
+                "page_id": page_id,
+                "timestamp": timestamp,
+            }
+        )
+    return alerts
+
+
+def _budget_warning_thresholds(
+    config: Any, *, pages_total: int, tokens_total: int, estimated_cost_usd: float
+) -> list[tuple[str, int | float, str, int | float]]:
+    currents: tuple[tuple[str, int | float, int | float | None, int | float | None], ...] = (
+        ("pages", pages_total, config.budget_warn_pages, config.budget_max_pages),
+        ("tokens", tokens_total, config.budget_warn_tokens, config.budget_max_tokens),
+        ("usd", estimated_cost_usd, config.budget_warn_usd, config.budget_max_usd),
+    )
+    warn_at_percent = config.budget_warn_at_percent
+    thresholds: list[tuple[str, int | float, str, int | float]] = []
+    for unit, current, absolute, cap in currents:
+        candidates: list[tuple[int | float, str]] = []
+        if absolute is not None:
+            candidates.append((absolute, "absolute"))
+        if warn_at_percent is not None and cap is not None:
+            candidates.append((cap * (warn_at_percent / 100), "percent"))
+        if not candidates:
+            continue
+        threshold, kind = min(
+            candidates,
+            key=lambda candidate: (
+                candidate[0],
+                0 if candidate[1] == "absolute" else 1,
+            ),
+        )
+        thresholds.append((unit, threshold, kind, current))
+    return thresholds
 
 
 def _sum_usage_field(usage_entries: list[dict[str, Any]], field: str) -> int | float | None:

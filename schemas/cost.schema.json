@@ -61,7 +61,48 @@
         },
         "additionalProperties": false
       }
+    },
+    "alerts": {
+      "type": "array",
+      "description": "First warning-threshold crossing for each configured unit.",
+      "items": {
+        "type": "object",
+        "required": ["unit", "threshold", "kind", "current", "page_id", "timestamp"],
+        "properties": {
+          "unit": { "type": "string", "enum": ["pages", "tokens", "usd"] },
+          "threshold": { "type": "number", "minimum": 0 },
+          "kind": { "type": "string", "enum": ["absolute", "percent"] },
+          "current": { "type": "number", "minimum": 0 },
+          "page_id": { "type": "string", "minLength": 1 },
+          "timestamp": { "type": "string", "minLength": 1 }
+        },
+        "additionalProperties": false
+      }
+    },
+    "by_adapter": {
+      "type": "object",
+      "description": "Usage and resolved cost grouped by provenance extractor.adapter.",
+      "additionalProperties": { "$ref": "#/$defs/rollup" }
+    },
+    "by_page_type": {
+      "type": "object",
+      "description": "Usage and resolved cost grouped by provenance route.type.",
+      "additionalProperties": { "$ref": "#/$defs/rollup" }
     }
   },
-  "additionalProperties": false
+  "additionalProperties": false,
+  "$defs": {
+    "rollup": {
+      "type": "object",
+      "required": ["pages", "tokens", "compute_seconds", "cost_usd", "cost_known"],
+      "properties": {
+        "pages": { "type": "integer", "minimum": 1 },
+        "tokens": { "type": ["integer", "null"] },
+        "compute_seconds": { "type": ["number", "null"] },
+        "cost_usd": { "type": ["number", "null"] },
+        "cost_known": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    }
+  }
 }
