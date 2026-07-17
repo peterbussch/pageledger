@@ -30,6 +30,7 @@ _KNOWN_TOP_LEVEL = frozenset({
 
 _KNOWN_RUN_KEYS = frozenset({
     "adapter",
+    "adapter_order",
     "adapter_options",
     "budget",
     "grading",
@@ -73,6 +74,9 @@ class PageLedgerConfig:
 
     @property
     def adapter_name(self) -> str | None:
+        order = self.adapter_order
+        if order is not None:
+            return str(order[0]["adapter"])
         value = _walk(self.data, "run", "adapter")
         if value is None:
             return None
@@ -82,6 +86,9 @@ class PageLedgerConfig:
 
     @property
     def adapter_options(self) -> dict[str, Any]:
+        order = self.adapter_order
+        if order is not None:
+            return dict(order[0]["adapter_options"])
         value = _walk(self.data, "run", "adapter_options")
         if value is None:
             return {}
@@ -91,6 +98,52 @@ class PageLedgerConfig:
             if not isinstance(key, str):
                 raise ValueError("run.adapter_options keys must be strings")
         return value
+
+    @property
+    def adapter_order(self) -> list[dict[str, Any]] | None:
+        run = _mapping_at(self.data, "run")
+        if "adapter_order" not in run:
+            return None
+        if "adapter" in run:
+            raise ValueError("run.adapter_order is mutually exclusive with run.adapter")
+        if "adapter_options" in run:
+            raise ValueError(
+                "run.adapter_options cannot be used with run.adapter_order; "
+                "put adapter_options on a chain entry"
+            )
+        value = run["adapter_order"]
+        if not isinstance(value, list) or not value:
+            raise ValueError("run.adapter_order must be a non-empty list")
+        normalized: list[dict[str, Any]] = []
+        for index, entry in enumerate(value):
+            path = f"run.adapter_order[{index}]"
+            if isinstance(entry, str):
+                if not entry:
+                    raise ValueError(f"{path} must be a non-empty adapter string")
+                normalized.append({"adapter": entry, "adapter_options": {}})
+                continue
+            if not isinstance(entry, dict):
+                raise ValueError(
+                    f"{path} must be an adapter string or a mapping"
+                )
+            unknown = sorted(set(entry) - {"adapter", "adapter_options"})
+            if unknown:
+                raise ValueError(f"{path}.{unknown[0]} is not supported")
+            adapter = entry.get("adapter")
+            if not isinstance(adapter, str) or not adapter:
+                raise ValueError(f"{path}.adapter must be a non-empty string")
+            if "adapter_options" in entry and not isinstance(
+                entry["adapter_options"], dict
+            ):
+                raise ValueError(f"{path}.adapter_options must be a mapping")
+            options = _options_mapping(
+                entry.get("adapter_options"),
+                f"{path}.adapter_options",
+            )
+            normalized.append(
+                {"adapter": adapter, "adapter_options": dict(options)}
+            )
+        return normalized
 
     @property
     def classify_adapter(self) -> str | None:
@@ -327,6 +380,7 @@ def _validate_config(config: PageLedgerConfig, *, validate_adapter: bool) -> Non
     _warn_unknown_top_level(config)
     _warn_unknown_run_keys(config)
     _warn_impossible_budget(config)
+    _warn_unreachable_adapter_steps(config)
 
     # Each property raises ValueError on malformed config; touch them all.
     for prop in (
@@ -343,6 +397,7 @@ def _validate_config(config: PageLedgerConfig, *, validate_adapter: bool) -> Non
         "max_consecutive_failures",
         "adapter_name",
         "adapter_options",
+        "adapter_order",
         "classify_adapter",
         "classify_adapter_options",
         "classify_hook",
@@ -411,6 +466,7 @@ def _reject_flat_keys(config: PageLedgerConfig) -> None:
     flat_keys = {
         "page_types": "taxonomy.page_types",
         "adapter": "run.adapter",
+        "adapter_order": "run.adapter_order",
         "max_rerun_depth": "run.max_rerun_depth",
     }
     for flat, nested in flat_keys.items():
@@ -457,6 +513,18 @@ def _warn_impossible_budget(config: PageLedgerConfig) -> None:
         config.warnings.append(
             "run.budget.max_usd is 0 — dollar budget will be exceeded immediately"
         )
+
+
+def _warn_unreachable_adapter_steps(config: PageLedgerConfig) -> None:
+    order = config.adapter_order
+    if order is None or len(order) <= config.max_rerun_depth + 1:
+        return
+    first_unreachable = config.max_rerun_depth + 1
+    config.warnings.append(
+        "run.adapter_order steps at indexes "
+        f"{first_unreachable}-{len(order) - 1} are unreachable with "
+        f"run.max_rerun_depth={config.max_rerun_depth}"
+    )
 
 
 def _nonneg_number(value: Any, name: str, *, cast: Any = float) -> Any:

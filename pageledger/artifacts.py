@@ -110,6 +110,7 @@ def build_manifest(
     status: str = "partial",
     extractors: list[dict[str, Any]] | None = None,
     routing: dict[str, Any] | None = None,
+    escalation: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     manifest: dict[str, Any] = {
         "schema_version": schema_version,
@@ -144,6 +145,8 @@ def build_manifest(
         manifest["summary"]["pages_not_attempted"] = pages_not_attempted
     if routing is not None:
         manifest["routing"] = routing
+    if escalation is not None:
+        manifest["escalation"] = escalation
     return manifest
 
 
@@ -175,6 +178,7 @@ def build_rerun_manifest(
     quarantined_page_ids: set[str] | None = None,
     run_depth: int = 0,
     grades: dict[str, str] | None = None,
+    escalation: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Generate a rerun manifest consumable by ``pageledger rerun``.
 
@@ -189,6 +193,8 @@ def build_rerun_manifest(
     - ``executable`` — items present and a further generation is allowed;
       ``pageledger rerun`` will consume this manifest.
     - ``empty_queue`` — nothing needed review, so there is nothing to rerun.
+    - ``chain_exhausted`` — candidates remain, but no later adapter is
+      configured; the review queue remains the terminal human state.
     - ``no_further_generations`` — the configured depth cap forbids another
       generation.
     """
@@ -197,42 +203,42 @@ def build_rerun_manifest(
         for document in route_map["documents"]
         for page in document["pages"]
     }
-    allowed = run_depth < max_rerun_depth
     quarantined = set(quarantined_page_ids or ())
     quarantined.update(
         item["page_id"] for item in audit.get("quarantine_queue", [])
     )
-    items: list[dict[str, Any]] = []
-    if allowed:
-        # A page can sit in the review queue once per reason (e.g. both
-        # quality_warning and grade_below_threshold); the rerun manifest
-        # lists it once, with the reasons joined.
-        by_page: dict[str, dict[str, Any]] = {}
-        for page in audit["review_queue"]:
-            page_id = page["page_id"]
-            if page_id in quarantined:
-                continue
-            existing = by_page.get(page_id)
-            if existing is not None:
-                if page["reason"] not in existing["reason"].split("+"):
-                    existing["reason"] += f"+{page['reason']}"
-                continue
-            by_page[page_id] = {
-                "page_id": page_id,
-                "page_number": page["page_number"],
-                "source": sources_by_page[page_id],
-                "action": page["action"],
-                "reason": page["reason"],
-                "previous_grade": (grades or {}).get(page_id),
-            }
-        items = list(by_page.values())
-    if not allowed:
+    # A page can sit in the review queue once per reason (e.g. both
+    # quality_warning and grade_below_threshold); candidate construction is
+    # independent of the depth/chain gates so exhaustion remains observable.
+    by_page: dict[str, dict[str, Any]] = {}
+    for page in audit["review_queue"]:
+        page_id = page["page_id"]
+        if page_id in quarantined:
+            continue
+        existing = by_page.get(page_id)
+        if existing is not None:
+            if page["reason"] not in existing["reason"].split("+"):
+                existing["reason"] += f"+{page['reason']}"
+            continue
+        by_page[page_id] = {
+            "page_id": page_id,
+            "page_number": page["page_number"],
+            "source": sources_by_page[page_id],
+            "action": page["action"],
+            "reason": page["reason"],
+            "previous_grade": (grades or {}).get(page_id),
+        }
+    candidates = list(by_page.values())
+    if run_depth >= max_rerun_depth:
         rerun_status = "no_further_generations"
-    elif items:
-        rerun_status = "executable"
-    else:
+    elif not candidates:
         rerun_status = "empty_queue"
-    return {
+    elif escalation is not None and escalation.get("next_adapter") is None:
+        rerun_status = "chain_exhausted"
+    else:
+        rerun_status = "executable"
+    items = candidates if rerun_status == "executable" else []
+    manifest = {
         "schema_version": schema_version,
         "run_id": f"{run_id}-rerun",
         "parent_run_id": parent_run_id,
@@ -245,6 +251,9 @@ def build_rerun_manifest(
         "rerun_status": rerun_status,
         "items": items,
     }
+    if escalation is not None:
+        manifest["escalation"] = escalation
+    return manifest
 
 
 def render_audit_markdown(audit: dict[str, Any]) -> str:

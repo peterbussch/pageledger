@@ -255,14 +255,33 @@ def run(
     # Construct adapters once in the execution path. Direct callers of
     # load_config retain its validation behavior.
     config = load_config(config_path, validate_adapter=False)
+    effective_adapter_name, effective_adapter_options = _effective_adapter(
+        config, run_depth
+    )
+    adapter_order = config.adapter_order
+    adapter_order_names = (
+        [str(entry["adapter"]) for entry in adapter_order]
+        if adapter_order is not None
+        else None
+    )
+    escalation: dict[str, Any] | None = (
+        {
+            "adapter_order": adapter_order_names,
+            "step": run_depth,
+        }
+        if adapter_order_names is not None
+        else None
+    )
     if routes_path is not None and (pages is not None or page_selection is not None):
         raise ValueError("--routes cannot be combined with --pages or rerun page selection")
     adapter = None
-    if (not dry_run or routes_path is not None) and config.adapter_name is not None:
-        adapter = load_adapter(config.adapter_name, config.adapter_options)
+    if (not dry_run or routes_path is not None) and effective_adapter_name is not None:
+        adapter = load_adapter(effective_adapter_name, effective_adapter_options)
     if not dry_run and routes_path is None and _requires_adapter(config.default_action):
-        if config.adapter_name is None:
-            raise ValueError("No configured adapter; set run.adapter in the config")
+        if effective_adapter_name is None:
+            raise ValueError(
+                "No configured adapter; set run.adapter or run.adapter_order in the config"
+            )
         assert adapter is not None
         action = config.default_action
         if _requires_adapter(action) and not adapter.supports(action):
@@ -281,7 +300,7 @@ def run(
         if len(input_paths) != 1:
             raise ValueError("--pages requires a single input file")
         selected_page_numbers = _parse_pages_expression(pages)
-    _validate_adapter_inputs(input_paths, adapter_name=config.adapter_name)
+    _validate_adapter_inputs(input_paths, adapter_name=effective_adapter_name)
     _validate_out_dir(out_dir)
 
     imported_routes: dict[str, Any] | None = None
@@ -290,7 +309,7 @@ def run(
     if routes_path is not None:
         for source in input_paths:
             page_counts[source.resolve()] = _planned_page_count(
-                source, adapter=adapter, adapter_name=config.adapter_name
+                source, adapter=adapter, adapter_name=effective_adapter_name
             )
         taxonomy = config.data.get("taxonomy") or {}
         page_types = set((taxonomy.get("page_types") or {}).keys())
@@ -307,7 +326,9 @@ def run(
             if _requires_adapter(page["action"])
         }
         if actions and adapter is None:
-            raise ValueError("No configured adapter; set run.adapter in the config")
+            raise ValueError(
+                "No configured adapter; set run.adapter or run.adapter_order in the config"
+            )
         for action in sorted(actions):
             assert adapter is not None
             if not adapter.supports(action):
@@ -354,7 +375,7 @@ def run(
             routed_pages = [dict(page) for page in imported_document["pages"]]
         elif selection_by_source is None:
             page_count = _planned_page_count(
-                source, adapter=adapter, adapter_name=config.adapter_name
+                source, adapter=adapter, adapter_name=effective_adapter_name
             )
             page_numbers: Sequence[int] = range(1, page_count + 1)
             if selected_page_numbers is not None:
@@ -538,8 +559,8 @@ def run(
                 "output_types": adapter_output_types,
                 "capabilities": adapter_capabilities,
             }
-            if config.adapter_options:
-                extractor_entry["options"] = dict(config.adapter_options)
+            if effective_adapter_options:
+                extractor_entry["options"] = dict(effective_adapter_options)
             if extractor_entry not in extractor_entries:
                 extractor_entries.append(extractor_entry)
             provenance_entries.append(
@@ -696,6 +717,7 @@ def run(
             if routes_path is not None and imported_routes is not None
             else None
         ),
+        escalation=escalation,
     )
     audit = build_audit(
         schema_version=config.schema_version,
@@ -728,6 +750,17 @@ def run(
         ),
     )
 
+    rerun_escalation: dict[str, Any] | None = None
+    if escalation is not None:
+        assert adapter_order_names is not None
+        rerun_escalation = {
+            **escalation,
+            "next_adapter": (
+                adapter_order_names[run_depth + 1]
+                if run_depth + 1 < len(adapter_order_names)
+                else None
+            ),
+        }
     rerun_manifest = build_rerun_manifest(
         schema_version=config.schema_version,
         run_id=run_id,
@@ -740,6 +773,7 @@ def run(
         quarantined_page_ids=quarantined_page_ids,
         run_depth=run_depth,
         grades={entry["page_id"]: entry["grade"] for entry in quality_entries},
+        escalation=rerun_escalation,
     )
     write_yaml(out_dir / "rerun-manifest.yml", rerun_manifest)
 
@@ -784,6 +818,8 @@ def run(
         "raw_artifact_count": len(provenance_entries),
         "config_warnings": [*config_warnings, *route_warnings],
     }
+    if escalation is not None:
+        result["escalation"] = escalation
     if parent_run_id is not None:
         result["parent_run_id"] = parent_run_id
         result["rerun_depth"] = run_depth
@@ -830,6 +866,32 @@ def rerun(
             f"Max rerun depth reached: this rerun would be generation {child_depth} "
             f"but run.max_rerun_depth is {config.max_rerun_depth}"
         )
+    if config.adapter_order is not None and child_depth >= len(config.adapter_order):
+        raise ValueError(
+            "Adapter chain exhausted: this rerun would be generation "
+            f"{child_depth} but run.adapter_order has {len(config.adapter_order)} step(s)"
+        )
+
+    effective_adapter_name, _effective_options = _effective_adapter(config, child_depth)
+    escalation_warnings: list[str] = []
+    parent_escalation = parent_rerun.get("escalation")
+    if isinstance(parent_escalation, dict):
+        recorded_next = parent_escalation.get("next_adapter")
+        if config.adapter_order is None:
+            escalation_warnings.append(
+                "Supplied run.adapter overrides the parent adapter chain"
+                + (
+                    f" planned next adapter '{recorded_next}'"
+                    if isinstance(recorded_next, str)
+                    else ""
+                )
+            )
+        elif not _adapter_names_match(recorded_next, effective_adapter_name):
+            escalation_warnings.append(
+                "Supplied config selects adapter "
+                f"'{effective_adapter_name}' for generation {child_depth}; "
+                f"parent planned '{recorded_next}' (config wins)"
+            )
 
     items = parent_rerun.get("items") or []
     if not items:
@@ -867,10 +929,33 @@ def rerun(
             entry["page_id"]: entry for entry in read_jsonl(parent / "quality.jsonl")
         },
         run_depth=child_depth,
+        adapter_path=adapter_path,
     )
     if integrity_warnings:
         result["source_integrity_warnings"] = integrity_warnings
+    if escalation_warnings:
+        result["escalation_warnings"] = escalation_warnings
     return result
+
+
+def _effective_adapter(config: Any, run_depth: int) -> tuple[str | None, dict[str, Any]]:
+    order = config.adapter_order
+    if order is None:
+        return config.adapter_name, config.adapter_options
+    if run_depth >= len(order):
+        raise ValueError(
+            f"Adapter chain exhausted at generation {run_depth}: "
+            f"run.adapter_order has {len(order)} step(s)"
+        )
+    entry = order[run_depth]
+    return str(entry["adapter"]), dict(entry["adapter_options"])
+
+
+def _adapter_names_match(recorded: Any, configured: str | None) -> bool:
+    if not isinstance(recorded, str) or configured is None:
+        return recorded is None and configured is None
+    aliases = {"pdf": "pdf_text", "pdf_text": "pdf_text"}
+    return aliases.get(recorded, recorded) == aliases.get(configured, configured)
 
 
 def _parse_pages_expression(expression: str) -> list[int]:
