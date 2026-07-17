@@ -23,6 +23,18 @@ runs/run-001/
 └── rerun-manifest.yml   # executable plan for re-extracting flagged pages
 ```
 
+`pageledger classify --out route-map.yml` produces a reviewable pair before
+a run directory exists:
+
+```text
+route-map.yml                 # complete classifier-produced routing plan
+route-map.evidence.jsonl      # one text-free signal/decision record per page
+```
+
+The evidence filename always uses `<out-stem>.evidence.jsonl`. Passing the
+route map to `pageledger run --routes route-map.yml` executes the classified
+plan and copies its decisions into the run artifacts.
+
 The point is not only the extracted text but the evidence around it: which
 pages were skipped, which engine ran with which options, what it cost and
 on what basis, which pages failed or need review, and what should be rerun.
@@ -32,7 +44,10 @@ on what basis, which pages failed or need review, and what should be rerun.
 `manifest.json` answers what ran. Run id, status, inputs with checksums and
 page counts (plus the `--pages` selection when one was used), the config
 snapshot's checksum, extractor identities (engine, version, options), and
-summary counts. This is the canonical artifact; start here.
+summary counts. Runs configured with `run.adapter_order` also record an
+optional `escalation` block with the chain's adapter names and this
+generation's zero-based `step`. One chain entry is the effective adapter for
+the whole generation. This is the canonical artifact; start here.
 Spec: [`run-manifest-spec.md`](run-manifest-spec.md).
 
 `config-snapshot.yml` records what you asked for. It is a verbatim copy of the
@@ -40,10 +55,25 @@ config, including one synthesized by `run --adapter`. Reproducing the run
 starts from this file.
 
 `route-map.yml` records where each page went. It contains page ids, source
-hashes, types, actions, prompts, and reasons. Built-in routing uses the
-configured default action; `run --routes` executes and preserves reviewed
-decisions from a human or external classifier.
+hashes, types, actions, prompts, reasons, and classifier confidence. Built-in
+run routing uses the configured default action and null confidence;
+`pageledger classify` emits structural decisions with real, deliberately
+uncalibrated confidence where the rule has one. `run --routes` executes and
+preserves reviewed decisions from the built-in classifier, a custom classifier
+hook, a human, or another external classifier. Extracted pages copy the value
+to `provenance.jsonl` as `route.route_confidence`.
 Spec: [`route-map-spec.md`](route-map-spec.md).
+
+`<out-stem>.evidence.jsonl` explains a classifier-produced route map without
+retaining page text. Each line joins the stable page identity to:
+
+- `signals`: structural counts and ratios used by the decision;
+- `probe`: adapter, adapter version, model, and result format; and
+- `decision`: type, confidence, reason, action, and prompt.
+
+The route map remains the executable artifact; the sibling evidence file is
+the diagnostic sidecar. Evidence lines validate against
+[`schemas/classify-evidence-line.schema.json`](../schemas/classify-evidence-line.schema.json).
 
 `raw/` holds extractor output, one file per page, named by page id. Page ids
 carry the source page number (`doc_0001_page_0081` is page 81 of the first
@@ -81,6 +111,22 @@ Spec: [`normalized-spec.md`](normalized-spec.md).
 unreported; this can be a free local engine or an adapter that omitted cost
 evidence). PageLedger refuses to invent dollars.
 
+Three optional 0.1-compatible fields add operational detail:
+
+- `alerts` records the first warning-threshold crossing per unit (`pages`,
+  `tokens`, or `usd`), including threshold kind, current value, page id, and
+  timestamp. Absolute `warn_*` thresholds can alert without a hard cap;
+  `warn_at_percent` is relative to a configured cap.
+- `by_adapter` groups usage and resolved cost by
+  `provenance.extractor.adapter`.
+- `by_page_type` groups the same fields by `provenance.route.type`.
+
+Each rollup contains `pages`, `tokens`, `compute_seconds`, `cost_usd`, and
+`cost_known`. Both mappings are derived from provenance, so they count
+successfully extracted pages only: skipped, review-only, failed, and
+not-attempted pages do not create buckets. They are absent when there are no
+provenance entries.
+
 `run.log` records what happened in order. It has one JSON line per extractor call
 with timestamp, page id, adapter, status, and any error, so partial or
 failed runs stay greppable.
@@ -89,7 +135,10 @@ failed runs stay greppable.
 and pages held out of reruns by `quarantine_if`. Policy reasons use stable
 strings such as `rerun_if:grade_below` and
 `quarantine_if:missing_required_columns`. `audit.md` is a rendering of
-`audit.json`, never a second source of truth.
+`audit.json`, never a second source of truth. Queue entries preserve route
+confidence, including real confidence from `pageledger classify`; null still
+means the classifier could not make a confident decision or no classifier
+ran.
 Spec: [`audit-spec.md`](audit-spec.md).
 
 `rerun-manifest.yml` records what to do next. It is an executable list of flagged
@@ -98,6 +147,11 @@ preserving page ids and lineage. Each item records `previous_grade`; a
 page flagged for more than one reason appears once, reasons joined
 (`quality_warning+grade_below_threshold`). Pages in the quarantine queue
 do not appear in rerun items, even if they also have review reasons.
+For adapter chains, its optional `escalation` block adds the planned
+`next_adapter`. If candidates remain after the chain ends, status is
+`chain_exhausted`, items are cleared, and the audit review queue remains the
+human worklist. The config supplied to `rerun` is authoritative; a mismatch
+with the recorded plan produces an escalation warning and the config wins.
 Spec: [`rerun-manifest-spec.md`](rerun-manifest-spec.md).
 
 ## Re-alignment
@@ -127,7 +181,9 @@ not replace the build-time JSON Schema suite.
 
 Artifact fields follow the compatibility policy in
 [`run-manifest-spec.md`](run-manifest-spec.md): additions are backward
-compatible within a schema version, and the schemas in
+compatible within a schema version. PageLedger 0.2.0 therefore retains
+`schema_version: "0.1"` for its optional classifier, escalation, alert, and
+rollup fields. The schemas in
 [`schemas/`](../schemas/) are the machine-readable authority, enforced by
 `tests/pageledger/test_schemas.py`. Built wheels install the same contracts
 under the environment's `share/pageledger/schemas/` directory.

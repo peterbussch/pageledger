@@ -39,6 +39,13 @@ is the durable pointer to every other artifact in the run directory.
       "capabilities": ["ocr", "tables", "cloud"]
     }
   ],
+  "escalation": {
+    "adapter_order": [
+      "my_project.adapters:QwenLocalAdapter",
+      "my_project.adapters:QwenCloudAdapter"
+    ],
+    "step": 0
+  },
   "dataset_citation": {
     "label": "User-provided source citation",
     "text": "Cite the source images or archival collection separately from PageLedger."
@@ -86,6 +93,7 @@ is the durable pointer to every other artifact in the run directory.
 | `summary` | object | Counts and cost summary for quick inspection. |
 | `alignment` | object | Optional. Present only after `pageledger align` re-derived the run's normalized/grade artifacts: `aligned_at`, `schema_source` (`config_snapshot` or the external schema path, snapshotted as `align-schema-snapshot.yml`), `schema_sha256`, `pageledger_version`. |
 | `routing` | object | Optional. Present when `--routes` supplied a reviewed map: `source_path`, `sha256`, and the source map's `source_run_id`. |
+| `escalation` | object | Optional. Present when `run.adapter_order` selected the effective adapter: `adapter_order` is the ordered list of adapter names/import strings and `step` is this run's zero-based rerun generation. |
 
 Required `summary` keys are `pages_total`, `pages_extracted`,
 `pages_skipped`, `pages_quarantined`, `records_normalized` (rows written
@@ -101,6 +109,26 @@ older successful 0.1 artifacts keep their compact shape.
 
 Use `partial` for dry runs and other runs that intentionally produce only part
 of the extraction lifecycle.
+
+## Adapter escalation
+
+`run.adapter_order` is a generation-indexed escalation chain. Generation D
+selects `adapter_order[D]`, constructs one effective adapter instance, and
+uses that adapter for every extraction in that generation. It does not try
+the whole chain per page. The original run records `step: 0`; its first rerun
+records `step: 1`, and so on.
+
+The manifest's optional `escalation` block contains names only:
+
+| Field | Type | Required | Meaning |
+|---|---|---|---|
+| `adapter_order` | array of strings | ✅ | Built-in names or custom import strings in generation order. Per-step `adapter_options` remain in `config-snapshot.yml`. |
+| `step` | integer | ✅ | Zero-based generation whose effective adapter produced this run. |
+
+The current generation's effective adapter is also the extractor recorded in
+`extractors` and per-page provenance. The companion `rerun-manifest.yml` adds
+`next_adapter`, if any, so the planned next generation is inspectable. See
+[`rerun-manifest-spec.md`](rerun-manifest-spec.md).
 
 ## Design notes
 
@@ -128,22 +156,32 @@ of the extraction lifecycle.
 - `cost.json` reports generated usage rollups with `pages`, `tokens`, and
   `compute_seconds`. Provenance `usage.cost_usd` remains adapter-reported;
   the separate per-page `cost` object records the resolved accounting value.
-  Aggregate dollar cost is an estimate, not a provider invoice.
+  Aggregate dollar cost is an estimate, not a provider invoice. Its optional
+  `alerts`, `by_adapter`, and `by_page_type` fields are additive 0.1 evidence;
+  the rollups contain extracted pages only because they are derived from
+  `provenance.jsonl`.
 
 ## Compatibility policy
 
 PageLedger artifacts carry `schema_version: "0.1"` as their release contract.
 
-- **Patch releases** (e.g. 0.1.0 → 0.1.1) may add new nullable or optional
-  fields to any artifact. Existing fields must not be renamed, removed, or
-  have their type or nullability changed.
+The package release and artifact schema are versioned independently.
+PageLedger 0.2.0 keeps artifact `schema_version: "0.1"`: its new classifier,
+escalation, and cost fields are additive and optional, so existing 0.1
+artifacts remain readable. A package minor release does not by itself require
+an artifact schema bump.
+
+- Package releases may add new nullable or optional fields to an existing
+  artifact schema. Existing fields must not be renamed, removed, or have
+  their type or nullability changed without a schema-version bump.
 - Compatibility is reader-forward: current schemas and commands accept older
   0.1 artifacts. An older schema file with `additionalProperties: false`
-  cannot know fields introduced by a later patch, so consumers should validate
+  cannot know fields introduced by a later release, so consumers should validate
   with the PageLedger version that reads the artifact.
-- **Minor releases** (e.g. 0.1 → 0.2) may add required fields, remove fields,
-  or change field types after a `schema_version` bump. The previous schema
-  version's artifacts remain readable but are treated as legacy.
+- A package release may add optional fields while retaining the artifact
+  schema version. Adding required fields, removing fields, or changing field
+  types requires a `schema_version` bump; the previous schema version's
+  artifacts remain readable but are treated as legacy.
 - **Breaking changes** require a `schema_version` increment and a changelog
   entry explaining the migration. Consumers that pin to a specific
   `schema_version` can detect breaking changes by inspecting the field.
@@ -157,6 +195,8 @@ PageLedger artifacts carry `schema_version: "0.1"` as their release contract.
 
 Additions that do NOT require a schema-version bump:
 - New optional/nulled-by-default fields in any artifact.
+- Optional evidence blocks such as manifest/rerun `escalation`, cost alerts
+  and rollups, and classifier identity/evidence fields shipped in 0.2.0.
 - New items in the `warnings` taxonomy for `quality.jsonl`.
 - New keys in the `budget` object of `cost.json` when no cap is configured.
 - New `reason` values in the `rerun-manifest.yml` or route map.

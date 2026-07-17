@@ -14,15 +14,17 @@
       "page_id": "doc_0001_page_0003",
       "page_number": 3,
       "type": "prose",
+      "confidence": 0.7,
       "action": "review",
-      "reason": "no_classifier_available"
+      "reason": "prose_text"
     }
   ],
   "quarantine_queue": [
     {
       "page_id": "doc_0001_page_0008",
       "page_number": 8,
-      "type": "table",
+      "type": "table_likely",
+      "confidence": 0.75,
       "action": "quarantine",
       "reason": "quarantine_if:missing_required_columns",
       "grade": "F",
@@ -38,13 +40,19 @@
   before trusting the run.
 - `quarantine_queue` contains pages excluded from rerun because they matched
   a `quarantine_if` rule. The rerun depth cap changes the rerun manifest,
-  not this queue.
+  not this queue. Adapter-chain exhaustion behaves the same way: candidates
+  remain here for human review even when the rerun manifest reports
+  `chain_exhausted` and clears its executable items.
 - `audit.md` should be generated from `audit.json`.
-- The current alpha queues dry-run pages, pages explicitly configured with
+- Current runs queue dry-run pages, pages explicitly configured with
   `default_action: review`, pages with quality warnings, and optionally pages
   below `run.grading.review_below_grade`, and pages matching `run.rerun_if`.
   Queue entries carry grade evidence when grading caused or informed the
   decision.
+- Routes produced by `pageledger classify` carry their page type and real
+  classifier confidence into this queue. These fixed heuristic confidences
+  are uncalibrated evidence, not probabilities. `null` remains valid when a
+  decision is unknown or no classifier ran.
 - Exhausted extraction failures use `extraction_failed`. If a global failure,
   circuit breaker, or budget cap halts the loop, remaining extraction pages use
   `not_attempted_after_failure` or `not_attempted_after_budget`. These entries
@@ -68,8 +76,17 @@
 | `page_id` | string | ✅ | no | Stable page identifier. |
 | `page_number` | integer | ✅ | no | One-based page number. |
 | `type` | string | ✅ | no | Page type from taxonomy. |
-| `confidence` | number | ❌ | yes | Classifier confidence. Null in alpha. |
+| `confidence` | number | ❌ | yes | Route classifier confidence from `route-map.yml`, between 0 and 1 when available. Emitted by current runs; optional for older 0.1 artifacts and null for unknown/unclassified routes. |
 | `action` | string | ✅ | no | `review` for review entries; `quarantine` for policy quarantine entries. |
-| `reason` | string | ✅ | no | Queue reason. Policy reasons start with `rerun_if:` or `quarantine_if:`. |
+| `reason` | string | ✅ | no | Queue reason. A route sent directly to review can retain a classifier reason such as `prose_text`; policy reasons include `quality_warning`, `grade_below_threshold`, `rerun_if:*`, and `quarantine_if:*`. |
 | `grade` | string | ❌ | yes | Page grade at queue time (`A`–`F`). Absent on entries queued before grading (configured-review pages). |
 | `grade_basis` | string | ❌ | yes | `signals_only` or `schema_aware`. |
+
+The queue `confidence` is route evidence and is distinct from extractor
+confidence in `quality.jsonl`. For an extracted page, the same route value is
+also written to `provenance.jsonl` as `route.route_confidence`; later quality
+or policy processing copies it into any audit entries it creates.
+
+The classifier and confidence fields are additive within the 0.1 artifact
+contract. PageLedger 0.2.0 therefore continues to write
+`schema_version: "0.1"`.

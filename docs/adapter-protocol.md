@@ -8,6 +8,10 @@ The protocol is frozen for the 0.1 schema version. Patch releases may add
 optional attributes; minor releases may add required attributes after a
 `schema_version` bump.
 
+This document describes extraction adapters. Classifier hooks are a separate,
+smaller protocol used only by `pageledger classify`; see
+[`classifier.md`](classifier.md#classifier-hooks).
+
 ## Call sequence
 
 ```mermaid
@@ -176,7 +180,48 @@ The directory is prepended to `sys.path` before the config is validated.
 ### Remaining limits
 
 - Async extraction is not supported (the runner is synchronous).
-- One adapter instance is shared across the whole run.
+- One effective adapter instance is shared across the whole run generation.
+  With `run.adapter_order`, generation D selects entry D for every extracted
+  page. The chain advances only when `pageledger rerun` creates generation
+  D+1; PageLedger does not try later adapters as per-page fallbacks inside one
+  generation.
+
+## Classifier hook pointer
+
+A domain classifier is configured independently from extraction:
+
+```yaml
+classify:
+  hook: my_project.classifier:ArchiveClassifier
+  hook_options:
+    collection: census
+```
+
+The import string may resolve to an instance, class, or factory. A hook
+declares non-empty `name`, `version`, and `page_types`, with optional `model`
+and `prompt_hash`, and implements:
+
+```python
+def classify_page(
+    self,
+    *,
+    page_id: str,
+    page_number: int,
+    source: Path,
+    text: str,
+    signals: dict[str, Any],
+) -> ClassificationResult:
+    ...
+```
+
+The hook replaces the built-in structural decision while receiving its
+proposal as `signals["builtin_type"]`. It must return
+`pageledger.classifier.ClassificationResult`; PageLedger validates the type,
+declared page taxonomy, confidence range, reason, action, and prompt before it
+writes the route map. Hook failures stop classification with page context.
+Use `classifier_conformance_check` or the complete protocol and examples in
+[`classifier.md`](classifier.md#classifier-hooks). This hook does not
+implement `ExtractorAdapter` and is never called by `pageledger run`.
 
 ## Timeout and subprocess guidance
 
