@@ -407,6 +407,34 @@ def test_cost_execute_success(tmp_path: Path) -> None:
     assert cost["canonical_unit"] == "pages"
     assert cost["pages_extracted"] == 2
     assert cost["budget"]["usd"]["max"] == 25
+    assert "alerts" not in cost
+    assert sum(bucket["pages"] for bucket in cost["by_adapter"].values()) == 2
+    assert sum(bucket["pages"] for bucket in cost["by_page_type"].values()) == 2
+
+
+def test_cost_schema_accepts_absolute_alerts(tmp_path: Path) -> None:
+    source = tmp_path / "sample.txt"
+    source.write_text("first page\fsecond page\n", encoding="utf-8")
+    config = MINIMAL_CONFIG + """\
+  pricing:
+    cost_per_page: 0.5
+  budget:
+    warn_usd: 0.75
+"""
+    out_dir = _run_pageledger(tmp_path, config_yaml=config, inputs=[str(source)])
+
+    cost = json.loads((out_dir / "cost.json").read_text(encoding="utf-8"))
+    _validate(_cost_schema, cost, "cost.json (absolute alert)")
+    assert cost["alerts"] == [
+        {
+            "unit": "usd",
+            "threshold": 0.75,
+            "kind": "absolute",
+            "current": 1.0,
+            "page_id": "doc_0001_page_0002",
+            "timestamp": cost["alerts"][0]["timestamp"],
+        }
+    ]
 
 
 def test_cost_dry_run(tmp_path: Path) -> None:

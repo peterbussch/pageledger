@@ -603,7 +603,25 @@ def test_text_adapter_writes_raw_output_and_provenance(tmp_path):
             "compute_seconds": None,
             "extraction_seconds": cost["usage"]["extraction_seconds"],
         },
-            "cost_usd": None,
+        "by_adapter": {
+            "text": {
+                "pages": 1,
+                "tokens": None,
+                "compute_seconds": None,
+                "cost_usd": None,
+                "cost_known": False,
+            }
+        },
+        "by_page_type": {
+            "prose": {
+                "pages": 1,
+                "tokens": None,
+                "compute_seconds": None,
+                "cost_usd": None,
+                "cost_known": False,
+            }
+        },
+        "cost_usd": None,
         "cost_known": False,
         "cost_basis": "none",
     }
