@@ -12,6 +12,7 @@ from pathlib import Path
 
 from . import __version__
 from .aligner import align_run
+from .classifier import classify
 from .compare import compare_runs, render_comparison
 from .doctor import build_doctor_report
 from .grading import GRADES
@@ -23,8 +24,16 @@ MINIMAL_CONFIG = textwrap.dedent("""\
     schema_version: "0.1"
     taxonomy:
       page_types:
+        blank:
+          default_action: skip
+        sparse:
+          default_action: review
         prose:
           default_action: transcribe_text
+        table_likely:
+          default_action: review
+        unknown:
+          default_action: review
     # For tabular work, add a schema section (columns, aliases, checks) so
     # structured adapter output lands in normalized/ with graded evidence,
     # and a run.grading section to act on grades. Commented reference:
@@ -125,6 +134,37 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Directory added to sys.path so a custom run.adapter module can be imported",
     )
+
+    classify_parser = subparsers.add_parser(
+        "classify",
+        help="Classify pages and emit an executable route map plus evidence sidecar",
+    )
+    classify_parser.add_argument(
+        "inputs",
+        nargs="*",
+        type=Path,
+        help="Input files or directories; omit when using --from-run",
+    )
+    classify_parser.add_argument("--config", type=Path, help="Optional PageLedger YAML config")
+    classify_parser.add_argument("--out", required=True, type=Path, help="Output route-map YAML")
+    classify_parser.add_argument(
+        "--from-run",
+        type=Path,
+        default=None,
+        help="Reclassify retained raw evidence from a full, non-rerun extraction",
+    )
+    classify_parser.add_argument(
+        "--adapter",
+        default=None,
+        help="Probe adapter name or module.path:Object (overrides classify.adapter)",
+    )
+    classify_parser.add_argument(
+        "--adapter-path",
+        type=Path,
+        default=None,
+        help="Directory added to sys.path for custom probe adapters or classifier hooks",
+    )
+    classify_parser.add_argument("--json", action="store_true", dest="json_output")
 
     doctor_parser = subparsers.add_parser(
         "doctor",
@@ -232,6 +272,9 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "run":
         return _cmd_run(args)
+
+    if args.command == "classify":
+        return _cmd_classify(args)
 
     if args.command == "rerun":
         return _cmd_rerun(args)
@@ -404,6 +447,33 @@ def _cmd_run(args: argparse.Namespace) -> int:
             for w in config_warnings:
                 print(f"  - {w}")
     return 1 if result["status"] == "partial" and not result["dry_run"] else 0
+
+
+# -- classify -----------------------------------------------------------------
+
+def _cmd_classify(args: argparse.Namespace) -> int:
+    try:
+        result = classify(
+            inputs=args.inputs,
+            config_path=args.config,
+            out_path=args.out,
+            from_run=args.from_run,
+            probe_adapter=args.adapter,
+            adapter_path=args.adapter_path,
+        )
+    except (RuntimeError, ValueError) as exc:
+        _print_error_json(exc, args)
+        print(f"pageledger: error: {exc}", file=sys.stderr)
+        return 1
+    if args.json_output:
+        print(json.dumps(result, ensure_ascii=False, sort_keys=True))
+    else:
+        print(f"PageLedger classification {result['run_id']} wrote {result['out_path']}")
+        print(f"Evidence: {result['evidence_path']}")
+        print(f"Pages: {result['pages']} across {result['documents']} documents")
+        for warning in result.get("warnings", []):
+            print(f"WARNING: {warning}")
+    return 0
 
 
 # -- rerun ---------------------------------------------------------------------

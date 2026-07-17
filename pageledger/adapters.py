@@ -551,22 +551,7 @@ def _adapter_contract_issues(adapter: Any) -> list[str]:
 
 def _load_custom_adapter(spec: str, opts: dict[str, Any] | None = None) -> Any:
     opts = dict(opts or {})
-    module_name, object_path = spec.split(":", 1)
-    if not module_name or not object_path:
-        raise ValueError("Custom adapter specs must use module.path:object")
-    try:
-        module = importlib.import_module(module_name)
-    except Exception as exc:
-        raise ValueError(f"Could not import custom adapter module '{module_name}'") from exc
-
-    candidate: Any = module
-    try:
-        for attr in object_path.split("."):
-            if not attr:
-                raise AttributeError(object_path)
-            candidate = getattr(candidate, attr)
-    except AttributeError as exc:
-        raise ValueError(f"Custom adapter object '{object_path}' not found in {module_name}") from exc
+    candidate = _import_object(spec, description="Custom adapter")
 
     adapter = candidate
     if isinstance(adapter, type):
@@ -596,6 +581,33 @@ def _load_custom_adapter(spec: str, opts: dict[str, Any] | None = None) -> Any:
         )
 
     return adapter
+
+
+def _import_object(spec: str, *, description: str) -> Any:
+    """Import a ``module.path:object`` without deciding how to construct it."""
+    if ":" not in spec:
+        raise ValueError(f"{description} specs must use module.path:object")
+    module_name, object_path = spec.split(":", 1)
+    if not module_name or not object_path:
+        raise ValueError(f"{description} specs must use module.path:object")
+    try:
+        module = importlib.import_module(module_name)
+    except Exception as exc:
+        raise ValueError(
+            f"Could not import {description.lower()} module '{module_name}'"
+        ) from exc
+
+    candidate: Any = module
+    try:
+        for attr in object_path.split("."):
+            if not attr:
+                raise AttributeError(object_path)
+            candidate = getattr(candidate, attr)
+    except AttributeError as exc:
+        raise ValueError(
+            f"{description} object '{object_path}' not found in {module_name}"
+        ) from exc
+    return candidate
 
 
 def _opts_phrase(opts: dict[str, Any]) -> str:

@@ -1,0 +1,71 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/peterbussch/pageledger/schemas/classify-evidence-line.json",
+  "title": "PageLedger Classification Evidence Line",
+  "description": "One retained, text-free evidence record per classified page. Schema version 0.1.",
+  "type": "object",
+  "required": ["schema_version", "page_id", "page_number", "source", "signals", "probe", "decision"],
+  "properties": {
+    "schema_version": { "type": "string", "const": "0.1" },
+    "page_id": { "type": "string" },
+    "page_number": { "type": "integer", "minimum": 1 },
+    "source": { "type": "string" },
+    "signals": {
+      "type": "object",
+      "required": [
+        "result_format", "character_count", "visible_character_count", "word_count",
+        "replacement_character_count", "control_character_count",
+        "suspicious_symbol_count", "suspicious_symbol_ratio",
+        "alpha_token_count", "mean_token_length", "short_token_ratio",
+        "prereform_letter_count", "terminal_hard_sign_count",
+        "pipe_line_ratio", "column_line_ratio", "digit_ratio",
+        "nonempty_line_count", "below_60_ratio"
+      ],
+      "properties": {
+        "result_format": { "type": ["string", "null"] },
+        "character_count": { "type": "integer", "minimum": 0 },
+        "visible_character_count": { "type": "integer", "minimum": 0 },
+        "word_count": { "type": "integer", "minimum": 0 },
+        "replacement_character_count": { "type": "integer", "minimum": 0 },
+        "control_character_count": { "type": "integer", "minimum": 0 },
+        "suspicious_symbol_count": { "type": "integer", "minimum": 0 },
+        "suspicious_symbol_ratio": { "type": "number", "minimum": 0 },
+        "alpha_token_count": { "type": "integer", "minimum": 0 },
+        "mean_token_length": { "type": ["number", "null"], "minimum": 0 },
+        "short_token_ratio": { "type": ["number", "null"], "minimum": 0, "maximum": 1 },
+        "prereform_letter_count": { "type": "integer", "minimum": 0 },
+        "terminal_hard_sign_count": { "type": "integer", "minimum": 0 },
+        "pipe_line_ratio": { "type": "number", "minimum": 0, "maximum": 1 },
+        "column_line_ratio": { "type": "number", "minimum": 0, "maximum": 1 },
+        "digit_ratio": { "type": "number", "minimum": 0, "maximum": 1 },
+        "nonempty_line_count": { "type": "integer", "minimum": 0 },
+        "below_60_ratio": { "type": ["number", "null"], "minimum": 0, "maximum": 1 }
+      },
+      "additionalProperties": false
+    },
+    "probe": {
+      "type": "object",
+      "required": ["adapter", "adapter_version", "model", "result_format"],
+      "properties": {
+        "adapter": { "type": ["string", "null"] },
+        "adapter_version": { "type": ["string", "null"] },
+        "model": { "type": ["string", "null"] },
+        "result_format": { "type": ["string", "null"] }
+      },
+      "additionalProperties": false
+    },
+    "decision": {
+      "type": "object",
+      "required": ["type", "confidence", "reason", "action", "prompt"],
+      "properties": {
+        "type": { "type": "string" },
+        "confidence": { "type": ["number", "null"], "minimum": 0, "maximum": 1 },
+        "reason": { "type": "string", "minLength": 1 },
+        "action": { "type": "string", "minLength": 1 },
+        "prompt": { "type": ["string", "null"] }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

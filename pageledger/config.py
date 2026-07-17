@@ -21,6 +21,7 @@ from .policy import validate_policy_rules
 # ---------------------------------------------------------------------------
 _KNOWN_TOP_LEVEL = frozenset({
     "schema_version",
+    "classify",
     "dataset_citation",
     "taxonomy",
     "schema",
@@ -90,6 +91,52 @@ class PageLedgerConfig:
             if not isinstance(key, str):
                 raise ValueError("run.adapter_options keys must be strings")
         return value
+
+    @property
+    def classify_adapter(self) -> str | None:
+        return _optional_nonempty_string(
+            _walk(self.data, "classify", "adapter"),
+            "classify.adapter",
+        )
+
+    @property
+    def classify_adapter_options(self) -> dict[str, Any]:
+        return _options_mapping(
+            _walk(self.data, "classify", "adapter_options"),
+            "classify.adapter_options",
+        )
+
+    @property
+    def classify_hook(self) -> str | None:
+        return _optional_nonempty_string(
+            _walk(self.data, "classify", "hook"),
+            "classify.hook",
+        )
+
+    @property
+    def classify_hook_options(self) -> dict[str, Any]:
+        return _options_mapping(
+            _walk(self.data, "classify", "hook_options"),
+            "classify.hook_options",
+        )
+
+    @property
+    def classify_thresholds(self) -> dict[str, int | float]:
+        from .classifier import merge_classify_thresholds
+
+        return merge_classify_thresholds(
+            _walk(self.data, "classify", "thresholds")
+        )
+
+    @property
+    def classify_min_confidence(self) -> float:
+        value = _walk(self.data, "classify", "min_confidence")
+        if value is None:
+            return 0.5
+        confidence = _nonneg_number(value, "classify.min_confidence")
+        if confidence > 1:
+            raise ValueError("classify.min_confidence must be between 0 and 1")
+        return confidence
 
     @property
     def pricing(self) -> dict[str, Any]:
@@ -296,6 +343,12 @@ def _validate_config(config: PageLedgerConfig, *, validate_adapter: bool) -> Non
         "max_consecutive_failures",
         "adapter_name",
         "adapter_options",
+        "classify_adapter",
+        "classify_adapter_options",
+        "classify_hook",
+        "classify_hook_options",
+        "classify_thresholds",
+        "classify_min_confidence",
         "review_below_grade",
         "grading_thresholds",
         "rerun_rules",
@@ -304,17 +357,27 @@ def _validate_config(config: PageLedgerConfig, *, validate_adapter: bool) -> Non
         getattr(config, prop)
     if validate_adapter and config.adapter_name is not None:
         load_adapter(config.adapter_name, config.adapter_options)
+    if validate_adapter and config.classify_adapter is not None:
+        load_adapter(config.classify_adapter, config.classify_adapter_options)
+    if validate_adapter and config.classify_hook is not None:
+        from .classifier import load_classifier_hook
+
+        load_classifier_hook(config.classify_hook, config.classify_hook_options)
 
 
 def _validate_mapping_sections(data: dict[str, Any]) -> None:
     """Reject present config objects whose contents would otherwise be ignored."""
-    for key in ("run", "dataset_citation", "schema"):
+    for key in ("run", "classify", "dataset_citation", "schema"):
         if key in data and not isinstance(data[key], dict):
             raise ValueError(f"{key} must be a mapping")
     run = data.get("run", {})
     for key in ("budget", "retry", "pricing", "grading"):
         if key in run and not isinstance(run[key], dict):
             raise ValueError(f"run.{key} must be a mapping")
+    classify = data.get("classify", {})
+    for key in ("adapter_options", "hook_options", "thresholds"):
+        if key in classify and not isinstance(classify[key], dict):
+            raise ValueError(f"classify.{key} must be a mapping")
 
 
 def _validate_dataset_citation(data: dict[str, Any]) -> None:
@@ -423,6 +486,24 @@ def _nonneg_number(value: Any, name: str, *, cast: Any = float) -> Any:
     if number < 0:
         raise ValueError(f"{name} must be non-negative")
     return number
+
+
+def _optional_nonempty_string(value: Any, name: str) -> str | None:
+    if value is None:
+        return None
+    if not isinstance(value, str) or not value:
+        raise ValueError(f"{name} must be a non-empty string")
+    return value
+
+
+def _options_mapping(value: Any, name: str) -> dict[str, Any]:
+    if value is None:
+        return {}
+    if not isinstance(value, dict):
+        raise ValueError(f"{name} must be a mapping")
+    if not all(isinstance(key, str) for key in value):
+        raise ValueError(f"{name} keys must be strings")
+    return value
 
 
 def _walk(data: dict[str, Any], *path: str) -> Any:

@@ -31,6 +31,9 @@ _provenance_schema = json.loads((SCHEMAS / "provenance-line.schema.json").read_t
 _quality_schema = json.loads((SCHEMAS / "quality-line.schema.json").read_text(encoding="utf-8"))
 _cost_schema = json.loads((SCHEMAS / "cost.schema.json").read_text(encoding="utf-8"))
 _run_log_schema = json.loads((SCHEMAS / "run-log-line.schema.json").read_text(encoding="utf-8"))
+_classify_evidence_schema = json.loads(
+    (SCHEMAS / "classify-evidence-line.schema.json").read_text(encoding="utf-8")
+)
 
 
 # --- Helpers --------------------------------------------------------------
@@ -55,6 +58,23 @@ def _validate_jsonl(path: Path, schema: dict, label: str) -> list[dict]:
         _validate(schema, entry, f"{label} line {lineno}")
         entries.append(entry)
     return entries
+
+
+def test_classify_evidence_schema_accepts_generated_lines(tmp_path: Path) -> None:
+    from pageledger.classifier import classify
+
+    source = tmp_path / "sample.txt"
+    source.write_text("classification evidence", encoding="utf-8")
+    out_path = tmp_path / "route-map.yml"
+    classify(inputs=[source], config_path=None, out_path=out_path)
+
+    entries = _validate_jsonl(
+        tmp_path / "route-map.evidence.jsonl",
+        _classify_evidence_schema,
+        "classification evidence",
+    )
+    assert len(entries) == 1
+    assert "classification evidence" not in json.dumps(entries[0])
 
 
 def test_quality_schema_accepts_original_0_1_lines() -> None:
