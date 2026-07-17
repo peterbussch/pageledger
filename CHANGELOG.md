@@ -6,6 +6,46 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to the artifact compatibility policy documented in
 `docs/run-manifest-spec.md` → Compatibility Policy.
 
+## 0.2.0 - 2026-07-17
+
+### Added
+
+- **Structural page classification:** `pageledger classify` probes inputs or
+  reuses retained evidence from a complete run and emits a route map that can
+  execute unchanged through `pageledger run --routes`. The dependency-free
+  classifier distinguishes `blank`, `sparse`, `prose`, `table_likely`, and
+  `unknown`, records every signal and decision in an evidence sidecar, and
+  supports importable classifier hooks for domain taxonomies.
+- **Generation-indexed adapter escalation:** `run.adapter_order` selects one
+  adapter and option set per original/rerun generation. Manifests record the
+  planned chain and current step; exhausted chains leave pending pages in the
+  human review queue with `chain_exhausted` unless the independent rerun-depth
+  cap was reached first.
+- **Budget alerts and grouped cost evidence:** capless `warn_pages`,
+  `warn_tokens`, and `warn_usd` thresholds record one first-crossing alert per
+  unit. `cost.json` can now group extracted-page usage and resolved cost by
+  adapter and routed page type.
+
+### Changed
+
+- Classifier output is now the built-in producer for the reviewed route-map
+  executor introduced in 0.1.6. Classification remains an explicit stage;
+  ordinary `run` commands do not invoke it automatically.
+- Rerun config remains authoritative when it differs from a parent's recorded
+  next adapter. PageLedger records and prints the disagreement before using
+  the supplied config. `max_rerun_depth` remains independent of chain length.
+- Absolute and cap-relative budget thresholds share a first-crossing record;
+  the lower effective threshold wins, with explicit absolute thresholds
+  winning exact ties. Existing per-page `run.log` warning behavior is retained.
+
+### Compatibility
+
+- The package version is 0.2.0, while every artifact and config contract keeps
+  `schema_version: "0.1"`. Manifest escalation fields and cost alerts/rollups
+  are additive and optional; existing 0.1 artifacts remain valid.
+- Core still depends only on PyYAML. The classifier adds no bundled model,
+  computer-vision runtime, provider SDK, pricing catalog, or domain taxonomy.
+
 ## 0.1.7 - 2026-07-11
 
 ### Fixed
