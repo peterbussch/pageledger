@@ -1,6 +1,6 @@
 # Capabilities and limits
 
-What the 0.1.x alpha does, what it leaves to you, and what is documented
+What PageLedger 0.2.0 does, what it leaves to you, and what is documented
 design rather than working code. This is the honest-scope page; the README
 stays short because this exists.
 
@@ -17,9 +17,20 @@ stays short because this exists.
   while keeping the source page numbering in every artifact. Sampling a
   large volume no longer means splitting the PDF and losing page identity.
 - `--routes route-map.yml` executes complete, reviewed per-page decisions from
-  a human or external classifier. It validates source coverage, page identity,
-  taxonomy types, confidence, prompts, and adapter action support before
-  extraction, then records the source route-map hash.
+  `pageledger classify`, a human, or an external classifier. It validates
+  source coverage, page identity, taxonomy types, confidence, prompts, and
+  adapter action support before extraction, then records the source route-map
+  hash.
+- `pageledger classify` probes source pages or reuses retained evidence with
+  `--from-run`, assigns the structural types `blank`, `sparse`, `prose`,
+  `table_likely`, and `unknown`, maps types to configured actions, and emits an
+  executable schema-0.1 route map plus a text-free evidence sidecar. The tested
+  workflow is `classify` followed by `run --routes`; see
+  [`classifier.md`](classifier.md).
+- User-supplied classifier hooks can replace the built-in type decision through
+  a `module.path:Object` import string. Hooks declare their page types and
+  return a type, confidence, reason, and optional action or prompt. Hook output
+  is validated before either artifact is written.
 - Adapter options (`run.adapter_options`) passed to built-in and custom
   adapter constructors, and `--adapter-path` for loading custom adapter
   modules without touching PYTHONPATH.
@@ -45,8 +56,11 @@ stays short because this exists.
   Arabic, Devanagari, Bengali, Gujarati, Gurmukhi, Tamil, Telugu, Kannada, and
   Malayalam scripts; this guards against known shape-warning false positives,
   not OCR errors or language-specific accuracy.
-- Page-denominated budget enforcement (pages, tokens, dollars) with
-  preflight refusal and per-page caps.
+- Page-denominated budget enforcement (pages, tokens, dollars) with preflight
+  refusal and per-page caps. Absolute `warn_pages`, `warn_tokens`, and
+  `warn_usd` thresholds can alert without a cap; `cost.json` records each
+  unit's first crossing and provenance-derived rollups by adapter and page
+  type.
 - Retry with configurable `max_retries` and optional exponential backoff.
 - Optional continuation after exhausted page failures, with a consecutive-
   failure circuit breaker and failed/not-attempted pages added to rerun work.
@@ -54,6 +68,11 @@ stays short because this exists.
   run's rerun manifest (typically with a stronger adapter), preserving page
   ids, recording parent lineage, enforcing `max_rerun_depth`, and warning
   if a source file changed since the parent run.
+- Multi-adapter escalation chains through `run.adapter_order`. Generation zero
+  uses the first adapter, each explicit `pageledger rerun` advances to the next,
+  and manifests record the selected step and planned next adapter. Exhausting
+  the chain leaves unresolved pages in review and makes the rerun plan
+  non-executable; it does not silently quarantine them.
 - Schema alignment: the config `schema` section (columns, aliases, types,
   required fields, arithmetic `checks` with tolerance) maps structured
   extraction output (`markdown_table`, `json`, `csv`) to normalized
@@ -109,14 +128,15 @@ stays short because this exists.
   and
   [`examples/ollama_cleanup_adapter.py`](../examples/ollama_cleanup_adapter.py)).
 - PDF page counting for custom adapters that expose `page_count(source)`.
+- Domain-specific page taxonomies through a classifier hook. Core supplies the
+  structural signals and route-map process, while the project supplies the
+  semantic decision.
 
 ## Documented design, not yet implemented
 
-- Automatic page classification. Without `--routes`, the alpha routes every
-  page to the configured `default_action` (`review` in dry-run mode). No
-  classifier ships; users can execute decisions from one with `--routes`.
-- Multi-adapter routing chains and the remaining staged CLI commands
-  (`classify`, `extract`, `audit`). `align` already ships.
+- Separate staged `extract` and `audit` commands. Extraction and audit behavior
+  already exists under `run`; no independent commands ship yet. `classify` and
+  `align` do ship.
 
 Details and examples live in [`design.md`](design.md).
 
@@ -129,6 +149,32 @@ Details and examples live in [`design.md`](design.md).
   missing, and refuses to start when `run.adapter_options.lang` names a
   language pack that is not installed. OCR quality is Tesseract's, at the
   DPI and language you configure.
+- The built-in classifier is structural, not semantic. It has no image model,
+  language model, document-domain labels, or region-level routing. Domain types
+  require a project hook.
+- Classifier confidences are fixed, uncalibrated evidence scores. They rank the
+  built-in rule outcomes but are not probabilities, and they are not directly
+  comparable with a hook's confidence scale.
+- Table classification uses structured-result format, pipe density, or the
+  combination of column spacing and digit density. The tuned
+  `table_column_line_ratio: 0.015` default recovered six known OCR table
+  spreads in a small census dogfood while its digit guard kept the sampled
+  prose pages out. This is not broad accuracy calibration; layout loss and
+  digit-heavy prose can still produce false negatives or positives.
+- An empty `pdf_text` probe cannot distinguish a visually blank PDF page from
+  an image-only page. It emits `unknown` with null confidence and routes to
+  review. An OCR or text probe can emit `blank`, but that remains a text-output
+  judgment rather than proof about page pixels.
+- `classify` probe mode has no retry, budget enforcement, cost ledger, or run
+  directory. A `pdf_ocr` probe still spends OCR time per page. Probe failures
+  become `unknown`/`review`; classifier-hook failures abort the command.
+- `classify --from-run` accepts only a full-coverage, non-dry-run
+  generation-zero parent. Missing retained evidence for an individual page
+  becomes `unknown`/`review`; reruns and `--pages` partial runs are rejected
+  rather than emitting an incomplete map.
+- A custom classification probe and the later run adapter may count pages
+  differently. `run --routes` fails its complete-coverage check in that case;
+  PageLedger does not renumber or reconcile the map silently.
 - Quality signals are diagnostic, not calibrated. `quality.jsonl` records
   per-page evidence a human should weigh, not accuracy scores. Shape-based
   heuristics cannot detect word-level misrecognition ("matericl" for
@@ -160,9 +206,12 @@ Details and examples live in [`design.md`](design.md).
   verify them against the page images.
 - Quality-warning pages land in `audit.json → review_queue` with reason
   `quality_warning`. Dry-run review entries use route-based reasons.
-- No built-in automatic classifier. Projects can classify pages externally or
-  review a map by hand, then execute those page-type-aware decisions with
-  `run --routes`.
+- `run` without `--routes` still sends every page to the configured
+  `default_action` (`review` in dry-run mode). Classification is an explicit
+  `classify` then `run --routes` workflow so the map remains reviewable evidence.
+- Adapter escalation chains advance only when the user runs `pageledger rerun`.
+  They do not automatically call every adapter in one run, merge parent and
+  child output, or remove unresolved pages from human review.
 - Reruns re-extract listed pages; they do not merge results. Combining
   parent and rerun outputs into one corpus is the project's decision, and
   `pageledger compare-runs` shows the per-page evidence for making it.
@@ -175,7 +224,7 @@ Details and examples live in [`design.md`](design.md).
 
 ## Tested scale and documents
 
-The 0.1.x alpha has been exercised locally on:
+PageLedger has been exercised locally on:
 
 - 5,000 synthetic text pages (2.4 s, ~2,100 pages/sec, artifact counts
   verified: raw files = provenance lines = quality lines = pages).
@@ -188,6 +237,10 @@ The 0.1.x alpha has been exercised locally on:
   military-statistical review (178-page image-only scan, pre-reform
   orthography). Walkthrough: [`multilingual-ocr.md`](multilingual-ocr.md).
 - A 72-page born-digital PDF via `pageledger[pdf]`.
+- The 0.2.0 structural classifier was checked against retained OCR from five
+  sampled pages of a 1916 Bessarabia address-calendar and seven sampled 1939
+  census spreads. That pass tuned the column-line threshold; it is evidence for
+  the default, not a general benchmark.
 
 This is evidence of the envelope, not a performance guarantee. Stress
 tests are marked `@pytest.mark.stress` and skipped in default CI:
