@@ -103,9 +103,10 @@ Normalized records should preserve links back to provenance lines:
 - `prompt_hash` is required whenever a prompt influenced output.
 - `deterministic` should be `false` unless the adapter can actually guarantee
   stable output for the same input and config.
-- `metrics` is a reference copy of `usage` for analytical workflows. It
-  shares the same keys and values as `usage` in the current alpha; future
-  versions may diverge `metrics` to exclude cost or add derived fields.
+- `usage` is the authoritative adapter-facing record. `metrics` is retained in
+  schema version `"0.1"` as a compatibility copy for spreadsheet and JSONL
+  analysis workflows that flatten page-level rows. If these fields diverge in a
+  future artifact schema, the schema version must change.
 - `usage.cost_usd` remains adapter-reported evidence. `cost.usd` is the value
   PageLedger actually uses after applying adapter-reported cost first and then
   configured unit rates. Missing token usage never becomes a known zero cost.

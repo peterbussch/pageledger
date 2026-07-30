@@ -230,6 +230,10 @@ pageledger extract scans/ --routes route-map.yml --out runs/run-001/
 pageledger audit runs/run-001/ --out runs/run-001/audit.md
 ```
 
+Only `classify` is implemented in the example above. Use `pageledger run
+--routes route-map.yml` for extraction, and inspect `audit.json` / `audit.md`
+from the run directory until separate `extract` and `audit` commands exist.
+
 (`rerun` and `align` graduated earlier; `classify` graduated in 0.2.0.) The staged
 commands are useful for debugging and advanced composition, but they should
 not be the default first-use experience. That stays `pageledger run`.

@@ -1,4 +1,4 @@
-"""Filesystem-native alpha runner for PageLedger."""
+"""Filesystem-native runner for PageLedger."""
 
 from __future__ import annotations
 
