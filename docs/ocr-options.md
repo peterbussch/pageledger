@@ -35,6 +35,11 @@ providers.
 6. Inspect `quality.jsonl`, `provenance.jsonl`, `run.log`, and `cost.json`
    before deciding whether to rerun pages with a stronger adapter.
 
+New runs record the concrete built-in backend identity in per-page provenance:
+`pdf_text` includes the installed pypdf version; `pdf_ocr` includes Tesseract,
+Poppler/pdftoppm, DPI, and language. A custom OCR/VLM adapter should put the
+equivalent model/revision and material runtime settings in `ExtractionResult.model`.
+
 For a worked example of steps 2–3 and the rerun loop on a real scanned
 document, see `docs/examples/jfk-scanned-archive.md` (including the
 local-LLM and cloud-VLM escalation tiers measured on the same pages).

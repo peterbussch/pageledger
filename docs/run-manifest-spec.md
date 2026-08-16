@@ -8,6 +8,7 @@ is the durable pointer to every other artifact in the run directory.
 ```json
 {
   "schema_version": "0.1",
+  "pageledger_version": "0.2.0",
   "run_id": "run-20260619T193000000000Z",
   "parent_run_id": null,
   "execution_mode": "execute",
@@ -80,6 +81,7 @@ is the durable pointer to every other artifact in the run directory.
 | Field | Type | Meaning |
 |---|---|---|
 | `schema_version` | string | Manifest schema version. |
+| `pageledger_version` | string | PageLedger package version that generated the manifest. Current writers always emit it; it is optional only when reading older schema-0.1 artifacts. |
 | `run_id` | string | Stable identifier for this run. |
 | `parent_run_id` | string or null | Previous run if this is a rerun. |
 | `execution_mode` | string | `dry_run` or `execute`. |
@@ -102,6 +104,10 @@ to `normalized/` by the schema aligner), `estimated_cost_usd`, and
 `quality_warning_pages`. `pages_routed_review` remains optional in the schema
 so pre-hardening schema-0.1 manifests can still be read; `verify-run` warns
 when that legacy evidence is absent.
+
+Current writers also emit top-level `pageledger_version`. It remains optional
+in the schema solely so pre-hardening schema-0.1 manifests remain readable;
+`verify-run` warns when that generator identity is absent.
 
 Runs with failures add `pages_failed`; runs halted before every extraction
 action was attempted add `pages_not_attempted`. They are omitted when zero so

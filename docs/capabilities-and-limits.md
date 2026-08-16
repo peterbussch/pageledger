@@ -9,6 +9,8 @@ stays short because this exists.
 - `pageledger run` for text fixtures (form-feed pagination), born-digital
   PDF text layers (`pdf_text`, via `pageledger[pdf]`), and scanned PDFs
   (`pdf_ocr`, using locally installed `pdftoppm` + `tesseract`).
+  Per-page provenance identifies the installed pypdf backend for `pdf_text`,
+  or the Tesseract and Poppler versions plus DPI/language for `pdf_ocr`.
 - `pageledger run --adapter text|pdf_text|pdf_ocr` runs a built-in adapter
   without a YAML config. The generated defaults are recorded in
   `config-snapshot.yml`; PageLedger never reads a config file it was not

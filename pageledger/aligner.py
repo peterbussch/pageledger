@@ -470,7 +470,7 @@ def align_run(
     )
 
     records_normalized = sum(len(alignment["records"]) for alignment in alignments.values())
-    from pageledger import __version__
+    from ._version import __version__
 
     manifest["summary"]["records_normalized"] = records_normalized
     manifest["alignment"] = {

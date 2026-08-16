@@ -73,6 +73,13 @@ def verify_run(run_dir: Path) -> dict[str, Any]:
             "manifest_identity_missing",
             "Manifest schema_version is missing or invalid",
         )
+    if not isinstance(manifest.get("pageledger_version"), str):
+        _add(
+            warnings,
+            "legacy_evidence_incomplete",
+            "Manifest predates PageLedger generator-version recording",
+            artifact="manifest.json",
+        )
 
     declarations = manifest.get("artifacts")
     if not isinstance(declarations, dict):

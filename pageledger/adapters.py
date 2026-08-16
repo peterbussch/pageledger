@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib
+import importlib.metadata
 import re
 import shutil
 import subprocess
@@ -155,7 +156,7 @@ class PdfTextAdapter:
             content=text,
             format="text",
             confidence=None,
-            model=None,
+            model=_pypdf_model_string(),
             warnings=[],
             usage={"pages": 1, "tokens": None, "compute_seconds": None, "cost_usd": None},
         )
@@ -258,7 +259,10 @@ class PdfOcrAdapter:
             content=text,
             format="text",
             confidence=confidence,
-            model=_tesseract_model_string(),
+            model=(
+                f"{_tesseract_model_string()}; {_pdftoppm_model_string()}; "
+                f"dpi={self.dpi}; lang={self.lang}"
+            ),
             warnings=[],
             usage={
                 "pages": 1,
@@ -406,6 +410,37 @@ def _tesseract_model_string() -> str:
     if first_line and first_line[0].strip():
         return first_line[0].strip()
     return "tesseract"
+
+
+@lru_cache(maxsize=1)
+def _pypdf_model_string() -> str:
+    """Return the installed embedded-text backend identity."""
+    try:
+        return f"pypdf {importlib.metadata.version('pypdf')}"
+    except importlib.metadata.PackageNotFoundError:
+        return "pypdf"
+
+
+@lru_cache(maxsize=1)
+def _pdftoppm_model_string() -> str:
+    """Return the Poppler renderer identity without making extraction depend on it."""
+    path = shutil.which("pdftoppm")
+    if path is None:
+        return "pdftoppm"
+    try:
+        proc = subprocess.run(
+            [path, "-v"],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return "pdftoppm"
+    output = "\n".join(part for part in (proc.stdout, proc.stderr) if part)
+    first_line = output.splitlines()[:1]
+    if first_line and first_line[0].strip():
+        return first_line[0].strip()
+    return "pdftoppm"
 
 
 def ocr_pdf_page_count(source: Path) -> int:

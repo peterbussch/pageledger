@@ -115,6 +115,13 @@ null, warning items are strings, `confidence_detail` is a JSON-serializable
 mapping or null, and numeric usage values are finite numbers rather than
 booleans. `NaN` and infinity are rejected at the adapter boundary.
 
+Use `model` for the concrete runtime identity that could affect output, not
+only a marketing model name. The built-in `pdf_text` adapter records the
+installed pypdf version. The built-in `pdf_ocr` adapter records the Tesseract
+and Poppler renderer versions plus the effective DPI and language selection.
+Custom adapters should likewise include model/revision, renderer, and material
+inference settings when the backend exposes them.
+
 Adapters do **not** have to know dollar prices. Report `cost_usd` only if the
 backend returns it directly (e.g. an OpenRouter-style gateway); otherwise leave
 it `null` and PageLedger derives cost from configured unit rates

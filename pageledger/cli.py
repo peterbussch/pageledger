@@ -10,7 +10,7 @@ import tempfile
 import textwrap
 from pathlib import Path
 
-from . import __version__
+from ._version import __version__
 from .aligner import align_run
 from .classifier import classify
 from .compare import compare_runs, render_comparison

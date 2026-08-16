@@ -8,6 +8,7 @@ from typing import Any
 
 import yaml
 
+from ._version import __version__
 from .grading import format_grade
 
 ARTIFACT_PATHS = {
@@ -75,6 +76,7 @@ def build_route_map(
 ) -> dict[str, Any]:
     return {
         "schema_version": schema_version,
+        "pageledger_version": __version__,
         "run_id": run_id,
         "generated_at": generated_at,
         "classifier": classifier or {
@@ -115,6 +117,7 @@ def build_manifest(
 ) -> dict[str, Any]:
     manifest: dict[str, Any] = {
         "schema_version": schema_version,
+        "pageledger_version": __version__,
         "run_id": run_id,
         "parent_run_id": parent_run_id,
         "execution_mode": execution_mode,

@@ -22,6 +22,10 @@
       "description": "Manifest schema version. This release is '0.1'.",
       "const": "0.1"
     },
+    "pageledger_version": {
+      "type": "string",
+      "description": "PageLedger package version that generated this manifest. Optional for compatibility with older schema-0.1 artifacts; current writers always emit it."
+    },
     "run_id": {
       "type": "string",
       "description": "Stable identifier for this run (e.g. 'run-20260619T193000000000Z')."

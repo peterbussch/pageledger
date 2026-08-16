@@ -9,6 +9,7 @@ called. `pageledger run --routes` executes the reviewed map.
 
 ```yaml
 schema_version: "0.1"
+pageledger_version: "0.2.0"
 run_id: classify-20260717T193000000000Z
 generated_at: "2026-07-17T19:30:00Z"
 classifier:
@@ -46,6 +47,7 @@ documents:
 | Field | Type | Required | Nullable | Meaning |
 |---|---|---|---|---|
 | `schema_version` | string | ✅ | no | Artifact schema version. It remains `"0.1"` in PageLedger 0.2.0. |
+| `pageledger_version` | string | ✅ for new maps | no | PageLedger package version that generated the map. Missing only on legacy schema-0.1 maps. |
 | `run_id` | string | ✅ | no | Identifier of the classification or planning operation. An extraction run rebinds this to its own run ID. |
 | `generated_at` | string | ✅ | no | UTC ISO 8601 timestamp. |
 | `classifier` | object | ✅ | no | Classifier metadata. Null values mean no classifier ran; classified and imported maps preserve the supplied identity. |

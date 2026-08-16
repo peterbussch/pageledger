@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib.metadata
 import json
 import os
 import subprocess
@@ -36,6 +37,18 @@ def test_builtin_text_adapter_passes_conformance() -> None:
 def test_builtin_pdf_text_adapter_passes_conformance() -> None:
     issues = adapter_conformance_check(PdfTextAdapter())
     assert issues == []
+
+
+def test_pdf_text_records_pypdf_backend_version(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr(adapters_module, "_pdf_page_text", lambda source, page: "text")
+    result = PdfTextAdapter().extract(
+        tmp_path / "input.pdf",
+        page_id="doc_0001_page_0001",
+        page_number=1,
+        action="transcribe_text",
+    )
+
+    assert result.model == f"pypdf {importlib.metadata.version('pypdf')}"
 
 
 @pytest.mark.parametrize("adapter", [TextAdapter(), PdfTextAdapter(), PdfOcrAdapter()])
@@ -360,7 +373,11 @@ class MisreportingAdapter:
             model=None, warnings=[], usage={"pages": 2},
         )
 """)
-    _run_and_assert_error(tmp_path, "misreport:MisreportingAdapter", "exactly 1")
+    _run_and_assert_error(
+        tmp_path,
+        "misreport:MisreportingAdapter",
+        "ValueError: <redacted>",
+    )
 
 
 def test_runner_rejects_usage_pages_zero(tmp_path: Path) -> None:
@@ -387,7 +404,11 @@ class ZeroPageAdapter:
             model=None, warnings=[], usage={"pages": 0},
         )
 """)
-    _run_and_assert_error(tmp_path, "zeropg:ZeroPageAdapter", "exactly 1")
+    _run_and_assert_error(
+        tmp_path,
+        "zeropg:ZeroPageAdapter",
+        "ValueError: <redacted>",
+    )
 
 
 # =========================================================================
@@ -507,6 +528,10 @@ def test_pdf_ocr_extract_with_mocked_binaries(tmp_path: Path, monkeypatch) -> No
         binary = Path(argv[0]).name
         if "--version" in argv:
             return subprocess.CompletedProcess(argv, 0, stdout="tesseract 5.5.2\n", stderr="")
+        if binary == "pdftoppm" and "-v" in argv:
+            return subprocess.CompletedProcess(
+                argv, 0, stdout="", stderr="pdftoppm version 26.05.0\n"
+            )
         if "--list-langs" in argv:
             # Listing unavailable — the language preflight skips itself.
             return subprocess.CompletedProcess(argv, 1, stdout="", stderr="")
@@ -531,7 +556,9 @@ def test_pdf_ocr_extract_with_mocked_binaries(tmp_path: Path, monkeypatch) -> No
     )
 
     assert result.content == "OCR TEXT\n"
-    assert result.model == "tesseract 5.5.2"
+    assert result.model == (
+        "tesseract 5.5.2; pdftoppm version 26.05.0; dpi=400; lang=eng+deu"
+    )
     assert result.format == "text"
     assert result.usage["pages"] == 1
     assert result.usage["compute_seconds"] is not None
@@ -747,13 +774,17 @@ def _fake_ocr_binaries(monkeypatch, *, tsv_body: str | None, txt: str = "OCR TEX
     calls: list[list[str]] = []
 
     def fake_run(argv, **kwargs):  # noqa: ANN001, ANN003
+        binary = Path(argv[0]).name
         if "--version" in argv:
             return subprocess.CompletedProcess(argv, 0, stdout="tesseract 5.5.2\n", stderr="")
+        if binary == "pdftoppm" and "-v" in argv:
+            return subprocess.CompletedProcess(
+                argv, 0, stdout="", stderr="pdftoppm version 26.05.0\n"
+            )
         if "--list-langs" in argv:
             # Listing unavailable — the language preflight skips itself.
             return subprocess.CompletedProcess(argv, 1, stdout="", stderr="")
         calls.append(list(argv))
-        binary = Path(argv[0]).name
         if binary == "pdftoppm":
             prefix = Path(argv[-1])
             (prefix.parent / "page-1.png").write_bytes(b"png")
@@ -827,13 +858,17 @@ def test_pdf_ocr_confidence_survives_malformed_tsv(tmp_path: Path, monkeypatch) 
 
 def _fake_binaries_with_langs(monkeypatch, langs: list[str]):
     def fake_run(argv, **kwargs):  # noqa: ANN001, ANN003
+        binary = Path(argv[0]).name
         if "--version" in argv:
             return subprocess.CompletedProcess(argv, 0, stdout="tesseract 5.5.2\n", stderr="")
+        if binary == "pdftoppm" and "-v" in argv:
+            return subprocess.CompletedProcess(
+                argv, 0, stdout="", stderr="pdftoppm version 26.05.0\n"
+            )
         if "--list-langs" in argv:
             listed = "\n".join(langs)
             body = f'List of available languages in "/fake/tessdata/" ({len(langs)}):\n{listed}\n'
             return subprocess.CompletedProcess(argv, 0, stdout=body, stderr="")
-        binary = Path(argv[0]).name
         if binary == "pdftoppm":
             prefix = Path(argv[-1])
             (prefix.parent / "page-1.png").write_bytes(b"png")
@@ -866,11 +901,15 @@ def test_pdf_ocr_accepts_installed_language_pack(tmp_path: Path, monkeypatch) ->
 def test_pdf_ocr_skips_lang_check_when_listing_fails(tmp_path: Path, monkeypatch) -> None:
     """An unparseable --list-langs must not block extraction."""
     def fake_run(argv, **kwargs):  # noqa: ANN001, ANN003
+        binary = Path(argv[0]).name
         if "--version" in argv:
             return subprocess.CompletedProcess(argv, 0, stdout="tesseract 5.5.2\n", stderr="")
+        if binary == "pdftoppm" and "-v" in argv:
+            return subprocess.CompletedProcess(
+                argv, 0, stdout="", stderr="pdftoppm version 26.05.0\n"
+            )
         if "--list-langs" in argv:
             return subprocess.CompletedProcess(argv, 1, stdout="", stderr="weird failure")
-        binary = Path(argv[0]).name
         if binary == "pdftoppm":
             (Path(argv[-1]).parent / "page-1.png").write_bytes(b"png")
         elif binary == "tesseract":
