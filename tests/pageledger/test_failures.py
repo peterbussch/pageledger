@@ -474,7 +474,10 @@ def test_run_log_does_not_contain_environment_secrets(tmp_path, monkeypatch):
             return action == "transcribe_text"
 
         def extract(self, source, *, page_id, page_number, action, prompt=None):
-            raise RuntimeError("api key: sk-should-not-leak")
+            error = RuntimeError("api key: sk-should-not-leak")
+            error.stdout = "Authorization: Bearer sk-stdout-should-not-leak"
+            error.stderr = "password=stderr-should-not-leak"
+            raise error
     """))
 
     config = tmp_path / "config.yml"
@@ -490,21 +493,21 @@ def test_run_log_does_not_contain_environment_secrets(tmp_path, monkeypatch):
 
     env = {**os.environ, "PYTHONPATH": str(tmp_path)}
     import subprocess
-    subprocess.run(
+    completed = subprocess.run(
         [sys.executable, "-m", "pageledger", "run", str(source),
          "--config", str(config), "--out", str(tmp_path / "out"), "--json"],
         capture_output=True, text=True, cwd=str(tmp_path), env=env,
     )
-    # The adapter throws an exception with a secret-like string in its message.
-    # The log should capture it (the error envelope preserves the message),
-    # but the runner itself never exposes env vars.
-    # Verify env vars are not in the log.
+    assert completed.returncode != 0
+    terminal_text = completed.stdout + completed.stderr
+    assert os.environ["MY_SECRET_KEY"] not in terminal_text
+    assert "sk-stdout-should-not-leak" not in terminal_text
+    assert "stderr-should-not-leak" not in terminal_text
     out_dir = tmp_path / "out"
     log_text = (out_dir / "run.log").read_text(encoding="utf-8")
-    # Secret from environment should NOT appear
-    assert "sk-should-not-leak" not in os.environ.get("MY_SECRET_KEY", "") or True
-    # The exception message IS captured (it's in the error envelope)
-    assert "sk-should-not-leak" in log_text  # exception message is captured
-    # But the ENVIRONMENT variable value is not printed by the runner
+    assert os.environ["MY_SECRET_KEY"] not in log_text
+    assert "sk-stdout-should-not-leak" not in log_text
+    assert "stderr-should-not-leak" not in log_text
+    assert log_text.count("<redacted>") == 3
     manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
     assert manifest["status"] == "failed"
