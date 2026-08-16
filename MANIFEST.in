@@ -2,6 +2,7 @@ include README.md
 include LICENSE
 include CHANGELOG.md
 include CITATION.cff
+include THIRD_PARTY_NOTICES.md
 recursive-include docs *.md *.yml
 recursive-include examples *.py *.sh
 recursive-include schemas *.json
@@ -13,6 +14,7 @@ exclude docs/autoresearch.md
 exclude _session_research.md
 recursive-exclude prompts *
 recursive-exclude assets *
+prune brand
 prune .planning
 prune .stress
 prune .hermes

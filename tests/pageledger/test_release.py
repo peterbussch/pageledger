@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
+from zipfile import ZipFile
 
 from scripts.check_release import check_release
 
@@ -78,3 +79,22 @@ def test_all_github_actions_are_pinned_and_ci_has_a_frozen_lane() -> None:
     assert uses
     assert all(re.fullmatch(r"[0-9a-f]{40}", revision) for revision in uses)
     assert "uv sync --frozen" in workflows[0]
+
+
+def test_brand_archive_carries_font_license_and_no_release_version() -> None:
+    archive_path = REPO / "brand" / "pageledger-logo-design.zip"
+    with ZipFile(archive_path) as archive:
+        names = set(archive.namelist())
+        assert "brand/fonts/OFL.txt" in names
+        license_text = archive.read("brand/fonts/OFL.txt").decode("utf-8")
+        readme = archive.read("brand/README.txt").decode("utf-8")
+        preview = archive.read("brand/index.html").decode("utf-8")
+
+    assert "Copyright 2020 The Archivo Project Authors" in license_text
+    assert "SIL OPEN FONT LICENSE Version 1.1" in license_text
+    assert "brand/fonts/OFL.txt" in readme
+    assert not re.search(r"\b\d+\.\d+\.\d+(?:a\d+)?\b", preview)
+
+    manifest_rules = (REPO / "MANIFEST.in").read_text(encoding="utf-8")
+    assert "prune brand" in manifest_rules
+    assert "include THIRD_PARTY_NOTICES.md" in manifest_rules
