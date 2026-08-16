@@ -5,7 +5,6 @@ from __future__ import annotations
 import hashlib
 import json
 import math
-import os
 import re
 import sys
 import time
@@ -47,15 +46,7 @@ from .policy import rebuild_policy_queues
 from .routing import load_route_map
 
 LOG_LEVELS = {"DEBUG": 10, "INFO": 20, "WARNING": 30, "ERROR": 40}
-SENSITIVE_ENV_NAME = re.compile(
-    r"(?:api[_-]?key|authorization|credential|password|secret|token)",
-    re.IGNORECASE,
-)
-SENSITIVE_VALUE = re.compile(
-    r"\b(api[ _-]?key|authorization|credential|password|secret|token)"
-    r"(\s*[:=]\s*)(?:bearer\s+)?([^\s,;\"']+)",
-    re.IGNORECASE,
-)
+ERROR_TYPE_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_.]*")
 
 
 # Compatibility aliases: these helpers lived in runner.py before the
@@ -98,14 +89,17 @@ class AdapterExecutionError(RuntimeError):
         stdout: str | None = None,
         stderr: str | None = None,
     ) -> None:
-        redacted_message = _redact_error_text(message) or ""
+        error_type = message.partition(":")[0].strip()
+        if not ERROR_TYPE_NAME.fullmatch(error_type):
+            error_type = "AdapterError"
+        redacted_message = f"{error_type}: <redacted>"
         super().__init__(f"Adapter '{adapter}' {status} for {page_id}: {redacted_message}")
         self.adapter = adapter
         self.page_id = page_id
         self.status = status
         self.message = redacted_message
-        self.stdout = _snippet(_redact_error_text(stdout))
-        self.stderr = _snippet(_redact_error_text(stderr))
+        self.stdout = "<redacted>" if stdout is not None else None
+        self.stderr = "<redacted>" if stderr is not None else None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -1310,25 +1304,3 @@ def _sha256_path(path: Path) -> str:
 
 def _sha256_text(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
-
-
-def _snippet(value: Any, *, limit: int = 1000) -> str | None:
-    if value is None:
-        return None
-    text = value.decode("utf-8", errors="replace") if isinstance(value, bytes) else str(value)
-    return text[:limit]
-
-
-def _redact_error_text(value: Any) -> str | None:
-    """Remove likely credentials from adapter-controlled error evidence."""
-    if value is None:
-        return None
-    text = value.decode("utf-8", errors="replace") if isinstance(value, bytes) else str(value)
-    text = SENSITIVE_VALUE.sub(
-        lambda match: f"{match.group(1)}{match.group(2)}<redacted>",
-        text,
-    )
-    for name, secret in os.environ.items():
-        if SENSITIVE_ENV_NAME.search(name) and len(secret) >= 8:
-            text = text.replace(secret, "<redacted>")
-    return text

@@ -233,9 +233,12 @@ Adapters that shell out to external commands (e.g. `pdftoppm`, `tesseract`,
   or a descriptive `RuntimeError` so PageLedger can record the failure in
   `run.log`. The default stops the run; `run.on_page_error: continue` proceeds
   to the next page, subject to `max_consecutive_failures`.
-- Capture `stdout` and `stderr` so the error envelope has diagnostic content.
-- Do not pass secrets or environment variables to subprocess stdout/stderr
-  capture without redaction.
+- Capture `stdout` and `stderr` when the adapter needs them for local control
+  flow, but do not expect PageLedger to persist their contents. Failure
+  envelopes are fail-closed: they retain the exception class and whether
+  stdout/stderr existed, replacing all adapter-controlled diagnostic text with
+  `<redacted>`. This prevents provider and subprocess errors from becoming a
+  credential-exfiltration path through `run.log` or terminal output.
 
 Example pattern:
 

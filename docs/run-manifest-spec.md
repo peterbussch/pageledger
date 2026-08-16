@@ -255,9 +255,11 @@ canonical signal that PageLedger finished writing every artifact it points to;
 - **`run.log` always has the failure entry.** Even if only one page failed, the
   log entry carries the adapter name, page ID, error envelope, attempt count,
   and retry status. The `error` field is a serializable dict (not a traceback).
-- **No secrets in logs or exceptions.** `AdapterExecutionError` captures
-  stdout/stderr snippets (max 1000 chars each) but the runner never prints
-  environment variables or credential values.
+- **Adapter diagnostics fail closed.** `AdapterExecutionError` retains the
+  exception class, page, adapter, attempt, and whether stdout/stderr existed.
+  Adapter-controlled messages and stdout/stderr contents are replaced with
+  `<redacted>` in both `run.log` and terminal output so provider errors cannot
+  leak credentials.
 - **Config snapshot is always written before extraction.** If a failure happens
   during extraction, `config-snapshot.yml` exists and can be audited.
 - **Output directory is empty-or-new before extraction starts.** The runner
@@ -274,6 +276,6 @@ canonical signal that PageLedger finished writing every artifact it points to;
 | `Adapter 'X' does not support action 'Y'` | Adapter/action mismatch | Check `adapter.supports(action)` |
 | `Cannot read input file` | Permission error or missing file | `chmod +r` or verify path |
 | `Budget exceeded after ...` | Page/token/dollar cap hit | Increase budget caps or reduce input |
-| `Adapter 'X' failed for ...` | Adapter exception | Check `run.log` for error envelope; inspect adapter |
+| `Adapter 'X' failed for ...` | Adapter exception | Check the redacted `run.log` envelope, then inspect or debug the adapter locally |
 | `usage must be JSON-serializable` | Adapter returned non-serializable usage | Fix adapter `usage` dict |
 | `usage.pages must be exactly 1` | Adapter misreported page count | Adapter must set `usage.pages = 1` |

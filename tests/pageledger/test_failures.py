@@ -17,6 +17,7 @@ import textwrap
 import pytest
 
 from pageledger.runner import (
+    AdapterExecutionError,
     BudgetExceededError,
     run,
 )
@@ -447,6 +448,34 @@ def test_failed_run_manifest_status_is_failed_not_completed(tmp_path):
 # =========================================================================
 # Secrets do not appear in logs
 # =========================================================================
+
+@pytest.mark.parametrize(
+    "secret_text",
+    [
+        "api key: sk-plain-secret",
+        "Authorization: Bearer sk-bearer-secret",
+        'api_key="sk-quoted-secret"',
+        '{"api_key": "sk-json-secret"}',
+        "client_secret='sk-single-secret'",
+        "https://example.invalid/?api_key=sk-query-secret&next=1",
+        "upstream failed with sk-env-only-secret",
+    ],
+)
+def test_adapter_error_envelope_discards_adapter_controlled_diagnostics(secret_text):
+    error = AdapterExecutionError(
+        adapter="secret-fail",
+        page_id="doc_0001_page_0001",
+        status="failed",
+        message=f"RuntimeError: {secret_text}",
+        stdout=secret_text.encode(),
+        stderr=secret_text,
+    )
+
+    serialized = json.dumps(error.to_dict()) + str(error)
+    assert secret_text not in serialized
+    assert error.message == "RuntimeError: <redacted>"
+    assert error.stdout == "<redacted>"
+    assert error.stderr == "<redacted>"
 
 def test_run_log_does_not_contain_environment_secrets(tmp_path, monkeypatch):
     """Adapter exception messages in run.log do not expose env vars."""
