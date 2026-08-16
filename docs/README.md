@@ -12,6 +12,7 @@ the [first OCR run guide](pdf-ocr-first-run.md) for a scanned PDF.
 - [Work through a scanned government archive](examples/jfk-scanned-archive.md)
 - [Write a custom extraction adapter](adapter-protocol.md)
 - [Compare PageLedger with document extraction tools](comparison.md)
+- [Release PageLedger conservatively](releasing.md)
 
 ## Artifact reference
 

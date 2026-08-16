@@ -1,78 +1,122 @@
 name: Publish
 
 on:
-  release:
-    types: [published]
   workflow_dispatch:
-    # Manual dispatch rehearses the OIDC handshake against TestPyPI
-    # without touching production.
+    inputs:
+      target:
+        description: Package index to publish to after verification
+        required: true
+        default: testpypi
+        type: choice
+        options:
+          - testpypi
+          - pypi
 
 permissions:
   contents: read
+
+concurrency:
+  group: publish-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   verify:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: "3.14"
-      - name: Install verification tools
-        run: pip install ".[dev,pdf]"
+      - name: Require an exact release tag and matching tracked metadata
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_REF_TYPE: ${{ github.ref_type }}
+        run: |
+          test "$RELEASE_REF_TYPE" = "tag" || {
+            echo "Publish must be manually dispatched from an existing tag." >&2
+            exit 1
+          }
+          python scripts/check_release.py "$RELEASE_TAG"
+      - name: Recreate the locked verification environment
+        run: |
+          python -m pip install uv==0.11.16
+          uv sync --frozen --extra dev --extra pdf
       - name: Verify release source
         run: |
-          ruff check pageledger/ tests/ examples/
-          mypy pageledger/
-          python -m pytest tests/pageledger/ -q -m "not stress"
+          uv run --frozen --extra dev --extra pdf ruff check pageledger/ tests/ examples/ scripts/
+          uv run --frozen --extra dev --extra pdf mypy pageledger/
+          uv run --frozen --extra dev --extra pdf python -m pytest tests/pageledger/ -q -m "not stress"
 
   build:
     needs: verify
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: "3.13"
-      - name: Build sdist and wheel
+      - name: Recreate the locked build environment
         run: |
-          pip install build twine
-          python -m build
-          twine check dist/*
-          python -c 'from pathlib import Path; from zipfile import ZipFile; wheel=next(Path("dist").glob("*.whl")); names=ZipFile(wheel).namelist(); assert any(name.endswith(".data/data/share/pageledger/schemas/manifest.schema.json") for name in names)'
-      - uses: actions/upload-artifact@v7
+          python -m pip install uv==0.11.16
+          uv sync --frozen --extra dev --extra pdf
+      - name: Recheck release metadata and build distributions
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          uv run --frozen --extra dev python scripts/check_release.py "$RELEASE_TAG"
+          uv run --frozen --extra dev python -m build
+          uv run --frozen --extra dev twine check dist/*
+          uv run --frozen --extra dev python -c 'from pathlib import Path; from zipfile import ZipFile; wheel=next(Path("dist").glob("*.whl")); names=ZipFile(wheel).namelist(); assert any(name.endswith(".data/data/share/pageledger/schemas/manifest.schema.json") for name in names)'
+      - name: Smoke-test the exact wheel
+        run: |
+          python -m venv /tmp/pageledger-release-wheel
+          /tmp/pageledger-release-wheel/bin/pip install "$(ls dist/pageledger-*.whl)[pdf]"
+          /tmp/pageledger-release-wheel/bin/pageledger --version
+          /tmp/pageledger-release-wheel/bin/pageledger doctor --json
+          printf 'first page\fsecond page\n' > /tmp/pageledger-release-smoke.txt
+          /tmp/pageledger-release-wheel/bin/pageledger run /tmp/pageledger-release-smoke.txt --adapter text --out /tmp/pageledger-release-run --json
+          /tmp/pageledger-release-wheel/bin/pageledger verify-run /tmp/pageledger-release-run
+      - name: Record distribution hashes
+        run: sha256sum dist/pageledger-* > dist/SHA256SUMS
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: dist
+          name: dist-${{ github.ref_name }}
           path: dist/
+          if-no-files-found: error
+          retention-days: 14
 
   publish-testpypi:
-    if: github.event_name == 'workflow_dispatch'
+    if: inputs.target == 'testpypi'
     needs: build
     runs-on: ubuntu-latest
     environment: testpypi
     permissions:
       id-token: write
     steps:
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
-          name: dist
+          name: dist-${{ github.ref_name }}
           path: dist/
+      - name: Remove non-package checksum file
+        run: rm dist/SHA256SUMS
       - name: Publish to TestPyPI (trusted publishing)
-        uses: pypa/gh-action-pypi-publish@release/v1
+        uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # release/v1
         with:
           repository-url: https://test.pypi.org/legacy/
 
   publish-pypi:
-    if: github.event_name == 'release'
+    if: inputs.target == 'pypi'
     needs: build
     runs-on: ubuntu-latest
     environment: pypi
     permissions:
       id-token: write
     steps:
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
-          name: dist
+          name: dist-${{ github.ref_name }}
           path: dist/
+      - name: Remove non-package checksum file
+        run: rm dist/SHA256SUMS
       - name: Publish to PyPI (trusted publishing)
-        uses: pypa/gh-action-pypi-publish@release/v1
+        uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # release/v1
