@@ -201,6 +201,50 @@ def test_verify_run_checks_provenance_quality_raw_and_normalized(tmp_path):
     } <= _codes(report, "errors")
 
 
+def test_verify_run_detects_modified_raw_artifact(tmp_path):
+    from pageledger.verify import verify_run
+
+    out_dir, _ = _run(tmp_path)
+    raw_path = out_dir / "raw" / "doc_0001_page_0001.txt"
+    raw_path.write_text("tampered extraction output", encoding="utf-8")
+
+    report = verify_run(out_dir)
+
+    assert "raw_artifact_hash_mismatch" in _codes(report, "errors")
+
+
+def test_verify_run_warns_for_legacy_provenance_without_raw_hash(tmp_path):
+    from pageledger.verify import verify_run
+
+    out_dir, _ = _run(tmp_path)
+    provenance_path = out_dir / "provenance.jsonl"
+    provenance = [
+        json.loads(line) for line in provenance_path.read_text().splitlines()
+    ]
+    for entry in provenance:
+        entry["result"].pop("raw_sha256")
+    provenance_path.write_text(
+        "".join(json.dumps(entry) + "\n" for entry in provenance),
+        encoding="utf-8",
+    )
+
+    report = verify_run(out_dir)
+
+    assert report["status"] == "pass"
+    assert "legacy_evidence_incomplete" in _codes(report, "warnings")
+
+
+def test_verify_run_detects_stale_audit_rendering(tmp_path):
+    from pageledger.verify import verify_run
+
+    out_dir, _ = _run(tmp_path)
+    (out_dir / "audit.md").write_text("stale audit rendering\n", encoding="utf-8")
+
+    report = verify_run(out_dir)
+
+    assert "audit_render_mismatch" in _codes(report, "errors")
+
+
 def test_verify_run_checks_audit_rerun_and_cost_references(tmp_path):
     from pageledger.verify import verify_run
 

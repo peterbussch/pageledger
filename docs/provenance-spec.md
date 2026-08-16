@@ -35,7 +35,8 @@ metadata needed to understand and reconstruct the recorded method.
     "format": "markdown_table",
     "confidence": 0.84,
     "warnings": ["missing_optional_column"],
-    "raw_artifact": "raw/doc_0001_page_0002.markdown_table"
+    "raw_artifact": "raw/doc_0001_page_0002.markdown_table",
+    "raw_sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
   },
   "usage": {
     "pages": 1,
@@ -85,7 +86,7 @@ Normalized records should preserve links back to provenance lines:
 | `source` | object | Source path, page number, and source checksum. |
 | `route` | object | Page type, action, and route confidence. |
 | `extractor` | object | Adapter, adapter version, model, prompt hash, determinism flag, and adapter capability metadata. |
-| `result` | object | Output format, confidence, warnings, and raw artifact path. |
+| `result` | object | Output format, confidence, warnings, raw artifact path, and (for current writers) the exact raw artifact SHA-256. |
 | `usage` | object | Canonical usage fields: `pages`, `tokens`, `compute_seconds`, and `cost_usd`. |
 | `metrics` | object | Flat copy of `usage` for analytical workflows. |
 | `cost` | object | Optional PageLedger-resolved per-page cost: `usd` plus `basis` (`adapter_reported`, `configured_rate`, or null). |
@@ -110,6 +111,11 @@ Normalized records should preserve links back to provenance lines:
 - `usage.cost_usd` remains adapter-reported evidence. `cost.usd` is the value
   PageLedger actually uses after applying adapter-reported cost first and then
   configured unit rates. Missing token usage never becomes a known zero cost.
+- `result.raw_sha256` is optional for compatibility with older schema-0.1
+  ledgers. Current writers always emit it. `verify-run` fails if current raw
+  bytes differ and warns when legacy provenance has no digest. This detects
+  accidental or local modification; it is not authenticity without an
+  externally trusted or signed manifest/provenance set.
 - The JSON Schema for this artifact is at `schemas/provenance-line.schema.json`.
 - Schema validation tests are in `tests/pageledger/test_schemas.py`.
 

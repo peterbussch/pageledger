@@ -107,7 +107,10 @@ stays short because this exists.
   route-action/page-bucket counts, hashes, and references without claiming OCR
   correctness or requiring a runtime JSON Schema dependency. Current manifests
   count review-only routes separately so incomplete extraction coverage cannot
-  hide behind extracted/skipped totals.
+  hide behind extracted/skipped totals. Current provenance also hashes exact
+  raw-output bytes, and the verifier checks that `audit.md` is the deterministic
+  rendering of `audit.json`; legacy artifacts without raw hashes receive a
+  warning.
 - `pageledger inspect-run --csv`: one row per page (counts, confidence,
   warnings, grade, cost, timing) for spreadsheet triage.
 - Cost provenance: `cost.json` records `cost_basis` (`adapter_reported`,

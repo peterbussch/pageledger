@@ -13,6 +13,8 @@ from typing import Any
 
 import yaml
 
+from .artifacts import render_audit_markdown
+
 REQUIRED_ARTIFACTS = {
     "config_snapshot",
     "route_map",
@@ -418,6 +420,26 @@ def verify_run(run_dir: Path) -> dict[str, Any]:
                 page_id=page_id,
                 artifact=raw_name,
             )
+        else:
+            expected_raw_hash = result.get("raw_sha256")
+            if expected_raw_hash is None:
+                _add(
+                    warnings,
+                    "legacy_evidence_incomplete",
+                    f"Provenance lacks a raw artifact hash for {page_id}",
+                    page_id=page_id,
+                )
+            elif (
+                not isinstance(expected_raw_hash, str)
+                or _sha256(raw_path) != expected_raw_hash
+            ):
+                _add(
+                    errors,
+                    "raw_artifact_hash_mismatch",
+                    f"Raw artifact SHA-256 differs from provenance for {page_id}",
+                    page_id=page_id,
+                    artifact=raw_name,
+                )
 
     for page_id, entry in quality.items():
         _check_schema(entry, schema_version, errors, "quality.jsonl", page_id)
@@ -508,6 +530,17 @@ def verify_run(run_dir: Path) -> dict[str, Any]:
                     expected=summary.get("pages_quarantined"),
                     actual=len(quarantined),
                 )
+        audit_markdown = loaded.get("audit_md")
+        if (
+            isinstance(audit_markdown, str)
+            and audit_markdown != render_audit_markdown(audit)
+        ):
+            _add(
+                errors,
+                "audit_render_mismatch",
+                "audit.md is not the current rendering of audit.json",
+                artifact=paths["audit_md"].name,
+            )
 
     rerun = loaded.get("rerun_manifest")
     if isinstance(rerun, dict):

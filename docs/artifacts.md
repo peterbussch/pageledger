@@ -139,6 +139,10 @@ strings such as `rerun_if:grade_below` and
 confidence, including real confidence from `pageledger classify`; null still
 means the classifier could not make a confident decision or no classifier
 ran.
+`verify-run` regenerates the Markdown rendering in memory and fails when
+`audit.md` is stale or edited. It also verifies `result.raw_sha256` for current
+provenance lines, warning rather than failing solely because an older
+schema-0.1 line predates raw-output digests.
 Spec: [`audit-spec.md`](audit-spec.md).
 
 `rerun-manifest.yml` records what to do next. It is an executable list of flagged

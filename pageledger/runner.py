@@ -527,6 +527,7 @@ def run(
                 else json.dumps(result.content, ensure_ascii=False, allow_nan=False)
             )
             (out_dir / raw_artifact).write_text(raw_text, encoding="utf-8")
+            raw_sha256 = _sha256_path(out_dir / raw_artifact)
             page_tokens = usage.get("tokens")
             page_cost, page_cost_basis = _derive_cost(
                 usage,
@@ -600,6 +601,7 @@ def run(
                     result=result,
                     usage=usage,
                     raw_artifact=raw_artifact,
+                    raw_sha256=raw_sha256,
                     prompt_hash=prompt_hash,
                     timestamp=extraction_started_at,
                     extraction_seconds=extraction_seconds,
@@ -1234,6 +1236,7 @@ def _build_provenance_entry(
     result: Any,
     usage: dict[str, Any],
     raw_artifact: Path,
+    raw_sha256: str,
     prompt_hash: str,
     timestamp: str,
     extraction_seconds: float | None,
@@ -1272,6 +1275,7 @@ def _build_provenance_entry(
             "confidence": result.confidence,
             "warnings": result.warnings,
             "raw_artifact": raw_artifact.as_posix(),
+            "raw_sha256": raw_sha256,
         },
         "usage": usage,
         "metrics": usage,

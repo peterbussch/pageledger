@@ -359,6 +359,7 @@ def test_provenance_execute_success(tmp_path: Path) -> None:
     out_dir = _run_pageledger(tmp_path, config_yaml=MINIMAL_CONFIG, inputs=[str(source)])
     entries = _validate_jsonl(out_dir / "provenance.jsonl", _provenance_schema, "provenance")
     assert len(entries) == 3
+    assert all(len(entry["result"]["raw_sha256"]) == 64 for entry in entries)
     manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
     assert len(entries) == manifest["summary"]["pages_extracted"]
 
