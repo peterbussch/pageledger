@@ -169,10 +169,14 @@ pageledger inspect-run runs/run-001/ --csv > pages.csv
 ```
 
 Summarizes a run directory: status, page counts, warnings, failures,
-review-queue size, records normalized, grade distribution, cost, artifact
-presence. `--csv` writes one row per page (page id, counts, confidence,
-warnings, grade, cost, timing) for triage in a spreadsheet. `--json` for
-the summary as JSON.
+review-queue size, records normalized, grade distributions grouped by evidence
+basis, cost, and artifact presence. Human output labels each distribution as
+`Grades (signals)`, `Grades (schema)`, or `Grades (unknown)` for legacy graded
+entries; it never merges these into an unlabeled headline. JSON retains the
+aggregate `grade_distribution` for compatibility and adds
+`grade_distribution_by_basis`. `--csv` writes one row per page (page id,
+counts, confidence, warnings, grade, grade basis, cost, timing) for triage in a
+spreadsheet. `--json` emits the summary as JSON.
 
 ## init-config
 

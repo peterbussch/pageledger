@@ -1002,6 +1002,9 @@ def test_inspect_run_reports_grades_and_csv_columns(tmp_path: Path) -> None:
     assert exit_code == 0
     report = json.loads(stdout)
     assert report["grade_distribution"]["D"] == 1
+    assert report["grade_distribution_by_basis"] == {
+        "schema_aware": {"A": 0, "B": 0, "C": 0, "D": 1, "F": 0}
+    }
     assert report["records_normalized"] == 1  # row kept; unmatched column is null
 
     exit_code, stdout, _ = _run_cli(["inspect-run", str(out_dir), "--csv"])
@@ -1013,4 +1016,5 @@ def test_inspect_run_reports_grades_and_csv_columns(tmp_path: Path) -> None:
 
     exit_code, stdout, _ = _run_cli(["inspect-run", str(out_dir)])
     assert exit_code == 0
-    assert "Grades: A=0 B=0 C=0 D=1 F=0" in stdout
+    assert "Grades (schema): A=0 B=0 C=0 D=1 F=0" in stdout
+    assert "\nGrades: " not in stdout

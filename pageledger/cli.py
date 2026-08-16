@@ -15,7 +15,7 @@ from .aligner import align_run
 from .classifier import classify
 from .compare import compare_runs, render_comparison
 from .doctor import build_doctor_report
-from .grading import GRADES
+from .grading import GRADES, grade_basis_label
 from .reports import inspect_run, run_pages_csv
 from .runner import rerun, run
 from .verify import render_verification, verify_run
@@ -330,9 +330,11 @@ def _print_inspect_report(report: dict) -> None:
         print(f"Pages not attempted: {report['pages_not_attempted']}")
     print(f"Review queue: {report['review_queue_count']}")
     print(f"Records normalized: {report['records_normalized']}")
-    distribution = report["grade_distribution"]
-    if distribution:
-        print("Grades: " + " ".join(f"{g}={distribution[g]}" for g in GRADES))
+    for basis, distribution in report["grade_distribution_by_basis"].items():
+        print(
+            f"Grades ({grade_basis_label(basis)}): "
+            + " ".join(f"{grade}={distribution[grade]}" for grade in GRADES)
+        )
     print(f"Cost known: {report['cost_known']}")
     if report["estimated_cost_usd"] is not None:
         print(f"Estimated cost USD: {report['estimated_cost_usd']}")
