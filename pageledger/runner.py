@@ -357,6 +357,7 @@ def run(
     pages_failed = 0
     pages_not_attempted = 0
     pages_skipped = 0
+    pages_routed_review = 0
     tokens_total = 0
     estimated_cost_usd = 0.0
     cost_is_partial = False
@@ -422,6 +423,7 @@ def run(
             action = cast(str, page["action"])
             if action == "review":
                 review_queue.append(_review_queue_entry(page))
+                pages_routed_review += 1
             if action == "skip":
                 pages_skipped += 1
             planned_pages.append((source, page))
@@ -701,7 +703,7 @@ def run(
 
     if failure_error:
         status = "failed"
-    elif dry_run or pages_failed:
+    elif dry_run or pages_failed or pages_routed_review:
         status = "partial"
     else:
         status = "completed"
@@ -724,6 +726,7 @@ def run(
         pages_failed=pages_failed,
         pages_not_attempted=pages_not_attempted,
         pages_skipped=pages_skipped,
+        pages_routed_review=pages_routed_review,
         pages_quarantined=len(quarantined_page_ids),
         records_normalized=sum(
             len(alignment["records"]) for alignment in alignments.values()
@@ -817,6 +820,7 @@ def run(
                 "pages_total": pages_total,
                 "pages_extracted": pages_extracted,
                 "pages_skipped": pages_skipped,
+                "pages_routed_review": pages_routed_review,
             }
         ]
     )

@@ -94,6 +94,7 @@ def inspect_run(run_dir: Path) -> dict[str, Any]:
         "pages_total": summary.get("pages_total", 0),
         "pages_extracted": summary.get("pages_extracted", 0),
         "pages_skipped": summary.get("pages_skipped", 0),
+        "pages_routed_review": summary.get("pages_routed_review", 0),
         "pages_not_attempted": summary.get("pages_not_attempted", 0),
         "provenance_count": provenance_count,
         "quality_warning_pages": quality_warning_pages,

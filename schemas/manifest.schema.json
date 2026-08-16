@@ -146,6 +146,11 @@
         "pages_failed": { "type": "integer", "minimum": 0 },
         "pages_not_attempted": { "type": "integer", "minimum": 0 },
         "pages_skipped": { "type": "integer", "minimum": 0 },
+        "pages_routed_review": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Pages whose route action was review, so extraction was deliberately deferred. Optional for compatibility with older schema-0.1 manifests; current writers always emit it."
+        },
         "pages_quarantined": { "type": "integer", "minimum": 0 },
         "records_normalized": { "type": "integer", "minimum": 0 },
         "estimated_cost_usd": { "type": "number" },

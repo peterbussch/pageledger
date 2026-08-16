@@ -104,8 +104,10 @@ stays short because this exists.
   improvement/resolution totals are reported only when source identity and
   adapter match; cross-adapter and changed-source transitions are unranked.
 - `pageledger verify-run`: checks cross-artifact ledger coherence, identifiers,
-  counts, hashes, and references without claiming OCR correctness or requiring
-  a runtime JSON Schema dependency.
+  route-action/page-bucket counts, hashes, and references without claiming OCR
+  correctness or requiring a runtime JSON Schema dependency. Current manifests
+  count review-only routes separately so incomplete extraction coverage cannot
+  hide behind extracted/skipped totals.
 - `pageledger inspect-run --csv`: one row per page (counts, confidence,
   warnings, grade, cost, timing) for spreadsheet triage.
 - Cost provenance: `cost.json` records `cost_basis` (`adapter_reported`,

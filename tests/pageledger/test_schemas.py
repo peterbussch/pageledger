@@ -598,6 +598,7 @@ def test_manifest_summary_keys(tmp_path: Path) -> None:
     out_dir = _run_pageledger(tmp_path, config_yaml=MINIMAL_CONFIG, inputs=[str(source)])
     manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
     required_summary = {"pages_total", "pages_extracted", "pages_skipped",
+                        "pages_routed_review",
                         "pages_quarantined", "records_normalized", "estimated_cost_usd",
                         "quality_warning_pages"}
     assert required_summary <= set(manifest["summary"].keys())

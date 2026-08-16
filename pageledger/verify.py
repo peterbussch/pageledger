@@ -242,6 +242,69 @@ def verify_run(run_dir: Path) -> dict[str, Any]:
             actual=counts["routed_pages"],
         )
 
+    routed_review_count = sum(
+        page.get("action") == "review" for page in route_pages.values()
+    )
+    skipped_page_count = sum(
+        page.get("action") == "skip" for page in route_pages.values()
+    )
+    if "pages_routed_review" not in summary:
+        _add(
+            warnings,
+            "legacy_evidence_incomplete",
+            "Manifest predates pages_routed_review accounting",
+        )
+    elif summary.get("pages_routed_review") != routed_review_count:
+        _add(
+            errors,
+            "routed_review_count_mismatch",
+            "Review-route count does not match manifest.summary.pages_routed_review",
+            expected=summary.get("pages_routed_review"),
+            actual=routed_review_count,
+        )
+    if summary.get("pages_skipped") != skipped_page_count:
+        _add(
+            errors,
+            "skipped_page_count_mismatch",
+            "Skip-route count does not match manifest.summary.pages_skipped",
+            expected=summary.get("pages_skipped"),
+            actual=skipped_page_count,
+        )
+    if "pages_routed_review" in summary:
+        accounting_values = {
+            "pages_total": summary.get("pages_total"),
+            "pages_extracted": summary.get("pages_extracted"),
+            "pages_failed": summary.get("pages_failed", 0),
+            "pages_not_attempted": summary.get("pages_not_attempted", 0),
+            "pages_skipped": summary.get("pages_skipped"),
+            "pages_routed_review": summary.get("pages_routed_review"),
+        }
+        if all(
+            isinstance(value, int) and not isinstance(value, bool)
+            for value in accounting_values.values()
+        ):
+            accounted = sum(
+                value
+                for key, value in accounting_values.items()
+                if key != "pages_total"
+            )
+            if accounting_values["pages_total"] != accounted:
+                _add(
+                    errors,
+                    "page_accounting_mismatch",
+                    "Manifest page buckets do not sum to pages_total",
+                    expected=accounting_values["pages_total"],
+                    actual=accounted,
+                )
+        if routed_review_count and manifest.get("status") == "completed":
+            _add(
+                errors,
+                "run_status_mismatch",
+                "A run with review-only routes cannot have completed status",
+                expected="partial",
+                actual="completed",
+            )
+
     _check_external_sources(manifest_inputs, route_sources, warnings)
 
     provenance_entries = loaded.get("provenance")
@@ -268,6 +331,13 @@ def verify_run(run_dir: Path) -> dict[str, Any]:
                 errors,
                 "unknown_page_reference",
                 f"Provenance references unrouted page {page_id}",
+                page_id=page_id,
+            )
+        elif route_page.get("action") in {"review", "skip"}:
+            _add(
+                errors,
+                "route_evidence_mismatch",
+                f"Provenance exists for non-extraction route {page_id}",
                 page_id=page_id,
             )
         source = entry.get("source")

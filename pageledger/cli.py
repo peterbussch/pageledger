@@ -322,7 +322,8 @@ def _print_inspect_report(report: dict) -> None:
     print(f"Execution mode: {report['execution_mode']}")
     print(f"Pages: {report['pages_total']} total / "
           f"{report['pages_extracted']} extracted / "
-          f"{report['pages_skipped']} skipped")
+          f"{report['pages_skipped']} skipped / "
+          f"{report['pages_routed_review']} routed to review")
     print(f"Quality warnings: {report['quality_warning_pages']}")
     print(f"Failed pages: {report['failed_page_count']}")
     if report["pages_not_attempted"]:
@@ -455,7 +456,11 @@ def _cmd_run(args: argparse.Namespace) -> int:
             print(f"Config warnings ({len(config_warnings)}):")
             for w in config_warnings:
                 print(f"  - {w}")
-    return 1 if result["status"] == "partial" and not result["dry_run"] else 0
+    summary = result["summary"]
+    execution_failed = bool(
+        summary.get("pages_failed") or summary.get("pages_not_attempted")
+    )
+    return 1 if result["status"] == "partial" and execution_failed else 0
 
 
 # -- classify -----------------------------------------------------------------

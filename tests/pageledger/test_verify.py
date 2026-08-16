@@ -157,6 +157,25 @@ def test_verify_run_checks_route_page_and_quality_totals(tmp_path):
     )
 
 
+def test_verify_run_enforces_route_action_accounting(tmp_path):
+    from pageledger.verify import verify_run
+
+    out_dir, _ = _run(tmp_path)
+    manifest_path = out_dir / "manifest.json"
+    manifest = json.loads(manifest_path.read_text())
+    manifest["summary"]["pages_routed_review"] = 1
+    manifest["summary"]["pages_skipped"] = 1
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    report = verify_run(out_dir)
+
+    assert {
+        "routed_review_count_mismatch",
+        "skipped_page_count_mismatch",
+        "page_accounting_mismatch",
+    } <= _codes(report, "errors")
+
+
 def test_verify_run_checks_provenance_quality_raw_and_normalized(tmp_path):
     from pageledger.verify import verify_run
 

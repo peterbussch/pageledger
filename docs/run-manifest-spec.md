@@ -67,6 +67,7 @@ is the durable pointer to every other artifact in the run directory.
     "pages_total": 240,
     "pages_extracted": 212,
     "pages_skipped": 21,
+    "pages_routed_review": 7,
     "pages_quarantined": 0,
     "records_normalized": 0,
     "estimated_cost_usd": 12.44
@@ -95,10 +96,12 @@ is the durable pointer to every other artifact in the run directory.
 | `routing` | object | Optional. Present when `--routes` supplied a reviewed map: `source_path`, `sha256`, and the source map's `source_run_id`. |
 | `escalation` | object | Optional. Present when `run.adapter_order` selected the effective adapter: `adapter_order` is the ordered list of adapter names/import strings and `step` is this run's zero-based rerun generation. |
 
-Required `summary` keys are `pages_total`, `pages_extracted`,
-`pages_skipped`, `pages_quarantined`, `records_normalized` (rows written
+Current writers emit `pages_total`, `pages_extracted`, `pages_skipped`,
+`pages_routed_review`, `pages_quarantined`, `records_normalized` (rows written
 to `normalized/` by the schema aligner), `estimated_cost_usd`, and
-`quality_warning_pages`.
+`quality_warning_pages`. `pages_routed_review` remains optional in the schema
+so pre-hardening schema-0.1 manifests can still be read; `verify-run` warns
+when that legacy evidence is absent.
 
 Runs with failures add `pages_failed`; runs halted before every extraction
 action was attempted add `pages_not_attempted`. They are omitted when zero so
@@ -107,8 +110,23 @@ older successful 0.1 artifacts keep their compact shape.
 `pages_quarantined` counts distinct pages that matched at least one
 `quarantine_if` rule.
 
-Use `partial` for dry runs and other runs that intentionally produce only part
-of the extraction lifecycle.
+`pages_routed_review` counts pages whose route action was `review`, so no
+extractor ran. It is disjoint from `pages_extracted`, `pages_skipped`,
+`pages_failed`, and `pages_not_attempted`. New manifests obey:
+
+```text
+pages_total = pages_extracted + pages_failed + pages_not_attempted
+            + pages_skipped + pages_routed_review
+```
+
+The audit review queue can be larger because post-extraction quality warnings
+also enter review; those pages remain part of `pages_extracted` and are not
+double-counted in `pages_routed_review`.
+
+Use `partial` for dry runs, runs with failures, and execute-mode runs that
+intentionally defer one or more pages through a `review` route. `completed`
+means every routed extraction/skip decision finished without a review-only gap;
+it does not claim extraction accuracy.
 
 ## Adapter escalation
 

@@ -436,9 +436,10 @@ taxonomy:
     manifest = json.loads((tmp_path / "run" / "manifest.json").read_text(encoding="utf-8"))
     assert manifest["summary"] == {
         "pages_total": 1,
-        "pages_extracted": 0,
-        "pages_skipped": 1,
-        "pages_quarantined": 0,
+            "pages_extracted": 0,
+            "pages_skipped": 1,
+            "pages_routed_review": 0,
+            "pages_quarantined": 0,
         "records_normalized": 0,
         "estimated_cost_usd": 0.0,
         "quality_warning_pages": 0,
@@ -479,6 +480,8 @@ taxonomy:
     assert manifest["summary"]["pages_total"] == 1
     assert manifest["summary"]["pages_extracted"] == 0
     assert manifest["summary"]["pages_skipped"] == 0
+    assert manifest["summary"]["pages_routed_review"] == 1
+    assert manifest["status"] == "partial"
 
     audit = json.loads((out_dir / "audit.json").read_text(encoding="utf-8"))
     assert audit["review_queue"][0]["action"] == "review"
@@ -492,6 +495,7 @@ taxonomy:
     assert log_event["status"] == "run_complete"
     assert log_event["pages_extracted"] == 0
     assert log_event["pages_skipped"] == 0
+    assert log_event["pages_routed_review"] == 1
 
 
 def test_non_dry_run_rejects_unsupported_extraction_action_before_writing(tmp_path):
@@ -923,7 +927,7 @@ run:
     log_event = json.loads((out_dir / "run.log").read_text(encoding="utf-8"))
     assert log_event["status"] == "failed"
     assert log_event["error"]["status"] == "invalid_result"
-    assert "usage must be JSON-serializable" in log_event["error"]["message"]
+    assert log_event["error"]["message"] == "ValueError: <redacted>"
 
 
 def test_path_like_adapter_format_writes_failed_manifest_and_run_log(tmp_path, monkeypatch):
@@ -954,7 +958,7 @@ run:
     assert manifest["status"] == "failed"
     log_event = json.loads((out_dir / "run.log").read_text(encoding="utf-8"))
     assert log_event["status"] == "failed"
-    assert "format must contain only letters, numbers, and underscores" in log_event["error"]["message"]
+    assert log_event["error"]["message"] == "ValueError: <redacted>"
 
 
 def test_budget_cap_stops_run_after_observed_cost(tmp_path, monkeypatch):

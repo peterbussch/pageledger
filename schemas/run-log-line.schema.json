@@ -30,6 +30,7 @@
     "pages_total": { "type": "integer", "description": "Present on summary entries only." },
     "pages_extracted": { "type": "integer", "description": "Present on summary entries only." },
     "pages_skipped": { "type": "integer", "description": "Present on summary entries only." },
+    "pages_routed_review": { "type": "integer", "description": "Pages deliberately deferred by a review route. Present on summary entries only in current writers." },
     "attempt": { "type": "integer", "minimum": 1 },
     "max_retries": { "type": "integer", "minimum": 0 },
     "error": {
