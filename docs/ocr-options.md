@@ -15,7 +15,7 @@ providers.
 | Scanned PDF, plain text | `pdf_ocr` (Tesseract) | yes | free, plus compute | Image-only or noisy-layer scans where plain text is enough | Built-in adapter; needs poppler + Tesseract installed. `dpi`/`lang` via `run.adapter_options`. |
 | Baseline OCR preprocessing | OCRmyPDF + Tesseract | yes | free, plus compute | Producing a searchable PDF for other tools too | External preprocessing, then `pdf_text`. |
 | Local-LLM cleanup | Tesseract + local model (mlx_lm, llama.cpp, Ollama) | yes | free, plus compute | Fixing character-level OCR errors without sending pages anywhere | Custom adapter; see [`local_llm_cleanup_adapter.py`](../examples/local_llm_cleanup_adapter.py) or [`ollama_cleanup_adapter.py`](../examples/ollama_cleanup_adapter.py). |
-| Local document conversion | Docling | yes | free/open, plus compute | PDF/document conversion with layout-aware output | Custom adapter returning text, Markdown, or JSON. |
+| Local document conversion | Docling | yes | free/open, plus compute | PDF/document conversion with layout-aware output | Functional machine-level example in [`docling_adapter.py`](../examples/docling_adapter.py), returning page-level Markdown. |
 | Markdown/JSON extraction | Marker | yes | free/open, plus compute | Markdown, JSON, tables, equations, forms, images | Custom adapter returning Markdown or JSON. |
 | Local OCR/layout/tables | Surya | yes | free/open, often heavier compute | OCR, reading order, layout, table recognition | Custom adapter with `capabilities=("ocr", "layout", "tables", "local")`. |
 | Cloud OCR/document AI | User-chosen provider | no | provider-defined | Managed OCR, forms, tables, enterprise pipelines | Custom adapter with redacted env checks and configured pricing. |
@@ -39,6 +39,27 @@ New runs record the concrete built-in backend identity in per-page provenance:
 `pdf_text` includes the installed pypdf version; `pdf_ocr` includes Tesseract,
 Poppler/pdftoppm, DPI, and language. A custom OCR/VLM adapter should put the
 equivalent model/revision and material runtime settings in `ExtractionResult.model`.
+
+### Docling: standard first, VLM selectively
+
+Install the heavy Docling stack as a machine tool, not in PageLedger core:
+
+```bash
+uv tool install docling
+```
+
+In standard mode the example runs Docling once per source document and caches
+its structured result, because loading the standard models once per page is
+prohibitively expensive. In VLM mode it passes a one-page range for each page
+PageLedger actually requests; this makes selective reruns possible without
+converting the entire source. Start with `pipeline: standard` for local OCR,
+layout, and tables. Escalate selected difficult pages with `pipeline: vlm` and
+the dogfooded local preset (`smoldocling`). Remote services
+and external plugins remain disabled. Both lanes are uncalibrated extractors:
+inspect PageLedger's warnings and the rendered source rather than assuming that
+richer layout output is automatically more accurate. The VLM lane always emits
+`docling_vlm_uncalibrated`, so plausible-looking generative OCR cannot silently
+receive a no-review A grade from shape signals alone.
 
 For a worked example of steps 2–3 and the rerun loop on a real scanned
 document, see `docs/examples/jfk-scanned-archive.md` (including the

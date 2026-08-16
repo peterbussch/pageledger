@@ -6,6 +6,59 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to the artifact compatibility policy documented in
 `docs/run-manifest-spec.md` → Compatibility Policy.
 
+## 0.3.0a1 - 2026-08-16
+
+### Added
+
+- **Auditable local Docling example:** `examples/docling_adapter.py` invokes a
+  machine-level Docling installation without adding its ML stack to PageLedger
+  core. Standard mode converts once per document and derives page-level
+  Markdown; local VLM mode processes only requested pages. Provenance records
+  the Docling version, pipeline, VLM preset, and batch mode, while known visual
+  or table serialization losses become adapter-native warnings.
+- Raw extraction artifacts now carry SHA-256 identities in provenance and are
+  checked by `verify-run`. Current manifests and route maps record the
+  PageLedger package version; built-in PDF adapters record their effective
+  parser, OCR, renderer, and material runtime settings.
+- Latin-script joined/run-on hidden text now produces explicit quality and
+  classifier evidence instead of silently receiving an A signals grade.
+
+### Fixed
+
+- Adapter-controlled exception messages, stdout, and stderr are omitted from
+  default terminal/log error envelopes, preventing heuristic redaction misses
+  from becoming secret disclosures.
+- Adapter-native result warnings now enter `quality.jsonl`, grading, and audit
+  routing as well as provenance; backends can no longer report known partial
+  output without affecting review.
+- Review-only routes have explicit accounting, grade distributions are labeled
+  by evidence basis, and audit Markdown is verified as a rendering of
+  `audit.json` rather than an independent source of truth.
+- `compare-runs` now ranks transitions only when the full effective extractor
+  identity matches, so different models or pipelines behind one adapter name
+  remain visible but unranked.
+- Reruns verify the parent ledger and source bytes before extraction, rederive
+  their executable plan, preserve the source document page count, and record
+  durable lineage depth.
+
+### Release process
+
+- Package publication is now a manual, tag-only, environment-gated workflow
+  that verifies exact release metadata and smoke-tests the exact built wheel
+  before TestPyPI or PyPI upload. CI keeps a frozen dependency lane alongside
+  latest-dependency coverage, with third-party actions pinned to commit SHAs.
+- The tracked Archivo font subset now carries its upstream OFL and copyright
+  notice inside the brand archive; distributable third-party notices are
+  included while brand source assets remain excluded from package archives.
+
+### Compatibility
+
+- Artifact schema version remains `0.1`. New fields are additive and optional
+  for older artifacts. Current verification is stricter for raw-file tampering,
+  rerun lineage/source drift, and audit-render divergence.
+- Core still depends only on PyYAML. Docling remains an optional machine-level
+  example integration and is not added to PageLedger dependencies or `uv.lock`.
+
 ## 0.2.0 - 2026-07-17
 
 ### Added

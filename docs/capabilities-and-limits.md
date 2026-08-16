@@ -105,7 +105,8 @@ stays short because this exists.
 - `pageledger compare-runs`: page-by-page diff of two runs. Character and
   word deltas, warning and grade transitions, adapters, and cost. Directional
   improvement/resolution totals are reported only when source identity and
-  adapter match; cross-adapter and changed-source transitions are unranked.
+  the complete effective extractor identity match; changed-source,
+  cross-adapter, and same-adapter/different-model transitions are unranked.
 - `pageledger verify-run`: checks cross-artifact ledger coherence, identifiers,
   route-action/page-bucket counts, hashes, and references without claiming OCR
   correctness or requiring a runtime JSON Schema dependency. Current manifests
@@ -193,9 +194,10 @@ Details and examples live in [`design.md`](design.md).
   or large rerun expansion queues review; it does not prove that an adapter
   hallucinated, and absence of a warning does not prove faithful output.
 - Grades are deterministic summaries of that same evidence, not accuracy.
-  A grade is only comparable within one adapter: confidence is
-  uncalibrated across engines, so an `A` from one extractor and a `B`
-  from another are not orderable claims. A `signals_only` grade from an
+  A grade is only comparable when the effective extractor identity matches:
+  confidence is uncalibrated across engines, versions, models, and prompts, so
+  an `A` from one extractor and a `B` from another are not orderable claims. A
+  `signals_only` grade from an
   adapter that reports no confidence rests on warning counts alone. The
   `(signals)`/`(schema)` label exists so that weaker evidence is never
   mistaken for schema-checked records.

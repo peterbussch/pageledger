@@ -145,9 +145,11 @@ pageledger compare-runs runs/run-001/ runs/run-002/
 Page-by-page diff of two runs: character, word, and extraction-time deltas;
 warning and grade transitions; adapters; provenance identity; and cost.
 Directional totals such as “improved” and “resolved” are counted only when
-source bytes, source page, and adapter match. Cross-adapter, changed-source,
-and legacy-unknown transitions are shown but unranked. `--json` exposes the
-comparability evidence for every shared page id.
+source bytes, source page, and the effective extractor identity match. That
+identity includes the adapter and version, model, prompt hash, determinism,
+input/output types, and capabilities. Changed-source, cross-adapter,
+same-adapter/different-extractor, and legacy-unknown transitions are shown but
+unranked. `--json` exposes the comparability evidence for every shared page id.
 
 ## verify-run
 

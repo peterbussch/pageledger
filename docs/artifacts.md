@@ -93,7 +93,7 @@ a warning list (`empty_text`, `low_confidence`, `instruction_echo`,
 `output_inflation`, and others), and a grade
 (`A`–`F` with `grade_basis` and per-axis detail). These are diagnostics
 for a human, not accuracy scores; a grade is a deterministic summary of
-this evidence, comparable only within one adapter.
+this evidence, comparable only when the effective extractor identity matches.
 Spec: [`provenance-spec.md`](provenance-spec.md) (companion section).
 
 `normalized/` holds what the schema aligner extracted, one

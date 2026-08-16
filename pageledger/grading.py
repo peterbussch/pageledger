@@ -2,10 +2,10 @@
 
 A grade is a deterministic summary of recorded evidence, not a calibrated
 accuracy estimate. Confidence values come from uncalibrated extractors, so
-grades are only comparable within one adapter. Every rendered surface
-labels the basis — ``A (signals)`` and ``A (schema)`` are never the same
-string — because a page graded on text signals alone carries far weaker
-evidence than one whose records passed schema checks.
+grades are only comparable when the effective extractor identity matches.
+Every rendered surface labels the basis — ``A (signals)`` and ``A (schema)``
+are never the same string — because a page graded on text signals alone
+carries far weaker evidence than one whose records passed schema checks.
 """
 
 from __future__ import annotations

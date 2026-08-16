@@ -26,7 +26,7 @@
     },
     "warnings": {
       "type": "array",
-      "description": "Quality warnings include empty_text, short_text, replacement_characters, control_characters, suspicious_symbol_density, fragmented_text, joined_text, suspicious_embedded_text_delta, historical_orthography, low_confidence, instruction_echo, and output_inflation.",
+      "description": "Adapter-native warnings plus PageLedger-derived quality warnings such as empty_text, short_text, replacement_characters, control_characters, suspicious_symbol_density, fragmented_text, joined_text, suspicious_embedded_text_delta, historical_orthography, low_confidence, instruction_echo, and output_inflation.",
       "items": { "type": "string" }
     },
     "text_quality": {

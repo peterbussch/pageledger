@@ -15,8 +15,8 @@ def compare_runs(run_dir_a: Path, run_dir_b: Path) -> dict[str, Any]:
 
     Pages line up on ``page_id``, but changes are ranked only when provenance
     proves that both entries refer to the same source bytes, source page, and
-    adapter. Reused identifiers and legacy runs with incomplete evidence stay
-    visible as incomparable pages.
+    effective extractor identity. Reused identifiers and legacy runs with
+    incomplete evidence stay visible as incomparable pages.
     """
     a = _load_run(run_dir_a, label="A")
     b = _load_run(run_dir_b, label="B")
@@ -42,14 +42,22 @@ def compare_runs(run_dir_a: Path, run_dir_b: Path) -> dict[str, Any]:
         source_status = _source_status(source_a, source_b)
         if source_status in {"changed", "different"}:
             identity_mismatches.append(page_id)
-        adapter_a = qa.get("adapter") or provenance_a.get("extractor", {}).get("adapter")
-        adapter_b = qb.get("adapter") or provenance_b.get("extractor", {}).get("adapter")
+        extractor_a = provenance_a.get("extractor", {})
+        extractor_b = provenance_b.get("extractor", {})
+        adapter_a = qa.get("adapter") or extractor_a.get("adapter")
+        adapter_b = qb.get("adapter") or extractor_b.get("adapter")
+        effective_extractor_a = _effective_extractor_identity(adapter_a, extractor_a)
+        effective_extractor_b = _effective_extractor_identity(adapter_b, extractor_b)
         if source_status in {"changed", "different"}:
             comparability = "incomparable_source"
         elif source_status == "unknown" or not adapter_a or not adapter_b:
             comparability = "incomparable_unknown"
         elif adapter_a != adapter_b:
             comparability = "incomparable_adapter"
+        elif effective_extractor_a is None or effective_extractor_b is None:
+            comparability = "incomparable_unknown"
+        elif effective_extractor_a != effective_extractor_b:
+            comparability = "incomparable_extractor"
         else:
             comparability = "comparable"
             pages_comparable += 1
@@ -102,6 +110,8 @@ def compare_runs(run_dir_a: Path, run_dir_b: Path) -> dict[str, Any]:
                 "source_status": source_status,
                 "adapter_a": adapter_a,
                 "adapter_b": adapter_b,
+                "effective_extractor_a": effective_extractor_a,
+                "effective_extractor_b": effective_extractor_b,
                 "comparability": comparability,
             }
         )
@@ -281,6 +291,57 @@ def _source_status(source_a: Any, source_b: Any) -> str:
     if isinstance(path_a, str) and isinstance(path_b, str) and path_a == path_b:
         return "changed"
     return "different"
+
+
+def _effective_extractor_identity(
+    adapter: Any, extractor: Any
+) -> dict[str, Any] | None:
+    """Return normalized evidence that two outputs used the same extractor."""
+    if not isinstance(adapter, str) or not adapter or not isinstance(extractor, dict):
+        return None
+
+    required = (
+        "adapter_version",
+        "model",
+        "prompt_hash",
+        "deterministic",
+        "input_types",
+        "output_types",
+        "capabilities",
+    )
+    if any(field not in extractor for field in required):
+        return None
+
+    adapter_version = extractor["adapter_version"]
+    model = extractor["model"]
+    prompt_hash = extractor["prompt_hash"]
+    deterministic = extractor["deterministic"]
+    if not isinstance(adapter_version, str) or not adapter_version:
+        return None
+    if model is not None and not isinstance(model, str):
+        return None
+    if prompt_hash is not None and not isinstance(prompt_hash, str):
+        return None
+    if not isinstance(deterministic, bool):
+        return None
+
+    normalized_lists: dict[str, list[str]] = {}
+    for field in ("input_types", "output_types", "capabilities"):
+        values = extractor[field]
+        if not isinstance(values, list) or any(
+            not isinstance(value, str) for value in values
+        ):
+            return None
+        normalized_lists[field] = sorted(values)
+
+    return {
+        "adapter": adapter,
+        "adapter_version": adapter_version,
+        "model": model,
+        "prompt_hash": prompt_hash,
+        "deterministic": deterministic,
+        **normalized_lists,
+    }
 
 
 def _cost_line(summary: dict[str, Any]) -> str:

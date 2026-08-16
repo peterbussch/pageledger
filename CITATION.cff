@@ -20,5 +20,5 @@ identifiers:
     value: 10.5281/zenodo.21340651
     description: "Concept DOI resolving to the latest archived version of PageLedger."
 repository-code: "https://github.com/peterbussch/pageledger"
-version: "0.2.0"
-date-released: "2026-07-17"
+version: "0.3.0a1"
+date-released: "2026-08-16"

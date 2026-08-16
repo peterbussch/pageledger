@@ -230,7 +230,7 @@ def test_dry_run_writes_auditable_artifacts(tmp_path):
 
 
 def test_package_exports_release_version():
-    assert pageledger.__version__ == "0.2.0"
+    assert pageledger.__version__ == "0.3.0a1"
 
 
 def test_dry_run_expands_directory_inputs_in_stable_order(tmp_path):

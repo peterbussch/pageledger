@@ -298,6 +298,63 @@ def test_compare_cross_adapter_changes_are_unranked(tmp_path):
     assert report["grades_improved_total"] == 0
 
 
+def test_compare_same_adapter_different_model_is_unranked(tmp_path):
+    """A shared adapter name must not make different model pipelines rankable."""
+    from pageledger.compare import compare_runs
+
+    source = tmp_path / "doc.txt"
+    source.write_text("short\n", encoding="utf-8")
+    out_a = _run([source], tmp_path, "a")
+    out_b = _run([source], tmp_path, "b")
+
+    provenance_path = out_b / "provenance.jsonl"
+    provenance = [
+        json.loads(line) for line in provenance_path.read_text().splitlines()
+    ]
+    provenance[0]["extractor"]["model"] = "alternate-model"
+    provenance_path.write_text(json.dumps(provenance[0]) + "\n", encoding="utf-8")
+
+    quality_path = out_b / "quality.jsonl"
+    quality = [json.loads(line) for line in quality_path.read_text().splitlines()]
+    quality[0].update(warnings=[], grade="A")
+    quality_path.write_text(json.dumps(quality[0]) + "\n", encoding="utf-8")
+
+    report = compare_runs(out_a, out_b)
+
+    page = report["pages"][0]
+    assert page["adapter_a"] == page["adapter_b"] == "text"
+    assert page["effective_extractor_a"]["model"] is None
+    assert page["effective_extractor_b"]["model"] == "alternate-model"
+    assert page["comparability"] == "incomparable_extractor"
+    assert report["pages_comparable_total"] == 0
+    assert report["warnings_resolved_total"] == 0
+    assert report["grades_improved_total"] == 0
+
+
+def test_compare_missing_extractor_identity_evidence_is_unknown(tmp_path):
+    from pageledger.compare import compare_runs
+
+    source = tmp_path / "doc.txt"
+    source.write_text("one clean page of text\n", encoding="utf-8")
+    out_a = _run([source], tmp_path, "a")
+    out_b = _run([source], tmp_path, "b")
+
+    provenance_path = out_a / "provenance.jsonl"
+    provenance = [
+        json.loads(line) for line in provenance_path.read_text().splitlines()
+    ]
+    del provenance[0]["extractor"]["model"]
+    provenance_path.write_text(json.dumps(provenance[0]) + "\n", encoding="utf-8")
+
+    report = compare_runs(out_a, out_b)
+
+    page = report["pages"][0]
+    assert page["source_status"] == "same"
+    assert page["effective_extractor_a"] is None
+    assert page["comparability"] == "incomparable_unknown"
+    assert report["pages_incomparable_total"] == 1
+
+
 def test_compare_legacy_missing_provenance_is_unknown(tmp_path):
     from pageledger.compare import compare_runs
 

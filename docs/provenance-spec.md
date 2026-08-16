@@ -134,7 +134,7 @@ not a calibrated accuracy score. Fields:
 | `word_count` | integer | ✅ | no | Count of Unicode letter tokens; combining marks remain attached to their base-letter token. |
 | `confidence` | number or null | ❌ | yes | Adapter-reported page confidence, 0–1. Emitted by current runs; optional so original 0.1 lines remain valid. |
 | `confidence_detail` | object or null | ❌ | yes | Engine-native confidence evidence. Emitted by current runs; optional for original 0.1 compatibility. |
-| `warnings` | array of strings | ✅ | no | Quality warnings (see taxonomy below). |
+| `warnings` | array of strings | ✅ | no | Adapter-native warnings plus PageLedger-derived quality warnings (see taxonomy below). Adapter warnings are also retained in the provenance result. |
 | `text_quality` | object | ✅ | no | Sub-metrics (see below). |
 | `embedded_text_comparison` | object | ❌ | yes | Comparison with PDF embedded text layer. Null for non-PDF sources. |
 | `output_integrity` | object | ❌ | no | Conservative chat-template-marker and parent-rerun size evidence. Present on new 0.1.4 quality lines; optional so older lines remain valid. |
@@ -187,7 +187,7 @@ not garble.
 
 | Warning | Trigger |
 |---|---|
-| `empty_text` | `character_count == 0`. |
+| `empty_text` | Output contains no Unicode letters or digits (including truly empty, whitespace-only, and OCR-speck/punctuation-only output). |
 | `short_text` | `character_count < 10`. |
 | `replacement_characters` | `replacement_character_count > 0`. |
 | `control_characters` | `control_character_count > 0`. |

@@ -77,6 +77,13 @@ Non-English documents: set `lang` and `dpi` in the config
 visible). See [`docs/multilingual-ocr.md`](docs/multilingual-ocr.md) for a
 worked Cyrillic example, including what the signals catch on an 1850 scan.
 
+For layout-aware tables or a fully local VLM escalation, install Docling as a
+machine tool (`uv tool install docling`) and use the functional
+[`examples/docling_adapter.py`](examples/docling_adapter.py) custom adapter.
+It keeps Docling's ML dependencies out of PageLedger core and records the exact
+Docling/pipeline identity in page provenance; see
+[`docs/adapter-protocol.md`](docs/adapter-protocol.md#local-docling-example).
+
 ## How a run works
 
 ```mermaid

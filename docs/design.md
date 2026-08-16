@@ -263,5 +263,6 @@ not be the default first-use experience. That stays `pageledger run`.
 - How should quality scores be calibrated across extractors that do not
   expose comparable confidences? (0.1.3 answers this by *labeling*, not
   calibrating. Every rendered grade carries its basis, `A (signals)` or
-  `A (schema)`, and the docs state that grades are only comparable within
-  one adapter. True cross-extractor calibration remains open.)
+  `A (schema)`, and the docs state that grades are only comparable when the
+  effective extractor identity matches. True cross-extractor calibration
+  remains open.)

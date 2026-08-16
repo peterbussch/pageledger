@@ -25,7 +25,8 @@ artifact, TestPyPI rehearsal, and production approval come first.
    lists. No run directories, PDFs, rendered pages, credentials, planning
    notes, or local research corpora belong in the public commit or packages.
 5. Merge the reviewed release commit to `main`, then create and push an
-   annotated (preferably signed) `vX.Y.Z` tag pointing at that exact commit.
+   annotated (preferably signed) version tag such as `vX.Y.Z` or `vX.Y.ZaN`
+   pointing at that exact commit.
 
 The release checker fails if the tag, package/runtime versions, citation,
 changelog date, or committed lock disagree.

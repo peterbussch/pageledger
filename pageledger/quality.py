@@ -34,8 +34,11 @@ def _build_quality_entry(
     character_count = len(text)
     token_lengths = _alphabetic_token_lengths(text)
     word_count = len(token_lengths)
-    warnings: list[str] = []
-    if character_count == 0:
+    # Adapter-native warnings are quality evidence, not provenance-only notes.
+    # Preserve them verbatim so a backend can surface partial or structurally
+    # incomplete output to grading and the audit queue.
+    warnings: list[str] = list(result.warnings)
+    if not any(character.isalnum() for character in text):
         warnings.append("empty_text")
     elif character_count < 10:
         warnings.append("short_text")
@@ -74,6 +77,7 @@ def _build_quality_entry(
         }
         if embedded_chars > 0 and (ratio is not None and (ratio < 0.5 or ratio > 1.8)):
             warnings.append("suspicious_embedded_text_delta")
+    warnings = list(dict.fromkeys(warnings))
     return {
         "schema_version": schema_version,
         "page_id": page["page_id"],
