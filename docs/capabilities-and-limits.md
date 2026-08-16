@@ -68,8 +68,9 @@ stays short because this exists.
   failure circuit breaker and failed/not-attempted pages added to rerun work.
 - `pageledger rerun`: re-extracts exactly the pages listed in a previous
   run's rerun manifest (typically with a stronger adapter), preserving page
-  ids, recording parent lineage, enforcing `max_rerun_depth`, and warning
-  if a source file changed since the parent run.
+  ids, recording parent lineage, enforcing `max_rerun_depth`, re-deriving the
+  queue from parent evidence, and refusing changed source bytes or edited
+  executable plans before creating the child run.
 - Multi-adapter escalation chains through `run.adapter_order`. Generation zero
   uses the first adapter, each explicit `pageledger rerun` advances to the next,
   and manifests record the selected step and planned next adapter. Exhausting

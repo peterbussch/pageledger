@@ -271,6 +271,21 @@ def test_verify_run_checks_audit_rerun_and_cost_references(tmp_path):
     } <= _codes(report, "errors")
 
 
+def test_verify_run_rejects_edited_rerun_plan(tmp_path):
+    from pageledger.verify import verify_run
+
+    out_dir, _ = _run(tmp_path)
+    rerun_path = out_dir / "rerun-manifest.yml"
+    rerun = yaml.safe_load(rerun_path.read_text())
+    rerun["items"][0]["reason"] = "manual_override"
+    rerun_path.write_text(yaml.safe_dump(rerun), encoding="utf-8")
+
+    report = verify_run(out_dir)
+
+    assert report["status"] == "fail"
+    assert "rerun_plan_mismatch" in _codes(report, "errors")
+
+
 def test_verify_run_warns_when_external_source_is_missing(tmp_path):
     from pageledger.verify import verify_run
 

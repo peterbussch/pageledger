@@ -13,7 +13,7 @@ from typing import Any
 
 import yaml
 
-from .artifacts import render_audit_markdown
+from .artifacts import build_rerun_manifest, render_audit_markdown
 
 REQUIRED_ARTIFACTS = {
     "config_snapshot",
@@ -400,6 +400,7 @@ def verify_run(run_dir: Path) -> dict[str, Any]:
                 page_id=page_id,
             )
             continue
+        assert isinstance(result, dict)
         raw_path = (root / raw_name).resolve()
         raw_references.add(raw_path)
         if raw_path.stem != page_id:
@@ -565,6 +566,21 @@ def verify_run(run_dir: Path) -> dict[str, Any]:
         else:
             counts["rerun_references"] = len(items)
             _check_references(items, route_pages, errors, paths["rerun_manifest"].name)
+        if (
+            isinstance(config, dict)
+            and isinstance(route, dict)
+            and isinstance(audit, dict)
+        ):
+            _check_rerun_plan(
+                rerun,
+                manifest,
+                config,
+                route,
+                audit,
+                quality,
+                errors,
+                warnings,
+            )
 
     cost = loaded.get("cost")
     if isinstance(cost, dict):
@@ -642,6 +658,120 @@ def verify_run(run_dir: Path) -> dict[str, Any]:
             )
 
     return _report(root, errors, warnings, counts)
+
+
+def _check_rerun_plan(
+    rerun: dict[str, Any],
+    manifest: dict[str, Any],
+    config: dict[str, Any],
+    route: dict[str, Any],
+    audit: dict[str, Any],
+    quality: dict[str, dict[str, Any]],
+    errors: list[dict[str, Any]],
+    warnings: list[dict[str, Any]],
+) -> None:
+    """Re-derive the executable queue from parent evidence and compare it."""
+    schema_version = manifest.get("schema_version")
+    run_id = manifest.get("run_id")
+    if not isinstance(schema_version, str) or not isinstance(run_id, str):
+        return
+    raw_depth = manifest.get("run_depth")
+    if isinstance(raw_depth, int) and not isinstance(raw_depth, bool) and raw_depth >= 0:
+        run_depth = raw_depth
+    elif manifest.get("parent_run_id") is None:
+        run_depth = 0
+        _add(
+            warnings,
+            "legacy_evidence_incomplete",
+            "Manifest predates durable run_depth recording; inferred generation 0",
+            artifact="manifest.json",
+        )
+    else:
+        raw_rerun_depth = rerun.get("rerun_depth")
+        if not isinstance(raw_rerun_depth, int) or isinstance(raw_rerun_depth, bool):
+            return
+        run_depth = raw_rerun_depth
+        _add(
+            warnings,
+            "legacy_evidence_incomplete",
+            "Rerun lineage predates durable manifest run_depth recording",
+            artifact="manifest.json",
+        )
+
+    run_config = config.get("run")
+    if not isinstance(run_config, dict):
+        run_config = {}
+    max_rerun_depth = run_config.get("max_rerun_depth", 2)
+    if (
+        not isinstance(max_rerun_depth, int)
+        or isinstance(max_rerun_depth, bool)
+        or max_rerun_depth < 0
+    ):
+        return
+
+    rerun_escalation: dict[str, Any] | None = None
+    manifest_escalation = manifest.get("escalation")
+    if isinstance(manifest_escalation, dict):
+        adapter_order = manifest_escalation.get("adapter_order")
+        if isinstance(adapter_order, list):
+            rerun_escalation = {
+                "adapter_order": adapter_order,
+                "step": run_depth,
+                "next_adapter": (
+                    adapter_order[run_depth + 1]
+                    if run_depth + 1 < len(adapter_order)
+                    else None
+                ),
+            }
+
+    try:
+        expected = build_rerun_manifest(
+            schema_version=schema_version,
+            run_id=run_id,
+            parent_run_id=run_id,
+            created_at=str(rerun.get("created_at", "")),
+            max_rerun_depth=max_rerun_depth,
+            reason=(
+                "dry_run"
+                if manifest.get("execution_mode") == "dry_run"
+                else "audit_policy"
+            ),
+            audit=audit,
+            route_map=route,
+            run_depth=run_depth,
+            grades={
+                page_id: entry["grade"]
+                for page_id, entry in quality.items()
+                if isinstance(entry.get("grade"), str)
+            },
+            escalation=rerun_escalation,
+        )
+    except (KeyError, TypeError, ValueError):
+        # Malformed audit/route evidence is already reported by the structural
+        # and reference checks; re-derivation must not turn it into a crash.
+        return
+    fields = (
+        "schema_version",
+        "run_id",
+        "parent_run_id",
+        "parent_manifest",
+        "rerun_depth",
+        "max_rerun_depth",
+        "reason",
+        "rerun_executable",
+        "rerun_status",
+        "items",
+        "escalation",
+    )
+    differing = [field for field in fields if rerun.get(field) != expected.get(field)]
+    if differing:
+        _add(
+            errors,
+            "rerun_plan_mismatch",
+            "Rerun manifest is not the queue derived from audit, route, config, and grade evidence",
+            artifact="rerun-manifest.yml",
+            differing_fields=differing,
+        )
 
 
 def render_verification(report: dict[str, Any]) -> str:

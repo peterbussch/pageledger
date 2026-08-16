@@ -106,8 +106,10 @@ executable. `run.max_rerun_depth` is an independent cap and takes precedence
 when both limits are reached. The supplied config
 is authoritative: if it disagrees with the parent's recorded next adapter,
 PageLedger prints an escalation warning and uses the config. Source-integrity
-changes are warned separately. `rerun` takes the same `--dry-run`, `--json`,
-`--log-level`, and `--adapter-path` flags as `run`.
+changes fail closed before the child directory is created. The parent ledger
+must pass `verify-run`, and its executable queue must still match the audit,
+routes, config, grades, quarantine, and lineage evidence. `rerun` takes the
+same `--dry-run`, `--json`, `--log-level`, and `--adapter-path` flags as `run`.
 
 ## align
 

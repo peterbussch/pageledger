@@ -531,8 +531,6 @@ def _cmd_rerun(args: argparse.Namespace) -> int:
         _print_budget_alerts(result)
         for warning in result.get("config_warnings", []):
             print(f"WARNING: {warning}")
-        for warning in result.get("source_integrity_warnings", []):
-            print(f"WARNING: {warning}")
         for warning in result.get("escalation_warnings", []):
             print(f"WARNING: {warning}")
     return 1 if result["status"] == "partial" and not result["dry_run"] else 0

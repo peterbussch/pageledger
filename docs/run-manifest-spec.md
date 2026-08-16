@@ -11,6 +11,7 @@ is the durable pointer to every other artifact in the run directory.
   "pageledger_version": "0.2.0",
   "run_id": "run-20260619T193000000000Z",
   "parent_run_id": null,
+  "run_depth": 0,
   "execution_mode": "execute",
   "started_at": "2026-06-19T19:30:00Z",
   "completed_at": "2026-06-19T19:42:00Z",
@@ -84,11 +85,12 @@ is the durable pointer to every other artifact in the run directory.
 | `pageledger_version` | string | PageLedger package version that generated the manifest. Current writers always emit it; it is optional only when reading older schema-0.1 artifacts. |
 | `run_id` | string | Stable identifier for this run. |
 | `parent_run_id` | string or null | Previous run if this is a rerun. |
+| `run_depth` | integer | Zero-based rerun generation: `0` for an original run. Current writers always emit it; it is optional only for older schema-0.1 artifacts. |
 | `execution_mode` | string | `dry_run` or `execute`. |
 | `started_at` | ISO timestamp | Run start time in UTC. |
 | `completed_at` | ISO timestamp or null | Run completion time in UTC. |
 | `status` | string | `completed`, `failed`, or `partial`. |
-| `inputs` | array | Source files and checksums. Each entry carries `path`, `sha256`, and `page_count` (the source's full size). When `--pages` limits the run, the entry also carries the selection expression as `pages` (e.g. `"1-8,81"`). |
+| `inputs` | array | Source files and checksums. Each entry carries `path`, `sha256`, and `page_count` (the source's full size). When `--pages` or a rerun limits the run, the entry also carries the selection expression as `pages` (e.g. `"1-8,81"`). |
 | `config` | object | Run-directory config snapshot path, checksum, and source config paths. |
 | `extractors` | array | Extractor adapters and model/version metadata. |
 | `dataset_citation` | object or null | Optional user-provided source citation for the input collection. |
@@ -108,6 +110,11 @@ when that legacy evidence is absent.
 Current writers also emit top-level `pageledger_version`. It remains optional
 in the schema solely so pre-hardening schema-0.1 manifests remain readable;
 `verify-run` warns when that generator identity is absent.
+
+Current writers emit `run_depth` on every manifest. For original legacy runs
+without it, generation 0 can be inferred from `parent_run_id: null`. A legacy
+rerun whose manifest lacks `run_depth` remains readable, but PageLedger will
+not execute another generation because its lineage depth is ambiguous.
 
 Runs with failures add `pages_failed`; runs halted before every extraction
 action was attempted add `pages_not_attempted`. They are omitted when zero so

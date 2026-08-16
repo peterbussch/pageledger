@@ -236,6 +236,7 @@ def run(
     page_selection: list[dict[str, Any]] | None = None,
     parent_run_id: str | None = None,
     parent_quality_by_page: dict[str, dict[str, Any]] | None = None,
+    source_page_counts: dict[Path, int] | None = None,
     run_depth: int = 0,
     adapter_path: Path | None = None,
     routes_path: Path | None = None,
@@ -401,8 +402,23 @@ def run(
             ]
         else:
             selected = selection_by_source[source]
-            page_count = len(selected)
+            declared_page_count = (
+                source_page_counts.get(source.resolve())
+                if source_page_counts is not None
+                else None
+            )
+            page_count = (
+                declared_page_count
+                if declared_page_count is not None
+                else _planned_page_count(
+                    source, adapter=adapter, adapter_name=effective_adapter_name
+                )
+            )
             planned = [(item["page_id"], int(item["page_number"])) for item in selected]
+            if any(page_number > page_count for _, page_number in planned):
+                raise ValueError(
+                    f"Rerun selection exceeds the recorded source page count for {source}"
+                )
         if imported_routes is None:
             routed_pages = []
             for page_id, page_number in planned:
@@ -440,6 +456,10 @@ def run(
         }
         if selected_page_numbers is not None:
             input_entry["pages"] = pages
+        elif selection_by_source is not None:
+            input_entry["pages"] = ",".join(
+                str(item["page_number"]) for item in selection_by_source[source]
+            )
         input_entries.append(input_entry)
         declared_sha256 = (
             imported_by_source[resolved_source].get("source_sha256")
@@ -720,6 +740,7 @@ def run(
         completed_at=_utc_now(),
         inputs=input_entries,
         parent_run_id=parent_run_id,
+        run_depth=run_depth,
         config_sha256=_sha256_path(config_snapshot),
         config_source_paths=[str(config_path.resolve())],
         dataset_citation=config.dataset_citation,
@@ -877,8 +898,8 @@ def rerun(
     with a stronger engine to re-extract weak pages.
 
     Enforces ``run.max_rerun_depth`` from the supplied config against the
-    parent's recorded ``rerun_depth``. Warns (without failing) when a source
-    file's checksum no longer matches the parent run's manifest.
+    parent's recorded ``rerun_depth``. The parent ledger and derived rerun
+    plan must verify, and every source must still match the parent checksum.
     """
     parent = parent_dir.expanduser().resolve()
     manifest_path = parent / "manifest.json"
@@ -887,10 +908,22 @@ def rerun(
         raise ValueError(f"No manifest.json found in {parent}; not a run directory")
     if not rerun_path.is_file():
         raise ValueError(f"No rerun-manifest.yml found in {parent}")
+    from .verify import verify_run
+
+    parent_verification = verify_run(parent)
+    if parent_verification["status"] != "pass":
+        codes = sorted({error["code"] for error in parent_verification["errors"]})
+        raise ValueError(
+            "parent run verification failed; refusing rerun: " + ", ".join(codes)
+        )
     parent_manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     parent_rerun = yaml.safe_load(rerun_path.read_text(encoding="utf-8"))
     if not isinstance(parent_rerun, dict):
         raise ValueError(f"Invalid rerun manifest: {rerun_path}")
+    if "run_depth" not in parent_manifest and parent_manifest.get("parent_run_id") is not None:
+        raise ValueError(
+            "Parent rerun predates durable run_depth evidence; refusing ambiguous lineage"
+        )
 
     _apply_adapter_path(adapter_path)
     config = load_config(config_path, validate_adapter=False)
@@ -934,22 +967,34 @@ def rerun(
             f"(rerun_status: {parent_rerun.get('rerun_status', 'unknown')})"
         )
 
-    recorded_hashes = {
-        str(Path(entry["path"]).resolve()): entry.get("sha256")
-        for entry in parent_manifest.get("inputs", [])
-        if isinstance(entry, dict) and "path" in entry
-    }
-    integrity_warnings: list[str] = []
+    parent_route_path = parent / parent_manifest["artifacts"]["route_map"]
+    parent_route = yaml.safe_load(parent_route_path.read_text(encoding="utf-8"))
+    parent_inputs = parent_manifest.get("inputs", [])
+    recorded_inputs: dict[str, dict[str, Any]] = {}
+    for index, document in enumerate(parent_route.get("documents", [])):
+        if (
+            isinstance(document, dict)
+            and isinstance(document.get("source"), str)
+            and index < len(parent_inputs)
+            and isinstance(parent_inputs[index], dict)
+        ):
+            recorded_inputs[str(Path(document["source"]).resolve())] = parent_inputs[index]
+    source_page_counts: dict[Path, int] = {}
     for source_str in sorted({str(item["source"]) for item in items}):
         source = Path(source_str)
         if not source.exists():
             raise ValueError(f"Rerun source no longer exists: {source}")
-        recorded = recorded_hashes.get(str(source.resolve()))
-        if recorded is not None and _sha256_path(source) != recorded:
-            integrity_warnings.append(
+        recorded_input = recorded_inputs.get(str(source.resolve()))
+        recorded = recorded_input.get("sha256") if recorded_input else None
+        if not isinstance(recorded, str) or _sha256_path(source) != recorded:
+            raise ValueError(
                 f"Source changed since parent run: {source} "
-                "(sha256 no longer matches parent manifest)"
+                "(sha256 does not match parent manifest)"
             )
+        page_count = recorded_input.get("page_count") if recorded_input else None
+        if not isinstance(page_count, int) or isinstance(page_count, bool) or page_count < 1:
+            raise ValueError(f"Parent manifest lacks a valid source page_count for {source}")
+        source_page_counts[source.resolve()] = page_count
 
     result = run(
         inputs=[],
@@ -962,11 +1007,10 @@ def rerun(
         parent_quality_by_page={
             entry["page_id"]: entry for entry in read_jsonl(parent / "quality.jsonl")
         },
+        source_page_counts=source_page_counts,
         run_depth=child_depth,
         adapter_path=adapter_path,
     )
-    if integrity_warnings:
-        result["source_integrity_warnings"] = integrity_warnings
     if escalation_warnings:
         result["escalation_warnings"] = escalation_warnings
     return result

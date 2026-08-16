@@ -34,6 +34,11 @@
       "type": ["string", "null"],
       "description": "Previous run identifier if this is a rerun. Null for first runs."
     },
+    "run_depth": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Zero-based rerun generation. Optional for compatibility with older schema-0.1 artifacts; current writers always emit it."
+    },
     "execution_mode": {
       "type": "string",
       "description": "Execution mode.",

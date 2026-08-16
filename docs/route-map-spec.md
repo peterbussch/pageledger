@@ -100,6 +100,10 @@ readable.
   `doc_{NNNN}_page_{MMMM}` IDs, and reference exactly the CLI inputs. Relative
   source paths resolve from the map's directory. `pageledger classify` emits
   absolute source paths.
+- A route map written inside a rerun directory is intentionally a selected-page
+  ledger, not an input to `run --routes`: each document's `page_count` remains
+  the source's full size while `pages` contains only that generation's selected
+  pages. The child manifest records the same selection in `inputs[].pages`.
 - When `taxonomy.page_types` is nonempty, every page type must exist in it.
   `pageledger classify` checks up front that a nonempty taxonomy covers every
   type the built-in classifier or hook can emit. An empty taxonomy skips the

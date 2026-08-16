@@ -604,6 +604,7 @@ def test_manifest_summary_keys(tmp_path: Path) -> None:
     import pageledger
 
     assert manifest["pageledger_version"] == pageledger.__version__
+    assert manifest["run_depth"] == 0
     required_summary = {"pages_total", "pages_extracted", "pages_skipped",
                         "pages_routed_review",
                         "pages_quarantined", "records_normalized", "estimated_cost_usd",
