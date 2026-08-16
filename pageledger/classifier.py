@@ -36,6 +36,11 @@ DEFAULT_CLASSIFY_THRESHOLDS: dict[str, int | float] = {
     "table_digit_ratio": 0.25,
     "fragmented_mean_token_length": 3.0,
     "fragmented_min_alpha_tokens": 20,
+    "joined_mean_token_length": 10.0,
+    "joined_max_token_length": 80,
+    "joined_min_alpha_tokens": 20,
+    "joined_max_whitespace_ratio": 0.03,
+    "joined_min_latin_letter_ratio": 0.8,
     "low_confidence_below_60_ratio": 0.25,
     "low_confidence_penalty": 0.2,
 }
@@ -46,6 +51,8 @@ _INTEGER_THRESHOLDS = frozenset(
         "sparse_max_words",
         "table_min_lines",
         "fragmented_min_alpha_tokens",
+        "joined_max_token_length",
+        "joined_min_alpha_tokens",
     }
 )
 _RATIO_THRESHOLDS = frozenset(
@@ -55,6 +62,8 @@ _RATIO_THRESHOLDS = frozenset(
         "table_digit_ratio",
         "low_confidence_below_60_ratio",
         "low_confidence_penalty",
+        "joined_max_whitespace_ratio",
+        "joined_min_latin_letter_ratio",
     }
 )
 _COLUMN_RUN = re.compile(r"\S {2,}\S")
@@ -166,6 +175,17 @@ def classify_signals(
         result = ClassificationResult(
             "table_likely", 0.85, f"structured_payload:{result_format}"
         )
+    elif (
+        signals["mean_token_length"] is not None
+        and signals["mean_token_length"] >= thresholds["joined_mean_token_length"]
+        and signals["max_token_length"] >= thresholds["joined_max_token_length"]
+        and signals["alpha_token_count"] >= thresholds["joined_min_alpha_tokens"]
+        and signals["whitespace_character_ratio"]
+        <= thresholds["joined_max_whitespace_ratio"]
+        and signals["latin_letter_ratio"]
+        >= thresholds["joined_min_latin_letter_ratio"]
+    ):
+        result = ClassificationResult("unknown", None, "joined_text")
     elif (
         lines >= thresholds["table_min_lines"]
         and signals["pipe_line_ratio"] >= thresholds["table_pipe_line_ratio"]

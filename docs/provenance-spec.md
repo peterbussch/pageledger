@@ -125,7 +125,7 @@ not a calibrated accuracy score. Fields:
 | `page_number` | integer | ✅ | no | One-based page number. |
 | `adapter` | string | ✅ | no | Adapter name for diagnostics attribution. |
 | `character_count` | integer | ✅ | no | Total characters in extractor output. |
-| `word_count` | integer | ✅ | no | Regex word count (`\w+`). |
+| `word_count` | integer | ✅ | no | Count of Unicode letter tokens; combining marks remain attached to their base-letter token. |
 | `confidence` | number or null | ❌ | yes | Adapter-reported page confidence, 0–1. Emitted by current runs; optional so original 0.1 lines remain valid. |
 | `confidence_detail` | object or null | ❌ | yes | Engine-native confidence evidence. Emitted by current runs; optional for original 0.1 compatibility. |
 | `warnings` | array of strings | ✅ | no | Quality warnings (see taxonomy below). |
@@ -156,7 +156,7 @@ Confidence/coverage/pass-rate thresholds are overridable under
 coverage below `minimum_required_column_coverage` forces the schema axis
 to F, and page confidence under `low_confidence_threshold` caps the final
 grade at C. The structured-format prose heuristics
-(`suspicious_symbol_density`, `fragmented_text`) do not fire on
+(`suspicious_symbol_density`, `fragmented_text`, `joined_text`) do not fire on
 `markdown_table`/`json`/`csv` pages: pipes and braces are construction,
 not garble.
 
@@ -170,7 +170,10 @@ not garble.
 | `suspicious_symbol_ratio` | number (0–1) | `suspicious_symbol_count / character_count`. |
 | `alpha_token_count` | integer | Unicode letter tokens on the page; combining marks remain attached to their base-letter token. |
 | `mean_token_length` | number or null | Mean Unicode letter-plus-mark token length; null with no tokens. The `<3` warning boundary is a fragment-noise heuristic, not a cross-language quality score. |
+| `max_token_length` | integer | Maximum Unicode letter-plus-mark token length. |
 | `short_token_ratio` | number (0–1) or null | Share of Unicode letter-plus-mark tokens with 1–2 code points. |
+| `whitespace_character_ratio` | number (0–1) | Share of output characters for which `str.isspace()` is true. |
+| `latin_letter_ratio` | number (0–1) | Share of Unicode letters identified as Latin-script letters; used only as a conservative joined-text guard. |
 | `prereform_letter_count` | integer | Cyrillic letters abolished by the 1918 Russian reform (ѣ, ѳ, ѵ). Modern Ukrainian/Belarusian і is deliberately not counted. |
 | `terminal_hard_sign_count` | integer | Word-final hard signs (ъ): mandatory before 1918, absent from modern Russian. This is the pre-reform signal that survives OCR: engines trained on modern text destroy the abolished letters but keep ъ. |
 
@@ -184,6 +187,7 @@ not garble.
 | `control_characters` | `control_character_count > 0`. |
 | `suspicious_symbol_density` | `suspicious_symbol_ratio >= 0.03` AND `suspicious_symbol_count >= 5`. |
 | `fragmented_text` | `mean_token_length < 3.0` AND `alpha_token_count >= 20`. Catches OCR fragment noise; does not catch word-level misrecognition. |
+| `joined_text` | `mean_token_length >= 10`, `max_token_length >= 80`, `alpha_token_count >= 20`, `whitespace_character_ratio <= 0.03`, and `latin_letter_ratio >= 0.8`. Catches collapsed Latin word boundaries; it is review evidence, not proof of corruption. |
 | `suspicious_embedded_text_delta` | PDF embedded text character ratio < 0.5 or > 1.8, when embedded text is available and adapter does not report `embedded_text` capability. |
 | `historical_orthography` | `prereform_letter_count >= 2`, OR `terminal_hard_sign_count >= 2` at a density of ≥1 per 100 alphabetic tokens over ≥20 tokens. The page is pre-1918 Russian orthography and an OCR model trained on modern text is probably mismatched. Measured on an 1850 gubernia review: 21 terminal ъ per 100 tokens vs 0.00 in modern text. |
 | `low_confidence` | `confidence_detail.below_60_ratio >= 0.25` over ≥10 words. A quarter of the words under engine confidence 60 marks the page for review; a mean can hide one illegible paragraph on an otherwise clean page. |

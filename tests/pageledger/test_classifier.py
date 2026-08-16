@@ -49,6 +49,9 @@ def test_structural_signals_include_line_and_quality_evidence() -> None:
     assert signals["column_line_ratio"] == 0.5
     assert signals["digit_ratio"] > 0
     assert signals["alpha_token_count"] == signals["word_count"]
+    assert signals["max_token_length"] == 5
+    assert signals["whitespace_character_ratio"] > 0
+    assert signals["latin_letter_ratio"] == 1.0
     assert signals["below_60_ratio"] == 0.25
 
 
@@ -88,6 +91,16 @@ def test_sparse_column_evidence_still_detects_digit_dense_ocr_tables() -> None:
 def test_fragmented_branch_precedes_sparse() -> None:
     result = _decision(" ".join(["aa"] * 20))
     assert result == ClassificationResult("unknown", None, "fragmented_text")
+
+
+def test_joined_text_branch_routes_corrupt_latin_text_to_review() -> None:
+    result = _decision(" ".join(["a" * 100] * 25))
+    assert result == ClassificationResult("unknown", None, "joined_text")
+
+
+def test_joined_text_branch_has_cjk_guard() -> None:
+    result = _decision(" ".join(["漢" * 100] * 26))
+    assert result == ClassificationResult("prose", 0.7, "prose_text")
 
 
 def test_sparse_and_prose_branches() -> None:

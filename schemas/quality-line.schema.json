@@ -26,7 +26,7 @@
     },
     "warnings": {
       "type": "array",
-      "description": "Quality warnings include empty_text, short_text, replacement_characters, control_characters, suspicious_symbol_density, fragmented_text, suspicious_embedded_text_delta, historical_orthography, low_confidence, instruction_echo, and output_inflation.",
+      "description": "Quality warnings include empty_text, short_text, replacement_characters, control_characters, suspicious_symbol_density, fragmented_text, joined_text, suspicious_embedded_text_delta, historical_orthography, low_confidence, instruction_echo, and output_inflation.",
       "items": { "type": "string" }
     },
     "text_quality": {
@@ -42,11 +42,28 @@
           "type": ["number", "null"],
           "description": "Mean Unicode letter-plus-mark token length. Null when the page has none. The <3 boundary is a fragment-noise heuristic, not a cross-language quality score."
         },
+        "max_token_length": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Maximum Unicode letter-plus-mark token length. Added as joined-text evidence; optional for compatibility with older quality lines."
+        },
         "short_token_ratio": {
           "type": ["number", "null"],
           "minimum": 0,
           "maximum": 1,
           "description": "Share of Unicode letter-plus-mark tokens with 1-2 code points. Null when the page has none."
+        },
+        "whitespace_character_ratio": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "Share of output characters for which str.isspace() is true. Added as joined-text evidence; optional for compatibility with older quality lines."
+        },
+        "latin_letter_ratio": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "Share of Unicode letters whose names identify the Latin script. Added as a conservative joined-text guard; optional for compatibility with older quality lines."
         },
         "prereform_letter_count": {
           "type": "integer",

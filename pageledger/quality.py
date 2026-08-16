@@ -52,7 +52,8 @@ def _build_quality_entry(
         shape_warnings = [
             warning
             for warning in shape_warnings
-            if warning not in {"suspicious_symbol_density", "fragmented_text"}
+            if warning
+            not in {"suspicious_symbol_density", "fragmented_text", "joined_text"}
         ]
     warnings.extend(shape_warnings)
     output_integrity, integrity_warnings = _output_integrity(text, parent_quality)
@@ -197,6 +198,13 @@ def _text_quality_metrics(
     if token_lengths is None:
         token_lengths = _alphabetic_token_lengths(text)
     alpha_token_count = len(token_lengths)
+    letter_count = sum(1 for char in text if unicodedata.category(char).startswith("L"))
+    latin_letter_count = sum(
+        1
+        for char in text
+        if unicodedata.category(char).startswith("L")
+        and "LATIN" in unicodedata.name(char, "")
+    )
     return {
         "replacement_character_count": replacement_character_count,
         "control_character_count": control_character_count,
@@ -216,12 +224,21 @@ def _text_quality_metrics(
             if alpha_token_count == 0
             else round(sum(token_lengths) / alpha_token_count, 2)
         ),
+        "max_token_length": max(token_lengths, default=0),
         "short_token_ratio": (
             None
             if alpha_token_count == 0
             else round(
                 sum(1 for length in token_lengths if length <= 2) / alpha_token_count, 4
             )
+        ),
+        "whitespace_character_ratio": (
+            0.0
+            if character_count == 0
+            else round(sum(char.isspace() for char in text) / character_count, 4)
+        ),
+        "latin_letter_ratio": (
+            0.0 if letter_count == 0 else round(latin_letter_count / letter_count, 4)
         ),
         "prereform_letter_count": sum(1 for char in text if char in _PREREFORM_LETTERS),
         "terminal_hard_sign_count": len(_TERMINAL_HARD_SIGN.findall(text)),
@@ -245,6 +262,19 @@ def _text_quality_warnings(metrics: dict[str, Any]) -> list[str]:
         # Real prose in tested corpora sits above 4; OCR fragment noise
         # ("l| ||| l|l ll") collapses toward 1.
         warnings.append("fragmented_text")
+    if (
+        mean_token_length is not None
+        and mean_token_length >= 10.0
+        and metrics["max_token_length"] >= 80
+        and metrics["alpha_token_count"] >= 20
+        and metrics["whitespace_character_ratio"] <= 0.03
+        and metrics["latin_letter_ratio"] >= 0.8
+    ):
+        # Lost word boundaries in Latin-script hidden OCR create long joined
+        # tokens with almost no whitespace. The multi-signal guard avoids
+        # treating ordinary long words or unsegmented non-Latin scripts as
+        # evidence of corruption.
+        warnings.append("joined_text")
     if metrics["prereform_letter_count"] >= 2 or (
         metrics["alpha_token_count"] >= 20
         and metrics["terminal_hard_sign_count"] >= 2
