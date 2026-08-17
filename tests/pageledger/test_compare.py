@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from pathlib import Path
 
 import pytest
 
@@ -51,6 +52,58 @@ def test_compare_identical_runs(tmp_path):
     assert report["warnings_introduced_total"] == 0
     for page in report["pages"]:
         assert page["character_delta"] == 0
+
+
+def test_compare_reports_equal_raw_hashes(tmp_path: Path) -> None:
+    from pageledger.compare import compare_runs
+
+    source = tmp_path / "doc.txt"
+    source.write_text("same text", encoding="utf-8")
+    out_a = _run([source], tmp_path, "raw-a")
+    out_b = _run([source], tmp_path, "raw-b")
+    report = compare_runs(out_a, out_b)
+    assert report["raw_equal_total"] == 1
+    assert report["raw_different_total"] == 0
+    assert report["raw_missing_total"] == 0
+    assert report["pages"][0]["raw_equal"] is True
+    assert report["pages"][0]["raw_sha256_a"] == report["pages"][0]["raw_sha256_b"]
+
+
+def test_compare_reports_different_raw_hashes_without_failing(tmp_path: Path) -> None:
+    from pageledger.compare import compare_runs
+
+    source = tmp_path / "doc.txt"
+    source.write_text("same text", encoding="utf-8")
+    out_a = _run([source], tmp_path, "raw-a")
+    out_b = _run([source], tmp_path, "raw-b")
+    raw_b = next((out_b / "raw").iterdir())
+    raw_b.write_text("different output", encoding="utf-8")
+    entries = [json.loads(line) for line in (out_b / "provenance.jsonl").read_text().splitlines()]
+    entries[0]["result"]["raw_sha256"] = hashlib.sha256(raw_b.read_bytes()).hexdigest()
+    (out_b / "provenance.jsonl").write_text(
+        "".join(json.dumps(entry) + "\n" for entry in entries), encoding="utf-8"
+    )
+    report = compare_runs(out_a, out_b)
+    assert report["raw_equal_total"] == 0
+    assert report["raw_different_total"] == 1
+    assert report["pages"][0]["raw_equal"] is False
+
+
+def test_compare_reports_missing_legacy_raw_hash(tmp_path: Path) -> None:
+    from pageledger.compare import compare_runs
+
+    source = tmp_path / "doc.txt"
+    source.write_text("same text", encoding="utf-8")
+    out_a = _run([source], tmp_path, "raw-a")
+    out_b = _run([source], tmp_path, "raw-b")
+    entries = [json.loads(line) for line in (out_b / "provenance.jsonl").read_text().splitlines()]
+    entries[0]["result"].pop("raw_sha256")
+    (out_b / "provenance.jsonl").write_text(
+        "".join(json.dumps(entry) + "\n" for entry in entries), encoding="utf-8"
+    )
+    report = compare_runs(out_a, out_b)
+    assert report["raw_missing_total"] == 1
+    assert report["pages"][0]["raw_equal"] is None
 
 
 def test_compare_detects_resolved_warning(tmp_path):
@@ -186,6 +239,13 @@ def test_compare_cli_text_and_json(tmp_path, capsys):
     text = capsys.readouterr().out
     assert "Pages compared: 2" in text
     assert "Run A:" in text
+
+    single_source = tmp_path / "single-page.txt"
+    single_source.write_text("one page", encoding="utf-8")
+    single_a = _run([single_source], tmp_path, "raw-render-a")
+    single_b = _run([single_source], tmp_path, "raw-render-b")
+    assert main(["compare-runs", str(single_a), str(single_b)]) == 0
+    assert "Raw output: equal 1 / different 0 / missing 0" in capsys.readouterr().out
 
     exit_code = main(["compare-runs", str(out_a), str(out_b), "--json"])
     assert exit_code == 0
