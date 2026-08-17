@@ -6,6 +6,8 @@ import re
 from pathlib import Path
 from zipfile import ZipFile
 
+import yaml
+
 from scripts.check_release import check_release
 
 REPO = Path(__file__).resolve().parents[2]
@@ -62,11 +64,36 @@ def test_publish_is_manual_tag_only_and_verifies_before_upload() -> None:
 
     assert "release:\n" not in workflow
     assert "workflow_dispatch:" in workflow
+    assert "default: verify" in workflow
+    assert "production_confirmation:" in workflow
+    assert "required_reviewers" in workflow
+    assert "can_admins_bypass" in workflow
+    assert "deployment-branch-policies" in workflow
+    assert 'entry.get("name") == "v*"' in workflow
     assert "github.ref_type" in workflow
     assert 'python scripts/check_release.py "$RELEASE_TAG"' in workflow
+    assert 'test "$PRODUCTION_CONFIRMATION" = "$RELEASE_TAG"' in workflow
     assert "uv sync --frozen" in workflow
-    assert workflow.index("needs: verify") < workflow.index("Publish to TestPyPI")
+    assert "Publish to TestPyPI" not in workflow
     assert workflow.index("needs: verify") < workflow.index("Publish to PyPI")
+
+    parsed = yaml.safe_load(workflow)
+    jobs = parsed["jobs"]
+    assert jobs["build"]["needs"] == "verify"
+    assert jobs["publish-pypi"]["needs"] == "build"
+    assert jobs["publish-pypi"]["environment"] == "pypi"
+    assert jobs["publish-pypi"]["if"] == "inputs.target == 'pypi'"
+    uploaded_name = next(
+        step["with"]["name"]
+        for step in jobs["build"]["steps"]
+        if str(step.get("uses", "")).startswith("actions/upload-artifact@")
+    )
+    downloaded_name = next(
+        step["with"]["name"]
+        for step in jobs["publish-pypi"]["steps"]
+        if str(step.get("uses", "")).startswith("actions/download-artifact@")
+    )
+    assert uploaded_name == downloaded_name == "dist-${{ github.ref_name }}"
 
 
 def test_all_github_actions_are_pinned_and_ci_has_a_frozen_lane() -> None:

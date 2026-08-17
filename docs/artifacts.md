@@ -176,16 +176,20 @@ when the preview is applied.
 
 `pageledger verify-run <run-dir>` checks the relationships among these files:
 declared paths, identifiers, hashes, page counts, raw/normalized provenance,
-quality totals, audit/rerun references, and cost totals. Internal corruption is
-an error; a missing or changed external source is a warning because the ledger
-itself remains inspectable. Verification does not judge OCR accuracy and does
-not replace the build-time JSON Schema suite.
+quality totals, audit/rerun references, configured adapter chains, and cost
+totals. Malformed evidence produces a structured failure rather than reaching
+artifact renderers. Raw references outside the declared `raw/` directory are
+rejected without opening or hashing the target. Re-alignment hashes must match
+either `config-snapshot.yml` or the retained `align-schema-snapshot.yml`.
+Internal corruption is an error; a missing or changed external source is a
+warning because the ledger itself remains inspectable. Verification does not
+judge OCR accuracy and does not replace the build-time JSON Schema suite.
 
 ## Compatibility
 
 Artifact fields follow the compatibility policy in
 [`run-manifest-spec.md`](run-manifest-spec.md): additions are backward
-compatible within a schema version. PageLedger 0.2.0 therefore retains
+compatible within a schema version. PageLedger 0.3.0a1 therefore retains
 `schema_version: "0.1"` for its optional classifier, escalation, alert, and
 rollup fields. The schemas in
 [`schemas/`](../schemas/) are the machine-readable authority, enforced by

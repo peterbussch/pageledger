@@ -10,6 +10,7 @@ Verifies:
 
 from __future__ import annotations
 
+import hashlib
 import json
 
 MINIMAL = """\
@@ -177,7 +178,7 @@ def test_compare_reports_grade_changes(tmp_path):
     assert page1["grade_basis_a"] == "signals_only"
 
     rendered = render_comparison(report)
-    assert "Grades: improved 1 / regressed 0" in rendered
+    assert "Grades (matching basis/schema only): improved 1 / regressed 0" in rendered
     assert "F (signals)→A (signals)" in rendered
 
 
@@ -313,6 +314,10 @@ def test_compare_same_adapter_different_model_is_unranked(tmp_path):
     ]
     provenance[0]["extractor"]["model"] = "alternate-model"
     provenance_path.write_text(json.dumps(provenance[0]) + "\n", encoding="utf-8")
+    manifest_path = out_b / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["extractors"][0]["model"] = "alternate-model"
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
 
     quality_path = out_b / "quality.jsonl"
     quality = [json.loads(line) for line in quality_path.read_text().splitlines()]
@@ -328,6 +333,173 @@ def test_compare_same_adapter_different_model_is_unranked(tmp_path):
     assert page["comparability"] == "incomparable_extractor"
     assert report["pages_comparable_total"] == 0
     assert report["warnings_resolved_total"] == 0
+    assert report["grades_improved_total"] == 0
+
+
+def test_compare_same_adapter_different_options_is_unranked(tmp_path):
+    """Output-affecting adapter options are part of extractor identity."""
+    from pageledger.compare import compare_runs
+
+    source = tmp_path / "doc.txt"
+    source.write_text("short\n", encoding="utf-8")
+    out_a = _run([source], tmp_path, "a")
+    out_b = _run([source], tmp_path, "b")
+
+    for out_dir, mode in ((out_a, "mode-a"), (out_b, "mode-b")):
+        manifest_path = out_dir / "manifest.json"
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        manifest["extractors"][0]["options"] = {"mode": mode}
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    report = compare_runs(out_a, out_b)
+
+    page = report["pages"][0]
+    assert len(page["effective_extractor_a"]["options_sha256"]) == 64
+    assert len(page["effective_extractor_b"]["options_sha256"]) == 64
+    assert (
+        page["effective_extractor_a"]["options_sha256"]
+        != page["effective_extractor_b"]["options_sha256"]
+    )
+    assert page["comparability"] == "incomparable_extractor"
+    assert report["pages_comparable_total"] == 0
+
+
+def test_compare_does_not_rank_grades_across_evidence_bases(tmp_path):
+    from pageledger.compare import compare_runs, render_comparison
+
+    source = tmp_path / "doc.txt"
+    source.write_text("short\n", encoding="utf-8")
+    out_a = _run([source], tmp_path, "a")
+    out_b = _run([source], tmp_path, "b")
+
+    quality_path = out_b / "quality.jsonl"
+    quality = [json.loads(line) for line in quality_path.read_text().splitlines()]
+    quality[0].update(grade="A", grade_basis="schema_aware")
+    quality_path.write_text(json.dumps(quality[0]) + "\n", encoding="utf-8")
+
+    report = compare_runs(out_a, out_b)
+
+    page = report["pages"][0]
+    assert page["comparability"] == "comparable"
+    assert page["grade_comparability"] == "incomparable_basis"
+    assert report["grades_improved_total"] == 0
+    assert report["grades_regressed_total"] == 0
+    assert "| comparable | incomparable_basis |" in render_comparison(report)
+
+
+def test_compare_does_not_rank_schema_grades_from_different_schemas(tmp_path):
+    from pageledger.compare import compare_runs
+
+    source = tmp_path / "doc.txt"
+    source.write_text("short\n", encoding="utf-8")
+    out_a = _run([source], tmp_path, "a")
+    out_b = _run([source], tmp_path, "b")
+
+    for out_dir, grade, schema_hash in (
+        (out_a, "B", "name: schema-a\ncolumns: []\n"),
+        (out_b, "A", "name: schema-b\ncolumns: []\n"),
+    ):
+        quality_path = out_dir / "quality.jsonl"
+        quality = [json.loads(line) for line in quality_path.read_text().splitlines()]
+        quality[0].update(grade=grade, grade_basis="schema_aware")
+        quality_path.write_text(json.dumps(quality[0]) + "\n", encoding="utf-8")
+        schema_snapshot = out_dir / "align-schema-snapshot.yml"
+        schema_snapshot.write_text(schema_hash, encoding="utf-8")
+        recorded_hash = hashlib.sha256(schema_hash.encode("utf-8")).hexdigest()
+        manifest_path = out_dir / "manifest.json"
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        manifest["alignment"] = {
+            "aligned_at": "2026-08-16T00:00:00Z",
+            "schema_source": "test",
+            "schema_sha256": recorded_hash,
+            "pageledger_version": "0.3.0a1",
+        }
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    report = compare_runs(out_a, out_b)
+
+    page = report["pages"][0]
+    assert page["grade_comparability"] == "incomparable_schema"
+    assert page["grade_schema_identity_a"] != page["grade_schema_identity_b"]
+    assert report["grades_improved_total"] == 0
+
+
+def test_compare_recognizes_same_config_schema_after_alignment(tmp_path):
+    from pageledger.compare import compare_runs
+
+    source = tmp_path / "doc.txt"
+    source.write_text("short\n", encoding="utf-8")
+    schema_config = MINIMAL.replace(
+        "run:\n",
+        "schema:\n  name: demo\n  columns:\n    - {name: value, type: string}\nrun:\n",
+    )
+    out_a = _run([source], tmp_path, "a", config_text=schema_config)
+    out_b = _run([source], tmp_path, "b", config_text=schema_config)
+    for out_dir, grade in ((out_a, "B"), (out_b, "A")):
+        quality_path = out_dir / "quality.jsonl"
+        quality = [json.loads(line) for line in quality_path.read_text().splitlines()]
+        quality[0].update(grade=grade, grade_basis="schema_aware")
+        quality_path.write_text(json.dumps(quality[0]) + "\n", encoding="utf-8")
+    manifest_path = out_b / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    config_bytes = (out_b / "config-snapshot.yml").read_bytes()
+    manifest["alignment"] = {
+        "aligned_at": "2026-08-16T00:00:00Z",
+        "schema_source": "config_snapshot",
+        "schema_sha256": hashlib.sha256(config_bytes).hexdigest(),
+        "pageledger_version": "0.3.0a1",
+    }
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    report = compare_runs(out_a, out_b)
+
+    page = report["pages"][0]
+    assert page["grade_comparability"] == "comparable"
+    assert page["grade_schema_identity_a"] == page["grade_schema_identity_b"]
+    assert report["grades_improved_total"] == 1
+
+
+def test_compare_does_not_rank_grades_from_different_pageledger_versions(tmp_path):
+    from pageledger.compare import compare_runs
+
+    source = tmp_path / "doc.txt"
+    source.write_text("short\n", encoding="utf-8")
+    out_a = _run([source], tmp_path, "a")
+    out_b = _run([source], tmp_path, "b")
+    manifest_path = out_b / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["pageledger_version"] = "99.0"
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    quality_path = out_b / "quality.jsonl"
+    quality = [json.loads(line) for line in quality_path.read_text().splitlines()]
+    quality[0]["grade"] = "A"
+    quality_path.write_text(json.dumps(quality[0]) + "\n", encoding="utf-8")
+
+    report = compare_runs(out_a, out_b)
+
+    assert report["pages"][0]["grade_comparability"] == "incomparable_generator"
+    assert report["grades_improved_total"] == 0
+
+
+def test_compare_does_not_rank_grades_with_different_grading_config(tmp_path):
+    from pageledger.compare import compare_runs
+
+    source = tmp_path / "doc.txt"
+    source.write_text("short\n", encoding="utf-8")
+    config_a = MINIMAL + "  grading:\n    thresholds:\n      confidence: {A: 0.90}\n"
+    config_b = MINIMAL + "  grading:\n    thresholds:\n      confidence: {A: 0.95}\n"
+    out_a = _run([source], tmp_path, "a", config_text=config_a)
+    out_b = _run([source], tmp_path, "b", config_text=config_b)
+    quality_path = out_b / "quality.jsonl"
+    quality = [json.loads(line) for line in quality_path.read_text().splitlines()]
+    quality[0]["grade"] = "A"
+    quality_path.write_text(json.dumps(quality[0]) + "\n", encoding="utf-8")
+
+    report = compare_runs(out_a, out_b)
+
+    page = report["pages"][0]
+    assert page["grade_comparability"] == "incomparable_grade_config"
+    assert page["grade_config_identity_a"] != page["grade_config_identity_b"]
     assert report["grades_improved_total"] == 0
 
 

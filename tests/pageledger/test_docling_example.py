@@ -126,7 +126,57 @@ def _install_fake_docling(monkeypatch, module, document: dict) -> list[list[str]
 def test_docling_adapter_passes_conformance(docling_module) -> None:  # noqa: ANN001
     adapter = docling_module.DoclingAdapter()
     assert adapter_conformance_check(adapter) == []
-    assert adapter.capabilities == ("ocr", "layout", "tables", "vlm", "local")
+    assert adapter.capabilities == ("ocr", "layout", "tables", "local")
+
+
+@pytest.mark.parametrize(
+    ("pipeline", "action", "supported"),
+    [
+        ("standard", "transcribe_text", True),
+        ("standard", "extract_table", True),
+        ("standard", "vlm_table", False),
+        ("vlm", "transcribe_text", True),
+        ("vlm", "extract_table", True),
+        ("vlm", "vlm_table", True),
+    ],
+)
+def test_docling_actions_and_capabilities_are_pipeline_aware(
+    docling_module, pipeline: str, action: str, supported: bool  # noqa: ANN001
+) -> None:
+    adapter = docling_module.DoclingAdapter(pipeline=pipeline)
+    assert adapter.supports(action) is supported
+    assert ("vlm" in adapter.capabilities) is (pipeline == "vlm")
+
+
+def test_docling_adapter_rejects_prompts_it_cannot_apply(
+    tmp_path: Path, docling_module  # noqa: ANN001
+) -> None:
+    source = tmp_path / "sample.pdf"
+    source.write_bytes(b"%PDF-fake")
+
+    with pytest.raises(ValueError, match="does not apply route prompts"):
+        docling_module.DoclingAdapter().extract(
+            source,
+            page_id="doc_0001_page_0001",
+            page_number=1,
+            action="transcribe_text",
+            prompt="Preserve spelling.",
+        )
+
+
+def test_docling_standard_pipeline_rejects_vlm_action(
+    tmp_path: Path, docling_module  # noqa: ANN001
+) -> None:
+    source = tmp_path / "sample.pdf"
+    source.write_bytes(b"%PDF-fake")
+
+    with pytest.raises(ValueError, match="does not support action: vlm_table"):
+        docling_module.DoclingAdapter().extract(
+            source,
+            page_id="doc_0001_page_0001",
+            page_number=1,
+            action="vlm_table",
+        )
 
 
 @pytest.mark.parametrize(

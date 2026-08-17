@@ -61,6 +61,10 @@ richer layout output is automatically more accurate. The VLM lane always emits
 `docling_vlm_uncalibrated`, so plausible-looking generative OCR cannot silently
 receive a no-review A grade from shape signals alone.
 
+Standard mode supports `transcribe_text` and `extract_table`; only VLM mode
+supports `vlm_table`. The example rejects non-null route prompts because it
+does not pass them to Docling.
+
 For a worked example of steps 2–3 and the rerun loop on a real scanned
 document, see `docs/examples/jfk-scanned-archive.md` (including the
 local-LLM and cloud-VLM escalation tiers measured on the same pages).

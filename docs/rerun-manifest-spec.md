@@ -167,6 +167,11 @@ A mismatch is returned and printed as an `escalation_warnings` entry; the
 config wins. This makes the artifact an auditable plan without turning stale
 configuration into hidden authority.
 
+`verify-run` independently normalizes `run.adapter_order` from the retained
+`config-snapshot.yml`, checks the manifest chain and generation against it,
+and derives the expected rerun escalation only from that snapshot. Editing the
+manifest and rerun plan together cannot substitute an unconfigured adapter.
+
 ## Design notes
 
 - The rerun manifest should be generated from audit policy, not edited into

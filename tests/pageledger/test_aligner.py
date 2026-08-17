@@ -588,6 +588,12 @@ def test_align_run_dry_run_previews_without_writes(tmp_path):
     assert report["before"]["records_normalized"] == 0
     assert report["after"]["records_normalized"] == 1
     assert report["after"]["grade_distribution"]["A"] == 1
+    assert report["after"]["grade_distribution_by_basis"] == {
+        "schema_aware": {"A": 1, "B": 0, "C": 0, "D": 0, "F": 0}
+    }
+    assert report["grade_distribution_by_basis"] == report["after"][
+        "grade_distribution_by_basis"
+    ]
     assert _tree_contents(out) == before
     assert not (out / "align-schema-snapshot.yml").exists()
 

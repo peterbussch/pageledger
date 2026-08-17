@@ -98,6 +98,46 @@ def test_verify_run_checks_config_hash_and_internal_identity(tmp_path):
     assert {"config_hash_mismatch", "run_id_mismatch"} <= _codes(report, "errors")
 
 
+def test_verify_run_checks_alignment_schema_hash(tmp_path):
+    from pageledger.verify import verify_run
+
+    out_dir, _ = _run(tmp_path)
+    manifest_path = out_dir / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["alignment"] = {
+        "aligned_at": "2026-08-16T00:00:00Z",
+        "schema_source": "config_snapshot",
+        "schema_sha256": "0" * 64,
+        "pageledger_version": "0.3.0a1",
+    }
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    report = verify_run(out_dir)
+
+    assert report["status"] == "fail"
+    assert "alignment_schema_hash_mismatch" in _codes(report, "errors")
+
+
+def test_verify_run_requires_external_alignment_schema_snapshot(tmp_path):
+    from pageledger.verify import verify_run
+
+    out_dir, _ = _run(tmp_path)
+    manifest_path = out_dir / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["alignment"] = {
+        "aligned_at": "2026-08-16T00:00:00Z",
+        "schema_source": "/external/schema.yml",
+        "schema_sha256": "0" * 64,
+        "pageledger_version": "0.3.0a1",
+    }
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    report = verify_run(out_dir)
+
+    assert report["status"] == "fail"
+    assert "alignment_schema_snapshot_missing" in _codes(report, "errors")
+
+
 def test_verify_run_handles_malformed_manifest_sections(tmp_path):
     from pageledger.verify import verify_run
 
@@ -213,6 +253,39 @@ def test_verify_run_detects_modified_raw_artifact(tmp_path):
     assert "raw_artifact_hash_mismatch" in _codes(report, "errors")
 
 
+def test_verify_run_does_not_read_raw_artifact_outside_declared_directory(
+    tmp_path, monkeypatch
+):
+    import pageledger.verify as verify_module
+
+    out_dir, _ = _run(tmp_path)
+    outside = tmp_path / "outside.txt"
+    outside.write_text("must not be read as run evidence", encoding="utf-8")
+    provenance_path = out_dir / "provenance.jsonl"
+    entries = [
+        json.loads(line)
+        for line in provenance_path.read_text(encoding="utf-8").splitlines()
+    ]
+    entries[0]["result"]["raw_artifact"] = "../outside.txt"
+    provenance_path.write_text(
+        "".join(json.dumps(entry) + "\n" for entry in entries),
+        encoding="utf-8",
+    )
+    original_sha256 = verify_module._sha256
+
+    def guarded_sha256(path):  # noqa: ANN001, ANN202
+        if path.resolve() == outside.resolve():
+            raise AssertionError("verifier read an out-of-run raw artifact")
+        return original_sha256(path)
+
+    monkeypatch.setattr(verify_module, "_sha256", guarded_sha256)
+
+    report = verify_module.verify_run(out_dir)
+
+    assert report["status"] == "fail"
+    assert "raw_artifact_path_invalid" in _codes(report, "errors")
+
+
 def test_verify_run_warns_for_legacy_provenance_without_raw_hash(tmp_path):
     from pageledger.verify import verify_run
 
@@ -243,6 +316,28 @@ def test_verify_run_detects_stale_audit_rendering(tmp_path):
     report = verify_run(out_dir)
 
     assert "audit_render_mismatch" in _codes(report, "errors")
+
+
+def test_verify_run_returns_structured_failure_for_malformed_audit(tmp_path, capsys):
+    from pageledger.cli import main
+    from pageledger.verify import verify_run
+
+    out_dir, _ = _run(tmp_path)
+    audit_path = out_dir / "audit.json"
+    audit = json.loads(audit_path.read_text(encoding="utf-8"))
+    del audit["run_id"]
+    audit_path.write_text(json.dumps(audit), encoding="utf-8")
+
+    report = verify_run(out_dir)
+    assert report["status"] == "fail"
+    assert "run_id_mismatch" in _codes(report, "errors")
+    assert "artifact_structure_invalid" in _codes(report, "errors")
+
+    exit_code = main(["verify-run", str(out_dir), "--json"])
+    assert exit_code == 1
+    cli_report = json.loads(capsys.readouterr().out)
+    assert cli_report["status"] == "fail"
+    assert "artifact_structure_invalid" in _codes(cli_report, "errors")
 
 
 def test_verify_run_checks_audit_rerun_and_cost_references(tmp_path):
@@ -283,6 +378,37 @@ def test_verify_run_rejects_edited_rerun_plan(tmp_path):
     report = verify_run(out_dir)
 
     assert report["status"] == "fail"
+    assert "rerun_plan_mismatch" in _codes(report, "errors")
+
+
+def test_verify_run_derives_adapter_chain_from_config_snapshot(tmp_path):
+    from pageledger.runner import run
+    from pageledger.verify import verify_run
+
+    source = tmp_path / "chain.txt"
+    source.write_text("short\n", encoding="utf-8")
+    config = tmp_path / "chain.yml"
+    config.write_text(
+        MINIMAL.replace("adapter: text", "adapter_order: [text, text]"),
+        encoding="utf-8",
+    )
+    out_dir = tmp_path / "chain-run"
+    run(inputs=[source], config_path=config, out_dir=out_dir, dry_run=False)
+
+    manifest_path = out_dir / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["escalation"]["adapter_order"] = ["text", "evil"]
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    rerun_path = out_dir / "rerun-manifest.yml"
+    rerun = yaml.safe_load(rerun_path.read_text(encoding="utf-8"))
+    rerun["escalation"]["adapter_order"] = ["text", "evil"]
+    rerun["escalation"]["next_adapter"] = "evil"
+    rerun_path.write_text(yaml.safe_dump(rerun, sort_keys=False), encoding="utf-8")
+
+    report = verify_run(out_dir)
+
+    assert report["status"] == "fail"
+    assert "manifest_escalation_mismatch" in _codes(report, "errors")
     assert "rerun_plan_mismatch" in _codes(report, "errors")
 
 

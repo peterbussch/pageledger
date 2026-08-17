@@ -50,7 +50,8 @@ from typing import Any, ClassVar
 
 from pageledger.adapters import ExtractionResult, ocr_pdf_page_count
 
-_ACTIONS = frozenset({"transcribe_text", "extract_table", "vlm_table"})
+_STANDARD_ACTIONS = frozenset({"transcribe_text", "extract_table"})
+_VLM_ACTIONS = _STANDARD_ACTIONS | {"vlm_table"}
 _LOCAL_VLM_PRESETS = frozenset({"smoldocling"})
 _VERSION_PATTERN = re.compile(r"^Docling version:\s*(\S+)\s*$", re.MULTILINE)
 
@@ -72,20 +73,13 @@ class DoclingAdapter:
     timeout_seconds: int = 1800
     num_threads: int = 4
     executable: str = "docling"
+    capabilities: tuple[str, ...] = field(init=False)
 
     name: ClassVar[str] = "docling-local"
     version: ClassVar[str] = "example-0.1"
     deterministic: ClassVar[bool] = False
     input_types: ClassVar[tuple[str, ...]] = ("pdf",)
     output_types: ClassVar[tuple[str, ...]] = ("markdown",)
-    capabilities: ClassVar[tuple[str, ...]] = (
-        "ocr",
-        "layout",
-        "tables",
-        "vlm",
-        "local",
-    )
-
     _batches: dict[tuple[Path, int, int, int], _DocumentBatch] = field(
         default_factory=dict, init=False, repr=False
     )
@@ -117,9 +111,15 @@ class DoclingAdapter:
             )
         if not isinstance(self.executable, str) or not self.executable.strip():
             raise ValueError("run.adapter_options.executable must be a non-empty string")
+        self.capabilities = (
+            ("ocr", "layout", "tables", "vlm", "local")
+            if self.pipeline == "vlm"
+            else ("ocr", "layout", "tables", "local")
+        )
 
     def supports(self, action: str) -> bool:
-        return action in _ACTIONS
+        actions = _VLM_ACTIONS if self.pipeline == "vlm" else _STANDARD_ACTIONS
+        return action in actions
 
     def page_count(self, source: Path) -> int:
         return ocr_pdf_page_count(source)
@@ -135,9 +135,14 @@ class DoclingAdapter:
     ) -> ExtractionResult:
         if not self.supports(action):
             raise ValueError(f"{self.name} does not support action: {action}")
+        if prompt is not None:
+            raise ValueError(
+                f"{self.name} does not apply route prompts; remove the prompt or "
+                "use an adapter that records and applies it"
+            )
         if source.suffix.lower() != ".pdf":
             raise ValueError(f"{self.name} only reads PDF inputs: {source}")
-        _ = page_id, prompt
+        _ = page_id
 
         resolved = source.expanduser().resolve()
         stat = resolved.stat()

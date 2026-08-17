@@ -8,7 +8,7 @@ is the durable pointer to every other artifact in the run directory.
 ```json
 {
   "schema_version": "0.1",
-  "pageledger_version": "0.2.0",
+  "pageledger_version": "0.3.0a1",
   "run_id": "run-20260619T193000000000Z",
   "parent_run_id": null,
   "run_depth": 0,
@@ -170,6 +170,10 @@ The current generation's effective adapter is also the extractor recorded in
 - Hashes should cover source inputs and configs, not credential files.
 - `config-snapshot.yml` should copy the resolved user config used for the run
   so the manifest's config hash is inspectable later.
+- `run.adapter_options` are retained verbatim in `config-snapshot.yml` and,
+  when non-empty, in `manifest.extractors[].options`. Never put API keys,
+  passwords, tokens, or other credentials in adapter options; adapters should
+  resolve credentials from their normal external credential mechanism.
 - The current alpha records the copied config snapshot at `config.path` and the
   absolute source config path in `config.source_paths`. If a future project uses
   split config files, record all source inputs there.
@@ -197,7 +201,7 @@ The current generation's effective adapter is also the extractor recorded in
 PageLedger artifacts carry `schema_version: "0.1"` as their release contract.
 
 The package release and artifact schema are versioned independently.
-PageLedger 0.2.0 keeps artifact `schema_version: "0.1"`: its new classifier,
+PageLedger 0.3.0a1 keeps artifact `schema_version: "0.1"`: its newer classifier,
 escalation, and cost fields are additive and optional, so existing 0.1
 artifacts remain readable. A package minor release does not by itself require
 an artifact schema bump.

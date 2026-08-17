@@ -103,7 +103,7 @@
           "capabilities": { "type": "array", "items": { "type": "string" } },
           "options": {
             "type": "object",
-            "description": "run.adapter_options the adapter was constructed with."
+            "description": "run.adapter_options the adapter was constructed with. Stored verbatim as durable evidence; must not contain credentials."
           }
         },
         "additionalProperties": false

@@ -88,5 +88,5 @@ also written to `provenance.jsonl` as `route.route_confidence`; later quality
 or policy processing copies it into any audit entries it creates.
 
 The classifier and confidence fields are additive within the 0.1 artifact
-contract. PageLedger 0.2.0 therefore continues to write
+contract. PageLedger 0.3.0a1 therefore continues to write
 `schema_version: "0.1"`.

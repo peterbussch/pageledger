@@ -130,6 +130,11 @@ section) is snapshotted into the run directory as
 manifest; records the mutation in `run.log` and a `manifest.json`
 `alignment` block. `--json` for machine-readable output.
 
+Human output prints separate `Grades (signals)` and `Grades (schema)`
+distributions. JSON retains `grade_distribution` for compatibility and adds
+`grade_distribution_by_basis` at the top level and in both `before` and
+`after`.
+
 `--dry-run` computes the complete replacement in memory and reports
 before/after grades, review-queue size, and normalized-record count without
 writing any artifact or schema snapshot. Applied alignment stages every
@@ -147,9 +152,15 @@ warning and grade transitions; adapters; provenance identity; and cost.
 Directional totals such as “improved” and “resolved” are counted only when
 source bytes, source page, and the effective extractor identity match. That
 identity includes the adapter and version, model, prompt hash, determinism,
-input/output types, and capabilities. Changed-source, cross-adapter,
+input/output types, capabilities, and a SHA-256 identity of the recorded
+adapter options (the comparison report does not copy their values). Grade
+direction has a second gate: both grades must come from the
+same PageLedger version and grading configuration, have the same evidence
+basis, and (for schema-aware grades) have the same recorded schema identity.
+Changed-source, cross-adapter,
 same-adapter/different-extractor, and legacy-unknown transitions are shown but
-unranked. `--json` exposes the comparability evidence for every shared page id.
+unranked. `--json` exposes extraction and grade comparability separately for
+every shared page id.
 
 ## verify-run
 
@@ -160,10 +171,11 @@ pageledger verify-run runs/run-001/ --json
 
 Checks that the files in a run directory agree with one another: manifest
 declarations, identifiers, hashes, page counts, raw and normalized references,
-quality totals, audit/rerun items, and cost totals. Missing or changed external
-source files are warnings; malformed or inconsistent ledger artifacts are
-errors and produce exit code 1. Verification checks coherence, not extraction
-accuracy, and is not a replacement for the JSON Schema test suite.
+quality totals, audit/rerun items, alignment-schema snapshots, and cost totals.
+Missing or changed external source files are warnings; malformed or
+inconsistent ledger artifacts are errors and produce exit code 1. Verification
+checks coherence, not extraction accuracy, and is not a replacement for the
+JSON Schema test suite.
 
 ## inspect-run
 

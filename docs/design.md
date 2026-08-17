@@ -3,7 +3,7 @@
 This document explains the shipped architecture and the remaining targets.
 The release contract is what `capabilities-and-limits.md` lists as built in
 and what the JSON Schemas in [`../schemas/`](../schemas/) validate. PageLedger
-0.2.0 has the run controller, adapter protocol, structural classifier, route
+0.3.0a1 has the run controller, adapter protocol, structural classifier, route
 executor, generation-indexed adapter chains, schema aligner, per-page grading,
 audit queues, rerun execution, comparison, and ledger verification.
 

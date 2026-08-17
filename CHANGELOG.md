@@ -31,22 +31,32 @@ and this project adheres to the artifact compatibility policy documented in
 - Adapter-native result warnings now enter `quality.jsonl`, grading, and audit
   routing as well as provenance; backends can no longer report known partial
   output without affecting review.
+- The Docling example now advertises actions and capabilities by pipeline and
+  rejects route prompts it cannot apply, so standard extraction cannot be
+  mistaken for a VLM call or record a no-op prompt hash.
 - Review-only routes have explicit accounting, grade distributions are labeled
   by evidence basis, and audit Markdown is verified as a rendering of
   `audit.json` rather than an independent source of truth.
 - `compare-runs` now ranks transitions only when the full effective extractor
-  identity matches, so different models or pipelines behind one adapter name
-  remain visible but unranked.
+  identity, including adapter-option hashes, matches. Grade direction also
+  requires matching PageLedger versions, grading configuration, evidence bases,
+  and schema identity, so incompatible claims remain visible but unranked.
 - Reruns verify the parent ledger and source bytes before extraction, rederive
   their executable plan, preserve the source document page count, and record
   durable lineage depth.
+- Verification now checks retained alignment-schema hashes and comparison uses
+  canonical schema content, so pre/post-alignment grades can be related without
+  trusting a mutable or missing schema snapshot.
 
 ### Release process
 
 - Package publication is now a manual, tag-only, environment-gated workflow
   that verifies exact release metadata and smoke-tests the exact built wheel
-  before TestPyPI or PyPI upload. CI keeps a frozen dependency lane alongside
-  latest-dependency coverage, with third-party actions pinned to commit SHAs.
+  before any PyPI upload. Verification is the safe default; production also
+  requires the exact tag to be typed and a reviewer-protected, non-bypassable,
+  tag-restricted GitHub environment. CI keeps a frozen dependency lane
+  alongside latest-dependency coverage, with third-party actions pinned to
+  commit SHAs.
 - The tracked Archivo font subset now carries its upstream OFL and copyright
   notice inside the brand archive; distributable third-party notices are
   included while brand source assets remain excluded from package archives.

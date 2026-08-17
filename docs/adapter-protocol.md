@@ -216,6 +216,12 @@ recognition. For the dogfooded local VLM pass, set `pipeline: vlm` and
 Docling remote services or external plugins. Docling may download model assets
 on first use, so prewarm it before an offline run.
 
+Action support is pipeline-specific: standard mode accepts
+`transcribe_text` and `extract_table`, while VLM mode additionally accepts
+`vlm_table`. The example rejects route prompts because the Docling CLI command
+does not apply them; this prevents provenance from hashing a prompt that had no
+effect on extraction.
+
 One adapter instance is shared by the run. Standard mode converts each source
 document once, caches the structured result in memory, and derives one Markdown
 artifact per PDF page. Its conversion compute time is amortized across the
@@ -290,6 +296,11 @@ Adapters that shell out to external commands (e.g. `pdftoppm`, `tesseract`,
   stdout/stderr existed, replacing all adapter-controlled diagnostic text with
   `<redacted>`. This prevents provider and subprocess errors from becoming a
   credential-exfiltration path through `run.log` or terminal output.
+
+Adapter options are durable evidence, not a secret channel: PageLedger copies
+them into `config-snapshot.yml` and records non-empty options in the manifest.
+Do not pass credentials through `run.adapter_options`; resolve them from the
+adapter's external credential store or environment instead.
 
 Example pattern:
 

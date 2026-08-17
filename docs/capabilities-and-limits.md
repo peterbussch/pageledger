@@ -1,6 +1,6 @@
 # Capabilities and limits
 
-What PageLedger 0.2.0 does, what it leaves to you, and what is documented
+What PageLedger 0.3.0a1 does, what it leaves to you, and what is documented
 design rather than working code. This is the honest-scope page; the README
 stays short because this exists.
 
@@ -105,8 +105,11 @@ stays short because this exists.
 - `pageledger compare-runs`: page-by-page diff of two runs. Character and
   word deltas, warning and grade transitions, adapters, and cost. Directional
   improvement/resolution totals are reported only when source identity and
-  the complete effective extractor identity match; changed-source,
-  cross-adapter, and same-adapter/different-model transitions are unranked.
+  the complete effective extractor identity (including a hash of adapter
+  options) match. Grade direction additionally requires the same PageLedger
+  version, grading configuration, evidence basis, and (for schema-aware grades)
+  the same schema identity. Changed-source,
+  cross-adapter, and same-adapter/different-extractor transitions are unranked.
 - `pageledger verify-run`: checks cross-artifact ledger coherence, identifiers,
   route-action/page-bucket counts, hashes, and references without claiming OCR
   correctness or requiring a runtime JSON Schema dependency. Current manifests
@@ -194,7 +197,9 @@ Details and examples live in [`design.md`](design.md).
   or large rerun expansion queues review; it does not prove that an adapter
   hallucinated, and absence of a warning does not prove faithful output.
 - Grades are deterministic summaries of that same evidence, not accuracy.
-  A grade is only comparable when the effective extractor identity matches:
+  A grade is only comparable when the effective extractor identity, PageLedger
+  version, grading configuration, evidence basis, and any schema-aware schema
+  identity match:
   confidence is uncalibrated across engines, versions, models, and prompts, so
   an `A` from one extractor and a `B` from another are not orderable claims. A
   `signals_only` grade from an

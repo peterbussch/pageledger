@@ -14,6 +14,7 @@ from typing import Any
 import yaml
 
 from .artifacts import build_rerun_manifest, render_audit_markdown
+from .config import PageLedgerConfig
 
 REQUIRED_ARTIFACTS = {
     "config_snapshot",
@@ -171,6 +172,71 @@ def verify_run(run_dir: Path) -> dict[str, Any]:
             "Config snapshot schema_version does not match the manifest",
             artifact=paths["config_snapshot"].name,
         )
+
+    alignment = manifest.get("alignment")
+    if alignment is not None:
+        if not isinstance(alignment, dict):
+            _add(
+                errors,
+                "manifest_structure_invalid",
+                "Manifest alignment must be a mapping",
+                artifact="manifest.json",
+            )
+        else:
+            schema_source = alignment.get("schema_source")
+            expected_schema_hash = alignment.get("schema_sha256")
+            required_alignment_fields = (
+                "aligned_at",
+                "schema_source",
+                "schema_sha256",
+                "pageledger_version",
+            )
+            if any(
+                not isinstance(alignment.get(field), str)
+                or not alignment.get(field)
+                for field in required_alignment_fields
+            ):
+                _add(
+                    errors,
+                    "manifest_structure_invalid",
+                    "Manifest alignment fields must be non-empty strings",
+                    artifact="manifest.json",
+                )
+            else:
+                assert isinstance(schema_source, str)
+                assert isinstance(expected_schema_hash, str)
+                if schema_source == "config_snapshot":
+                    if config_path is not None and config_path.is_file():
+                        actual_schema_hash = _sha256(config_path)
+                        if actual_schema_hash != expected_schema_hash:
+                            _add(
+                                errors,
+                                "alignment_schema_hash_mismatch",
+                                "Alignment schema hash differs from config-snapshot.yml",
+                                artifact=config_path.name,
+                                expected=expected_schema_hash,
+                                actual=actual_schema_hash,
+                            )
+                else:
+                    alignment_snapshot = root / "align-schema-snapshot.yml"
+                    if not alignment_snapshot.is_file():
+                        _add(
+                            errors,
+                            "alignment_schema_snapshot_missing",
+                            "External alignment schema snapshot is missing",
+                            artifact=alignment_snapshot.name,
+                        )
+                    else:
+                        actual_schema_hash = _sha256(alignment_snapshot)
+                        if actual_schema_hash != expected_schema_hash:
+                            _add(
+                                errors,
+                                "alignment_schema_hash_mismatch",
+                                "Alignment schema hash differs from align-schema-snapshot.yml",
+                                artifact=alignment_snapshot.name,
+                                expected=expected_schema_hash,
+                                actual=actual_schema_hash,
+                            )
 
     route = loaded.get("route_map")
     route_pages: dict[str, dict[str, Any]] = {}
@@ -402,7 +468,6 @@ def verify_run(run_dir: Path) -> dict[str, Any]:
             continue
         assert isinstance(result, dict)
         raw_path = (root / raw_name).resolve()
-        raw_references.add(raw_path)
         if raw_path.stem != page_id:
             _add(
                 errors,
@@ -420,6 +485,8 @@ def verify_run(run_dir: Path) -> dict[str, Any]:
                 page_id=page_id,
                 artifact=raw_name,
             )
+            continue
+        raw_references.add(raw_path)
         if not raw_path.is_file():
             _add(
                 errors,
@@ -539,16 +606,24 @@ def verify_run(run_dir: Path) -> dict[str, Any]:
                     actual=len(quarantined),
                 )
         audit_markdown = loaded.get("audit_md")
-        if (
-            isinstance(audit_markdown, str)
-            and audit_markdown != render_audit_markdown(audit)
-        ):
-            _add(
-                errors,
-                "audit_render_mismatch",
-                "audit.md is not the current rendering of audit.json",
-                artifact=paths["audit_md"].name,
-            )
+        if isinstance(audit_markdown, str):
+            try:
+                expected_audit_markdown = render_audit_markdown(audit)
+            except (KeyError, TypeError, ValueError) as exc:
+                _add(
+                    errors,
+                    "artifact_structure_invalid",
+                    f"audit.json cannot be rendered safely: {exc}",
+                    artifact=paths["audit"].name,
+                )
+            else:
+                if audit_markdown != expected_audit_markdown:
+                    _add(
+                        errors,
+                        "audit_render_mismatch",
+                        "audit.md is not the current rendering of audit.json",
+                        artifact=paths["audit_md"].name,
+                    )
 
     rerun = loaded.get("rerun_manifest")
     if isinstance(rerun, dict):
@@ -709,20 +784,51 @@ def _check_rerun_plan(
     ):
         return
 
+    try:
+        configured_order = PageLedgerConfig(
+            schema_version=schema_version,
+            data=config,
+        ).adapter_order
+    except ValueError as exc:
+        _add(
+            errors,
+            "config_adapter_order_invalid",
+            f"Config snapshot adapter chain is invalid: {exc}",
+            artifact="config-snapshot.yml",
+        )
+        return
+
+    adapter_order = (
+        [str(entry["adapter"]) for entry in configured_order]
+        if configured_order is not None
+        else None
+    )
+    expected_manifest_escalation = (
+        {"adapter_order": adapter_order, "step": run_depth}
+        if adapter_order is not None
+        else None
+    )
+    if manifest.get("escalation") != expected_manifest_escalation:
+        _add(
+            errors,
+            "manifest_escalation_mismatch",
+            "Manifest adapter escalation does not match config-snapshot.yml",
+            artifact="manifest.json",
+            expected=expected_manifest_escalation,
+            actual=manifest.get("escalation"),
+        )
+
     rerun_escalation: dict[str, Any] | None = None
-    manifest_escalation = manifest.get("escalation")
-    if isinstance(manifest_escalation, dict):
-        adapter_order = manifest_escalation.get("adapter_order")
-        if isinstance(adapter_order, list):
-            rerun_escalation = {
-                "adapter_order": adapter_order,
-                "step": run_depth,
-                "next_adapter": (
-                    adapter_order[run_depth + 1]
-                    if run_depth + 1 < len(adapter_order)
-                    else None
-                ),
-            }
+    if adapter_order is not None:
+        rerun_escalation = {
+            "adapter_order": adapter_order,
+            "step": run_depth,
+            "next_adapter": (
+                adapter_order[run_depth + 1]
+                if run_depth + 1 < len(adapter_order)
+                else None
+            ),
+        }
 
     try:
         expected = build_rerun_manifest(

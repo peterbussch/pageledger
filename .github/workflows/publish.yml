@@ -4,16 +4,21 @@ on:
   workflow_dispatch:
     inputs:
       target:
-        description: Package index to publish to after verification
+        description: Verify the tagged artifact, or publish it to PyPI after approval
         required: true
-        default: testpypi
+        default: verify
         type: choice
         options:
-          - testpypi
+          - verify
           - pypi
+      production_confirmation:
+        description: For PyPI, type the exact release tag (for example v0.3.0a1)
+        required: false
+        type: string
 
 permissions:
   contents: read
+  actions: read
 
 concurrency:
   group: publish-${{ github.ref }}
@@ -31,12 +36,68 @@ jobs:
         env:
           RELEASE_TAG: ${{ github.ref_name }}
           RELEASE_REF_TYPE: ${{ github.ref_type }}
+          PUBLISH_TARGET: ${{ inputs.target }}
+          PRODUCTION_CONFIRMATION: ${{ inputs.production_confirmation }}
         run: |
           test "$RELEASE_REF_TYPE" = "tag" || {
             echo "Publish must be manually dispatched from an existing tag." >&2
             exit 1
           }
           python scripts/check_release.py "$RELEASE_TAG"
+          if [ "$PUBLISH_TARGET" = "pypi" ]; then
+            test "$PRODUCTION_CONFIRMATION" = "$RELEASE_TAG" || {
+              echo "PyPI publication requires typing the exact release tag." >&2
+              exit 1
+            }
+          fi
+      - name: Require protected PyPI environment before production
+        if: inputs.target == 'pypi'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          import urllib.error
+          import urllib.request
+
+          repository = os.environ["GITHUB_REPOSITORY"]
+          headers = {
+              "Accept": "application/vnd.github+json",
+              "Authorization": f"Bearer {os.environ['GITHUB_TOKEN']}",
+              "X-GitHub-Api-Version": "2026-03-10",
+          }
+
+          def get_json(path):
+              request = urllib.request.Request(
+                  f"https://api.github.com/repos/{repository}/{path}",
+                  headers=headers,
+              )
+              try:
+                  with urllib.request.urlopen(request, timeout=30) as response:
+                      return json.load(response)
+              except (OSError, urllib.error.HTTPError, json.JSONDecodeError) as exc:
+                  raise SystemExit(
+                      "Could not verify PyPI environment protections; refusing publication"
+                  ) from exc
+
+          environment = get_json("environments/pypi")
+          rules = environment.get("protection_rules", [])
+          if not any(rule.get("type") == "required_reviewers" for rule in rules):
+              raise SystemExit("PyPI environment has no required reviewer")
+          if environment.get("can_admins_bypass") is not False:
+              raise SystemExit("PyPI environment must disable administrator bypass")
+          deployment_policy = environment.get("deployment_branch_policy")
+          if not isinstance(deployment_policy, dict) or not deployment_policy.get(
+              "custom_branch_policies"
+          ):
+              raise SystemExit("PyPI environment must use selected tag policies")
+          policies = get_json("environments/pypi/deployment-branch-policies")
+          entries = policies.get("branch_policies", [])
+          if not any(entry.get("name") == "v*" for entry in entries):
+              raise SystemExit("PyPI environment must allow only the v* tag pattern")
+          print("PyPI environment protections verified")
+          PY
       - name: Recreate the locked verification environment
         run: |
           python -m pip install uv==0.11.16
@@ -85,31 +146,13 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
-  publish-testpypi:
-    if: inputs.target == 'testpypi'
-    needs: build
-    runs-on: ubuntu-latest
-    environment: testpypi
-    permissions:
-      id-token: write
-    steps:
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
-        with:
-          name: dist-${{ github.ref_name }}
-          path: dist/
-      - name: Remove non-package checksum file
-        run: rm dist/SHA256SUMS
-      - name: Publish to TestPyPI (trusted publishing)
-        uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # release/v1
-        with:
-          repository-url: https://test.pypi.org/legacy/
-
   publish-pypi:
     if: inputs.target == 'pypi'
     needs: build
     runs-on: ubuntu-latest
     environment: pypi
     permissions:
+      actions: read
       id-token: write
     steps:
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8

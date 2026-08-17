@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 from typing import Any
+
+import yaml
 
 from .artifacts import read_jsonl
 from .grading import format_grade, grade_is_below
@@ -31,6 +34,8 @@ def compare_runs(run_dir_a: Path, run_dir_b: Path) -> dict[str, Any]:
     grades_improved = 0
     grades_regressed = 0
     pages_comparable = 0
+    grade_pages_comparable = 0
+    grade_pages_incomparable = 0
     identity_mismatches: list[str] = []
     for page_id in common:
         qa = a["quality"][page_id]
@@ -46,8 +51,16 @@ def compare_runs(run_dir_a: Path, run_dir_b: Path) -> dict[str, Any]:
         extractor_b = provenance_b.get("extractor", {})
         adapter_a = qa.get("adapter") or extractor_a.get("adapter")
         adapter_b = qb.get("adapter") or extractor_b.get("adapter")
-        effective_extractor_a = _effective_extractor_identity(adapter_a, extractor_a)
-        effective_extractor_b = _effective_extractor_identity(adapter_b, extractor_b)
+        effective_extractor_a = _effective_extractor_identity(
+            adapter_a,
+            extractor_a,
+            _manifest_extractor_options_hash(a["manifest"], extractor_a),
+        )
+        effective_extractor_b = _effective_extractor_identity(
+            adapter_b,
+            extractor_b,
+            _manifest_extractor_options_hash(b["manifest"], extractor_b),
+        )
         if source_status in {"changed", "different"}:
             comparability = "incomparable_source"
         elif source_status == "unknown" or not adapter_a or not adapter_b:
@@ -70,8 +83,36 @@ def compare_runs(run_dir_a: Path, run_dir_b: Path) -> dict[str, Any]:
             warnings_introduced += len(introduced)
         grade_a = qa.get("grade")
         grade_b = qb.get("grade")
+        grade_basis_a = qa.get("grade_basis")
+        grade_basis_b = qb.get("grade_basis")
+        grade_generator_a = _grade_generator_identity(a["manifest"])
+        grade_generator_b = _grade_generator_identity(b["manifest"])
+        grade_config_identity_a = _grade_config_identity(a["config"])
+        grade_config_identity_b = _grade_config_identity(b["config"])
+        grade_schema_identity_a = _grade_schema_identity(
+            a["schema_identity"], grade_basis_a
+        )
+        grade_schema_identity_b = _grade_schema_identity(
+            b["schema_identity"], grade_basis_b
+        )
+        grade_comparability = _grade_comparability(
+            comparability,
+            grade_basis_a,
+            grade_basis_b,
+            grade_generator_a,
+            grade_generator_b,
+            grade_config_identity_a,
+            grade_config_identity_b,
+            grade_schema_identity_a,
+            grade_schema_identity_b,
+        )
+        if grade_a is not None and grade_b is not None:
+            if grade_comparability == "comparable":
+                grade_pages_comparable += 1
+            else:
+                grade_pages_incomparable += 1
         if (
-            comparability == "comparable"
+            grade_comparability == "comparable"
             and grade_a is not None
             and grade_b is not None
             and grade_a != grade_b
@@ -103,8 +144,15 @@ def compare_runs(run_dir_a: Path, run_dir_b: Path) -> dict[str, Any]:
                 "warnings_introduced": introduced,
                 "grade_a": grade_a,
                 "grade_b": grade_b,
-                "grade_basis_a": qa.get("grade_basis"),
-                "grade_basis_b": qb.get("grade_basis"),
+                "grade_basis_a": grade_basis_a,
+                "grade_basis_b": grade_basis_b,
+                "grade_generator_a": grade_generator_a,
+                "grade_generator_b": grade_generator_b,
+                "grade_config_identity_a": grade_config_identity_a,
+                "grade_config_identity_b": grade_config_identity_b,
+                "grade_schema_identity_a": grade_schema_identity_a,
+                "grade_schema_identity_b": grade_schema_identity_b,
+                "grade_comparability": grade_comparability,
                 "source_a": source_a,
                 "source_b": source_b,
                 "source_status": source_status,
@@ -122,6 +170,8 @@ def compare_runs(run_dir_a: Path, run_dir_b: Path) -> dict[str, Any]:
         "pages_compared": len(common),
         "pages_comparable_total": pages_comparable,
         "pages_incomparable_total": len(common) - pages_comparable,
+        "grade_pages_comparable_total": grade_pages_comparable,
+        "grade_pages_incomparable_total": grade_pages_incomparable,
         "page_identity_mismatches": identity_mismatches,
         "pages_only_in_a": sorted(ids_a - ids_b),
         "pages_only_in_b": sorted(ids_b - ids_a),
@@ -155,9 +205,11 @@ def render_comparison(report: dict[str, Any]) -> str:
         f"Warning pages: A={report['warning_pages_a']} B={report['warning_pages_b']}",
         f"Comparable pages: {report.get('pages_comparable_total', report['pages_compared'])}"
         f" / incomparable {report.get('pages_incomparable_total', 0)}",
+        f"Grade-comparable pages: {report.get('grade_pages_comparable_total', 0)}"
+        f" / incomparable {report.get('grade_pages_incomparable_total', 0)}",
         f"Warnings resolved in B: {report['warnings_resolved_total']}",
         f"Warnings introduced in B: {report['warnings_introduced_total']}",
-        f"Grades: improved {report['grades_improved_total']}"
+        f"Grades (matching basis/schema only): improved {report['grades_improved_total']}"
         f" / regressed {report['grades_regressed_total']}",
         f"Cost: A={_cost_line(a)} B={_cost_line(b)}",
     ]
@@ -177,14 +229,15 @@ def render_comparison(report: dict[str, Any]) -> str:
             [
                 "",
                 "Pages with warning or grade changes:",
-                "| page_id | comparable | chars A→B | grade A→B | resolved | introduced |",
-                "|---|---|---|---|---|---|",
+                "| page_id | extraction | grade | chars A→B | grade A→B | resolved | introduced |",
+                "|---|---|---|---|---|---|---|",
             ]
         )
         for page in changed[:50]:
             lines.append(
                 f"| {page['page_id']}"
                 f" | {page.get('comparability', 'comparable')}"
+                f" | {page.get('grade_comparability', 'incomparable_unknown')}"
                 f" | {page['character_count_a']}→{page['character_count_b']}"
                 f" | {_grade_transition(page)}"
                 f" | {', '.join(page['warnings_resolved']) or '-'}"
@@ -214,6 +267,8 @@ def _load_run(run_dir: Path, *, label: str) -> dict[str, Any]:
     provenance = {
         entry["page_id"]: entry for entry in read_jsonl(out_dir / "provenance.jsonl")
     }
+    config = _load_config_snapshot(out_dir, manifest)
+    schema_identity = _load_grade_schema_identity(out_dir, manifest, config)
 
     return {
         "dir": out_dir,
@@ -221,6 +276,8 @@ def _load_run(run_dir: Path, *, label: str) -> dict[str, Any]:
         "quality": quality,
         "provenance": provenance,
         "cost": cost,
+        "config": config,
+        "schema_identity": schema_identity,
     }
 
 
@@ -294,10 +351,15 @@ def _source_status(source_a: Any, source_b: Any) -> str:
 
 
 def _effective_extractor_identity(
-    adapter: Any, extractor: Any
+    adapter: Any, extractor: Any, options_sha256: str | None
 ) -> dict[str, Any] | None:
     """Return normalized evidence that two outputs used the same extractor."""
-    if not isinstance(adapter, str) or not adapter or not isinstance(extractor, dict):
+    if (
+        not isinstance(adapter, str)
+        or not adapter
+        or not isinstance(extractor, dict)
+        or options_sha256 is None
+    ):
         return None
 
     required = (
@@ -340,8 +402,220 @@ def _effective_extractor_identity(
         "model": model,
         "prompt_hash": prompt_hash,
         "deterministic": deterministic,
+        "options_sha256": options_sha256,
         **normalized_lists,
     }
+
+
+def _manifest_extractor_options_hash(
+    manifest: Any, page_extractor: Any
+) -> str | None:
+    """Resolve page provenance to one non-secret manifest options identity."""
+    if not isinstance(manifest, dict) or not isinstance(page_extractor, dict):
+        return None
+    manifest_extractors = manifest.get("extractors")
+    if not isinstance(manifest_extractors, list):
+        return None
+
+    option_hashes: set[str] = set()
+    for candidate in manifest_extractors:
+        if not _manifest_extractor_matches(candidate, page_extractor):
+            continue
+        assert isinstance(candidate, dict)
+        options = candidate.get("options", {})
+        if not isinstance(options, dict):
+            return None
+        try:
+            canonical = json.dumps(
+                options,
+                ensure_ascii=False,
+                allow_nan=False,
+                separators=(",", ":"),
+                sort_keys=True,
+            ).encode("utf-8")
+        except (TypeError, ValueError):
+            return None
+        option_hashes.add(hashlib.sha256(canonical).hexdigest())
+    if len(option_hashes) != 1:
+        return None
+    return next(iter(option_hashes))
+
+
+def _manifest_extractor_matches(candidate: Any, page_extractor: dict[str, Any]) -> bool:
+    if not isinstance(candidate, dict):
+        return False
+    scalar_fields = (
+        ("adapter", "adapter"),
+        ("version", "adapter_version"),
+        ("model", "model"),
+        ("prompt_hash", "prompt_hash"),
+        ("deterministic", "deterministic"),
+    )
+    if any(candidate.get(left) != page_extractor.get(right) for left, right in scalar_fields):
+        return False
+    for field in ("input_types", "output_types", "capabilities"):
+        left = candidate.get(field)
+        right = page_extractor.get(field)
+        if not isinstance(left, list) or not isinstance(right, list):
+            return False
+        if sorted(left) != sorted(right):
+            return False
+    return True
+
+
+def _grade_schema_identity(identity: Any, grade_basis: Any) -> str | None:
+    if grade_basis != "schema_aware":
+        return None
+    return identity if isinstance(identity, str) and identity else None
+
+
+def _grade_generator_identity(manifest: Any) -> str | None:
+    if not isinstance(manifest, dict):
+        return None
+    alignment = manifest.get("alignment")
+    if isinstance(alignment, dict):
+        aligned_version = alignment.get("pageledger_version")
+        if isinstance(aligned_version, str) and aligned_version:
+            return aligned_version
+    version = manifest.get("pageledger_version")
+    return version if isinstance(version, str) and version else None
+
+
+def _grade_config_identity(config: Any) -> str | None:
+    if not isinstance(config, dict):
+        return None
+    run_config = config.get("run")
+    if not isinstance(run_config, dict):
+        return None
+    grading = run_config.get("grading", {})
+    return _canonical_mapping_hash(grading)
+
+
+def _canonical_mapping_hash(value: Any) -> str | None:
+    if not isinstance(value, dict):
+        return None
+    try:
+        canonical = json.dumps(
+            value,
+            ensure_ascii=False,
+            allow_nan=False,
+            separators=(",", ":"),
+            sort_keys=True,
+        ).encode("utf-8")
+    except (TypeError, ValueError):
+        return None
+    return hashlib.sha256(canonical).hexdigest()
+
+
+def _load_config_snapshot(out_dir: Path, manifest: dict[str, Any]) -> dict[str, Any] | None:
+    manifest_config = manifest.get("config")
+    if not isinstance(manifest_config, dict):
+        return None
+    relative = manifest_config.get("path")
+    if not isinstance(relative, str) or not relative:
+        return None
+    path = (out_dir / relative).resolve()
+    if path != out_dir and out_dir not in path.parents:
+        return None
+    expected_hash = manifest_config.get("sha256")
+    if (
+        not isinstance(expected_hash, str)
+        or not _file_hash_matches(path, expected_hash)
+    ):
+        return None
+    try:
+        loaded = yaml.safe_load(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, yaml.YAMLError):
+        return None
+    return loaded if isinstance(loaded, dict) else None
+
+
+def _load_grade_schema_identity(
+    out_dir: Path,
+    manifest: dict[str, Any],
+    config: dict[str, Any] | None,
+) -> str | None:
+    if not isinstance(config, dict):
+        return None
+    config_schema = _canonical_mapping_hash(config.get("schema"))
+    alignment = manifest.get("alignment")
+    if alignment is None:
+        return config_schema
+    if not isinstance(alignment, dict):
+        return None
+    source = alignment.get("schema_source")
+    expected_hash = alignment.get("schema_sha256")
+    if not isinstance(source, str) or not isinstance(expected_hash, str):
+        return None
+    if source == "config_snapshot":
+        manifest_config = manifest.get("config")
+        relative = (
+            manifest_config.get("path")
+            if isinstance(manifest_config, dict)
+            else None
+        )
+        if not isinstance(relative, str):
+            return None
+        config_path = (out_dir / relative).resolve()
+        if not _file_hash_matches(config_path, expected_hash):
+            return None
+        return config_schema
+
+    schema_path = out_dir / "align-schema-snapshot.yml"
+    if not _file_hash_matches(schema_path, expected_hash):
+        return None
+    try:
+        loaded = yaml.safe_load(schema_path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, yaml.YAMLError):
+        return None
+    if not isinstance(loaded, dict):
+        return None
+    return _canonical_mapping_hash(loaded.get("schema", loaded))
+
+
+def _file_sha256(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def _file_hash_matches(path: Path, expected: str) -> bool:
+    try:
+        return path.is_file() and _file_sha256(path) == expected
+    except OSError:
+        return False
+
+
+def _grade_comparability(
+    extraction_comparability: str,
+    basis_a: Any,
+    basis_b: Any,
+    generator_a: str | None,
+    generator_b: str | None,
+    config_identity_a: str | None,
+    config_identity_b: str | None,
+    schema_identity_a: str | None,
+    schema_identity_b: str | None,
+) -> str:
+    if extraction_comparability != "comparable":
+        return "incomparable_extraction"
+    valid_bases = {"signals_only", "schema_aware"}
+    if basis_a not in valid_bases or basis_b not in valid_bases:
+        return "incomparable_unknown"
+    if basis_a != basis_b:
+        return "incomparable_basis"
+    if generator_a is None or generator_b is None:
+        return "incomparable_unknown"
+    if generator_a != generator_b:
+        return "incomparable_generator"
+    if config_identity_a is None or config_identity_b is None:
+        return "incomparable_unknown"
+    if config_identity_a != config_identity_b:
+        return "incomparable_grade_config"
+    if basis_a == "schema_aware":
+        if schema_identity_a is None or schema_identity_b is None:
+            return "incomparable_unknown"
+        if schema_identity_a != schema_identity_b:
+            return "incomparable_schema"
+    return "comparable"
 
 
 def _cost_line(summary: dict[str, Any]) -> str:

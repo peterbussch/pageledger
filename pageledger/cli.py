@@ -364,8 +364,11 @@ def _cmd_align(args: argparse.Namespace) -> int:
         print(f"Schema source: {report['schema_source']}")
         print(f"Pages aligned: {report['pages_aligned']}")
         print(f"Records normalized: {report['records_normalized']}")
-        distribution = report["grade_distribution"]
-        print("Grades: " + " ".join(f"{g}={distribution[g]}" for g in GRADES))
+        for basis, distribution in report["grade_distribution_by_basis"].items():
+            print(
+                f"Grades ({grade_basis_label(basis)}): "
+                + " ".join(f"{grade}={distribution[grade]}" for grade in GRADES)
+            )
         print(f"Review queue: {report['review_queue_count']}")
     return 0
 
