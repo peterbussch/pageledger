@@ -187,10 +187,10 @@ Internal corruption is an error; a missing or changed external source is a
 warning because the ledger itself remains inspectable. Verification does not
 judge OCR accuracy and does not replace the build-time JSON Schema suite.
 
-Current manifests require `result.raw_sha256` on every provenance line. A
-missing hash is an error, not a legacy downgrade. Only manifests that predate
-the `pageledger_version` field retain warning-only compatibility for absent raw
-hashes.
+`verify-run` requires `result.raw_sha256` on every provenance line. A missing
+hash is an integrity error even for an otherwise readable legacy manifest;
+deleting generator-version evidence cannot downgrade it to a warning-only
+PASS.
 
 ## Compatibility
 

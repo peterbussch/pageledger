@@ -506,20 +506,12 @@ def verify_run(run_dir: Path) -> dict[str, Any]:
         else:
             expected_raw_hash = result.get("raw_sha256")
             if expected_raw_hash is None:
-                if "pageledger_version" in manifest:
-                    _add(
-                        errors,
-                        "raw_artifact_hash_missing",
-                        f"Current provenance lacks a raw artifact hash for {page_id}",
-                        page_id=page_id,
-                    )
-                else:
-                    _add(
-                        warnings,
-                        "legacy_evidence_incomplete",
-                        f"Legacy provenance lacks a raw artifact hash for {page_id}",
-                        page_id=page_id,
-                    )
+                _add(
+                    errors,
+                    "raw_artifact_hash_missing",
+                    f"Provenance lacks a raw artifact hash for {page_id}",
+                    page_id=page_id,
+                )
             elif (
                 not isinstance(expected_raw_hash, str)
                 or _sha256(raw_path) != expected_raw_hash

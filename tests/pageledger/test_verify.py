@@ -393,7 +393,7 @@ def test_verify_run_rejects_missing_raw_hash_from_new_run(tmp_path):
     assert "raw_artifact_hash_missing" in _codes(report, "errors")
 
 
-def test_verify_run_warns_for_legacy_provenance_without_raw_hash(tmp_path):
+def test_verify_run_fails_closed_for_legacy_provenance_without_raw_hash(tmp_path):
     from pageledger.verify import verify_run
 
     out_dir, _ = _run(tmp_path)
@@ -414,8 +414,9 @@ def test_verify_run_warns_for_legacy_provenance_without_raw_hash(tmp_path):
 
     report = verify_run(out_dir)
 
-    assert report["status"] == "pass"
+    assert report["status"] == "fail"
     assert "legacy_evidence_incomplete" in _codes(report, "warnings")
+    assert "raw_artifact_hash_missing" in _codes(report, "errors")
 
 
 def test_verify_run_detects_stale_audit_rendering(tmp_path):

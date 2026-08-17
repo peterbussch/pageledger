@@ -48,8 +48,9 @@ and this project adheres to the artifact compatibility policy documented in
 - Verification now checks retained alignment-schema hashes and comparison uses
   canonical schema content, so pre/post-alignment grades can be related without
   trusting a mutable or missing schema snapshot.
-- Current-run raw hashes cannot be removed to obtain warning-only legacy
-  treatment, and raw/alignment symlinks cannot make verification or comparison
+- Missing raw hashes now fail integrity verification even for readable legacy
+  evidence, so deleting generator-version metadata cannot obtain warning-only
+  treatment; raw/alignment symlinks also cannot make verification or comparison
   read outside the run directory.
 
 ### Release process

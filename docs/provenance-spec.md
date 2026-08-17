@@ -113,11 +113,11 @@ Normalized records should preserve links back to provenance lines:
   configured unit rates. Missing token usage never becomes a known zero cost.
 - `result.raw_sha256` is optional for compatibility with older schema-0.1
   ledgers whose manifest also predates `pageledger_version`. Current writers
-  always emit it. `verify-run` fails if current raw bytes differ or if a digest
-  is removed from a current run; only genuinely older provenance gets the
-  incomplete-evidence warning. This detects accidental or local modification;
-  it is not authenticity without an externally trusted or signed
-  manifest/provenance set.
+  always emit it. `verify-run` fails if raw bytes differ or if any digest is
+  absent. Older evidence remains parseable and receives an incomplete-evidence
+  warning, but it cannot receive an integrity PASS without a raw digest. This
+  detects accidental or local modification; it is not authenticity without an
+  externally trusted or signed manifest/provenance set.
 - The JSON Schema for this artifact is at `schemas/provenance-line.schema.json`.
 - Schema validation tests are in `tests/pageledger/test_schemas.py`.
 

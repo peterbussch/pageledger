@@ -47,7 +47,8 @@ changelog date, or committed lock disagree.
 
    - at least one required reviewer;
    - administrator bypass disabled;
-   - selected deployment tags restricted to the `v*` pattern.
+   - the sole custom deployment pattern is `v*`; the environment job enforces
+     that pattern against the verified tag ref.
 
 4. After explicit release-owner approval, dispatch **Publish** again from the
    same tag with target `pypi` and type that exact tag into

@@ -69,7 +69,9 @@ def test_publish_is_manual_tag_only_and_verifies_before_upload() -> None:
     assert "required_reviewers" in workflow
     assert "can_admins_bypass" in workflow
     assert "deployment-branch-policies" in workflow
-    assert 'allowed_policies != {("tag", "v*")}' in workflow
+    assert 'policies.get("total_count") != 1' in workflow
+    assert "or len(entries) != 1" in workflow
+    assert 'allowed_policy_names != {"v*"}' in workflow
     assert "github.ref_type" in workflow
     assert 'python scripts/check_release.py "$RELEASE_TAG"' in workflow
     assert 'test "$PRODUCTION_CONFIRMATION" = "$RELEASE_TAG"' in workflow
