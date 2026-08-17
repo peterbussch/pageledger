@@ -672,7 +672,7 @@ def _rewrite_route_map(route_map: dict[str, Any], sources: list[dict[str, Any]])
 def _inventory(root: Path) -> list[dict[str, Any]]:
     paths: list[Path] = []
     for path in _walk_no_follow(root):
-        if path.name == "bundle.json":
+        if path.relative_to(root).as_posix() == "bundle.json":
             continue
         if path.is_file():
             paths.append(path)
@@ -733,7 +733,11 @@ def _validate_declared_paths(root: Path, baseline: dict[str, Any], replay: dict[
         _require_regular(candidate, relative)
         if candidate.stat().st_size != entry["size"] or _sha256_file(candidate) != entry["sha256"]:
             _fail("bundle_hash_mismatch", f"Bundle inventory hash or size mismatch: {relative}")
-    actual = {path.relative_to(root).as_posix() for path in _walk_no_follow(root) if path.is_file() and path.name != "bundle.json"}
+    actual = {
+        path.relative_to(root).as_posix()
+        for path in _walk_no_follow(root)
+        if path.relative_to(root).as_posix() != "bundle.json"
+    }
     if actual != seen_files:
         _fail("inventory_mismatch", "Bundle inventory does not match transported files")
     for required in (baseline["manifest"], replay["config"], replay["route_map"]):
@@ -825,7 +829,7 @@ def _validate_transport_allowlist(root: Path, manifest: dict[str, Any], sources:
     actual = {
         path.relative_to(root).as_posix()
         for path in _walk_no_follow(root)
-        if path.name != "bundle.json"
+        if path.relative_to(root).as_posix() != "bundle.json"
     }
     if actual != allowed:
         unexpected = sorted(actual - allowed)

@@ -237,10 +237,19 @@ def _refresh_bundle_inventory(bundle_dir: Path) -> dict:
             "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
         }
         for path in sorted(bundle_dir.rglob("*"))
-        if path.is_file() and path.name != "bundle.json"
+        if path.is_file() and path.relative_to(bundle_dir).as_posix() != "bundle.json"
     ]
     bundle_path.write_text(json.dumps(bundle, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     return bundle
+
+
+def _refresh_manifest_metadata(bundle_dir: Path) -> dict:
+    bundle_path = bundle_dir / "bundle.json"
+    bundle = json.loads(bundle_path.read_text(encoding="utf-8"))
+    manifest_path = bundle_dir / "baseline" / "manifest.json"
+    bundle["baseline"]["manifest_sha256"] = hashlib.sha256(manifest_path.read_bytes()).hexdigest()
+    bundle_path.write_text(json.dumps(bundle, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    return _refresh_bundle_inventory(bundle_dir)
 
 
 @pytest.mark.parametrize("new_name", ["sources/source-0001.TXT", "sources/nested/source-0001.txt"])
@@ -265,6 +274,7 @@ def test_bundle_rejects_noncanonical_source_filename(tmp_path: Path, new_name: s
     route["documents"][0]["source"] = new_name
     (bundle_dir / "replay-route-map.yml").write_text(yaml.safe_dump(route, sort_keys=False), encoding="utf-8")
     (bundle_dir / "bundle.json").write_text(json.dumps(bundle, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    _refresh_bundle_inventory(bundle_dir)
     with pytest.raises(ReplayError):
         validate_bundle(bundle_dir)
 
@@ -276,6 +286,20 @@ def test_bundle_rejects_regular_file_outside_canonical_allowlist(tmp_path: Path)
     bundle_dir = tmp_path / "bundle"
     bundle_run(run_dir, bundle_dir)
     (bundle_dir / "baseline" / "rogue.txt").write_text("undeclared", encoding="utf-8")
+    _refresh_bundle_inventory(bundle_dir)
+    with pytest.raises(ReplayError, match="undeclared"):
+        validate_bundle(bundle_dir)
+
+
+def test_bundle_nested_bundle_json_is_not_root_inventory_exemption(tmp_path: Path) -> None:
+    from pageledger.replay import ReplayError, bundle_run, validate_bundle
+
+    run_dir, _, _ = _run_text(tmp_path)
+    bundle_dir = tmp_path / "bundle"
+    bundle_run(run_dir, bundle_dir)
+    nested = bundle_dir / "baseline" / "nested" / "bundle.json"
+    nested.parent.mkdir()
+    nested.write_text("nested", encoding="utf-8")
     _refresh_bundle_inventory(bundle_dir)
     with pytest.raises(ReplayError, match="undeclared"):
         validate_bundle(bundle_dir)
@@ -342,6 +366,34 @@ def test_bundle_rejects_dry_run(tmp_path: Path) -> None:
         bundle_run(run_dir, tmp_path / "bundle")
 
 
+@pytest.mark.parametrize(
+    ("manifest_update", "message"),
+    [
+        ({"run_depth": 1}, "generation zero"),
+        ({"status": "failed"}, "status"),
+        ({"summary": {"pages_failed": 1}}, "failed"),
+        ({"summary": {"pages_not_attempted": 1}}, "unattempted"),
+    ],
+)
+def test_bundle_rejects_generation_and_incomplete_runs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, manifest_update: dict, message: str
+) -> None:
+    import pageledger.verify as verify_module
+    from pageledger.replay import ReplayError, bundle_run
+
+    run_dir, _, _ = _run_text(tmp_path)
+    manifest_path = run_dir / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    if "summary" in manifest_update:
+        manifest["summary"].update(manifest_update["summary"])
+    else:
+        manifest.update(manifest_update)
+    manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    monkeypatch.setattr(verify_module, "verify_run", lambda _: {"status": "pass"})
+    with pytest.raises(ReplayError, match=message):
+        bundle_run(run_dir, tmp_path / "bundle")
+
+
 @pytest.mark.parametrize("source_state", ["changed", "missing"])
 def test_bundle_rejects_changed_or_missing_source(tmp_path: Path, source_state: str) -> None:
     from pageledger.replay import ReplayError, bundle_run
@@ -391,3 +443,101 @@ def test_bundle_rejects_noncanonical_manifest_artifact_key(tmp_path: Path) -> No
     manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     with pytest.raises(ReplayError):
         bundle_run(run_dir, tmp_path / "bundle")
+
+
+@pytest.mark.parametrize("unsafe_path", ["/tmp/escape", "../escape"])
+def test_bundle_rejects_unsafe_inventory_paths(tmp_path: Path, unsafe_path: str) -> None:
+    from pageledger.replay import ReplayError, bundle_run, validate_bundle
+
+    run_dir, _, _ = _run_text(tmp_path)
+    bundle_dir = tmp_path / "bundle"
+    bundle_run(run_dir, bundle_dir)
+    bundle = json.loads((bundle_dir / "bundle.json").read_text(encoding="utf-8"))
+    bundle["files"][0]["path"] = unsafe_path
+    (bundle_dir / "bundle.json").write_text(json.dumps(bundle, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    with pytest.raises(ReplayError, match="Unsafe bundle path"):
+        validate_bundle(bundle_dir)
+
+
+def test_bundle_rejects_duplicate_source_mapping(tmp_path: Path) -> None:
+    from pageledger.replay import ReplayError, bundle_run, validate_bundle
+
+    run_dir, _, _ = _run_text(tmp_path)
+    bundle_dir = tmp_path / "bundle"
+    bundle_run(run_dir, bundle_dir)
+    bundle = json.loads((bundle_dir / "bundle.json").read_text(encoding="utf-8"))
+    duplicate = dict(bundle["sources"][0])
+    duplicate["index"] = 2
+    bundle["sources"].append(duplicate)
+    (bundle_dir / "bundle.json").write_text(json.dumps(bundle, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    with pytest.raises(ReplayError, match="source paths"):
+        validate_bundle(bundle_dir)
+
+
+def test_bundle_rejects_wrong_canonical_artifact_path(tmp_path: Path) -> None:
+    from pageledger.replay import ReplayError, bundle_run, validate_bundle
+
+    run_dir, _, _ = _run_text(tmp_path)
+    bundle_dir = tmp_path / "bundle"
+    bundle_run(run_dir, bundle_dir)
+    bundle = json.loads((bundle_dir / "bundle.json").read_text(encoding="utf-8"))
+    bundle["replay"]["config"] = "baseline/wrong-config.yml"
+    (bundle_dir / "bundle.json").write_text(json.dumps(bundle, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    with pytest.raises(ReplayError, match="canonical"):
+        validate_bundle(bundle_dir)
+
+
+@pytest.mark.parametrize("option_mapping", ["adapter_options", "hook_options"])
+def test_bundle_rejects_forbidden_key_in_config_option_mapping(
+    tmp_path: Path, option_mapping: str
+) -> None:
+    from pageledger.replay import ReplayError, bundle_run, validate_bundle
+
+    run_dir, _, _ = _run_text(tmp_path)
+    bundle_dir = tmp_path / "bundle"
+    bundle_run(run_dir, bundle_dir)
+    config_path = bundle_dir / "baseline" / "config-snapshot.yml"
+    config = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    if option_mapping == "adapter_options":
+        config.setdefault("run", {})[option_mapping] = {"api_key": "secret"}
+    else:
+        config.setdefault("classify", {})[option_mapping] = {"token": "secret"}
+    config_path.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
+    manifest_path = bundle_dir / "baseline" / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["config"]["sha256"] = hashlib.sha256(config_path.read_bytes()).hexdigest()
+    manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    _refresh_manifest_metadata(bundle_dir)
+    with pytest.raises(ReplayError, match="Credential option key"):
+        validate_bundle(bundle_dir)
+
+
+def test_bundle_positive_raw_log_citation_and_ordinary_option_values_are_not_scanned(
+    tmp_path: Path,
+) -> None:
+    from pageledger.replay import bundle_run, validate_bundle
+
+    config = MINIMAL_CONFIG.replace(
+        "run:\n  adapter: text", "dataset_citation:\n  label: raw/log/citation token\n  text: api_key prose\nrun:\n  adapter: text"
+    )
+    run_dir, _, _ = _run_text(tmp_path, config_text=config, source_text="raw token prose\fsecond page\n")
+    bundle_dir = tmp_path / "bundle"
+    bundle_run(run_dir, bundle_dir)
+    run_log = bundle_dir / "baseline" / "run.log"
+    log_lines = []
+    for line in run_log.read_text(encoding="utf-8").splitlines():
+        entry = json.loads(line)
+        entry["error"] = "raw/log/citation token"
+        log_lines.append(json.dumps(entry))
+    run_log.write_text("\n".join(log_lines) + "\n", encoding="utf-8")
+    _refresh_bundle_inventory(bundle_dir)
+    bundle = json.loads((bundle_dir / "bundle.json").read_text(encoding="utf-8"))
+    options = {"mode": "ordinary token value", "max_tokens": 10}
+    bundle["baseline"]["extractor"]["options"] = options
+    manifest_path = bundle_dir / "baseline" / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["extractors"][0]["options"] = options
+    manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    (bundle_dir / "bundle.json").write_text(json.dumps(bundle, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    _refresh_manifest_metadata(bundle_dir)
+    assert validate_bundle(bundle_dir)["baseline"]["run_id"] == manifest["run_id"]
