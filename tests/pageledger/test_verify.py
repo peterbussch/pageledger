@@ -49,6 +49,63 @@ def test_verify_run_accepts_coherent_ledger(tmp_path):
     assert report["counts"]["quality_warning_pages"] == 1
 
 
+@pytest.mark.parametrize(
+    "field",
+    ["baseline_run_id", "replay_run_id", "bundle_manifest_sha256", "outcome", "replay_schema_version"],
+)
+def test_verify_run_rejects_changed_replay_linkage(tmp_path: Path, field: str) -> None:
+    from pageledger.replay import bundle_run, replay_bundle
+    from pageledger.verify import verify_run
+
+    run_dir, _ = _run(tmp_path)
+    bundle_dir = tmp_path / "bundle"
+    bundle_run(run_dir, bundle_dir)
+    replay_dir = tmp_path / "replayed"
+    replay_bundle(bundle_dir, replay_dir)
+
+    manifest_path = replay_dir / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    replay_path = replay_dir / "replay.json"
+    replay = json.loads(replay_path.read_text(encoding="utf-8"))
+    target = replay if field == "replay_run_id" else manifest
+    if field in {"replay_schema_version", "outcome"}:
+        target[field] = "9.9" if field == "replay_schema_version" else "deterministic_mismatch"
+    elif field == "bundle_manifest_sha256":
+        target[field] = "0" * 64
+    else:
+        target[field] = "changed"
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    replay_path.write_text(json.dumps(replay), encoding="utf-8")
+
+    report = verify_run(replay_dir)
+
+    assert report["status"] == "fail"
+    assert "replay_linkage_mismatch" in _codes(report, "errors")
+
+
+def test_verify_run_reports_replay_artifact_missing_or_malformed(tmp_path: Path) -> None:
+    from pageledger.replay import bundle_run, replay_bundle
+    from pageledger.verify import verify_run
+
+    run_dir, _ = _run(tmp_path)
+    bundle_dir = tmp_path / "bundle"
+    bundle_run(run_dir, bundle_dir)
+    replay_dir = tmp_path / "replayed"
+    replay_bundle(bundle_dir, replay_dir)
+    manifest_path = replay_dir / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    replay_path = replay_dir / "replay.json"
+    replay_path.unlink()
+
+    missing = verify_run(replay_dir)
+    assert "replay_artifact_missing" in _codes(missing, "errors")
+
+    replay_path.write_text("not json", encoding="utf-8")
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    malformed = verify_run(replay_dir)
+    assert "replay_artifact_malformed" in _codes(malformed, "errors")
+
+
 def test_verify_run_does_not_follow_manifest_symlink(tmp_path, monkeypatch):
     from pathlib import Path
 

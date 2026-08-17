@@ -163,8 +163,12 @@ def verify_run(
         if not exists:
             _add(
                 errors,
-                "artifact_missing",
-                f"Manifest-declared artifact is missing: {relative}",
+                "replay_artifact_missing" if key == "replay" else "artifact_missing",
+                (
+                    f"Manifest-declared replay artifact is missing: {relative}"
+                    if key == "replay"
+                    else f"Manifest-declared artifact is missing: {relative}"
+                ),
                 artifact=relative,
             )
             continue
@@ -175,8 +179,12 @@ def verify_run(
         except (OSError, UnicodeError, json.JSONDecodeError, yaml.YAMLError, ValueError) as exc:
             _add(
                 errors,
-                "artifact_malformed",
-                f"Artifact cannot be parsed: {exc}",
+                "replay_artifact_malformed" if key == "replay" else "artifact_malformed",
+                (
+                    f"Replay artifact cannot be parsed: {exc}"
+                    if key == "replay"
+                    else f"Artifact cannot be parsed: {exc}"
+                ),
                 artifact=relative,
             )
 
@@ -831,6 +839,8 @@ def verify_run(
                 line_number=line_number,
             )
 
+    _check_replay_linkage(manifest, declarations, loaded, errors)
+
     return _report(root, errors, warnings, counts)
 
 
@@ -1014,12 +1024,230 @@ def _load_artifact(key: str, path: Path) -> Any:
                 raise ValueError(f"line {line_number} must be a mapping")
             entries.append(entry)
         return entries
-    if key in {"audit", "cost"}:
+    if key in {"audit", "cost", "replay"}:
         value = json.loads(text)
         if not isinstance(value, dict):
             raise ValueError("top level must be a mapping")
         return value
     return text
+
+
+def _check_replay_linkage(
+    manifest: dict[str, Any],
+    declarations: dict[str, Any],
+    loaded: dict[str, Any],
+    errors: list[dict[str, Any]],
+) -> None:
+    """Check optional replay evidence and its additive manifest linkage."""
+    linkage_keys = {
+        "replay_schema_version",
+        "baseline_run_id",
+        "bundle_manifest_sha256",
+        "outcome",
+    }
+    has_linkage = any(key in manifest for key in linkage_keys)
+    has_artifact = "replay" in declarations
+    if not has_linkage and not has_artifact:
+        return
+    present_linkage = linkage_keys & manifest.keys()
+    if has_linkage and present_linkage != linkage_keys:
+        _add(
+            errors,
+            "replay_artifact_malformed",
+            "Replay linkage must declare all replay metadata fields",
+            artifact="manifest.json",
+        )
+        return
+    if not has_artifact:
+        _add(
+            errors,
+            "replay_artifact_missing",
+            "Replay linkage exists but manifest does not declare replay.json",
+            artifact="manifest.json",
+        )
+        return
+    if not has_linkage:
+        _add(
+            errors,
+            "replay_artifact_missing",
+            "Manifest declares replay.json without replay linkage",
+            artifact="manifest.json",
+        )
+        return
+    replay = loaded.get("replay")
+    if not isinstance(replay, dict):
+        # The loader reports malformed/missing replay artifacts. Keep this
+        # helper fail-closed when called with an incomplete loaded mapping.
+        if "replay" not in loaded:
+            return
+        _add(
+            errors,
+            "replay_artifact_malformed",
+            "Replay artifact must be a mapping",
+            artifact="replay.json",
+        )
+        return
+
+    required = {
+        "replay_schema_version",
+        "bundle_manifest_sha256",
+        "baseline_run_id",
+        "replay_run_id",
+        "baseline_extractor",
+        "local_extractor",
+        "profile_match",
+        "outcome",
+        "raw",
+        "comparison",
+    }
+    if not required <= replay.keys():
+        _add(
+            errors,
+            "replay_artifact_malformed",
+            "Replay artifact is missing required fields",
+            artifact="replay.json",
+        )
+        return
+
+    if replay.get("replay_schema_version") != "0.1":
+        _add(
+            errors,
+            "replay_artifact_malformed",
+            "Replay schema version must be 0.1",
+            artifact="replay.json",
+        )
+    if not isinstance(replay.get("baseline_run_id"), str) or not replay["baseline_run_id"]:
+        _add(errors, "replay_artifact_malformed", "Replay baseline_run_id is invalid", artifact="replay.json")
+    if not isinstance(replay.get("replay_run_id"), str) or not replay["replay_run_id"]:
+        _add(errors, "replay_artifact_malformed", "Replay replay_run_id is invalid", artifact="replay.json")
+    if not _is_sha256(replay.get("bundle_manifest_sha256")):
+        _add(errors, "replay_artifact_malformed", "Replay bundle manifest hash is invalid", artifact="replay.json")
+    if replay.get("outcome") not in {"exact", "evidence_compared", "deterministic_mismatch"}:
+        _add(errors, "replay_artifact_malformed", "Replay outcome is invalid", artifact="replay.json")
+    if replay.get("profile_match") not in {True, False, None}:
+        _add(errors, "replay_artifact_malformed", "Replay profile_match is invalid", artifact="replay.json")
+
+    if (
+        replay.get("replay_schema_version") != manifest.get("replay_schema_version")
+        or replay.get("baseline_run_id") != manifest.get("baseline_run_id")
+        or replay.get("bundle_manifest_sha256") != manifest.get("bundle_manifest_sha256")
+        or replay.get("outcome") != manifest.get("outcome")
+        or replay.get("replay_run_id") != manifest.get("run_id")
+    ):
+        _add(
+            errors,
+            "replay_linkage_mismatch",
+            "Replay artifact does not agree with manifest replay linkage",
+            artifact="replay.json",
+        )
+
+    raw = replay.get("raw")
+    comparison = replay.get("comparison")
+    baseline_extractor = replay.get("baseline_extractor")
+    if not isinstance(raw, dict) or not isinstance(comparison, dict):
+        _add(errors, "replay_artifact_malformed", "Replay raw/comparison evidence is malformed", artifact="replay.json")
+        return
+    if not isinstance(baseline_extractor, dict) or not isinstance(replay.get("local_extractor"), dict):
+        _add(errors, "replay_artifact_malformed", "Replay extractor evidence is malformed", artifact="replay.json")
+        return
+
+    counts: dict[str, int] = {}
+    for name in ("equal", "different", "missing"):
+        value = raw.get(name)
+        if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+            _add(errors, "replay_artifact_malformed", f"Replay raw.{name} must be a nonnegative integer", artifact="replay.json")
+        else:
+            counts[name] = value
+    page_lists: dict[str, list[str]] = {}
+    for name in ("different_page_ids", "missing_page_ids"):
+        values = raw.get(name)
+        if (
+            not isinstance(values, list)
+            or any(not isinstance(value, str) or not value for value in values)
+            or len(values) != len(set(values))
+        ):
+            _add(errors, "replay_artifact_malformed", f"Replay raw.{name} must be unique page-id strings", artifact="replay.json")
+        else:
+            page_lists[name] = values
+            count_name = "different" if name.startswith("different") else "missing"
+            if count_name in counts and len(values) != counts[count_name]:
+                _add(errors, "replay_linkage_mismatch", f"Replay raw.{name} length does not match its count", artifact="replay.json")
+
+    run_a = comparison.get("run_a")
+    run_b = comparison.get("run_b")
+    if not isinstance(run_a, dict) or not isinstance(run_b, dict):
+        _add(errors, "replay_artifact_malformed", "Replay comparison run summaries are malformed", artifact="replay.json")
+        return
+    baseline_id = replay.get("baseline_run_id")
+    replay_id = replay.get("replay_run_id")
+    if run_a.get("run_id") != baseline_id or run_b.get("run_id") != replay_id:
+        _add(errors, "replay_linkage_mismatch", "Replay comparison run IDs do not match replay IDs", artifact="replay.json")
+
+    pages_only_a = comparison.get("pages_only_in_a", [])
+    pages_only_b = comparison.get("pages_only_in_b", [])
+    if (
+        not isinstance(pages_only_a, list)
+        or not isinstance(pages_only_b, list)
+        or any(not isinstance(value, str) or not value for value in pages_only_a + pages_only_b)
+        or len(pages_only_a) != len(set(pages_only_a))
+        or len(pages_only_b) != len(set(pages_only_b))
+    ):
+        _add(errors, "replay_artifact_malformed", "Replay comparison page sets are malformed", artifact="replay.json")
+        pages_only_a = []
+        pages_only_b = []
+    pages = comparison.get("pages", [])
+    if not isinstance(pages, list):
+        _add(errors, "replay_artifact_malformed", "Replay comparison pages must be a list", artifact="replay.json")
+        pages = []
+    comparison_different: list[str] = []
+    comparison_missing: list[str] = list(pages_only_a) + list(pages_only_b)
+    comparison_equal = 0
+    for page in pages:
+        if not isinstance(page, dict) or not isinstance(page.get("page_id"), str) or not page["page_id"]:
+            _add(errors, "replay_artifact_malformed", "Replay comparison page is malformed", artifact="replay.json")
+            continue
+        page_id = page["page_id"]
+        raw_equal = page.get("raw_equal")
+        if raw_equal is True:
+            comparison_equal += 1
+        elif raw_equal is False:
+            comparison_different.append(page_id)
+        elif raw_equal is None:
+            comparison_missing.append(page_id)
+        else:
+            _add(errors, "replay_artifact_malformed", "Replay comparison raw_equal is invalid", artifact="replay.json")
+    expected_missing = sorted(set(comparison_missing))
+    if (
+        counts.get("equal") != comparison_equal
+        or counts.get("different") != len(comparison_different)
+        or counts.get("missing") != len(expected_missing)
+        or set(page_lists.get("different_page_ids", [])) != set(comparison_different)
+        or set(page_lists.get("missing_page_ids", [])) != set(expected_missing)
+    ):
+        _add(errors, "replay_linkage_mismatch", "Replay raw evidence does not match comparison evidence", artifact="replay.json")
+
+    deterministic = baseline_extractor.get("deterministic") is True
+    capabilities = baseline_extractor.get("capabilities")
+    cloud = isinstance(capabilities, list) and any(str(value).casefold() == "cloud" for value in capabilities)
+    outcome = replay.get("outcome")
+    if outcome == "exact" and (
+        not deterministic
+        or cloud
+        or replay.get("profile_match") is not True
+        or counts.get("different") != 0
+        or counts.get("missing") != 0
+        or pages_only_a
+        or pages_only_b
+    ):
+        _add(errors, "replay_linkage_mismatch", "Exact replay invariants are not satisfied", artifact="replay.json")
+    elif outcome == "evidence_compared" and deterministic and not cloud:
+        _add(errors, "replay_linkage_mismatch", "Evidence-compared outcome requires a nondeterministic or cloud extractor", artifact="replay.json")
+    elif outcome == "deterministic_mismatch" and (
+        not deterministic
+        or cloud
+        or (counts.get("different", 0) == 0 and counts.get("missing", 0) == 0 and not pages_only_a and not pages_only_b)
+    ):
+        _add(errors, "replay_linkage_mismatch", "Deterministic mismatch outcome has no differing or missing pages", artifact="replay.json")
 
 
 def _index_pages(
@@ -1295,6 +1523,12 @@ def _sha256(path: Path) -> str:
         for chunk in iter(lambda: handle.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def _is_sha256(value: Any) -> bool:
+    return isinstance(value, str) and len(value) == 64 and all(
+        character in "0123456789abcdef" for character in value
+    )
 
 
 def _safe_resolve(path: Path) -> Path | None:

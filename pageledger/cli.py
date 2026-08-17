@@ -16,6 +16,7 @@ from .classifier import classify
 from .compare import compare_runs, render_comparison
 from .doctor import build_doctor_report
 from .grading import GRADES, grade_basis_label
+from .replay import ReplayError, bundle_run, replay_bundle
 from .reports import inspect_run, run_pages_csv
 from .runner import rerun, run
 from .verify import render_verification, verify_run
@@ -244,12 +245,31 @@ def build_parser() -> argparse.ArgumentParser:
     verify_parser.add_argument("run_dir", type=Path, help="Path to a run output directory")
     verify_parser.add_argument("--json", action="store_true", dest="json_output")
 
+    bundle_parser = subparsers.add_parser(
+        "bundle", help="Create an inspectable verified replay bundle"
+    )
+    bundle_parser.add_argument("run_dir", type=Path)
+    bundle_parser.add_argument("--out", required=True, type=Path)
+    bundle_parser.add_argument("--json", action="store_true", dest="json_output")
+
+    replay_parser = subparsers.add_parser(
+        "replay", help="Replay a verified bundle on this machine"
+    )
+    replay_parser.add_argument("bundle_dir", type=Path)
+    replay_parser.add_argument("--out", required=True, type=Path)
+    replay_parser.add_argument("--adapter-path", type=Path, default=None)
+    replay_parser.add_argument("--json", action="store_true", dest="json_output")
+
     return parser
 
 
 def _print_error_json(exc: Exception, args: argparse.Namespace) -> None:
     if getattr(args, "json_output", False):
-        print(json.dumps({"status": "error", "error": str(exc)}, ensure_ascii=False))
+        result = {"status": "error", "error": str(exc)}
+        code = getattr(exc, "code", None)
+        if isinstance(code, str) and code:
+            result["code"] = code
+        print(json.dumps(result, ensure_ascii=False))
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -266,6 +286,12 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "verify-run":
         return _cmd_verify_run(args)
+
+    if args.command == "bundle":
+        return _cmd_bundle(args)
+
+    if args.command == "replay":
+        return _cmd_replay(args)
 
     if args.command == "align":
         return _cmd_align(args)
@@ -382,6 +408,38 @@ def _cmd_verify_run(args: argparse.Namespace) -> int:
     else:
         sys.stdout.write(render_verification(report))
     return 0 if report["status"] == "pass" else 1
+
+
+# -- bundle ------------------------------------------------------------------
+
+def _cmd_bundle(args: argparse.Namespace) -> int:
+    try:
+        result = bundle_run(args.run_dir, args.out)
+    except (ReplayError, RuntimeError, ValueError, OSError) as exc:
+        _print_error_json(exc, args)
+        print(f"pageledger: error: {exc}", file=sys.stderr)
+        return 1
+    if args.json_output:
+        print(json.dumps(result, ensure_ascii=False, sort_keys=True))
+    else:
+        print(f"Bundle created: {result['bundle_dir']}")
+    return 0
+
+
+# -- replay ------------------------------------------------------------------
+
+def _cmd_replay(args: argparse.Namespace) -> int:
+    try:
+        result = replay_bundle(args.bundle_dir, args.out, adapter_path=args.adapter_path)
+    except (ReplayError, RuntimeError, ValueError, OSError) as exc:
+        _print_error_json(exc, args)
+        print(f"pageledger: error: {exc}", file=sys.stderr)
+        return 1
+    if args.json_output:
+        print(json.dumps(result, ensure_ascii=False, sort_keys=True))
+    else:
+        print(f"Verified replay outcome: {result['outcome']}")
+    return 0 if result.get("outcome") in {"exact", "evidence_compared"} else 1
 
 
 # -- compare-runs --------------------------------------------------------------

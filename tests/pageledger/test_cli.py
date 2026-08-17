@@ -34,6 +34,49 @@ def _run_cli(args: list[str], *, cwd: Path | None = None) -> tuple[int, str, str
     return result.returncode, result.stdout, result.stderr
 
 
+def test_bundle_and_replay_cli_surface(tmp_path: Path) -> None:
+    source = tmp_path / "source.txt"
+    source.write_text("first page\fsecond page\n", encoding="utf-8")
+    config = tmp_path / "config.yml"
+    config.write_text(MINIMAL_CONFIG, encoding="utf-8")
+    run_dir = tmp_path / "run"
+    assert _run_cli(
+        ["run", str(source), "--config", str(config), "--out", str(run_dir), "--json"]
+    )[0] == 0
+
+    bundle_dir = tmp_path / "bundle"
+    code, stdout, _ = _run_cli(["bundle", str(run_dir), "--out", str(bundle_dir), "--json"])
+    assert code == 0
+    assert json.loads(stdout)["bundle_dir"] == str(bundle_dir.resolve())
+
+    replay_dir = tmp_path / "replayed"
+    code, stdout, _ = _run_cli(["replay", str(bundle_dir), "--out", str(replay_dir), "--json"])
+    assert code == 0
+    assert json.loads(stdout)["outcome"] == "exact"
+
+    code, _, _ = _run_cli(
+        ["replay", str(bundle_dir), "--out", str(tmp_path / "unused"), "--config", "x.yml"]
+    )
+    assert code == 2
+
+
+def test_replay_human_exact_output(tmp_path: Path) -> None:
+    source = tmp_path / "source.txt"
+    source.write_text("first page\n", encoding="utf-8")
+    config = tmp_path / "config.yml"
+    config.write_text(MINIMAL_CONFIG, encoding="utf-8")
+    run_dir = tmp_path / "run"
+    assert _run_cli(
+        ["run", str(source), "--config", str(config), "--out", str(run_dir)]
+    )[0] == 0
+    bundle_dir = tmp_path / "bundle"
+    assert _run_cli(["bundle", str(run_dir), "--out", str(bundle_dir)])[0] == 0
+
+    code, stdout, _ = _run_cli(["replay", str(bundle_dir), "--out", str(tmp_path / "replayed")])
+    assert code == 0
+    assert stdout == "Verified replay outcome: exact\n"
+
+
 # =========================================================================
 # init-config
 # =========================================================================
