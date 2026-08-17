@@ -20,7 +20,7 @@ from contextlib import contextmanager
 from importlib import metadata
 from importlib.machinery import ModuleSpec
 from pathlib import Path
-from types import ModuleType
+from types import FunctionType, ModuleType
 from typing import Any, NoReturn, cast
 
 import yaml
@@ -723,18 +723,42 @@ def _reject_cached_bundle_modules(bundle_root: Path) -> None:
                 f"Cached sys.modules entry '{cached_name}' has unsafe module metadata"
             )
         module_dict = ModuleType.__getattribute__(module, "__dict__")
-        if module_type is not ModuleType and any(
-            "__getattr__" in cls.__dict__ for cls in module_type.__mro__
-        ) and any(key not in module_dict for key in ("__file__", "__path__", "__spec__")):
-            _bundle_import_forbidden(
-                f"Cached module '{cached_name}' has dynamic import metadata"
-            )
         spec = module_dict.get("__spec__")
         if spec is not None and type(spec) is not ModuleSpec:
             _bundle_import_forbidden(
                 f"Cached module '{cached_name}' has unsafe import metadata"
             )
         spec_dict = {} if spec is None else ModuleSpec.__getattribute__(spec, "__dict__")
+        metadata_names = ("__path__", "__file__", "__spec__")
+        if "__getattr__" in module_dict and any(
+            key not in module_dict for key in metadata_names
+        ):
+            hook = module_dict["__getattr__"]
+            module_file = module_dict.get("__file__")
+            origin = spec_dict.get("origin")
+            if (
+                type(hook) is not FunctionType
+                or type(module_file) is not str
+                or origin not in {module_file, "frozen"}
+            ):
+                _bundle_import_forbidden(
+                    f"Cached module '{cached_name}' has dynamic import metadata"
+                )
+        if module_type is not ModuleType:
+            for cls in module_type.__mro__:
+                if cls is ModuleType:
+                    break
+                class_dict = cls.__dict__
+                if any(name in class_dict for name in ("__getattribute__", "__path__", "__file__", "__spec__")):
+                    _bundle_import_forbidden(
+                        f"Cached module '{cached_name}' has descriptor import metadata"
+                    )
+                if "__getattr__" in class_dict and any(
+                    key not in module_dict for key in metadata_names
+                ):
+                    _bundle_import_forbidden(
+                        f"Cached module '{cached_name}' has dynamic import metadata"
+                    )
         origins: list[object] = [
             module_dict.get("__file__"),
             module_dict.get("__path__"),

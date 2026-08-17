@@ -811,6 +811,73 @@ def test_cached_dynamic_getattr_package_proxy_is_rejected_before_child_import(
         sys.modules.pop(module_name, None)
 
 
+def test_cached_module_class_descriptor_is_rejected_before_child_import(
+    tmp_path: Path,
+) -> None:
+    import sys
+    import types
+
+    from pageledger.replay import ReplayError, _bundle_import_boundary
+
+    bundle = tmp_path / "bundle"
+    (bundle / "sources" / "pkg").mkdir(parents=True)
+    marker = tmp_path / "descriptor-path-marker"
+
+    class DescriptorPackage(types.ModuleType):
+        @property
+        def __path__(self) -> list[str]:
+            marker.write_text("executed", encoding="utf-8")
+            return [str(bundle / "sources" / "pkg")]
+
+    module_name = "cached_descriptor_package"
+    module = DescriptorPackage(module_name)
+    module_dict = types.ModuleType.__getattribute__(module, "__dict__")
+    module_dict["__file__"] = str(tmp_path / "trusted.py")
+    module_dict["__path__"] = [str(tmp_path)]
+    sys.modules[module_name] = module
+    try:
+        with pytest.raises(ReplayError) as error:
+            with _bundle_import_boundary(bundle, None):
+                __import__(f"{module_name}.child")
+        assert error.value.code == "bundle_code_import_forbidden"
+        assert not marker.exists()
+    finally:
+        sys.modules.pop(module_name, None)
+
+
+def test_cached_plain_module_getattr_is_rejected_before_child_import(
+    tmp_path: Path,
+) -> None:
+    import sys
+    import types
+
+    from pageledger.replay import ReplayError, _bundle_import_boundary
+
+    bundle = tmp_path / "bundle"
+    (bundle / "sources" / "pkg").mkdir(parents=True)
+    marker = tmp_path / "plain-getattr-marker"
+    module_name = "cached_plain_getattr_package"
+    module = types.ModuleType(module_name)
+
+    def get_metadata(name: str) -> object:
+        if name == "__path__":
+            marker.write_text("executed", encoding="utf-8")
+            return [str(bundle / "sources" / "pkg")]
+        raise AttributeError(name)
+
+    module_dict = types.ModuleType.__getattribute__(module, "__dict__")
+    module_dict["__getattr__"] = get_metadata
+    sys.modules[module_name] = module
+    try:
+        with pytest.raises(ReplayError) as error:
+            with _bundle_import_boundary(bundle, None):
+                __import__(f"{module_name}.child")
+        assert error.value.code == "bundle_code_import_forbidden"
+        assert not marker.exists()
+    finally:
+        sys.modules.pop(module_name, None)
+
+
 def test_cached_module_spec_proxy_is_rejected_before_metadata_access(tmp_path: Path) -> None:
     import sys
     import types
