@@ -1285,11 +1285,27 @@ def _sha256(path: Path) -> str:
 
 
 def _safe_resolve(path: Path) -> Path | None:
-    """Resolve a run path without propagating malformed-path or link failures."""
-    try:
-        return path.resolve()
-    except (OSError, RuntimeError, ValueError):
-        return None
+    """Resolve safely across Python versions, retaining only missing tail parts."""
+    unresolved: list[str] = []
+    candidate = path
+    while True:
+        try:
+            resolved = candidate.resolve(strict=True)
+        except FileNotFoundError:
+            try:
+                if candidate.is_symlink():
+                    return None
+            except (OSError, ValueError):
+                return None
+            parent = candidate.parent
+            if parent == candidate:
+                return None
+            unresolved.append(candidate.name)
+            candidate = parent
+        except (OSError, RuntimeError, ValueError):
+            return None
+        else:
+            return resolved.joinpath(*reversed(unresolved))
 
 
 def _add(issues: list[dict[str, Any]], code: str, message: str, **details: Any) -> None:
