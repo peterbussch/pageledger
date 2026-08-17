@@ -253,7 +253,7 @@ def build_parser() -> argparse.ArgumentParser:
     bundle_parser.add_argument("--json", action="store_true", dest="json_output")
 
     replay_parser = subparsers.add_parser(
-        "replay", help="Replay a verified bundle on this machine"
+        "replay", help="Replay a verified bundle on this machine", allow_abbrev=False
     )
     replay_parser.add_argument("bundle_dir", type=Path)
     replay_parser.add_argument("--out", required=True, type=Path)

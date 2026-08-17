@@ -7,6 +7,7 @@ import sys
 import textwrap
 from pathlib import Path
 
+import pytest
 import yaml
 
 # Reuse helper from test_schemas
@@ -75,6 +76,47 @@ def test_replay_human_exact_output(tmp_path: Path) -> None:
     code, stdout, _ = _run_cli(["replay", str(bundle_dir), "--out", str(tmp_path / "replayed")])
     assert code == 0
     assert stdout == "Verified replay outcome: exact\n"
+
+
+def test_replay_cli_returns_one_with_deterministic_mismatch_json(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    import pageledger.cli as cli
+
+    monkeypatch.setattr(
+        cli,
+        "replay_bundle",
+        lambda *args, **kwargs: {"outcome": "deterministic_mismatch"},
+    )
+
+    assert cli.main(["replay", "bundle", "--out", "out", "--json"]) == 1
+    assert json.loads(capsys.readouterr().out)["outcome"] == "deterministic_mismatch"
+
+
+def test_replay_cli_returns_structured_incompatible_error(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    import pageledger.cli as cli
+    from pageledger.replay import ReplayError
+
+    def fail(*args, **kwargs):
+        raise ReplayError("incompatible_environment", "profile mismatch")
+
+    monkeypatch.setattr(cli, "replay_bundle", fail)
+
+    assert cli.main(["replay", "bundle", "--out", "out", "--json"]) == 1
+    result = json.loads(capsys.readouterr().out)
+    assert result["status"] == "error"
+    assert result["code"] == "incompatible_environment"
+
+
+@pytest.mark.parametrize("flag", ["--config", "--routes", "--pages", "--adapter"])
+def test_replay_cli_rejects_unapproved_overrides(flag: str) -> None:
+    from pageledger.cli import main
+
+    with pytest.raises(SystemExit) as error:
+        main(["replay", "bundle", "--out", "out", flag, "value"])
+    assert error.value.code == 2
 
 
 # =========================================================================

@@ -106,6 +106,108 @@ def test_verify_run_reports_replay_artifact_missing_or_malformed(tmp_path: Path)
     assert "replay_artifact_malformed" in _codes(malformed, "errors")
 
 
+def test_verify_run_rejects_duplicate_common_comparison_page_ids(tmp_path: Path) -> None:
+    from pageledger.replay import bundle_run, replay_bundle
+    from pageledger.verify import verify_run
+
+    run_dir, _ = _run(tmp_path)
+    bundle_dir = tmp_path / "bundle"
+    bundle_run(run_dir, bundle_dir)
+    replay_dir = tmp_path / "replayed"
+    replay_bundle(bundle_dir, replay_dir)
+    replay_path = replay_dir / "replay.json"
+    replay = json.loads(replay_path.read_text(encoding="utf-8"))
+    replay["comparison"]["pages"].append(dict(replay["comparison"]["pages"][0]))
+    replay["raw"]["equal"] += 1
+    replay_path.write_text(json.dumps(replay), encoding="utf-8")
+
+    report = verify_run(replay_dir)
+
+    assert report["status"] == "fail"
+    assert "replay_linkage_mismatch" in _codes(report, "errors")
+
+
+def test_verify_run_rejects_overlapping_page_only_comparison_ids(tmp_path: Path) -> None:
+    from pageledger.replay import bundle_run, replay_bundle
+    from pageledger.verify import verify_run
+
+    run_dir, _ = _run(tmp_path)
+    bundle_dir = tmp_path / "bundle"
+    bundle_run(run_dir, bundle_dir)
+    replay_dir = tmp_path / "replayed"
+    replay_bundle(bundle_dir, replay_dir)
+    replay_path = replay_dir / "replay.json"
+    replay = json.loads(replay_path.read_text(encoding="utf-8"))
+    replay["outcome"] = "deterministic_mismatch"
+    replay["comparison"]["pages_only_in_a"] = ["doc_0001_page_0001"]
+    replay["comparison"]["pages_only_in_b"] = ["doc_0001_page_0001"]
+    replay["raw"]["missing"] = 1
+    replay["raw"]["missing_page_ids"] = ["doc_0001_page_0001"]
+    replay_path.write_text(json.dumps(replay), encoding="utf-8")
+    manifest_path = replay_dir / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["outcome"] = "deterministic_mismatch"
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    report = verify_run(replay_dir)
+
+    assert report["status"] == "fail"
+    assert "replay_linkage_mismatch" in _codes(report, "errors")
+
+
+def test_verify_run_rejects_invalid_extractor_evidence_for_evidence_outcome(
+    tmp_path: Path,
+) -> None:
+    from pageledger.replay import bundle_run, replay_bundle
+    from pageledger.verify import verify_run
+
+    run_dir, _ = _run(tmp_path)
+    bundle_dir = tmp_path / "bundle"
+    bundle_run(run_dir, bundle_dir)
+    replay_dir = tmp_path / "replayed"
+    replay_bundle(bundle_dir, replay_dir)
+    replay_path = replay_dir / "replay.json"
+    replay = json.loads(replay_path.read_text(encoding="utf-8"))
+    replay["outcome"] = "evidence_compared"
+    replay["baseline_extractor"]["deterministic"] = None
+    replay["baseline_extractor"]["capabilities"] = ["local"]
+    replay_path.write_text(json.dumps(replay), encoding="utf-8")
+    manifest_path = replay_dir / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["outcome"] = "evidence_compared"
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    report = verify_run(replay_dir)
+
+    assert report["status"] == "fail"
+    assert "replay_artifact_malformed" in _codes(report, "errors")
+
+
+def test_verify_run_converts_optional_replay_loader_exception(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import pageledger.verify as verify_module
+    from pageledger.replay import bundle_run, replay_bundle
+
+    run_dir, _ = _run(tmp_path)
+    bundle_dir = tmp_path / "bundle"
+    bundle_run(run_dir, bundle_dir)
+    replay_dir = tmp_path / "replayed"
+    replay_bundle(bundle_dir, replay_dir)
+    original_load = verify_module._load_artifact
+
+    def raising_load(key: str, path: Path) -> object:
+        if key == "replay":
+            raise RuntimeError("unexpected loader failure")
+        return original_load(key, path)
+
+    monkeypatch.setattr(verify_module, "_load_artifact", raising_load)
+    report = verify_module.verify_run(replay_dir)
+
+    assert report["status"] == "fail"
+    assert "replay_artifact_malformed" in _codes(report, "errors")
+
+
 def test_verify_run_does_not_follow_manifest_symlink(tmp_path, monkeypatch):
     from pathlib import Path
 

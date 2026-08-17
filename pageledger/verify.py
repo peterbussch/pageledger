@@ -9,7 +9,7 @@ from __future__ import annotations
 import hashlib
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import yaml
 
@@ -185,6 +185,15 @@ def verify_run(
                     if key == "replay"
                     else f"Artifact cannot be parsed: {exc}"
                 ),
+                artifact=relative,
+            )
+        except Exception as exc:
+            if key != "replay":
+                raise
+            _add(
+                errors,
+                "replay_artifact_malformed",
+                f"Replay artifact cannot be loaded: {exc}",
                 artifact=relative,
             )
 
@@ -1150,6 +1159,15 @@ def _check_replay_linkage(
     if not isinstance(baseline_extractor, dict) or not isinstance(replay.get("local_extractor"), dict):
         _add(errors, "replay_artifact_malformed", "Replay extractor evidence is malformed", artifact="replay.json")
         return
+    extractor_evidence_valid = True
+    if not isinstance(baseline_extractor.get("deterministic"), bool):
+        _add(errors, "replay_artifact_malformed", "Replay baseline extractor deterministic flag is invalid", artifact="replay.json")
+        extractor_evidence_valid = False
+    capabilities = baseline_extractor.get("capabilities")
+    if not isinstance(capabilities, list) or any(not isinstance(value, str) for value in capabilities):
+        _add(errors, "replay_artifact_malformed", "Replay baseline extractor capabilities are invalid", artifact="replay.json")
+        extractor_evidence_valid = False
+    capabilities = cast(list[str], capabilities) if isinstance(capabilities, list) else []
 
     counts: dict[str, int] = {}
     for name in ("equal", "different", "missing"):
@@ -1216,6 +1234,18 @@ def _check_replay_linkage(
             comparison_missing.append(page_id)
         else:
             _add(errors, "replay_artifact_malformed", "Replay comparison raw_equal is invalid", artifact="replay.json")
+    common_page_ids = [
+        page["page_id"]
+        for page in pages
+        if isinstance(page, dict) and isinstance(page.get("page_id"), str) and page["page_id"]
+    ]
+    common_page_set = set(common_page_ids)
+    if len(common_page_ids) != len(common_page_set):
+        _add(errors, "replay_linkage_mismatch", "Replay comparison contains duplicate common page IDs", artifact="replay.json")
+    if set(pages_only_a) & set(pages_only_b) or (
+        common_page_set & (set(pages_only_a) | set(pages_only_b))
+    ):
+        _add(errors, "replay_linkage_mismatch", "Replay comparison page identity sets overlap", artifact="replay.json")
     expected_missing = sorted(set(comparison_missing))
     if (
         counts.get("equal") != comparison_equal
@@ -1226,9 +1256,10 @@ def _check_replay_linkage(
     ):
         _add(errors, "replay_linkage_mismatch", "Replay raw evidence does not match comparison evidence", artifact="replay.json")
 
-    deterministic = baseline_extractor.get("deterministic") is True
-    capabilities = baseline_extractor.get("capabilities")
-    cloud = isinstance(capabilities, list) and any(str(value).casefold() == "cloud" for value in capabilities)
+    if not extractor_evidence_valid:
+        return
+    deterministic = baseline_extractor["deterministic"]
+    cloud = any(value.casefold() == "cloud" for value in capabilities)
     outcome = replay.get("outcome")
     if outcome == "exact" and (
         not deterministic
