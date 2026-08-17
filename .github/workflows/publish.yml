@@ -94,8 +94,11 @@ jobs:
               raise SystemExit("PyPI environment must use selected tag policies")
           policies = get_json("environments/pypi/deployment-branch-policies")
           entries = policies.get("branch_policies", [])
-          if not any(entry.get("name") == "v*" for entry in entries):
-              raise SystemExit("PyPI environment must allow only the v* tag pattern")
+          allowed_policies = {
+              (entry.get("type"), entry.get("name")) for entry in entries
+          }
+          if allowed_policies != {("tag", "v*")}:
+              raise SystemExit("PyPI environment must allow exactly the v* tag pattern")
           print("PyPI environment protections verified")
           PY
       - name: Recreate the locked verification environment

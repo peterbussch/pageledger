@@ -155,8 +155,9 @@ identity includes the adapter and version, model, prompt hash, determinism,
 input/output types, capabilities, and a SHA-256 identity of the recorded
 adapter options (the comparison report does not copy their values). Grade
 direction has a second gate: both grades must come from the
-same PageLedger version and grading configuration, have the same evidence
-basis, and (for schema-aware grades) have the same recorded schema identity.
+same PageLedger version and effective grading policy (merged thresholds plus
+the schema low-confidence floor), have the same evidence basis, and (for
+schema-aware grades) have the same recorded schema identity.
 Changed-source, cross-adapter,
 same-adapter/different-extractor, and legacy-unknown transitions are shown but
 unranked. `--json` exposes extraction and grade comparability separately for

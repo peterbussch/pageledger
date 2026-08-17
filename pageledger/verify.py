@@ -218,13 +218,21 @@ def verify_run(run_dir: Path) -> dict[str, Any]:
                                 actual=actual_schema_hash,
                             )
                 else:
-                    alignment_snapshot = root / "align-schema-snapshot.yml"
-                    if not alignment_snapshot.is_file():
+                    declared_snapshot = root / "align-schema-snapshot.yml"
+                    alignment_snapshot = declared_snapshot.resolve()
+                    if alignment_snapshot != root and root not in alignment_snapshot.parents:
+                        _add(
+                            errors,
+                            "alignment_schema_snapshot_invalid",
+                            "External alignment schema snapshot resolves outside the run directory",
+                            artifact=declared_snapshot.name,
+                        )
+                    elif not alignment_snapshot.is_file():
                         _add(
                             errors,
                             "alignment_schema_snapshot_missing",
                             "External alignment schema snapshot is missing",
-                            artifact=alignment_snapshot.name,
+                            artifact=declared_snapshot.name,
                         )
                     else:
                         actual_schema_hash = _sha256(alignment_snapshot)
@@ -233,7 +241,7 @@ def verify_run(run_dir: Path) -> dict[str, Any]:
                                 errors,
                                 "alignment_schema_hash_mismatch",
                                 "Alignment schema hash differs from align-schema-snapshot.yml",
-                                artifact=alignment_snapshot.name,
+                                artifact=declared_snapshot.name,
                                 expected=expected_schema_hash,
                                 actual=actual_schema_hash,
                             )
@@ -477,11 +485,11 @@ def verify_run(run_dir: Path) -> dict[str, Any]:
                 artifact=raw_name,
             )
         raw_dir = paths.get("raw_dir")
-        if raw_dir is not None and raw_path.parent != raw_dir:
+        if raw_dir is None or not raw_dir.is_dir() or raw_path.parent != raw_dir:
             _add(
                 errors,
                 "raw_artifact_path_invalid",
-                f"Raw artifact is outside the declared raw directory for {page_id}",
+                f"Raw artifact lacks a valid contained raw directory for {page_id}",
                 page_id=page_id,
                 artifact=raw_name,
             )
@@ -498,12 +506,20 @@ def verify_run(run_dir: Path) -> dict[str, Any]:
         else:
             expected_raw_hash = result.get("raw_sha256")
             if expected_raw_hash is None:
-                _add(
-                    warnings,
-                    "legacy_evidence_incomplete",
-                    f"Provenance lacks a raw artifact hash for {page_id}",
-                    page_id=page_id,
-                )
+                if "pageledger_version" in manifest:
+                    _add(
+                        errors,
+                        "raw_artifact_hash_missing",
+                        f"Current provenance lacks a raw artifact hash for {page_id}",
+                        page_id=page_id,
+                    )
+                else:
+                    _add(
+                        warnings,
+                        "legacy_evidence_incomplete",
+                        f"Legacy provenance lacks a raw artifact hash for {page_id}",
+                        page_id=page_id,
+                    )
             elif (
                 not isinstance(expected_raw_hash, str)
                 or _sha256(raw_path) != expected_raw_hash
@@ -558,7 +574,28 @@ def verify_run(run_dir: Path) -> dict[str, Any]:
 
     raw_dir = paths.get("raw_dir")
     if raw_dir is not None and raw_dir.is_dir():
-        raw_files = {path.resolve() for path in raw_dir.rglob("*") if path.is_file()}
+        raw_files: set[Path] = set()
+        for candidate in raw_dir.rglob("*"):
+            if candidate.is_symlink():
+                _add(
+                    errors,
+                    "raw_artifact_path_invalid",
+                    "Raw artifact inventory contains a symbolic link",
+                    artifact=str(candidate.relative_to(root)),
+                )
+                continue
+            if not candidate.is_file():
+                continue
+            resolved = candidate.resolve()
+            if resolved != raw_dir and raw_dir not in resolved.parents:
+                _add(
+                    errors,
+                    "raw_artifact_path_invalid",
+                    "Raw artifact inventory resolves outside the declared raw directory",
+                    artifact=str(candidate.relative_to(root)),
+                )
+                continue
+            raw_files.add(resolved)
         counts["raw_artifacts"] = len(raw_files)
         for extra in sorted(raw_files - raw_references):
             _add(
@@ -609,7 +646,7 @@ def verify_run(run_dir: Path) -> dict[str, Any]:
         if isinstance(audit_markdown, str):
             try:
                 expected_audit_markdown = render_audit_markdown(audit)
-            except (KeyError, TypeError, ValueError) as exc:
+            except (AttributeError, KeyError, TypeError, ValueError) as exc:
                 _add(
                     errors,
                     "artifact_structure_invalid",
@@ -852,7 +889,7 @@ def _check_rerun_plan(
             },
             escalation=rerun_escalation,
         )
-    except (KeyError, TypeError, ValueError):
+    except (AttributeError, KeyError, TypeError, ValueError):
         # Malformed audit/route evidence is already reported by the structural
         # and reference checks; re-derivation must not turn it into a crash.
         return
@@ -1034,7 +1071,15 @@ def _check_references(
     artifact: str,
 ) -> None:
     for entry in entries:
-        page_id = entry.get("page_id") if isinstance(entry, dict) else None
+        if not isinstance(entry, dict):
+            _add(
+                errors,
+                "artifact_structure_invalid",
+                f"{artifact} queue item must be a mapping",
+                artifact=artifact,
+            )
+            continue
+        page_id = entry.get("page_id")
         route_page = route_pages.get(page_id) if isinstance(page_id, str) else None
         if route_page is None:
             _add(

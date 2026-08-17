@@ -39,14 +39,18 @@ and this project adheres to the artifact compatibility policy documented in
   `audit.json` rather than an independent source of truth.
 - `compare-runs` now ranks transitions only when the full effective extractor
   identity, including adapter-option hashes, matches. Grade direction also
-  requires matching PageLedger versions, grading configuration, evidence bases,
-  and schema identity, so incompatible claims remain visible but unranked.
+  requires matching PageLedger versions, effective grading policy, evidence
+  bases, and schema identity, so incompatible claims remain visible but
+  unranked.
 - Reruns verify the parent ledger and source bytes before extraction, rederive
   their executable plan, preserve the source document page count, and record
   durable lineage depth.
 - Verification now checks retained alignment-schema hashes and comparison uses
   canonical schema content, so pre/post-alignment grades can be related without
   trusting a mutable or missing schema snapshot.
+- Current-run raw hashes cannot be removed to obtain warning-only legacy
+  treatment, and raw/alignment symlinks cannot make verification or comparison
+  read outside the run directory.
 
 ### Release process
 

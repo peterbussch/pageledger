@@ -10,7 +10,7 @@ from typing import Any
 import yaml
 
 from .artifacts import read_jsonl
-from .grading import format_grade, grade_is_below
+from .grading import format_grade, grade_is_below, merge_thresholds, validate_thresholds
 
 
 def compare_runs(run_dir_a: Path, run_dir_b: Path) -> dict[str, Any]:
@@ -488,7 +488,43 @@ def _grade_config_identity(config: Any) -> str | None:
     if not isinstance(run_config, dict):
         return None
     grading = run_config.get("grading", {})
-    return _canonical_mapping_hash(grading)
+    if not isinstance(grading, dict):
+        return None
+    threshold_overrides = grading.get("thresholds")
+    try:
+        validate_thresholds(threshold_overrides)
+        thresholds = {
+            axis: {grade: float(value) for grade, value in bands.items()}
+            for axis, bands in merge_thresholds(threshold_overrides).items()
+        }
+    except (AttributeError, TypeError, ValueError):
+        return None
+
+    schema = config.get("schema", {})
+    if schema is None:
+        schema = {}
+    if not isinstance(schema, dict):
+        return None
+    quality = schema.get("quality", {})
+    if quality is None:
+        quality = {}
+    if not isinstance(quality, dict):
+        return None
+    low_confidence_floor = quality.get("low_confidence_threshold")
+    if low_confidence_floor is not None and (
+        isinstance(low_confidence_floor, bool)
+        or not isinstance(low_confidence_floor, (int, float))
+        or not 0 <= low_confidence_floor <= 1
+    ):
+        return None
+    if low_confidence_floor is not None:
+        low_confidence_floor = float(low_confidence_floor)
+    return _canonical_mapping_hash(
+        {
+            "thresholds": thresholds,
+            "low_confidence_threshold": low_confidence_floor,
+        }
+    )
 
 
 def _canonical_mapping_hash(value: Any) -> str | None:
@@ -561,7 +597,9 @@ def _load_grade_schema_identity(
             return None
         return config_schema
 
-    schema_path = out_dir / "align-schema-snapshot.yml"
+    schema_path = (out_dir / "align-schema-snapshot.yml").resolve()
+    if schema_path != out_dir and out_dir not in schema_path.parents:
+        return None
     if not _file_hash_matches(schema_path, expected_hash):
         return None
     try:

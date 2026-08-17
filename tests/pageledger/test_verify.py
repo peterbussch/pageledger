@@ -138,6 +138,39 @@ def test_verify_run_requires_external_alignment_schema_snapshot(tmp_path):
     assert "alignment_schema_snapshot_missing" in _codes(report, "errors")
 
 
+def test_verify_run_does_not_follow_external_alignment_schema_symlink(
+    tmp_path, monkeypatch
+):
+    import pageledger.verify as verify_module
+
+    out_dir, _ = _run(tmp_path)
+    outside = tmp_path / "outside-schema.yml"
+    outside.write_text("schema: {name: outside, columns: []}\n", encoding="utf-8")
+    (out_dir / "align-schema-snapshot.yml").symlink_to(outside)
+    manifest_path = out_dir / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["alignment"] = {
+        "aligned_at": "2026-08-16T00:00:00Z",
+        "schema_source": "/external/schema.yml",
+        "schema_sha256": "0" * 64,
+        "pageledger_version": "0.3.0a1",
+    }
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    original_sha256 = verify_module._sha256
+
+    def guarded_sha256(path):  # noqa: ANN001, ANN202
+        if path.resolve() == outside.resolve():
+            raise AssertionError("verifier read an out-of-run schema snapshot")
+        return original_sha256(path)
+
+    monkeypatch.setattr(verify_module, "_sha256", guarded_sha256)
+
+    report = verify_module.verify_run(out_dir)
+
+    assert report["status"] == "fail"
+    assert "alignment_schema_snapshot_invalid" in _codes(report, "errors")
+
+
 def test_verify_run_handles_malformed_manifest_sections(tmp_path):
     from pageledger.verify import verify_run
 
@@ -286,10 +319,88 @@ def test_verify_run_does_not_read_raw_artifact_outside_declared_directory(
     assert "raw_artifact_path_invalid" in _codes(report, "errors")
 
 
+def test_verify_run_does_not_read_outside_raw_when_declaration_is_missing(
+    tmp_path, monkeypatch
+):
+    import pageledger.verify as verify_module
+
+    out_dir, _ = _run(tmp_path)
+    outside = tmp_path / "outside.txt"
+    outside.write_text("must not be read as run evidence", encoding="utf-8")
+    manifest_path = out_dir / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    del manifest["artifacts"]["raw_dir"]
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    provenance_path = out_dir / "provenance.jsonl"
+    entries = [
+        json.loads(line)
+        for line in provenance_path.read_text(encoding="utf-8").splitlines()
+    ]
+    entries[0]["result"]["raw_artifact"] = "../outside.txt"
+    provenance_path.write_text(
+        "".join(json.dumps(entry) + "\n" for entry in entries),
+        encoding="utf-8",
+    )
+    original_sha256 = verify_module._sha256
+
+    def guarded_sha256(path):  # noqa: ANN001, ANN202
+        if path.resolve() == outside.resolve():
+            raise AssertionError("verifier read an out-of-run raw artifact")
+        return original_sha256(path)
+
+    monkeypatch.setattr(verify_module, "_sha256", guarded_sha256)
+
+    report = verify_module.verify_run(out_dir)
+
+    assert report["status"] == "fail"
+    assert "artifact_declaration_missing" in _codes(report, "errors")
+    assert "raw_artifact_path_invalid" in _codes(report, "errors")
+
+
+def test_verify_run_rejects_raw_symlink_without_following_inventory_target(tmp_path):
+    from pageledger.verify import verify_run
+
+    out_dir, _ = _run(tmp_path)
+    raw_path = out_dir / "raw" / "doc_0001_page_0001.txt"
+    outside = tmp_path / "outside.txt"
+    outside.write_text("outside raw directory", encoding="utf-8")
+    raw_path.unlink()
+    raw_path.symlink_to(outside)
+
+    report = verify_run(out_dir)
+
+    assert report["status"] == "fail"
+    assert "raw_artifact_path_invalid" in _codes(report, "errors")
+
+
+def test_verify_run_rejects_missing_raw_hash_from_new_run(tmp_path):
+    from pageledger.verify import verify_run
+
+    out_dir, _ = _run(tmp_path)
+    provenance_path = out_dir / "provenance.jsonl"
+    provenance = [
+        json.loads(line) for line in provenance_path.read_text().splitlines()
+    ]
+    provenance[0]["result"].pop("raw_sha256")
+    provenance_path.write_text(
+        "".join(json.dumps(entry) + "\n" for entry in provenance),
+        encoding="utf-8",
+    )
+
+    report = verify_run(out_dir)
+
+    assert report["status"] == "fail"
+    assert "raw_artifact_hash_missing" in _codes(report, "errors")
+
+
 def test_verify_run_warns_for_legacy_provenance_without_raw_hash(tmp_path):
     from pageledger.verify import verify_run
 
     out_dir, _ = _run(tmp_path)
+    manifest_path = out_dir / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    del manifest["pageledger_version"]
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
     provenance_path = out_dir / "provenance.jsonl"
     provenance = [
         json.loads(line) for line in provenance_path.read_text().splitlines()
@@ -338,6 +449,21 @@ def test_verify_run_returns_structured_failure_for_malformed_audit(tmp_path, cap
     cli_report = json.loads(capsys.readouterr().out)
     assert cli_report["status"] == "fail"
     assert "artifact_structure_invalid" in _codes(cli_report, "errors")
+
+
+def test_verify_run_returns_structured_failure_for_non_mapping_audit_item(tmp_path):
+    from pageledger.verify import verify_run
+
+    out_dir, _ = _run(tmp_path)
+    audit_path = out_dir / "audit.json"
+    audit = json.loads(audit_path.read_text(encoding="utf-8"))
+    audit["review_queue"] = [1]
+    audit_path.write_text(json.dumps(audit), encoding="utf-8")
+
+    report = verify_run(out_dir)
+
+    assert report["status"] == "fail"
+    assert "artifact_structure_invalid" in _codes(report, "errors")
 
 
 def test_verify_run_checks_audit_rerun_and_cost_references(tmp_path):

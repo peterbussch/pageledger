@@ -107,8 +107,8 @@ stays short because this exists.
   improvement/resolution totals are reported only when source identity and
   the complete effective extractor identity (including a hash of adapter
   options) match. Grade direction additionally requires the same PageLedger
-  version, grading configuration, evidence basis, and (for schema-aware grades)
-  the same schema identity. Changed-source,
+  version, effective grading policy, evidence basis, and (for schema-aware
+  grades) the same schema identity. Changed-source,
   cross-adapter, and same-adapter/different-extractor transitions are unranked.
 - `pageledger verify-run`: checks cross-artifact ledger coherence, identifiers,
   route-action/page-bucket counts, hashes, and references without claiming OCR
@@ -116,8 +116,9 @@ stays short because this exists.
   count review-only routes separately so incomplete extraction coverage cannot
   hide behind extracted/skipped totals. Current provenance also hashes exact
   raw-output bytes, and the verifier checks that `audit.md` is the deterministic
-  rendering of `audit.json`; legacy artifacts without raw hashes receive a
-  warning.
+  rendering of `audit.json`. Removing a raw hash from a current run is an error;
+  only legacy manifests that predate generator-version and raw-hash recording
+  receive an incomplete-evidence warning.
 - `pageledger inspect-run --csv`: one row per page (counts, confidence,
   warnings, grade, cost, timing) for spreadsheet triage.
 - Cost provenance: `cost.json` records `cost_basis` (`adapter_reported`,
@@ -198,8 +199,8 @@ Details and examples live in [`design.md`](design.md).
   hallucinated, and absence of a warning does not prove faithful output.
 - Grades are deterministic summaries of that same evidence, not accuracy.
   A grade is only comparable when the effective extractor identity, PageLedger
-  version, grading configuration, evidence basis, and any schema-aware schema
-  identity match:
+  version, effective grading policy, evidence basis, and any schema-aware
+  schema identity match:
   confidence is uncalibrated across engines, versions, models, and prompts, so
   an `A` from one extractor and a `B` from another are not orderable claims. A
   `signals_only` grade from an
