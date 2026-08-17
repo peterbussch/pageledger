@@ -14,13 +14,14 @@ import stat
 import sys
 import tempfile
 import uuid
+from _frozen_importlib_external import _NamespacePath  # type: ignore[attr-defined]
 from collections.abc import Mapping
 from contextlib import contextmanager
 from importlib import metadata
 from importlib.machinery import ModuleSpec
 from pathlib import Path
 from types import ModuleType
-from typing import Any, cast
+from typing import Any, NoReturn, cast
 
 import yaml
 
@@ -711,17 +712,27 @@ def _reject_cached_bundle_modules(bundle_root: Path) -> None:
     for cached_name, module in list(sys.modules.items()):
         if module is None:
             continue
-        if not isinstance(module, ModuleType):
-            raise ReplayError(
-                "bundle_code_import_forbidden",
-                f"Cached sys.modules entry '{cached_name}' is not a module",
+        module_type = type(module)
+        # A few installed modules use harmless ModuleType subclasses. They are
+        # safe only when the concrete class inherits the base metadata getter;
+        # custom/proxy getters are rejected before any metadata is read.
+        if not issubclass(module_type, ModuleType) or (
+            module_type.__getattribute__ is not ModuleType.__getattribute__
+        ):
+            _bundle_import_forbidden(
+                f"Cached sys.modules entry '{cached_name}' has unsafe module metadata"
             )
         module_dict = ModuleType.__getattribute__(module, "__dict__")
+        if module_type is not ModuleType and any(
+            "__getattr__" in cls.__dict__ for cls in module_type.__mro__
+        ) and any(key not in module_dict for key in ("__file__", "__path__", "__spec__")):
+            _bundle_import_forbidden(
+                f"Cached module '{cached_name}' has dynamic import metadata"
+            )
         spec = module_dict.get("__spec__")
-        if spec is not None and not isinstance(spec, ModuleSpec):
-            raise ReplayError(
-                "bundle_code_import_forbidden",
-                f"Cached module '{cached_name}' has unsafe import metadata",
+        if spec is not None and type(spec) is not ModuleSpec:
+            _bundle_import_forbidden(
+                f"Cached module '{cached_name}' has unsafe import metadata"
             )
         spec_dict = {} if spec is None else ModuleSpec.__getattribute__(spec, "__dict__")
         origins: list[object] = [
@@ -733,40 +744,48 @@ def _reject_cached_bundle_modules(bundle_root: Path) -> None:
         for origin in origins:
             for value in _origin_values(origin):
                 if _origin_in_bundle(value, bundle_root):
-                    raise ReplayError(
-                        "bundle_code_import_forbidden",
-                        f"Cached module '{cached_name}' is loaded from the bundle",
+                    _bundle_import_forbidden(
+                        f"Cached module '{cached_name}' is loaded from the bundle"
                     )
 
 
 def _origin_values(origin: object) -> list[str]:
-    if isinstance(origin, str):
+    if type(origin) is str:
         return [origin]
     if origin is None:
         return []
-    if isinstance(origin, (list, tuple)):
-        iterator = list.__iter__(origin) if isinstance(origin, list) else tuple.__iter__(origin)
-        return [value for value in iterator if isinstance(value, str)]
-    origin_type = type(origin)
-    if (
-        origin_type.__name__ == "_NamespacePath"
-        and origin_type.__module__ == "_frozen_importlib_external"
-    ):
+    if type(origin) is list:
+        values = list.__iter__(origin)
+    elif type(origin) is tuple:
+        values = tuple.__iter__(origin)
+    else:
+        if type(origin) is not _NamespacePath:
+            _bundle_import_forbidden("Cached module has unsafe import path metadata")
         namespace_dict = vars(origin)
         paths = namespace_dict.get("_path")
-        if isinstance(paths, list):
-            return [value for value in list.__iter__(paths) if isinstance(value, str)]
-    return []
+        if type(paths) is not list:
+            _bundle_import_forbidden("Cached module has unsafe namespace path metadata")
+        values = list.__iter__(paths)
+    result = list(values)
+    if any(type(value) is not str for value in result):
+        _bundle_import_forbidden("Cached module has unsafe import path metadata")
+    return cast(list[str], result)
 
 
 def _origin_in_bundle(origin: str, bundle_root: Path) -> bool:
-    if not origin or origin in {"built-in", "frozen", "namespace"} or origin.startswith("<"):
+    if origin in {"built-in", "frozen", "namespace"} or origin.startswith("<"):
         return False
+    if not origin:
+        _bundle_import_forbidden("Cached module has an empty import origin")
     try:
         resolved = Path(origin).expanduser().resolve()
     except (OSError, RuntimeError, ValueError):
-        return False
+        _bundle_import_forbidden("Cached module has an unresolvable import origin")
     return resolved == bundle_root or bundle_root in resolved.parents
+
+
+def _bundle_import_forbidden(message: str) -> NoReturn:
+    raise ReplayError("bundle_code_import_forbidden", message)
 
 
 def _check_bundle_eligibility(manifest: dict[str, Any]) -> None:

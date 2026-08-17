@@ -749,6 +749,118 @@ def test_cached_metadata_scan_does_not_execute_module_getattr(tmp_path: Path) ->
         sys.modules.pop(module_name, None)
 
 
+def test_cached_dynamic_package_proxy_is_rejected_before_child_import(
+    tmp_path: Path,
+) -> None:
+    import sys
+    import types
+
+    from pageledger.replay import ReplayError, _bundle_import_boundary
+
+    bundle = tmp_path / "bundle"
+    (bundle / "sources" / "pkg").mkdir(parents=True)
+    marker = tmp_path / "dynamic-path-marker"
+
+    class DynamicPackage(types.ModuleType):
+        def __getattribute__(self, name: str) -> object:
+            if name == "__path__":
+                marker.write_text("executed", encoding="utf-8")
+                return [str(bundle / "sources" / "pkg")]
+            return super().__getattribute__(name)
+
+    module_name = "cached_dynamic_package"
+    sys.modules[module_name] = DynamicPackage(module_name)
+    try:
+        with pytest.raises(ReplayError) as error:
+            with _bundle_import_boundary(bundle, None):
+                __import__(f"{module_name}.child")
+        assert error.value.code == "bundle_code_import_forbidden"
+        assert not marker.exists()
+    finally:
+        sys.modules.pop(module_name, None)
+
+
+def test_cached_dynamic_getattr_package_proxy_is_rejected_before_child_import(
+    tmp_path: Path,
+) -> None:
+    import sys
+    import types
+
+    from pageledger.replay import ReplayError, _bundle_import_boundary
+
+    bundle = tmp_path / "bundle"
+    (bundle / "sources" / "pkg").mkdir(parents=True)
+    marker = tmp_path / "dynamic-getattr-marker"
+
+    class DynamicPackage(types.ModuleType):
+        def __getattr__(self, name: str) -> object:
+            if name == "__path__":
+                marker.write_text("executed", encoding="utf-8")
+                return [str(bundle / "sources" / "pkg")]
+            raise AttributeError(name)
+
+    module_name = "cached_dynamic_getattr_package"
+    sys.modules[module_name] = DynamicPackage(module_name)
+    try:
+        with pytest.raises(ReplayError) as error:
+            with _bundle_import_boundary(bundle, None):
+                __import__(f"{module_name}.child")
+        assert error.value.code == "bundle_code_import_forbidden"
+        assert not marker.exists()
+    finally:
+        sys.modules.pop(module_name, None)
+
+
+def test_cached_module_spec_proxy_is_rejected_before_metadata_access(tmp_path: Path) -> None:
+    import sys
+    import types
+    from importlib.machinery import ModuleSpec
+
+    from pageledger.replay import ReplayError, _bundle_import_boundary
+
+    bundle = tmp_path / "bundle"
+    bundle.mkdir()
+
+    class SpecProxy(ModuleSpec):
+        pass
+
+    module_name = "cached_spec_proxy"
+    module = types.ModuleType(module_name)
+    module.__spec__ = SpecProxy(module_name, loader=None, origin=str(bundle / "helper.py"))
+    sys.modules[module_name] = module
+    try:
+        with pytest.raises(ReplayError) as error:
+            with _bundle_import_boundary(bundle, None):
+                pass
+        assert error.value.code == "bundle_code_import_forbidden"
+    finally:
+        sys.modules.pop(module_name, None)
+
+
+@pytest.mark.parametrize("origin", [object(), "\x00unresolvable"])
+def test_cached_unknown_or_unresolvable_origin_is_rejected(
+    tmp_path: Path, origin: object
+) -> None:
+    import sys
+    import types
+
+    from pageledger.replay import ReplayError, _bundle_import_boundary
+
+    bundle = tmp_path / "bundle"
+    bundle.mkdir()
+    module_name = "cached_invalid_origin"
+    module = types.ModuleType(module_name)
+    module.__file__ = origin  # type: ignore[assignment]
+    sys.modules[module_name] = module
+    try:
+        with pytest.raises(ReplayError) as error:
+            with _bundle_import_boundary(bundle, None):
+                pass
+        assert error.value.code == "bundle_code_import_forbidden"
+    finally:
+        sys.modules.pop(module_name, None)
+
+
 def test_import_boundary_fails_closed_and_restores_sys_path(tmp_path: Path) -> None:
     import sys
 
