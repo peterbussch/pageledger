@@ -577,13 +577,17 @@ def test_replay_blocks_implicit_bundle_adapter_import_before_execution(
     sys.modules.pop("source-0001", None)
     sys.path[:] = [entry for entry in sys.path if entry != str(trusted.resolve())]
     monkeypatch.chdir(bundle_dir / "sources")
+    original_path = list(sys.path)
     sys.path.insert(0, str(bundle_dir / "sources"))
-    before = list(sys.path)
-    with pytest.raises(ReplayError) as error:
-        replay_bundle(bundle_dir, tmp_path / "never-created")
-    assert error.value.code in {"extractor_identity_mismatch", "bundle_code_import_forbidden"}
-    assert not marker.exists()
-    assert sys.path == before
+    active_path = list(sys.path)
+    try:
+        with pytest.raises(ReplayError) as error:
+            replay_bundle(bundle_dir, tmp_path / "never-created")
+        assert error.value.code in {"extractor_identity_mismatch", "bundle_code_import_forbidden"}
+        assert not marker.exists()
+        assert sys.path == active_path
+    finally:
+        sys.path[:] = original_path
 
 
 def test_replay_trusted_adapter_path_succeeds_and_restores_import_state(
@@ -617,6 +621,153 @@ def test_replay_trusted_adapter_path_succeeds_and_restores_import_state(
     result = replay_bundle(bundle_dir, tmp_path / "replayed", adapter_path=adapter_dir)
     assert result["outcome"] == "evidence_compared"
     assert sys.path == before
+
+
+def test_profile_hook_cannot_import_bundle_helper(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import sys
+
+    from pageledger.replay import ReplayError, bundle_run, replay_bundle
+    from pageledger.runner import run
+
+    trusted = tmp_path / "trusted"
+    trusted.mkdir()
+    marker = tmp_path / "profile-hook-marker"
+    (trusted / "trusted_adapter.py").write_text(
+        "from pageledger.adapters import ExtractionResult\n"
+        "class Adapter:\n"
+        "    name = 'trusted'\n"
+        "    version = '1.0'\n"
+        "    deterministic = True\n"
+        "    input_types = ('text',)\n"
+        "    output_types = ('text',)\n"
+        "    capabilities = ('local',)\n"
+        "    def supports(self, action): return action == 'transcribe_text'\n"
+        "    def reproducibility_profile(self):\n"
+        "        import importlib\n"
+        "        importlib.import_module('source-0001')\n"
+        "        return {'materials': []}\n"
+        "    def extract(self, source, *, page_id, page_number, action, prompt=None):\n"
+        "        return ExtractionResult(content='safe', format='text', confidence=None, model='safe', warnings=[], usage={'pages': 1})\n",
+        encoding="utf-8",
+    )
+    (trusted / "source-0001.py").write_text(
+        f"from pathlib import Path\nPath({str(marker)!r}).write_text('executed')\n",
+        encoding="utf-8",
+    )
+    payload = tmp_path / "source-0001.py"
+    payload.write_text(
+        f"from pathlib import Path\nPath({str(marker)!r}).write_text('executed')\n",
+        encoding="utf-8",
+    )
+    config = tmp_path / "config.yml"
+    config.write_text(MINIMAL_CONFIG.replace("adapter: text", "adapter: trusted_adapter:Adapter"), encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    run_dir = tmp_path / "run"
+    run(inputs=[payload], config_path=config, out_dir=run_dir, dry_run=False, adapter_path=trusted)
+    assert marker.exists()
+    marker.unlink()
+    bundle_dir = tmp_path / "bundle"
+    bundle_run(run_dir, bundle_dir)
+    (trusted / "source-0001.py").unlink()
+    sys.modules.pop("source-0001", None)
+    sys.modules.pop("trusted_adapter", None)
+    trusted_entry = str(trusted.resolve())
+    sys.path[:] = [entry for entry in sys.path if entry != trusted_entry]
+    monkeypatch.chdir(bundle_dir / "sources")
+    with pytest.raises(ReplayError) as error:
+        replay_bundle(bundle_dir, tmp_path / "never-created", adapter_path=trusted)
+    assert error.value.code == "incompatible_environment"
+    assert not marker.exists()
+    assert not (tmp_path / "never-created").exists()
+
+
+@pytest.mark.parametrize("metadata_kind", ["file", "path", "spec"])
+def test_cached_unrelated_bundle_module_is_rejected_before_import(
+    tmp_path: Path, metadata_kind: str
+) -> None:
+    import sys
+    import types
+    from importlib.machinery import ModuleSpec
+
+    from pageledger.replay import ReplayError, _bundle_import_boundary
+
+    bundle = tmp_path / "bundle"
+    (bundle / "sources" / "pkg").mkdir(parents=True)
+    module_name = f"cached_bundle_case_{metadata_kind}"
+    module = types.ModuleType(module_name)
+    if metadata_kind == "file":
+        module.__file__ = str(bundle / "sources" / "helper.py")
+    elif metadata_kind == "path":
+        module.__path__ = [str(bundle / "sources" / "pkg")]
+    else:
+        module.__spec__ = ModuleSpec(
+            module_name,
+            loader=None,
+            origin=str(bundle / "sources" / "helper.py"),
+            is_package=True,
+        )
+        module.__spec__.submodule_search_locations = [str(bundle / "sources" / "pkg")]
+    sys.modules[module_name] = module
+    try:
+        with pytest.raises(ReplayError) as error:
+            with _bundle_import_boundary(bundle, None):
+                pass
+        assert error.value.code == "bundle_code_import_forbidden"
+    finally:
+        sys.modules.pop(module_name, None)
+
+
+def test_cached_metadata_scan_does_not_execute_module_getattr(tmp_path: Path) -> None:
+    import sys
+    import types
+
+    from pageledger.replay import ReplayError, _bundle_import_boundary
+
+    bundle = tmp_path / "bundle"
+    bundle.mkdir()
+    marker = tmp_path / "metadata-getattr-marker"
+
+    class ProxyModule(types.ModuleType):
+        def __getattribute__(self, name: str) -> object:
+            if name in {"__file__", "__path__", "__spec__"}:
+                marker.write_text("executed", encoding="utf-8")
+            return super().__getattribute__(name)
+
+    module_name = "cached_metadata_proxy"
+    module = ProxyModule(module_name)
+    module.__file__ = str(bundle / "helper.py")
+    sys.modules[module_name] = module
+    try:
+        with pytest.raises(ReplayError) as error:
+            with _bundle_import_boundary(bundle, None):
+                pass
+        assert error.value.code == "bundle_code_import_forbidden"
+        assert not marker.exists()
+    finally:
+        sys.modules.pop(module_name, None)
+
+
+def test_import_boundary_fails_closed_and_restores_sys_path(tmp_path: Path) -> None:
+    import sys
+
+    from pageledger.replay import _bundle_import_boundary
+
+    bundle = tmp_path / "bundle"
+    bundle.mkdir()
+    unresolved = "\x00unresolvable"
+    marker = object()
+    before = list(sys.path)
+    sys.path.extend([unresolved, marker])
+    active_before = list(sys.path)
+    try:
+        with _bundle_import_boundary(bundle, None):
+            assert unresolved not in sys.path
+            assert marker not in sys.path
+        assert sys.path == active_before
+    finally:
+        sys.path[:] = before
 
 
 def test_replay_rejects_tampered_bundle_before_output_creation(tmp_path: Path) -> None:

@@ -17,7 +17,9 @@ import uuid
 from collections.abc import Mapping
 from contextlib import contextmanager
 from importlib import metadata
+from importlib.machinery import ModuleSpec
 from pathlib import Path
+from types import ModuleType
 from typing import Any, cast
 
 import yaml
@@ -481,59 +483,58 @@ def replay_bundle(
     adapter_name, adapter_options = _effective_adapter(config, 0)
     if adapter_name is None:
         raise ReplayError("extractor_identity_mismatch", "Bundle config has no effective adapter")
-    try:
-        with _bundle_import_boundary(root, trusted_path, adapter_name):
-            adapter = load_adapter(adapter_name, adapter_options)
-    except ReplayError:
-        raise
-    except Exception as exc:
-        raise ReplayError(
-            "extractor_identity_mismatch",
-            "Local adapter could not be loaded",
-        ) from exc
-
-    local_profile: dict[str, Any] | None = None
-    local_extractor = _runtime_extractor_identity(adapter, adapter_options, None)
-    if _identity_without_profile(local_extractor) != _identity_without_profile(baseline_extractor):
-        raise ReplayError(
-            "extractor_identity_mismatch",
-            "Local adapter identity does not match the baseline",
-        )
-    cloud = "cloud" in {str(value).casefold() for value in baseline_extractor["capabilities"]}
-    if bool(getattr(adapter, "deterministic", False)) and not cloud:
+    with _bundle_import_boundary(root, trusted_path):
         try:
-            local_profile = build_reproducibility_profile(adapter)
+            adapter = load_adapter(adapter_name, adapter_options)
+        except ReplayError:
+            raise
         except Exception as exc:
             raise ReplayError(
-                "incompatible_environment",
-                "Local reproducibility profile could not be established",
+                "extractor_identity_mismatch",
+                "Local adapter could not be loaded",
             ) from exc
-        recorded_profile = baseline_extractor.get("reproducibility_profile")
-        if not isinstance(recorded_profile, dict) or local_profile is None:
-            raise ReplayError(
-                "incompatible_environment",
-                "Local reproducibility profile does not match the baseline",
-            )
-        if profile_sha256(local_profile) != profile_sha256(recorded_profile):
-            raise ReplayError(
-                "incompatible_environment",
-                "Local reproducibility profile does not match the baseline",
-            )
 
-    local_extractor["reproducibility_profile"] = local_profile
+        local_profile: dict[str, Any] | None = None
+        local_extractor = _runtime_extractor_identity(adapter, adapter_options, None)
+        if _identity_without_profile(local_extractor) != _identity_without_profile(baseline_extractor):
+            raise ReplayError(
+                "extractor_identity_mismatch",
+                "Local adapter identity does not match the baseline",
+            )
+        cloud = "cloud" in {str(value).casefold() for value in baseline_extractor["capabilities"]}
+        if bool(getattr(adapter, "deterministic", False)) and not cloud:
+            try:
+                local_profile = build_reproducibility_profile(adapter)
+            except Exception as exc:
+                raise ReplayError(
+                    "incompatible_environment",
+                    "Local reproducibility profile could not be established",
+                ) from exc
+            recorded_profile = baseline_extractor.get("reproducibility_profile")
+            if not isinstance(recorded_profile, dict) or local_profile is None:
+                raise ReplayError(
+                    "incompatible_environment",
+                    "Local reproducibility profile does not match the baseline",
+                )
+            if profile_sha256(local_profile) != profile_sha256(recorded_profile):
+                raise ReplayError(
+                    "incompatible_environment",
+                    "Local reproducibility profile does not match the baseline",
+                )
 
-    source_records = cast(list[dict[str, Any]], bundle["sources"])
-    source_paths = [root / record["path"] for record in source_records]
-    route_path: Path | None = None
-    replay_route = root / "replay-route-map.yml"
-    run_kwargs: dict[str, Any] = {
-        "inputs": source_paths,
-        "config_path": config_path,
-        "out_dir": requested_out,
-        "dry_run": False,
-        "adapter_path": trusted_path,
-    }
-    with _bundle_import_boundary(root, trusted_path, adapter_name):
+        local_extractor["reproducibility_profile"] = local_profile
+
+        source_records = cast(list[dict[str, Any]], bundle["sources"])
+        source_paths = [root / record["path"] for record in source_records]
+        route_path: Path | None = None
+        replay_route = root / "replay-route-map.yml"
+        run_kwargs: dict[str, Any] = {
+            "inputs": source_paths,
+            "config_path": config_path,
+            "out_dir": requested_out,
+            "dry_run": False,
+            "adapter_path": trusted_path,
+        }
         if "routing" in baseline_manifest:
             route = _read_yaml_mapping(replay_route, "portable route map")
             documents = route.get("documents")
@@ -668,7 +669,6 @@ def _atomic_write_json(path: Path, value: dict[str, Any]) -> None:
 def _bundle_import_boundary(
     bundle_root: Path,
     trusted_adapter_path: Path | None,
-    adapter_name: str | None,
 ):
     """Temporarily prevent Python imports from resolving inside a bundle."""
     original_path = list(sys.path)
@@ -682,23 +682,21 @@ def _bundle_import_boundary(
                 "Trusted adapter path must not be equal to, inside, or above the bundle",
             )
     try:
-        filtered: list[Any] = []
+        filtered: list[str] = []
         for entry in original_path:
             if not isinstance(entry, str):
-                filtered.append(entry)
                 continue
             candidate = Path.cwd() if entry == "" else Path(entry).expanduser()
             try:
                 resolved = candidate.resolve()
             except (OSError, RuntimeError, ValueError):
-                filtered.append(entry)
                 continue
             if not _paths_related(resolved, root):
                 filtered.append(entry)
         if trusted is not None:
             filtered.insert(0, str(trusted))
         sys.path[:] = filtered
-        _reject_cached_bundle_module(root, adapter_name)
+        _reject_cached_bundle_modules(root)
         yield
     finally:
         sys.path[:] = original_path
@@ -708,25 +706,67 @@ def _paths_related(left: Path, right: Path) -> bool:
     return left == right or left in right.parents or right in left.parents
 
 
-def _reject_cached_bundle_module(bundle_root: Path, adapter_name: str | None) -> None:
-    if not isinstance(adapter_name, str) or ":" not in adapter_name:
-        return
-    module_name = adapter_name.split(":", 1)[0]
+def _reject_cached_bundle_modules(bundle_root: Path) -> None:
+    """Reject any cached module whose import origin is inside the bundle."""
     for cached_name, module in list(sys.modules.items()):
-        if cached_name != module_name and not cached_name.startswith(f"{module_name}."):
+        if module is None:
             continue
-        source = getattr(module, "__file__", None)
-        if not isinstance(source, str):
-            continue
-        try:
-            source_path = Path(source).resolve()
-        except (OSError, RuntimeError, ValueError):
-            continue
-        if bundle_root == source_path or bundle_root in source_path.parents:
+        if not isinstance(module, ModuleType):
             raise ReplayError(
                 "bundle_code_import_forbidden",
-                f"Adapter module '{cached_name}' is already loaded from the bundle",
+                f"Cached sys.modules entry '{cached_name}' is not a module",
             )
+        module_dict = ModuleType.__getattribute__(module, "__dict__")
+        spec = module_dict.get("__spec__")
+        if spec is not None and not isinstance(spec, ModuleSpec):
+            raise ReplayError(
+                "bundle_code_import_forbidden",
+                f"Cached module '{cached_name}' has unsafe import metadata",
+            )
+        spec_dict = {} if spec is None else ModuleSpec.__getattribute__(spec, "__dict__")
+        origins: list[object] = [
+            module_dict.get("__file__"),
+            module_dict.get("__path__"),
+            spec_dict.get("origin"),
+            spec_dict.get("submodule_search_locations"),
+        ]
+        for origin in origins:
+            for value in _origin_values(origin):
+                if _origin_in_bundle(value, bundle_root):
+                    raise ReplayError(
+                        "bundle_code_import_forbidden",
+                        f"Cached module '{cached_name}' is loaded from the bundle",
+                    )
+
+
+def _origin_values(origin: object) -> list[str]:
+    if isinstance(origin, str):
+        return [origin]
+    if origin is None:
+        return []
+    if isinstance(origin, (list, tuple)):
+        iterator = list.__iter__(origin) if isinstance(origin, list) else tuple.__iter__(origin)
+        return [value for value in iterator if isinstance(value, str)]
+    origin_type = type(origin)
+    if (
+        origin_type.__name__ == "_NamespacePath"
+        and origin_type.__module__ == "_frozen_importlib_external"
+    ):
+        namespace_dict = vars(origin)
+        paths = namespace_dict.get("_path")
+        if isinstance(paths, list):
+            return [value for value in list.__iter__(paths) if isinstance(value, str)]
+    return []
+
+
+def _origin_in_bundle(origin: str, bundle_root: Path) -> bool:
+    if not origin or origin in {"built-in", "frozen", "namespace"} or origin.startswith("<"):
+        return False
+    try:
+        resolved = Path(origin).expanduser().resolve()
+    except (OSError, RuntimeError, ValueError):
+        return False
+    return resolved == bundle_root or bundle_root in resolved.parents
 
 
 def _check_bundle_eligibility(manifest: dict[str, Any]) -> None:
