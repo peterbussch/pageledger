@@ -216,6 +216,29 @@ def test_conformance_and_loading_reject_noncallable_page_count(
         load_adapter(f"{module.__name__}:ADAPTER")
 
 
+def test_conformance_reports_noncallable_reproducibility_profile() -> None:
+    class BadProfileAdapter:
+        name = "bad-profile"
+        version = "1.0"
+        deterministic = True
+        input_types = ("text",)
+        output_types = ("text",)
+        capabilities = ("local",)
+        reproducibility_profile = {"materials": []}
+
+        def supports(self, action: str) -> bool:
+            return True
+
+        def extract(self, **kw):  # noqa: ANN003
+            return ExtractionResult(
+                content="test", format="text", confidence=None,
+                model=None, warnings=[], usage={"pages": 1},
+            )
+
+    issues = adapter_conformance_check(BadProfileAdapter())
+    assert any("reproducibility_profile" in issue for issue in issues)
+
+
 def test_custom_adapter_missing_metadata_is_not_filled_in(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

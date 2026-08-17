@@ -202,6 +202,9 @@ def test_manifest_execute_success(tmp_path: Path) -> None:
     assert manifest["status"] == "completed"
     assert manifest["summary"]["pages_total"] == 2
     assert manifest["summary"]["pages_extracted"] == 2
+    legacy_manifest = json.loads(json.dumps(manifest))
+    legacy_manifest["extractors"][0].pop("reproducibility_profile")
+    _validate(_manifest_schema, legacy_manifest, "legacy manifest.json (execute)")
 
 
 def test_manifest_records_adapter_options(tmp_path: Path) -> None:

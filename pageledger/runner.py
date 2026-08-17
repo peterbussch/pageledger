@@ -43,6 +43,7 @@ from .artifacts import (
 from .config import load_config
 from .grading import grade_page
 from .policy import rebuild_policy_queues
+from .replay import build_reproducibility_profile
 from .routing import load_route_map
 
 LOG_LEVELS = {"DEBUG": 10, "INFO": 20, "WARNING": 30, "ERROR": 40}
@@ -293,6 +294,12 @@ def run(
         action = config.default_action
         if _requires_adapter(action) and not adapter.supports(action):
             raise ValueError(f"Adapter '{adapter.name}' does not support action '{action}'")
+
+    adapter_profile = (
+        build_reproducibility_profile(adapter)
+        if adapter is not None and not dry_run
+        else None
+    )
 
     started_at = _utc_now()
     run_id = f"run-{_utc_now_compact()}"
@@ -606,6 +613,8 @@ def run(
                 "output_types": adapter_output_types,
                 "capabilities": adapter_capabilities,
             }
+            if adapter_profile is not None:
+                extractor_entry["reproducibility_profile"] = adapter_profile
             if effective_adapter_options:
                 extractor_entry["options"] = dict(effective_adapter_options)
             if extractor_entry not in extractor_entries:
@@ -708,6 +717,35 @@ def run(
         )
 
     quality_warning_pages = sum(1 for entry in quality_entries if entry.get("warnings"))
+
+    # A route-only execute run can have no extracted page while still having
+    # a deterministic adapter and profile suitable for a later bundle.
+    if (
+        not dry_run
+        and adapter is not None
+        and adapter_profile is not None
+        and not extractor_entries
+        and planned_pages
+        and all(
+            cast(str, page["action"]) in {"review", "skip"}
+            for _source, page in planned_pages
+        )
+    ):
+        planned_extractor_entry: dict[str, Any] = {
+            "name": adapter.name,
+            "adapter": adapter.name,
+            "model": None,
+            "version": adapter.version,
+            "prompt_hash": _sha256_text(config.default_prompt or ""),
+            "deterministic": adapter.deterministic,
+            "input_types": adapter_input_types,
+            "output_types": adapter_output_types,
+            "capabilities": adapter_capabilities,
+            "reproducibility_profile": adapter_profile,
+        }
+        if effective_adapter_options:
+            planned_extractor_entry["options"] = dict(effective_adapter_options)
+        extractor_entries.append(planned_extractor_entry)
 
     routes = {
         page["page_id"]: page

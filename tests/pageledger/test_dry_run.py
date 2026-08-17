@@ -579,6 +579,9 @@ def test_text_adapter_writes_raw_output_and_provenance(tmp_path):
             "input_types": ["text"],
             "output_types": ["text"],
             "capabilities": ["embedded_text", "local"],
+            "reproducibility_profile": manifest["extractors"][0][
+                "reproducibility_profile"
+            ],
         }
     ]
     assert provenance["result"]["raw_artifact"] == "raw/doc_0001_page_0001.txt"
