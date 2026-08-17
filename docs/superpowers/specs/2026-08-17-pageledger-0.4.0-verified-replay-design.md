@@ -1,6 +1,6 @@
 # PageLedger 0.4.0 verified replay design
 
-Status: approved for written-spec review
+Status: approved for implementation
 
 Date: 2026-08-17
 
