@@ -139,9 +139,13 @@ class PdfTextAdapter:
         return action == "transcribe_text"
 
     def reproducibility_profile(self) -> dict[str, object]:
-        from .replay import package_material
+        from .replay import _ProfileUnavailable, package_material
 
-        return {"materials": [package_material("pypdf")]}
+        try:
+            material = package_material("pypdf")
+        except (OSError, RuntimeError, ValueError) as exc:
+            raise _ProfileUnavailable("pdf_text material is unavailable") from exc
+        return {"materials": [material]}
 
     def page_count(self, source: Path) -> int:
         return paginate(source, allow_pdf=True)
@@ -211,23 +215,26 @@ class PdfOcrAdapter:
         return action == "transcribe_text"
 
     def reproducibility_profile(self) -> dict[str, object]:
-        from .replay import binary_material, model_material
+        from .replay import _ProfileUnavailable, binary_material, model_material
 
-        tesseract = _require_binary("tesseract")
-        pdftoppm = _require_binary("pdftoppm")
-        data_dir = _tesseract_data_dir(tesseract)
-        materials: list[dict[str, str]] = [
-            binary_material("tesseract", tesseract, _tesseract_model_string()),
-            binary_material("pdftoppm", pdftoppm, _pdftoppm_model_string()),
-        ]
-        for language in self.lang.split("+"):
-            traineddata = data_dir / f"{language}.traineddata"
-            materials.append(
-                model_material(
-                    f"tesseract:{language}.traineddata",
-                    traineddata,
+        try:
+            tesseract = _require_binary("tesseract")
+            pdftoppm = _require_binary("pdftoppm")
+            data_dir = _tesseract_data_dir(tesseract)
+            materials: list[dict[str, str]] = [
+                binary_material("tesseract", tesseract, _tesseract_model_string()),
+                binary_material("pdftoppm", pdftoppm, _pdftoppm_model_string()),
+            ]
+            for language in self.lang.split("+"):
+                traineddata = data_dir / f"{language}.traineddata"
+                materials.append(
+                    model_material(
+                        f"tesseract:{language}.traineddata",
+                        traineddata,
+                    )
                 )
-            )
+        except (OSError, RuntimeError, ValueError) as exc:
+            raise _ProfileUnavailable("pdf_ocr material is unavailable") from exc
         return {"materials": materials}
 
     def page_count(self, source: Path) -> int:

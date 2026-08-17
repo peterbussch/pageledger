@@ -127,6 +127,113 @@ def test_verify_run_rejects_duplicate_common_comparison_page_ids(tmp_path: Path)
     assert "replay_linkage_mismatch" in _codes(report, "errors")
 
 
+def test_verify_run_rejects_raw_equal_contradiction_with_consistent_counters(
+    tmp_path: Path,
+) -> None:
+    from pageledger.replay import bundle_run, replay_bundle
+    from pageledger.verify import verify_run
+
+    run_dir, _ = _run(tmp_path)
+    bundle_dir = tmp_path / "bundle"
+    bundle_run(run_dir, bundle_dir)
+    replay_dir = tmp_path / "replayed"
+    replay_bundle(bundle_dir, replay_dir)
+    replay_path = replay_dir / "replay.json"
+    replay = json.loads(replay_path.read_text(encoding="utf-8"))
+    page = replay["comparison"]["pages"][0]
+    page_id = page["page_id"]
+    page["raw_equal"] = False
+    replay["raw"] = {
+        "equal": 0,
+        "different": 1,
+        "missing": 0,
+        "different_page_ids": [page_id],
+        "missing_page_ids": [],
+    }
+    replay["outcome"] = "deterministic_mismatch"
+    replay_path.write_text(json.dumps(replay), encoding="utf-8")
+    manifest_path = replay_dir / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["outcome"] = "deterministic_mismatch"
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    report = verify_run(replay_dir)
+
+    assert report["status"] == "fail"
+    assert "replay_linkage_mismatch" in _codes(report, "errors")
+
+
+def test_verify_run_rejects_replay_raw_hash_divergence_from_provenance(
+    tmp_path: Path,
+) -> None:
+    from pageledger.replay import bundle_run, replay_bundle
+    from pageledger.verify import verify_run
+
+    run_dir, _ = _run(tmp_path)
+    bundle_dir = tmp_path / "bundle"
+    bundle_run(run_dir, bundle_dir)
+    replay_dir = tmp_path / "replayed"
+    replay_bundle(bundle_dir, replay_dir)
+    replay_path = replay_dir / "replay.json"
+    replay = json.loads(replay_path.read_text(encoding="utf-8"))
+    forged_hash = "0" * 64
+    replay["comparison"]["pages"][0]["raw_sha256_a"] = forged_hash
+    replay["comparison"]["pages"][0]["raw_sha256_b"] = forged_hash
+    replay_path.write_text(json.dumps(replay), encoding="utf-8")
+
+    report = verify_run(replay_dir)
+
+    assert report["status"] == "fail"
+    assert "replay_linkage_mismatch" in _codes(report, "errors")
+
+
+def test_verify_run_rejects_bogus_replay_extractor_identity(
+    tmp_path: Path,
+) -> None:
+    from pageledger.replay import bundle_run, replay_bundle
+    from pageledger.verify import verify_run
+
+    run_dir, _ = _run(tmp_path)
+    bundle_dir = tmp_path / "bundle"
+    bundle_run(run_dir, bundle_dir)
+    replay_dir = tmp_path / "replayed"
+    replay_bundle(bundle_dir, replay_dir)
+    replay_path = replay_dir / "replay.json"
+    replay = json.loads(replay_path.read_text(encoding="utf-8"))
+    replay["baseline_extractor"]["adapter"] = "bogus"
+    replay["local_extractor"]["adapter"] = "bogus"
+    replay["baseline_extractor"]["version"] = "bogus"
+    replay["local_extractor"]["version"] = "bogus"
+    replay_path.write_text(json.dumps(replay), encoding="utf-8")
+
+    report = verify_run(replay_dir)
+
+    assert report["status"] == "fail"
+    assert "replay_linkage_mismatch" in _codes(report, "errors")
+
+
+def test_verify_run_rejects_malformed_replay_extractor_options(
+    tmp_path: Path,
+) -> None:
+    from pageledger.replay import bundle_run, replay_bundle
+    from pageledger.verify import verify_run
+
+    run_dir, _ = _run(tmp_path)
+    bundle_dir = tmp_path / "bundle"
+    bundle_run(run_dir, bundle_dir)
+    replay_dir = tmp_path / "replayed"
+    replay_bundle(bundle_dir, replay_dir)
+    replay_path = replay_dir / "replay.json"
+    replay = json.loads(replay_path.read_text(encoding="utf-8"))
+    replay["local_extractor"]["options"] = []
+    replay_path.write_text(json.dumps(replay), encoding="utf-8")
+
+    report = verify_run(replay_dir)
+
+    assert report["status"] == "fail"
+    assert "replay_artifact_malformed" in _codes(report, "errors")
+
+
 def test_verify_run_rejects_overlapping_page_only_comparison_ids(tmp_path: Path) -> None:
     from pageledger.replay import bundle_run, replay_bundle
     from pageledger.verify import verify_run

@@ -39,6 +39,108 @@ def test_builtin_pdf_text_adapter_passes_conformance() -> None:
     assert issues == []
 
 
+def test_pdf_text_profile_material_provider_success_and_unavailable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import pageledger.replay as replay_module
+
+    material = {"kind": "package", "name": "pypdf", "version": "1.0", "sha256": "0" * 64}
+    monkeypatch.setattr(replay_module, "package_material", lambda name: material)
+    profile = replay_module.build_reproducibility_profile(PdfTextAdapter())
+    assert profile is not None
+    assert profile["materials"] == [material]
+
+    def unavailable(_name: str) -> dict[str, str]:
+        raise ValueError("package metadata unavailable")
+
+    monkeypatch.setattr(replay_module, "package_material", unavailable)
+    assert replay_module.build_reproducibility_profile(PdfTextAdapter()) is None
+
+
+def test_pdf_ocr_profile_material_provider_success_and_unavailable(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import pageledger.replay as replay_module
+
+    tessdata = tmp_path / "tessdata"
+    tessdata.mkdir()
+    (tessdata / "eng.traineddata").write_bytes(b"trained data")
+    tesseract = tmp_path / "tesseract"
+    pdftoppm = tmp_path / "pdftoppm"
+    tesseract.write_bytes(b"tesseract")
+    pdftoppm.write_bytes(b"pdftoppm")
+    monkeypatch.setattr(
+        adapters_module,
+        "_require_binary",
+        lambda name: str(tesseract if name == "tesseract" else pdftoppm),
+    )
+    monkeypatch.setattr(adapters_module, "_tesseract_data_dir", lambda _path: tessdata)
+    monkeypatch.setattr(adapters_module, "_tesseract_model_string", lambda: "tesseract 1.0")
+    monkeypatch.setattr(adapters_module, "_pdftoppm_model_string", lambda: "pdftoppm 1.0")
+
+    profile = replay_module.build_reproducibility_profile(PdfOcrAdapter())
+    assert profile is not None
+    assert {material["name"] for material in profile["materials"]} == {
+        "tesseract",
+        "pdftoppm",
+        "tesseract:eng.traineddata",
+    }
+
+    def unavailable(_name: str) -> str:
+        raise RuntimeError("binary discovery unavailable")
+
+    monkeypatch.setattr(adapters_module, "_require_binary", unavailable)
+    assert replay_module.build_reproducibility_profile(PdfOcrAdapter()) is None
+
+
+def test_pdf_ocr_run_without_profile_is_ordinary_but_not_bundleable(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from pageledger.replay import ReplayError, bundle_run
+    from pageledger.runner import run
+
+    monkeypatch.setattr(
+        adapters_module,
+        "_require_binary",
+        lambda _name: (_ for _ in ()).throw(RuntimeError("tesseract unavailable")),
+    )
+    monkeypatch.setattr(PdfOcrAdapter, "page_count", lambda self, source: 1)
+    monkeypatch.setattr(
+        PdfOcrAdapter,
+        "extract",
+        lambda self, source, *, page_id, page_number, action, prompt=None: ExtractionResult(
+            content="OCR text",
+            format="text",
+            confidence=None,
+            model="mock-ocr",
+            warnings=[],
+            usage={"pages": 1},
+        ),
+    )
+    source = tmp_path / "scan.pdf"
+    source.write_bytes(b"not a real PDF; extraction is mocked")
+    config = tmp_path / "config.yml"
+    config.write_text(
+        "schema_version: '0.1'\n"
+        "taxonomy:\n"
+        "  page_types:\n"
+        "    prose:\n"
+        "      default_action: transcribe_text\n"
+        "run:\n"
+        "  adapter: pdf_ocr\n",
+        encoding="utf-8",
+    )
+    run_dir = tmp_path / "run"
+    result = run(inputs=[source], config_path=config, out_dir=run_dir, dry_run=False)
+
+    assert result["summary"]["pages_extracted"] == 1
+    manifest = json.loads((run_dir / "manifest.json").read_text(encoding="utf-8"))
+    assert "reproducibility_profile" not in manifest["extractors"][0]
+    with pytest.raises(ReplayError) as error:
+        bundle_run(run_dir, tmp_path / "bundle")
+    assert error.value.code == "profile_missing"
+
+
 def test_pdf_text_records_pypdf_backend_version(tmp_path: Path, monkeypatch) -> None:
     pytest.importorskip("pypdf")
     monkeypatch.setattr(adapters_module, "_pdf_page_text", lambda source, page: "text")

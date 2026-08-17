@@ -623,6 +623,63 @@ def test_replay_trusted_adapter_path_succeeds_and_restores_import_state(
     assert sys.path == before
 
 
+def test_replay_trusted_adapter_replaces_cached_module_and_restores_modules(
+    tmp_path: Path,
+) -> None:
+    import sys
+
+    from pageledger.replay import bundle_run, replay_bundle
+
+    module_name = "replay_ab_adapter"
+    dependency_name = "replay_ab_fresh_dependency"
+    adapter_a = tmp_path / "adapter-a"
+    adapter_b = tmp_path / "adapter-b"
+    adapter_a.mkdir()
+    adapter_b.mkdir()
+    common = (
+        "from pageledger.adapters import ExtractionResult\n"
+        "class Adapter:\n"
+        "    name = 'same-module'\n"
+        "    version = '1.0'\n"
+        "    deterministic = False\n"
+        "    input_types = ('text',)\n"
+        "    output_types = ('text',)\n"
+        "    capabilities = ('local',)\n"
+        "    def supports(self, action): return action == 'transcribe_text'\n"
+        "    def extract(self, source, *, page_id, page_number, action, prompt=None):\n"
+        "        return ExtractionResult(content=MARKER, format='text', confidence=None, model=None, warnings=[], usage={'pages': 1})\n"
+    )
+    (adapter_a / f"{module_name}.py").write_text(
+        common.replace("MARKER", repr("A")), encoding="utf-8"
+    )
+    (adapter_b / f"{module_name}.py").write_text(
+        (f"import {dependency_name}\n" + common).replace("MARKER", repr("B")),
+        encoding="utf-8",
+    )
+    (adapter_b / f"{dependency_name}.py").write_text("VALUE = 'fresh'\n", encoding="utf-8")
+    config = MINIMAL_CONFIG.replace("adapter: text", f"adapter: {module_name}:Adapter")
+    run_dir, _, _ = _run_text(tmp_path, config_text=config, adapter_path=adapter_a)
+    bundle_dir = tmp_path / "bundle"
+    bundle_run(run_dir, bundle_dir)
+
+    before_modules = dict(sys.modules)
+    before_path = list(sys.path)
+    replayed = tmp_path / "replayed"
+    replay_bundle(bundle_dir, replayed, adapter_path=adapter_b)
+
+    raw = next((replayed / "raw").glob("*"))
+    assert raw.read_text(encoding="utf-8") == "B"
+    assert sys.path == before_path
+    assert sys.modules == before_modules
+    assert dependency_name not in sys.modules
+
+    sys.modules.pop(module_name, None)
+    for path in (adapter_a, adapter_b):
+        entry = str(path.resolve())
+        while entry in sys.path:
+            sys.path.remove(entry)
+
+
 def test_profile_hook_cannot_import_bundle_helper(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -962,6 +1019,26 @@ def test_replay_rejects_tampered_bundle_before_output_creation(tmp_path: Path) -
     assert not (tmp_path / "never-created").exists()
 
 
+def test_bundle_rejects_route_decision_tampering_after_inventory_refresh(tmp_path: Path) -> None:
+    from pageledger.replay import ReplayError, bundle_run, replay_bundle
+
+    run_dir, _, _ = _run_text(tmp_path)
+    bundle_dir = tmp_path / "bundle"
+    bundle_run(run_dir, bundle_dir)
+    route_path = bundle_dir / "replay-route-map.yml"
+    route = yaml.safe_load(route_path.read_text(encoding="utf-8"))
+    route["documents"][0]["pages"][0]["action"] = "skip"
+    route["documents"][0]["pages"][0]["reason"] = "attacker changed the plan"
+    route_path.write_text(yaml.safe_dump(route, sort_keys=False), encoding="utf-8")
+    _refresh_bundle_inventory(bundle_dir)
+
+    output = tmp_path / "never-created"
+    with pytest.raises(ReplayError) as error:
+        replay_bundle(bundle_dir, output)
+    assert error.value.code == "route_map_mismatch"
+    assert not output.exists()
+
+
 def test_replay_rejects_adapter_path_inside_bundle(tmp_path: Path) -> None:
     from pageledger.replay import ReplayError, bundle_run, replay_bundle
 
@@ -1268,6 +1345,28 @@ def test_bundle_rejects_wrong_canonical_artifact_path(tmp_path: Path) -> None:
     (bundle_dir / "bundle.json").write_text(json.dumps(bundle, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     with pytest.raises(ReplayError, match="canonical"):
         validate_bundle(bundle_dir)
+
+
+@pytest.mark.parametrize("alias", ["./baseline/audit.json", "baseline//audit.json", "baseline/./audit.json"])
+def test_bundle_rejects_noncanonical_inventory_aliases(tmp_path: Path, alias: str) -> None:
+    from pageledger.replay import ReplayError, bundle_run, validate_bundle
+
+    run_dir, _, _ = _run_text(tmp_path)
+    bundle_dir = tmp_path / "bundle"
+    bundle_run(run_dir, bundle_dir)
+    bundle_path = bundle_dir / "bundle.json"
+    bundle = json.loads(bundle_path.read_text(encoding="utf-8"))
+    for entry in bundle["files"]:
+        if entry["path"] == "baseline/audit.json":
+            entry["path"] = alias
+            break
+    else:
+        pytest.fail("baseline audit inventory entry missing")
+    bundle_path.write_text(json.dumps(bundle, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+    with pytest.raises(ReplayError) as error:
+        validate_bundle(bundle_dir)
+    assert error.value.code == "bundle_path_unsafe"
 
 
 @pytest.mark.parametrize("option_mapping", ["adapter_options", "hook_options"])

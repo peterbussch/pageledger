@@ -848,7 +848,7 @@ def verify_run(
                 line_number=line_number,
             )
 
-    _check_replay_linkage(manifest, declarations, loaded, errors)
+    _check_replay_linkage(manifest, declarations, loaded, provenance, errors)
 
     return _report(root, errors, warnings, counts)
 
@@ -1045,6 +1045,7 @@ def _check_replay_linkage(
     manifest: dict[str, Any],
     declarations: dict[str, Any],
     loaded: dict[str, Any],
+    provenance: dict[str, dict[str, Any]],
     errors: list[dict[str, Any]],
 ) -> None:
     """Check optional replay evidence and its additive manifest linkage."""
@@ -1133,7 +1134,7 @@ def _check_replay_linkage(
         _add(errors, "replay_artifact_malformed", "Replay bundle manifest hash is invalid", artifact="replay.json")
     if replay.get("outcome") not in {"exact", "evidence_compared", "deterministic_mismatch"}:
         _add(errors, "replay_artifact_malformed", "Replay outcome is invalid", artifact="replay.json")
-    if replay.get("profile_match") not in {True, False, None}:
+    if replay.get("profile_match") is not None and not isinstance(replay.get("profile_match"), bool):
         _add(errors, "replay_artifact_malformed", "Replay profile_match is invalid", artifact="replay.json")
 
     if (
@@ -1153,21 +1154,45 @@ def _check_replay_linkage(
     raw = replay.get("raw")
     comparison = replay.get("comparison")
     baseline_extractor = replay.get("baseline_extractor")
+    local_extractor = replay.get("local_extractor")
     if not isinstance(raw, dict) or not isinstance(comparison, dict):
         _add(errors, "replay_artifact_malformed", "Replay raw/comparison evidence is malformed", artifact="replay.json")
         return
-    if not isinstance(baseline_extractor, dict) or not isinstance(replay.get("local_extractor"), dict):
+    if not isinstance(baseline_extractor, dict) or not isinstance(local_extractor, dict):
         _add(errors, "replay_artifact_malformed", "Replay extractor evidence is malformed", artifact="replay.json")
         return
-    extractor_evidence_valid = True
-    if not isinstance(baseline_extractor.get("deterministic"), bool):
-        _add(errors, "replay_artifact_malformed", "Replay baseline extractor deterministic flag is invalid", artifact="replay.json")
-        extractor_evidence_valid = False
-    capabilities = baseline_extractor.get("capabilities")
-    if not isinstance(capabilities, list) or any(not isinstance(value, str) for value in capabilities):
-        _add(errors, "replay_artifact_malformed", "Replay baseline extractor capabilities are invalid", artifact="replay.json")
-        extractor_evidence_valid = False
-    capabilities = cast(list[str], capabilities) if isinstance(capabilities, list) else []
+    baseline_identity = _validate_replay_extractor_identity(
+        baseline_extractor, "baseline_extractor", errors
+    )
+    local_identity = _validate_replay_extractor_identity(
+        local_extractor, "local_extractor", errors
+    )
+    expected_local = _manifest_replay_extractor_identity(manifest, errors)
+    extractor_evidence_valid = baseline_identity is not None and local_identity is not None
+    if baseline_identity is not None and local_identity is not None:
+        base_keys = (
+            "adapter",
+            "version",
+            "deterministic",
+            "input_types",
+            "output_types",
+            "capabilities",
+            "options",
+        )
+        if any(baseline_identity[key] != local_identity[key] for key in base_keys):
+            _add(
+                errors,
+                "replay_linkage_mismatch",
+                "Replay baseline and local extractor identities differ",
+                artifact="replay.json",
+            )
+        if expected_local is not None and local_identity != expected_local:
+            _add(
+                errors,
+                "replay_linkage_mismatch",
+                "Replay local extractor does not match the run manifest",
+                artifact="replay.json",
+            )
 
     counts: dict[str, int] = {}
     for name in ("equal", "different", "missing"):
@@ -1225,7 +1250,45 @@ def _check_replay_linkage(
             _add(errors, "replay_artifact_malformed", "Replay comparison page is malformed", artifact="replay.json")
             continue
         page_id = page["page_id"]
+        raw_a = page.get("raw_sha256_a")
+        raw_b = page.get("raw_sha256_b")
+        raw_a_valid = raw_a is None or _is_sha256(raw_a)
+        raw_b_valid = raw_b is None or _is_sha256(raw_b)
+        if not raw_a_valid:
+            _add(
+                errors,
+                "replay_artifact_malformed",
+                "Replay comparison raw_sha256_a must be a SHA-256 string or null",
+                artifact="replay.json",
+            )
+        if not raw_b_valid:
+            _add(
+                errors,
+                "replay_artifact_malformed",
+                "Replay comparison raw_sha256_b must be a SHA-256 string or null",
+                artifact="replay.json",
+            )
+        expected_raw_equal = raw_a == raw_b if _is_sha256(raw_a) and _is_sha256(raw_b) else None
         raw_equal = page.get("raw_equal")
+        if raw_equal is not expected_raw_equal:
+            _add(
+                errors,
+                "replay_linkage_mismatch",
+                "Replay comparison raw_equal contradicts raw SHA-256 evidence",
+                artifact="replay.json",
+                page_id=page_id,
+            )
+        current_entry = provenance.get(page_id)
+        current_result = current_entry.get("result") if isinstance(current_entry, dict) else None
+        current_raw = current_result.get("raw_sha256") if isinstance(current_result, dict) else None
+        if raw_b != current_raw:
+            _add(
+                errors,
+                "replay_linkage_mismatch",
+                "Replay raw_sha256_b differs from current provenance",
+                artifact="replay.json",
+                page_id=page_id,
+            )
         if raw_equal is True:
             comparison_equal += 1
         elif raw_equal is False:
@@ -1258,8 +1321,32 @@ def _check_replay_linkage(
 
     if not extractor_evidence_valid:
         return
-    deterministic = baseline_extractor["deterministic"]
+    assert baseline_identity is not None
+    deterministic = baseline_identity["deterministic"]
+    capabilities = cast(list[str], baseline_identity["capabilities"])
     cloud = any(value.casefold() == "cloud" for value in capabilities)
+    if deterministic and not cloud:
+        if (
+            baseline_identity["reproducibility_profile_sha256"] is None
+            or local_identity is None
+            or local_identity["reproducibility_profile_sha256"] is None
+            or baseline_identity["reproducibility_profile_sha256"]
+            != local_identity["reproducibility_profile_sha256"]
+            or replay.get("profile_match") is not True
+        ):
+            _add(
+                errors,
+                "replay_linkage_mismatch",
+                "Deterministic replay profile evidence does not agree",
+                artifact="replay.json",
+            )
+    elif replay.get("profile_match") is not None:
+        _add(
+            errors,
+            "replay_linkage_mismatch",
+            "Nondeterministic or cloud replay must not claim a profile match",
+            artifact="replay.json",
+        )
     outcome = replay.get("outcome")
     if outcome == "exact" and (
         not deterministic
@@ -1279,6 +1366,95 @@ def _check_replay_linkage(
         or (counts.get("different", 0) == 0 and counts.get("missing", 0) == 0 and not pages_only_a and not pages_only_b)
     ):
         _add(errors, "replay_linkage_mismatch", "Deterministic mismatch outcome has no differing or missing pages", artifact="replay.json")
+
+
+def _validate_replay_extractor_identity(
+    identity: dict[str, Any], label: str, errors: list[dict[str, Any]]
+) -> dict[str, Any] | None:
+    expected = {
+        "adapter",
+        "version",
+        "deterministic",
+        "input_types",
+        "output_types",
+        "capabilities",
+        "options",
+        "reproducibility_profile_sha256",
+    }
+    if set(identity) != expected:
+        _add(errors, "replay_artifact_malformed", f"Replay {label} has invalid fields", artifact="replay.json")
+        return None
+    if (
+        not isinstance(identity["adapter"], str)
+        or not identity["adapter"]
+        or not isinstance(identity["version"], str)
+        or not identity["version"]
+        or not isinstance(identity["deterministic"], bool)
+    ):
+        _add(errors, "replay_artifact_malformed", f"Replay {label} has invalid scalar identity fields", artifact="replay.json")
+        return None
+    for field in ("input_types", "output_types", "capabilities"):
+        values = identity[field]
+        if not isinstance(values, list) or any(not isinstance(value, str) for value in values):
+            _add(errors, "replay_artifact_malformed", f"Replay {label}.{field} must be a list of strings", artifact="replay.json")
+            return None
+        if values != sorted(set(values)):
+            _add(errors, "replay_artifact_malformed", f"Replay {label}.{field} must be sorted and unique", artifact="replay.json")
+            return None
+    options = identity["options"]
+    if not isinstance(options, dict) or any(not isinstance(key, str) for key in options):
+        _add(errors, "replay_artifact_malformed", f"Replay {label}.options must be a mapping", artifact="replay.json")
+        return None
+    try:
+        json.dumps(options, ensure_ascii=False, allow_nan=False)
+    except (TypeError, ValueError) as exc:
+        _add(errors, "replay_artifact_malformed", f"Replay {label}.options must contain finite JSON: {exc}", artifact="replay.json")
+        return None
+    profile_hash = identity["reproducibility_profile_sha256"]
+    if profile_hash is not None and not _is_sha256(profile_hash):
+        _add(errors, "replay_artifact_malformed", f"Replay {label} profile hash is invalid", artifact="replay.json")
+        return None
+    return identity
+
+
+def _manifest_replay_extractor_identity(
+    manifest: dict[str, Any], errors: list[dict[str, Any]]
+) -> dict[str, Any] | None:
+    entries = manifest.get("extractors")
+    if not isinstance(entries, list) or not entries:
+        _add(errors, "replay_artifact_malformed", "Run manifest has no extractor entries", artifact="manifest.json")
+        return None
+    identities: list[dict[str, Any]] = []
+    for entry in entries:
+        if not isinstance(entry, dict):
+            _add(errors, "replay_artifact_malformed", "Run manifest extractor entry is malformed", artifact="manifest.json")
+            continue
+        profile = entry.get("reproducibility_profile")
+        profile_hash: str | None = None
+        if profile is not None:
+            if not isinstance(profile, dict) or not _is_sha256(profile.get("profile_sha256")):
+                _add(errors, "replay_artifact_malformed", "Run manifest reproducibility profile is malformed", artifact="manifest.json")
+            else:
+                profile_hash = profile["profile_sha256"]
+        candidate = {
+            "adapter": entry.get("adapter"),
+            "version": entry.get("version"),
+            "deterministic": entry.get("deterministic"),
+            "input_types": entry.get("input_types"),
+            "output_types": entry.get("output_types"),
+            "capabilities": entry.get("capabilities"),
+            "options": entry.get("options", {}),
+            "reproducibility_profile_sha256": profile_hash,
+        }
+        validated = _validate_replay_extractor_identity(candidate, "manifest extractor", errors)
+        if validated is not None:
+            identities.append(validated)
+    if not identities:
+        return None
+    first = identities[0]
+    if any(identity != first for identity in identities[1:]):
+        _add(errors, "replay_linkage_mismatch", "Run manifest extractor entries disagree", artifact="manifest.json")
+    return first
 
 
 def _index_pages(
