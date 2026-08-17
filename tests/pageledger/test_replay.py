@@ -538,6 +538,87 @@ def test_external_alignment_snapshot_replays_without_original_schema(
     assert (tmp_path / "replayed" / "normalized" / "doc_0001_page_0001.json").is_file()
 
 
+def test_replay_blocks_implicit_bundle_adapter_import_before_execution(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import sys
+
+    from pageledger.replay import ReplayError, bundle_run, replay_bundle
+    from pageledger.runner import run
+
+    trusted = tmp_path / "trusted"
+    trusted.mkdir()
+    marker = tmp_path / "bundle-import-marker"
+    (trusted / "source-0001.py").write_text(
+        "from pageledger.adapters import ExtractionResult\n"
+        "class Adapter:\n"
+        "    name = 'source-0001'\n"
+        "    version = '1.0'\n"
+        "    deterministic = False\n"
+        "    input_types = ('text',)\n"
+        "    output_types = ('text',)\n"
+        "    capabilities = ('local',)\n"
+        "    def supports(self, action): return action == 'transcribe_text'\n"
+        "    def extract(self, source, *, page_id, page_number, action, prompt=None):\n"
+        "        return ExtractionResult(content='safe', format='text', confidence=None, model='safe', warnings=[], usage={'pages': 1})\n",
+        encoding="utf-8",
+    )
+    payload = tmp_path / "payload.py"
+    payload.write_text(
+        f"from pathlib import Path\nPath({str(marker)!r}).write_text('executed')\n",
+        encoding="utf-8",
+    )
+    config = tmp_path / "config.yml"
+    config.write_text(MINIMAL_CONFIG.replace("adapter: text", "adapter: source-0001:Adapter"), encoding="utf-8")
+    run_dir = tmp_path / "run"
+    run(inputs=[payload], config_path=config, out_dir=run_dir, dry_run=False, adapter_path=trusted)
+    bundle_dir = tmp_path / "bundle"
+    bundle_run(run_dir, bundle_dir)
+    sys.modules.pop("source-0001", None)
+    sys.path[:] = [entry for entry in sys.path if entry != str(trusted.resolve())]
+    monkeypatch.chdir(bundle_dir / "sources")
+    sys.path.insert(0, str(bundle_dir / "sources"))
+    before = list(sys.path)
+    with pytest.raises(ReplayError) as error:
+        replay_bundle(bundle_dir, tmp_path / "never-created")
+    assert error.value.code in {"extractor_identity_mismatch", "bundle_code_import_forbidden"}
+    assert not marker.exists()
+    assert sys.path == before
+
+
+def test_replay_trusted_adapter_path_succeeds_and_restores_import_state(
+    tmp_path: Path,
+) -> None:
+    from pageledger.replay import bundle_run, replay_bundle
+
+    adapter_dir = tmp_path / "trusted-adapters"
+    adapter_dir.mkdir()
+    (adapter_dir / "safe.py").write_text(
+        "from pageledger.adapters import ExtractionResult\n"
+        "class Adapter:\n"
+        "    name = 'safe'\n"
+        "    version = '1.0'\n"
+        "    deterministic = False\n"
+        "    input_types = ('text',)\n"
+        "    output_types = ('text',)\n"
+        "    capabilities = ('local',)\n"
+        "    def supports(self, action): return action == 'transcribe_text'\n"
+        "    def extract(self, source, *, page_id, page_number, action, prompt=None):\n"
+        "        return ExtractionResult(content='safe', format='text', confidence=None, model='safe', warnings=[], usage={'pages': 1})\n",
+        encoding="utf-8",
+    )
+    config = MINIMAL_CONFIG.replace("adapter: text", "adapter: safe:Adapter")
+    run_dir, _, _ = _run_text(tmp_path, config_text=config, adapter_path=adapter_dir)
+    bundle_dir = tmp_path / "bundle"
+    bundle_run(run_dir, bundle_dir)
+    import sys
+
+    before = list(sys.path)
+    result = replay_bundle(bundle_dir, tmp_path / "replayed", adapter_path=adapter_dir)
+    assert result["outcome"] == "evidence_compared"
+    assert sys.path == before
+
+
 def test_replay_rejects_tampered_bundle_before_output_creation(tmp_path: Path) -> None:
     from pageledger.replay import ReplayError, bundle_run, replay_bundle
 

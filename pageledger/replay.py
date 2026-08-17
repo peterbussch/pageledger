@@ -15,6 +15,7 @@ import sys
 import tempfile
 import uuid
 from collections.abc import Mapping
+from contextlib import contextmanager
 from importlib import metadata
 from pathlib import Path
 from typing import Any, cast
@@ -454,7 +455,7 @@ def replay_bundle(
     from .aligner import align_run
     from .compare import compare_runs
     from .config import load_config
-    from .runner import _apply_adapter_path, _effective_adapter, run
+    from .runner import _effective_adapter, run
     from .verify import verify_run
 
     bundle = validate_bundle(bundle_dir)
@@ -481,8 +482,10 @@ def replay_bundle(
     if adapter_name is None:
         raise ReplayError("extractor_identity_mismatch", "Bundle config has no effective adapter")
     try:
-        _apply_adapter_path(trusted_path)
-        adapter = load_adapter(adapter_name, adapter_options)
+        with _bundle_import_boundary(root, trusted_path, adapter_name):
+            adapter = load_adapter(adapter_name, adapter_options)
+    except ReplayError:
+        raise
     except Exception as exc:
         raise ReplayError(
             "extractor_identity_mismatch",
@@ -530,24 +533,25 @@ def replay_bundle(
         "dry_run": False,
         "adapter_path": trusted_path,
     }
-    if "routing" in baseline_manifest:
-        route = _read_yaml_mapping(replay_route, "portable route map")
-        documents = route.get("documents")
-        if not isinstance(documents, list) or len(documents) != len(source_paths):
-            raise ReplayError("route_map_invalid", "Portable route map does not match bundle sources")
-        for document, source in zip(documents, source_paths, strict=True):
-            if not isinstance(document, dict):
-                raise ReplayError("route_map_invalid", "Portable route map document is invalid")
-            document["source"] = str(source.resolve())
-        with tempfile.TemporaryDirectory(prefix="pageledger-replay-route-") as temp:
-            route_path = Path(temp) / "route-map.yml"
-            route_path.write_text(yaml.safe_dump(route, sort_keys=False), encoding="utf-8")
-            run_kwargs["routes_path"] = route_path
+    with _bundle_import_boundary(root, trusted_path, adapter_name):
+        if "routing" in baseline_manifest:
+            route = _read_yaml_mapping(replay_route, "portable route map")
+            documents = route.get("documents")
+            if not isinstance(documents, list) or len(documents) != len(source_paths):
+                raise ReplayError("route_map_invalid", "Portable route map does not match bundle sources")
+            for document, source in zip(documents, source_paths, strict=True):
+                if not isinstance(document, dict):
+                    raise ReplayError("route_map_invalid", "Portable route map document is invalid")
+                document["source"] = str(source.resolve())
+            with tempfile.TemporaryDirectory(prefix="pageledger-replay-route-") as temp:
+                route_path = Path(temp) / "route-map.yml"
+                route_path.write_text(yaml.safe_dump(route, sort_keys=False), encoding="utf-8")
+                run_kwargs["routes_path"] = route_path
+                run_result = run(**run_kwargs)
+        else:
+            if len(source_paths) == 1 and source_records[0].get("pages"):
+                run_kwargs["pages"] = source_records[0]["pages"]
             run_result = run(**run_kwargs)
-    else:
-        if len(source_paths) == 1 and source_records[0].get("pages"):
-            run_kwargs["pages"] = source_records[0]["pages"]
-        run_result = run(**run_kwargs)
 
     alignment = baseline_manifest.get("alignment")
     if isinstance(alignment, dict) and alignment.get("schema_source") != "config_snapshot":
@@ -658,6 +662,71 @@ def _atomic_write_json(path: Path, value: dict[str, Any]) -> None:
         encoding="utf-8",
     )
     os.replace(temporary, path)
+
+
+@contextmanager
+def _bundle_import_boundary(
+    bundle_root: Path,
+    trusted_adapter_path: Path | None,
+    adapter_name: str | None,
+):
+    """Temporarily prevent Python imports from resolving inside a bundle."""
+    original_path = list(sys.path)
+    root = bundle_root.resolve()
+    trusted: Path | None = None
+    if trusted_adapter_path is not None:
+        trusted = trusted_adapter_path.expanduser().resolve()
+        if _paths_related(trusted, root):
+            raise ReplayError(
+                "adapter_path_inside_bundle",
+                "Trusted adapter path must not be equal to, inside, or above the bundle",
+            )
+    try:
+        filtered: list[Any] = []
+        for entry in original_path:
+            if not isinstance(entry, str):
+                filtered.append(entry)
+                continue
+            candidate = Path.cwd() if entry == "" else Path(entry).expanduser()
+            try:
+                resolved = candidate.resolve()
+            except (OSError, RuntimeError, ValueError):
+                filtered.append(entry)
+                continue
+            if not _paths_related(resolved, root):
+                filtered.append(entry)
+        if trusted is not None:
+            filtered.insert(0, str(trusted))
+        sys.path[:] = filtered
+        _reject_cached_bundle_module(root, adapter_name)
+        yield
+    finally:
+        sys.path[:] = original_path
+
+
+def _paths_related(left: Path, right: Path) -> bool:
+    return left == right or left in right.parents or right in left.parents
+
+
+def _reject_cached_bundle_module(bundle_root: Path, adapter_name: str | None) -> None:
+    if not isinstance(adapter_name, str) or ":" not in adapter_name:
+        return
+    module_name = adapter_name.split(":", 1)[0]
+    for cached_name, module in list(sys.modules.items()):
+        if cached_name != module_name and not cached_name.startswith(f"{module_name}."):
+            continue
+        source = getattr(module, "__file__", None)
+        if not isinstance(source, str):
+            continue
+        try:
+            source_path = Path(source).resolve()
+        except (OSError, RuntimeError, ValueError):
+            continue
+        if bundle_root == source_path or bundle_root in source_path.parents:
+            raise ReplayError(
+                "bundle_code_import_forbidden",
+                f"Adapter module '{cached_name}' is already loaded from the bundle",
+            )
 
 
 def _check_bundle_eligibility(manifest: dict[str, Any]) -> None:
