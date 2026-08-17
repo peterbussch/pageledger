@@ -7,6 +7,7 @@ import json
 from pathlib import Path
 
 import pytest
+import yaml
 
 MINIMAL_CONFIG = """\
 schema_version: "0.1"
@@ -202,3 +203,23 @@ def test_review_only_custom_adapter_without_hook_gets_planned_entry(tmp_path: Pa
         }
     ]
     assert "reproducibility_profile" not in manifest["extractors"][0]
+
+
+def test_bundle_text_run_has_portable_layout(tmp_path: Path) -> None:
+    from pageledger.replay import bundle_run, validate_bundle
+
+    run_dir, _, _ = _run_text(tmp_path)
+    bundle_dir = tmp_path / "bundle"
+    manifest = json.loads((run_dir / "manifest.json").read_text())
+    result = bundle_run(run_dir, bundle_dir)
+    bundle = json.loads((bundle_dir / "bundle.json").read_text())
+    assert result["bundle_dir"] == str(bundle_dir.resolve())
+    assert bundle["bundle_schema_version"] == "0.1"
+    assert bundle["baseline"]["run_id"] == manifest["run_id"]
+    assert bundle["baseline"]["manifest"] == "baseline/manifest.json"
+    assert bundle["replay"]["config"] == "baseline/config-snapshot.yml"
+    assert bundle["replay"]["route_map"] == "replay-route-map.yml"
+    assert bundle["sources"][0]["path"] == "sources/source-0001.txt"
+    assert yaml.safe_load((bundle_dir / "replay-route-map.yml").read_text())["documents"][0]["source"] == "sources/source-0001.txt"
+    assert all(entry["path"] != "bundle.json" for entry in bundle["files"])
+    assert validate_bundle(bundle_dir)["baseline"]["run_id"] == manifest["run_id"]

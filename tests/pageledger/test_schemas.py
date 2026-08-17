@@ -34,6 +34,7 @@ _run_log_schema = json.loads((SCHEMAS / "run-log-line.schema.json").read_text(en
 _classify_evidence_schema = json.loads(
     (SCHEMAS / "classify-evidence-line.schema.json").read_text(encoding="utf-8")
 )
+_bundle_schema = json.loads((SCHEMAS / "bundle.schema.json").read_text(encoding="utf-8"))
 
 
 # --- Helpers --------------------------------------------------------------
@@ -130,6 +131,18 @@ def _run_pageledger(
             f"stderr: {result.stderr}"
         )
     return out_dir
+
+
+def test_bundle_schema_accepts_generated_bundle(tmp_path: Path) -> None:
+    from pageledger.replay import bundle_run
+
+    source = tmp_path / "sample.txt"
+    source.write_text("first page\fsecond page\n", encoding="utf-8")
+    out_dir = _run_pageledger(tmp_path, config_yaml=MINIMAL_CONFIG, inputs=[str(source)])
+    bundle_dir = tmp_path / "bundle"
+    bundle_run(out_dir, bundle_dir)
+    bundle = json.loads((bundle_dir / "bundle.json").read_text(encoding="utf-8"))
+    _validate(_bundle_schema, bundle, "bundle.json")
 
 
 # --- Test fixtures --------------------------------------------------------

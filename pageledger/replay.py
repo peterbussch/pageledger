@@ -6,13 +6,19 @@ import hashlib
 import inspect
 import json
 import locale
+import os
 import platform
 import re
+import shutil
+import stat
 import sys
+import uuid
 from collections.abc import Mapping
 from importlib import metadata
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
+
+import yaml
 
 from ._version import __version__
 
@@ -31,6 +37,33 @@ _MUTABLE_VERSION_ALIASES = {
     "unknown",
     "unversioned",
 }
+
+_BUNDLE_VERSION = "0.1"
+_FORBIDDEN_OPTION_KEYS = {
+    "apikey",
+    "apitoken",
+    "token",
+    "accesstoken",
+    "authtoken",
+    "bearertoken",
+    "refreshtoken",
+    "clientsecret",
+    "secretkey",
+    "password",
+    "credential",
+    "credentials",
+    "authorization",
+    "privatekey",
+    "accesskey",
+}
+
+
+class ReplayError(ValueError):
+    """A structured failure at the verified replay transport boundary."""
+
+    def __init__(self, code: str, message: str) -> None:
+        super().__init__(message)
+        self.code = code
 
 
 def profile_sha256(profile: Mapping[str, object]) -> str:
@@ -254,3 +287,669 @@ def model_material(name: str, path: Path, version: str = "unknown") -> dict[str,
     if version.casefold() in _MUTABLE_VERSION_ALIASES:
         version = f"sha256:{digest}"
     return {"kind": "model", "name": name, "version": version, "sha256": digest}
+
+
+def bundle_run(run_dir: Path, out_dir: Path) -> dict[str, Any]:
+    """Create an inspectable, portable bundle from a verified execute run."""
+    from .verify import verify_run
+
+    run_root = _resolve_directory(run_dir, "run_path_invalid")
+    report = verify_run(run_root)
+    if report.get("status") != "pass":
+        raise ReplayError("run_not_verified", "Run directory did not pass verification")
+    manifest = _read_json_object(run_root / "manifest.json", "manifest")
+    _check_bundle_eligibility(manifest)
+    extractor = _ordinary_extractor_identity(manifest)
+    config_source = _declared_file(run_root, manifest, "config_snapshot")
+    config_data = _read_yaml_mapping(config_source, "config snapshot")
+    _check_config_credentials(config_data)
+    _check_credentials(extractor.get("options", {}))
+
+    source_records, source_paths = _bundle_sources(run_root, manifest)
+    route_source = _declared_file(run_root, manifest, "route_map")
+    route_map = _read_yaml_mapping(route_source, "route map")
+    _check_source_route(run_root, manifest, route_map, source_paths)
+
+    requested = Path(out_dir).expanduser()
+    if requested.exists() or requested.is_symlink():
+        raise ReplayError("bundle_output_exists", f"Bundle output already exists: {requested}")
+    parent = requested.parent.resolve()
+    parent.mkdir(parents=True, exist_ok=True)
+    temporary = parent / f".{requested.name}.tmp-{uuid.uuid4().hex}"
+    try:
+        temporary.mkdir()
+        (temporary / "baseline").mkdir()
+        (temporary / "sources").mkdir()
+        _copy_baseline(run_root, manifest, temporary)
+        for source_record, source in zip(source_records, source_paths, strict=True):
+            suffix = source.suffix.lower()
+            destination = temporary / source_record["path"]
+            destination = destination.with_name(destination.name + suffix) if suffix else destination
+            source_record["path"] = destination.relative_to(temporary).as_posix()
+            shutil.copyfile(source, destination)
+
+        _rewrite_route_map(route_map, source_records)
+        (temporary / "replay-route-map.yml").write_text(
+            yaml.safe_dump(route_map, allow_unicode=True, sort_keys=False), encoding="utf-8"
+        )
+        files = _inventory(temporary)
+        baseline_manifest = temporary / "baseline" / "manifest.json"
+        bundle = {
+            "bundle_schema_version": _BUNDLE_VERSION,
+            "baseline": {
+                "run_id": manifest["run_id"],
+                "manifest": "baseline/manifest.json",
+                "manifest_sha256": _sha256_file(baseline_manifest),
+                "execution_mode": manifest["execution_mode"],
+                "run_depth": manifest["run_depth"],
+                "extractor": extractor,
+            },
+            "replay": {
+                "config": "baseline/config-snapshot.yml",
+                "route_map": "replay-route-map.yml",
+            },
+            "sources": source_records,
+            "files": files,
+        }
+        (temporary / "bundle.json").write_text(
+            json.dumps(bundle, ensure_ascii=False, indent=2, sort_keys=True, allow_nan=False) + "\n",
+            encoding="utf-8",
+        )
+        validate_bundle(temporary)
+        temporary.rename(requested)
+    except Exception:
+        if temporary.exists() or temporary.is_symlink():
+            _remove_temporary(temporary)
+        raise
+    result = {"bundle_dir": str(requested.resolve())}
+    result["bundle_sha256"] = _sha256_file(requested / "bundle.json")
+    return result
+
+
+def validate_bundle(bundle_dir: Path) -> dict[str, Any]:
+    """Validate an untrusted replay bundle without importing jsonschema."""
+    root = _resolve_directory(bundle_dir, "bundle_path_invalid")
+    bundle_path = root / "bundle.json"
+    _require_regular(bundle_path, "bundle.json")
+    bundle = _read_json_object(bundle_path, "bundle")
+    _exact_keys(bundle, {"bundle_schema_version", "baseline", "replay", "sources", "files"}, "bundle")
+    if bundle["bundle_schema_version"] != _BUNDLE_VERSION:
+        _fail("bundle_schema_version_invalid", "Unsupported bundle schema version")
+    baseline = bundle["baseline"]
+    replay = bundle["replay"]
+    if not isinstance(baseline, dict) or not isinstance(replay, dict):
+        _fail("bundle_structure_invalid", "Bundle baseline and replay must be mappings")
+    _exact_keys(
+        baseline,
+        {"run_id", "manifest", "manifest_sha256", "execution_mode", "run_depth", "extractor"},
+        "bundle baseline",
+    )
+    _exact_keys(replay, {"config", "route_map"}, "bundle replay")
+    if baseline["manifest"] != "baseline/manifest.json":
+        _fail("bundle_path_invalid", "Bundle baseline manifest path is not canonical")
+    if replay["config"] != "baseline/config-snapshot.yml" or replay["route_map"] != "replay-route-map.yml":
+        _fail("bundle_path_invalid", "Bundle replay paths are not canonical")
+    if not isinstance(baseline["run_id"], str) or not baseline["run_id"]:
+        _fail("bundle_structure_invalid", "Bundle baseline run_id must be a non-empty string")
+    if baseline["execution_mode"] != "execute" or type(baseline["run_depth"]) is not int or baseline["run_depth"] != 0:
+        _fail("bundle_ineligible", "Bundle baseline is not an execute generation-zero run")
+    if not _is_sha256(baseline["manifest_sha256"]):
+        _fail("bundle_hash_invalid", "Bundle baseline manifest hash is invalid")
+    extractor = baseline["extractor"]
+    if not isinstance(extractor, dict):
+        _fail("bundle_structure_invalid", "Bundle baseline extractor must be a mapping")
+    extractor = cast(dict[str, Any], extractor)
+    _validate_extractor_identity(extractor)
+    _check_credentials(extractor.get("options", {}))
+    sources = bundle["sources"]
+    files = bundle["files"]
+    if not isinstance(sources, list) or not isinstance(files, list):
+        _fail("bundle_structure_invalid", "Bundle sources and files must be lists")
+    _validate_declared_paths(root, baseline, replay, sources, files)
+
+    manifest_path = root / baseline["manifest"]
+    manifest = _read_json_object(manifest_path, "baseline manifest")
+    if manifest.get("run_id") != baseline["run_id"]:
+        _fail("bundle_manifest_mismatch", "Bundle run_id differs from baseline manifest")
+    if _sha256_file(manifest_path) != baseline["manifest_sha256"]:
+        _fail("bundle_hash_mismatch", "Baseline manifest hash does not match bundle")
+    _check_bundle_eligibility(manifest)
+    identity = _ordinary_extractor_identity(manifest)
+    if _canonical(identity) != _canonical(extractor):
+        _fail("bundle_extractor_mismatch", "Bundle extractor differs from baseline manifest")
+    _validate_baseline_artifacts(root, manifest)
+    config_path = root / replay["config"]
+    config = _read_yaml_mapping(config_path, "bundle config snapshot")
+    _check_config_credentials(config)
+    _validate_sources_against_manifest(root, manifest, sources)
+    _validate_source_files(root, sources)
+    route_map = _read_yaml_mapping(root / replay["route_map"], "bundle route map")
+    source_paths = [entry["path"] for entry in sources]
+    _check_portable_route(route_map, manifest, source_paths, sources)
+    return bundle
+
+
+def _check_bundle_eligibility(manifest: dict[str, Any]) -> None:
+    if manifest.get("execution_mode") != "execute":
+        _fail("run_ineligible", "Replay bundles require execute mode")
+    if type(manifest.get("run_depth")) is not int or manifest.get("run_depth") != 0:
+        _fail("run_ineligible", "Replay bundles require generation zero")
+    if manifest.get("status") not in {"completed", "partial"}:
+        _fail("run_ineligible", "Run status is not eligible for replay bundling")
+    summary = manifest.get("summary")
+    if not isinstance(summary, dict):
+        _fail("run_ineligible", "Manifest summary is missing")
+    summary = cast(dict[str, Any], summary)
+    for key in ("pages_failed", "pages_not_attempted", "pages_routed_review"):
+        value = summary.get(key, 0)
+        if type(value) is not int or value < 0:
+            _fail("run_ineligible", f"Manifest summary {key} is invalid")
+    if summary.get("pages_failed", 0) != 0 or summary.get("pages_not_attempted", 0) != 0:
+        _fail("run_ineligible", "Run contains failed or unattempted pages")
+    if manifest["status"] == "partial" and summary.get("pages_routed_review", 0) <= 0:
+        _fail("run_ineligible", "Partial run has no review-routed pages")
+
+
+def _ordinary_extractor_identity(manifest: dict[str, Any]) -> dict[str, Any]:
+    entries = manifest.get("extractors")
+    if not isinstance(entries, list) or not entries:
+        _fail("extractor_missing", "Manifest has no extractor entries")
+    entries = cast(list[Any], entries)
+    identities = []
+    for entry in entries:
+        if not isinstance(entry, dict):
+            _fail("extractor_invalid", "Manifest extractor entry must be a mapping")
+        entry = cast(dict[str, Any], entry)
+        options = entry.get("options", {})
+        if not isinstance(options, dict):
+            _fail("extractor_invalid", "Manifest extractor options must be a mapping")
+        for field in ("input_types", "output_types", "capabilities"):
+            value = entry.get(field, [])
+            if not isinstance(value, list) or any(not isinstance(item, str) for item in value):
+                _fail("extractor_invalid", f"Manifest extractor {field} must be a list of strings")
+        try:
+            json.dumps(options, ensure_ascii=False, allow_nan=False)
+        except (TypeError, ValueError) as exc:
+            _fail("extractor_invalid", "Manifest extractor options must contain finite JSON", exc)
+        identity = {
+            "adapter": entry.get("adapter"),
+            "version": entry.get("version"),
+            "deterministic": entry.get("deterministic"),
+            "input_types": sorted(entry.get("input_types", [])),
+            "output_types": sorted(entry.get("output_types", [])),
+            "capabilities": sorted(entry.get("capabilities", [])),
+            "options": options,
+            "reproducibility_profile": entry.get("reproducibility_profile"),
+        }
+        _validate_extractor_identity(identity)
+        identities.append(identity)
+    first = identities[0]
+    for candidate in identities[1:]:
+        if _canonical(candidate) != _canonical(first):
+            _fail("extractor_conflict", "Manifest extractor entries have conflicting identities")
+    return first
+
+
+def _validate_extractor_identity(identity: dict[str, Any]) -> None:
+    _exact_keys(
+        identity,
+        {"adapter", "version", "deterministic", "input_types", "output_types", "capabilities", "options", "reproducibility_profile"},
+        "extractor identity",
+    )
+    if not isinstance(identity["adapter"], str) or not identity["adapter"]:
+        _fail("extractor_invalid", "Extractor adapter must be a non-empty string")
+    if not isinstance(identity["version"], str) or not identity["version"]:
+        _fail("extractor_invalid", "Extractor version must be a non-empty string")
+    if not isinstance(identity["deterministic"], bool):
+        _fail("extractor_invalid", "Extractor deterministic must be boolean")
+    for field in ("input_types", "output_types", "capabilities"):
+        value = identity[field]
+        if not isinstance(value, list) or any(not isinstance(item, str) for item in value):
+            _fail("extractor_invalid", f"Extractor {field} must be a list of strings")
+        if value != sorted(set(value)):
+            _fail("extractor_invalid", f"Extractor {field} must be sorted and unique")
+    if not isinstance(identity["options"], dict):
+        _fail("extractor_invalid", "Extractor options must be a mapping")
+    profile = identity["reproducibility_profile"]
+    cloud = "cloud" in {item.casefold() for item in identity["capabilities"]}
+    if profile is None:
+        if identity["deterministic"] and not cloud:
+            _fail("profile_missing", "Deterministic non-cloud extractor lacks a profile")
+        return
+    _validate_profile(profile, identity)
+
+
+def _validate_profile(profile: Any, identity: dict[str, Any]) -> None:
+    if not isinstance(profile, dict):
+        _fail("profile_invalid", "Reproducibility profile must be a mapping or null")
+    profile = cast(dict[str, Any], profile)
+    _exact_keys(profile, {"profile_version", "pageledger", "adapter", "runtime", "materials", "profile_sha256"}, "profile")
+    if profile.get("profile_version") != PROFILE_VERSION:
+        _fail("profile_invalid", "Unsupported reproducibility profile version")
+    for section, keys in {
+        "pageledger": {"version", "code_sha256"},
+        "adapter": {"module", "name", "version", "code_sha256"},
+        "runtime": {"python_implementation", "python_version", "system", "release", "machine", "preferred_encoding", "filesystem_encoding"},
+    }.items():
+        value = profile.get(section)
+        if not isinstance(value, dict):
+            _fail("profile_invalid", f"Profile {section} must be a mapping")
+        value = cast(dict[str, Any], value)
+        _exact_keys(value, keys, f"profile {section}")
+        if any(not isinstance(value[item], str) or not value[item] for item in keys if item != "code_sha256"):
+            _fail("profile_invalid", f"Profile {section} contains invalid strings")
+        if "code_sha256" in value and not _is_sha256(value["code_sha256"]):
+            _fail("profile_invalid", f"Profile {section} code hash is invalid")
+    adapter_profile = profile["adapter"]
+    if adapter_profile["name"] != identity["adapter"] or adapter_profile["version"] != identity["version"]:
+        _fail("profile_invalid", "Profile adapter identity disagrees with extractor")
+    materials = profile.get("materials")
+    if not isinstance(materials, list):
+        _fail("profile_invalid", "Profile materials must be a list")
+    materials = cast(list[Any], materials)
+    previous: tuple[str, str] | None = None
+    for material in materials:
+        if not isinstance(material, dict):
+            _fail("profile_invalid", "Profile material must be a mapping")
+        _exact_keys(material, {"kind", "name", "version", "sha256"}, "profile material")
+        if any(not isinstance(material[key], str) or not material[key] for key in ("kind", "name", "version")):
+            _fail("profile_invalid", "Profile material has invalid fields")
+        if material["kind"] not in _MATERIAL_KINDS or not _is_sha256(material["sha256"]):
+            _fail("profile_invalid", "Profile material kind or hash is invalid")
+        pair = (material["kind"], material["name"])
+        if previous is not None and pair <= previous:
+            _fail("profile_invalid", "Profile materials must be sorted and unique")
+        previous = pair
+    if not _is_sha256(profile.get("profile_sha256")) or profile_sha256(profile) != profile["profile_sha256"]:
+        _fail("profile_hash_mismatch", "Reproducibility profile self-hash does not match")
+
+
+def _bundle_sources(run_root: Path, manifest: dict[str, Any]) -> tuple[list[dict[str, Any]], list[Path]]:
+    inputs = manifest.get("inputs")
+    if not isinstance(inputs, list) or not inputs:
+        _fail("source_missing", "Manifest has no source inputs")
+    inputs = cast(list[Any], inputs)
+    records: list[dict[str, Any]] = []
+    paths: list[Path] = []
+    seen: set[Path] = set()
+    for index, entry in enumerate(inputs, 1):
+        if not isinstance(entry, dict) or not isinstance(entry.get("path"), str):
+            _fail("source_invalid", "Manifest source entry is invalid")
+        source = Path(entry["path"]).expanduser()
+        _require_regular(source, f"source {entry['path']}")
+        resolved = source.resolve()
+        if resolved in seen:
+            _fail("source_duplicate", "Manifest contains duplicate source paths")
+        seen.add(resolved)
+        expected = entry.get("sha256")
+        if not _is_sha256(expected) or _sha256_file(source) != expected:
+            _fail("source_changed", f"Source does not match manifest: {source}")
+        portable = f"sources/source-{index:04d}"
+        record: dict[str, Any] = {
+            "index": index,
+            "path": portable,
+            "sha256": expected,
+            "size": source.stat().st_size,
+            "page_count": entry.get("page_count"),
+        }
+        if "pages" in entry:
+            record["pages"] = entry["pages"]
+        records.append(record)
+        paths.append(source)
+    return records, paths
+
+
+def _copy_baseline(run_root: Path, manifest: dict[str, Any], destination: Path) -> None:
+    manifest_out = destination / "baseline" / "manifest.json"
+    shutil.copyfile(run_root / "manifest.json", manifest_out)
+    declarations = manifest.get("artifacts")
+    if not isinstance(declarations, dict):
+        _fail("artifact_declarations_missing", "Manifest artifacts must be a mapping")
+    declarations = cast(dict[str, Any], declarations)
+    for key, relative in declarations.items():
+        if not isinstance(relative, str):
+            _fail("artifact_path_invalid", f"Artifact path for {key} is invalid")
+        safe_relative = _safe_relative(relative)
+        source = run_root / safe_relative.rstrip("/")
+        if key in {"raw_dir", "normalized_dir"}:
+            _copy_tree(source, destination / "baseline" / safe_relative.rstrip("/"))
+        else:
+            _require_regular(source, safe_relative)
+            target = destination / "baseline" / safe_relative
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(source, target)
+    alignment = manifest.get("alignment")
+    if isinstance(alignment, dict) and alignment.get("schema_source") != "config_snapshot":
+        snapshot = run_root / "align-schema-snapshot.yml"
+        _require_regular(snapshot, "align-schema-snapshot.yml")
+        shutil.copyfile(snapshot, destination / "baseline" / snapshot.name)
+
+
+def _copy_tree(source: Path, target: Path) -> None:
+    if not source.is_dir() or source.is_symlink():
+        _fail("artifact_path_invalid", f"Artifact directory is unsafe: {source}")
+    target.mkdir(parents=True, exist_ok=True)
+    for path in sorted(source.rglob("*")):
+        relative = path.relative_to(source)
+        if path.is_dir():
+            if path.is_symlink():
+                _fail("artifact_file_unsafe", f"Unsafe artifact path: {path}")
+            (target / relative).mkdir(parents=True, exist_ok=True)
+        else:
+            _require_regular(path, str(path))
+            (target / relative).parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(path, target / relative)
+
+
+def _rewrite_route_map(route_map: dict[str, Any], sources: list[dict[str, Any]]) -> None:
+    documents = route_map.get("documents")
+    if not isinstance(documents, list) or len(documents) != len(sources):
+        _fail("route_source_mismatch", "Route map documents do not match manifest sources")
+    documents = cast(list[Any], documents)
+    for document, source in zip(documents, sources, strict=True):
+        if not isinstance(document, dict):
+            _fail("route_source_mismatch", "Route map document is invalid")
+        document["source"] = source["path"]
+
+
+def _inventory(root: Path) -> list[dict[str, Any]]:
+    paths: list[Path] = []
+    for path in _walk_no_follow(root):
+        if path.name == "bundle.json":
+            continue
+        if path.is_file():
+            paths.append(path)
+    entries = []
+    for path in sorted(paths, key=lambda item: item.relative_to(root).as_posix()):
+        relative = path.relative_to(root).as_posix()
+        entries.append({"path": relative, "size": path.stat().st_size, "sha256": _sha256_file(path)})
+    return entries
+
+
+def _validate_declared_paths(root: Path, baseline: dict[str, Any], replay: dict[str, Any], sources: list[Any], files: list[Any]) -> None:
+    paths: list[str] = []
+    for value in (baseline["manifest"], replay["config"], replay["route_map"]):
+        paths.append(_safe_relative(value))
+    if not isinstance(sources, list) or not isinstance(files, list):
+        _fail("bundle_structure_invalid", "Bundle sources and files must be lists")
+    sources = cast(list[Any], sources)
+    files = cast(list[Any], files)
+    for entry in sources:
+        if not isinstance(entry, dict):
+            _fail("source_invalid", "Bundle source entry must be a mapping")
+        _exact_keys(entry, {"index", "path", "sha256", "size", "page_count", "pages"} if "pages" in entry else {"index", "path", "sha256", "size", "page_count"}, "bundle source")
+        if type(entry.get("index")) is not int or entry["index"] < 1:
+            _fail("source_invalid", "Bundle source index must be a positive integer")
+        if not _is_sha256(entry.get("sha256")):
+            _fail("source_invalid", "Bundle source hash is invalid")
+        if type(entry.get("size")) is not int or entry["size"] < 0:
+            _fail("source_invalid", "Bundle source size must be a non-negative integer")
+        if type(entry.get("page_count")) is not int or entry["page_count"] < 0:
+            _fail("source_invalid", "Bundle source page_count must be a non-negative integer")
+        if "pages" in entry and not isinstance(entry["pages"], str):
+            _fail("source_invalid", "Bundle source pages must be a string")
+        source_path = _safe_relative(entry.get("path"))
+        if Path(source_path).parent.as_posix() != "sources":
+            _fail("source_path_invalid", "Bundle source must be directly beneath sources/")
+        paths.append(source_path)
+    if [entry.get("index") for entry in sources] != list(range(1, len(sources) + 1)):
+        _fail("source_order_invalid", "Bundle source indexes must be consecutive")
+    if len({entry.get("path") for entry in sources}) != len(sources):
+        _fail("source_duplicate", "Bundle source paths must be unique")
+    seen_files: set[str] = set()
+    previous = ""
+    for entry in files:
+        if not isinstance(entry, dict):
+            _fail("inventory_invalid", "Bundle inventory entry must be a mapping")
+        _exact_keys(entry, {"path", "size", "sha256"}, "bundle inventory")
+        relative = _safe_relative(entry.get("path"))
+        if relative in seen_files:
+            _fail("inventory_duplicate", f"Duplicate bundle inventory path: {relative}")
+        if previous and relative <= previous:
+            _fail("inventory_order_invalid", "Bundle inventory paths must be sorted")
+        previous = relative
+        seen_files.add(relative)
+        paths.append(relative)
+        if not isinstance(entry["size"], int) or isinstance(entry["size"], bool) or entry["size"] < 0 or not _is_sha256(entry["sha256"]):
+            _fail("inventory_invalid", f"Invalid bundle inventory metadata: {relative}")
+        candidate = root / relative
+        _require_regular(candidate, relative)
+        if candidate.stat().st_size != entry["size"] or _sha256_file(candidate) != entry["sha256"]:
+            _fail("bundle_hash_mismatch", f"Bundle inventory hash or size mismatch: {relative}")
+    actual = {path.relative_to(root).as_posix() for path in _walk_no_follow(root) if path.is_file() and path.name != "bundle.json"}
+    if actual != seen_files:
+        _fail("inventory_mismatch", "Bundle inventory does not match transported files")
+    for required in (baseline["manifest"], replay["config"], replay["route_map"]):
+        if required not in seen_files:
+            _fail("inventory_missing", f"Bundle inventory omits {required}")
+    if any(entry["path"] not in seen_files for entry in sources):
+        _fail("inventory_missing", "Bundle inventory omits a source")
+
+
+def _validate_sources_against_manifest(root: Path, manifest: dict[str, Any], sources: list[Any]) -> None:
+    inputs = manifest.get("inputs")
+    if not isinstance(inputs, list) or len(inputs) != len(sources):
+        _fail("source_manifest_mismatch", "Bundle sources disagree with baseline manifest")
+    inputs = cast(list[Any], inputs)
+    for original, transported in zip(inputs, sources, strict=True):
+        if not isinstance(original, dict):
+            _fail("source_manifest_mismatch", "Baseline manifest source is invalid")
+        if original.get("sha256") != transported.get("sha256") or original.get("page_count") != transported.get("page_count"):
+            _fail("source_manifest_mismatch", "Bundle source metadata disagrees with baseline manifest")
+        if "pages" in original and original.get("pages") != transported.get("pages"):
+            _fail("source_manifest_mismatch", "Bundle source page selection disagrees with baseline manifest")
+
+
+def _validate_source_files(root: Path, sources: list[Any]) -> None:
+    for entry in sources:
+        path = root / entry["path"]
+        _require_regular(path, entry["path"])
+        if path.stat().st_size != entry["size"] or _sha256_file(path) != entry["sha256"]:
+            _fail("source_hash_mismatch", f"Bundle source hash or size mismatch: {entry['path']}")
+
+
+def _validate_baseline_artifacts(root: Path, manifest: dict[str, Any]) -> None:
+    declarations = manifest.get("artifacts")
+    if not isinstance(declarations, dict):
+        _fail("artifact_declarations_missing", "Baseline manifest artifacts are missing")
+    declarations = cast(dict[str, Any], declarations)
+    for key, value in declarations.items():
+        if not isinstance(value, str):
+            _fail("artifact_path_invalid", f"Baseline artifact path is invalid: {key}")
+        relative = _safe_relative(value).rstrip("/")
+        path = root / "baseline" / relative
+        if key in {"raw_dir", "normalized_dir"}:
+            try:
+                mode = path.lstat().st_mode
+            except OSError as exc:
+                _fail("artifact_missing", f"Missing baseline artifact directory: {relative}", exc)
+            if stat.S_ISLNK(mode) or not stat.S_ISDIR(mode):
+                _fail("artifact_file_unsafe", f"Unsafe baseline artifact directory: {relative}")
+        else:
+            _require_regular(path, relative)
+    alignment = manifest.get("alignment")
+    if isinstance(alignment, dict) and alignment.get("schema_source") != "config_snapshot":
+        snapshot = root / "baseline" / "align-schema-snapshot.yml"
+        _require_regular(snapshot, "align-schema-snapshot.yml")
+        if alignment.get("schema_sha256") != _sha256_file(snapshot):
+            _fail("bundle_hash_mismatch", "Alignment schema snapshot hash does not match manifest")
+
+
+def _check_source_route(run_root: Path, manifest: dict[str, Any], route_map: dict[str, Any], source_paths: list[Path]) -> None:
+    docs = route_map.get("documents")
+    inputs = manifest.get("inputs")
+    if not isinstance(docs, list) or not isinstance(inputs, list) or len(docs) != len(inputs):
+        _fail("route_source_mismatch", "Route map source mappings are incomplete")
+    docs = cast(list[Any], docs)
+    inputs = cast(list[Any], inputs)
+    for document, original, source in zip(docs, inputs, source_paths, strict=True):
+        if not isinstance(document, dict) or not isinstance(original, dict):
+            _fail("route_source_mismatch", "Route map source mapping is invalid")
+        route_source = document.get("source")
+        if not isinstance(route_source, str) or Path(route_source).expanduser().resolve() != source.resolve():
+            _fail("route_source_mismatch", "Route map source disagrees with manifest input")
+        if document.get("source_sha256") != original.get("sha256"):
+            _fail("route_source_mismatch", "Route map source hash disagrees with manifest")
+
+
+def _check_portable_route(route_map: dict[str, Any], manifest: dict[str, Any], source_paths: list[str], sources: list[Any]) -> None:
+    docs = route_map.get("documents")
+    if not isinstance(docs, list) or len(docs) != len(sources):
+        _fail("route_source_mismatch", "Portable route map documents do not match sources")
+    docs = cast(list[Any], docs)
+    seen: set[str] = set()
+    for document, path, source in zip(docs, source_paths, sources, strict=True):
+        if not isinstance(document, dict) or document.get("source") != path:
+            _fail("route_source_mismatch", "Portable route map source disagrees with bundle")
+        if path in seen:
+            _fail("source_duplicate", "Portable route map contains duplicate source mapping")
+        seen.add(path)
+        if document.get("source_sha256") != source.get("sha256") or document.get("page_count") != source.get("page_count"):
+            _fail("route_source_mismatch", "Portable route metadata disagrees with bundle sources")
+    if route_map.get("run_id") != manifest.get("run_id"):
+        _fail("route_source_mismatch", "Portable route run_id disagrees with baseline manifest")
+
+
+def _check_credentials(value: Any) -> None:
+    if isinstance(value, Mapping):
+        for key, child in value.items():
+            normalized = "".join(character for character in key.casefold() if character.isalnum()) if isinstance(key, str) else ""
+            if normalized in _FORBIDDEN_OPTION_KEYS:
+                _fail("credential_key_forbidden", f"Credential option key is forbidden: {key}")
+            _check_credentials(child)
+    elif isinstance(value, list):
+        for child in value:
+            _check_credentials(child)
+
+
+def _check_config_credentials(config: Any) -> None:
+    """Inspect only adapter option mappings; prose/citations are not scanned."""
+    if not isinstance(config, Mapping):
+        return
+    run = config.get("run")
+    if not isinstance(run, Mapping):
+        return
+    _scan_approved_option_mappings(config)
+
+
+def _scan_approved_option_mappings(value: Any) -> None:
+    if isinstance(value, Mapping):
+        for key, child in value.items():
+            if isinstance(key, str) and key.casefold() in {"adapter_options", "hook_options"}:
+                _check_credentials(child)
+            else:
+                _scan_approved_option_mappings(child)
+    elif isinstance(value, list):
+        for child in value:
+            _scan_approved_option_mappings(child)
+
+
+def _declared_file(root: Path, manifest: dict[str, Any], key: str) -> Path:
+    declarations = manifest.get("artifacts")
+    if not isinstance(declarations, dict) or not isinstance(declarations.get(key), str):
+        _fail("artifact_declaration_missing", f"Manifest does not declare {key}")
+    declarations = cast(dict[str, Any], declarations)
+    relative = _safe_relative(declarations[key])
+    path = root / relative.rstrip("/")
+    _require_regular(path, relative)
+    return path
+
+
+def _resolve_directory(path: Path, code: str) -> Path:
+    root = Path(path).expanduser()
+    try:
+        resolved = root.resolve()
+    except (OSError, RuntimeError, ValueError) as exc:
+        _fail(code, f"Cannot resolve directory: {path}", exc)
+    if not resolved.is_dir() or root.is_symlink():
+        _fail(code, f"Directory is missing or unsafe: {path}")
+    return resolved
+
+
+def _read_json_object(path: Path, label: str) -> dict[str, Any]:
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        _fail("bundle_malformed", f"Cannot parse {label}: {exc}")
+    if not isinstance(value, dict):
+        _fail("bundle_structure_invalid", f"{label} must be a mapping")
+    return value
+
+
+def _read_yaml_mapping(path: Path, label: str) -> dict[str, Any]:
+    _require_regular(path, label)
+    try:
+        value = yaml.safe_load(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, yaml.YAMLError) as exc:
+        _fail("bundle_malformed", f"Cannot parse {label}: {exc}")
+    if not isinstance(value, dict):
+        _fail("bundle_structure_invalid", f"{label} must be a mapping")
+    return value
+
+
+def _safe_relative(value: Any) -> str:
+    if not isinstance(value, str) or not value:
+        _fail("bundle_path_unsafe", f"Unsafe bundle path: {value}")
+    relative = Path(value)
+    if "\x00" in value or "\\" in value or relative.is_absolute() or ".." in relative.parts:
+        _fail("bundle_path_unsafe", f"Unsafe bundle path: {value}")
+    return relative.as_posix()
+
+
+def _require_regular(path: Path, label: str) -> None:
+    try:
+        st = path.lstat()
+    except (OSError, ValueError) as exc:
+        _fail("bundle_file_missing", f"Missing bundle file: {label}", exc)
+    if stat.S_ISLNK(st.st_mode) or not stat.S_ISREG(st.st_mode) or st.st_nlink != 1:
+        _fail("bundle_file_unsafe", f"Unsafe bundle file: {label}")
+
+
+def _walk_no_follow(root: Path) -> list[Path]:
+    result: list[Path] = []
+    for directory, dirnames, filenames in os.walk(root, followlinks=False):
+        directory_path = Path(directory)
+        for name in list(dirnames):
+            path = directory_path / name
+            st = path.lstat()
+            if stat.S_ISLNK(st.st_mode) or not stat.S_ISDIR(st.st_mode):
+                _fail("bundle_file_unsafe", f"Unsafe bundle path: {path.relative_to(root)}")
+        for name in filenames:
+            path = directory_path / name
+            _require_regular(path, path.relative_to(root).as_posix())
+            result.append(path)
+    return result
+
+
+def _remove_temporary(path: Path) -> None:
+    if path.is_symlink() or path.is_file():
+        path.unlink()
+    elif path.is_dir():
+        shutil.rmtree(path)
+
+
+def _sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _is_sha256(value: Any) -> bool:
+    return isinstance(value, str) and _SHA256.fullmatch(value) is not None
+
+
+def _canonical(value: Any) -> str:
+    return json.dumps(value, ensure_ascii=False, allow_nan=False, sort_keys=True, separators=(",", ":"))
+
+
+def _exact_keys(value: Mapping[str, Any], expected: set[str], label: str) -> None:
+    if set(value) != expected:
+        _fail("bundle_structure_invalid", f"{label} has unexpected or missing fields")
+
+
+def _fail(code: str, message: str, cause: BaseException | None = None) -> Any:
+    if cause is None:
+        raise ReplayError(code, message)
+    raise ReplayError(code, message) from cause
