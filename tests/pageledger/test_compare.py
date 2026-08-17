@@ -644,7 +644,7 @@ def test_compare_recognizes_same_config_schema_after_alignment(tmp_path):
         "aligned_at": "2026-08-16T00:00:00Z",
         "schema_source": "config_snapshot",
         "schema_sha256": hashlib.sha256(config_bytes).hexdigest(),
-        "pageledger_version": "0.3.0a1",
+        "pageledger_version": manifest["pageledger_version"],
     }
     manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
 
