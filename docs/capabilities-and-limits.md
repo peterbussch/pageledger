@@ -164,6 +164,8 @@ licenses, or credentials; it cannot make an external service deterministic.
 Replay requires the locally available adapter identity and rejects baseline,
 source, route, config, profile, and inventory tampering. A successful
 `evidence_compared` result is useful linkage evidence, not an accuracy claim.
+PageLedger makes no source authenticity or authorship claim and performs no
+licensing, privacy, or legal review.
 
 Details and examples live in [`design.md`](design.md).
 

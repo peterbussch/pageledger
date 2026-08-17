@@ -76,6 +76,7 @@ jobs:
           /tmp/venv-sdist/bin/pip install "$(ls dist/pageledger-*.tar.gz)[pdf]"
           /tmp/venv-sdist/bin/pageledger init-config
           /tmp/venv-sdist/bin/pageledger doctor --json
+          (cd /tmp && /tmp/venv-sdist/bin/python -c 'from importlib.metadata import files; names={str(p) for p in (files("pageledger") or [])}; assert all(any(name.endswith("share/pageledger/schemas/" + schema) for name in names) for schema in ("manifest.schema.json", "bundle.schema.json", "replay.schema.json"))')
           SOURCE=/tmp/smoke2.txt
           RUN=/tmp/smoke2-run
           BUNDLE=/tmp/smoke2-bundle

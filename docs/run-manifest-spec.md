@@ -93,7 +93,7 @@ is the durable pointer to every other artifact in the run directory.
 | `status` | string | `completed`, `failed`, or `partial`. |
 | `inputs` | array | Source files and checksums. Each entry carries `path`, `sha256`, and `page_count` (the source's full size). When `--pages` or a rerun limits the run, the entry also carries the selection expression as `pages` (e.g. `"1-8,81"`). |
 | `config` | object | Run-directory config snapshot path, checksum, and source config paths. |
-| `extractors` | array | Extractor adapters and model/version metadata. Current writers may add an optional `reproducibility_profile` containing the profile envelope and `profile_sha256`; it is path-free and may be `null` when an adapter has no hook. |
+| `extractors` | array | Extractor adapters and model/version metadata. Current writers may add an optional `reproducibility_profile` containing the profile envelope and `profile_sha256`; it is path-free and omitted when an adapter has no hook. |
 | `dataset_citation` | object or null | Optional user-provided source citation for the input collection. |
 | `artifacts` | object | Relative paths to route, raw, normalized, audit, and provenance artifacts. |
 | `summary` | object | Counts and cost summary for quick inspection. |
@@ -102,7 +102,7 @@ is the durable pointer to every other artifact in the run directory.
 | `escalation` | object | Optional. Present when `run.adapter_order` selected the effective adapter: `adapter_order` is the ordered list of adapter names/import strings and `step` is this run's zero-based rerun generation. |
 | `replay_schema_version` | string | Optional. Present on a replay run; currently `"0.1"`. |
 | `baseline_run_id` | string | Optional. Replay linkage to the transported baseline run. |
-| `bundle_manifest_sha256` | string | Optional. SHA-256 of the baseline manifest recorded in `bundle.json`. |
+| `bundle_manifest_sha256` | string | Optional. SHA-256 of the exact `bundle.json` bytes (the bundle index), recorded on a replay run. |
 | `outcome` | string | Optional. Replay result: `exact`, `evidence_compared`, or `deterministic_mismatch`. |
 
 Current writers emit `pages_total`, `pages_extracted`, `pages_skipped`,

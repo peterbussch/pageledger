@@ -204,7 +204,7 @@ generation-zero execute run. Its contract is intentionally inspectable:
 
 ```text
 bundle/
-├── bundle.json                 # index, baseline hash, sources, file inventory
+├── bundle.json                 # index, baseline manifest hash, file inventory
 ├── baseline/                   # unchanged run artifacts and config snapshot
 │   ├── manifest.json
 │   ├── config-snapshot.yml
@@ -215,18 +215,21 @@ bundle/
 ```
 
 `bundle.json` is the sole bundle index. `baseline` identifies the unchanged
-manifest and its SHA-256, `extractor` carries the effective identity and
-optional reproducibility profile, `sources` carries source path/size/hash/page
-metadata, and `files` inventories every transported regular file. The baseline
+manifest and its SHA-256; `baseline.extractor` carries the effective identity
+and optional reproducibility profile; `sources` carries source
+path/size/hash/page metadata. `files` inventories every transported regular
+file except `bundle.json` itself, avoiding a self-hash cycle. The baseline
 manifest and all artifacts are retained so the bundle does not create a second
 run ledger. The portable route map preserves page IDs, page selection, and
 route decisions while replacing source paths with the bundled copies.
 
 `pageledger replay` validates this index and inventory before running the normal
 adapter path. It writes the replay run plus `replay.json`, which links the
-baseline and replay IDs, bundle manifest hash, local/baseline extractor
+baseline and replay IDs, bundle index hash, local/baseline extractor
 identities, profile match, raw equal/different/missing counts, and the complete
-comparison evidence. Outcomes are `exact` (deterministic raw bytes match),
+comparison evidence. The replay linkage hash is the exact `bundle.json` index
+bytes, not the baseline manifest hash. Outcomes are `exact` (deterministic raw
+bytes match),
 `evidence_compared` (for non-deterministic or cloud adapters), or
 `deterministic_mismatch`. A source may be moved or removed after bundling;
 replay uses only the copied source bytes. The bundle is not an archive and does

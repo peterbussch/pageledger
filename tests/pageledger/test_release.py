@@ -96,6 +96,13 @@ def test_publish_is_manual_tag_only_and_verifies_before_upload() -> None:
         assert smoke.index("mv \"$SOURCE\"") < smoke.index("pageledger replay")
         assert smoke.index("pageledger replay") < smoke.rindex("pageledger verify-run")
 
+    ci_workflow = (REPO / ".github" / "workflows" / "ci.yml").read_text(
+        encoding="utf-8"
+    )
+    assert ci_workflow.count("from importlib.metadata import files") == 2
+    for schema_name in ("manifest.schema.json", "bundle.schema.json", "replay.schema.json"):
+        assert ci_workflow.count(schema_name) >= 2
+
     parsed = yaml.safe_load(workflow)
     jobs = parsed["jobs"]
     assert jobs["build"]["needs"] == "verify"

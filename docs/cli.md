@@ -194,13 +194,17 @@ an ordinary, generation-zero execute run. The bundle contains an unchanged
 files under `sources/`, an inventory with SHA-256 hashes, and
 `replay-route-map.yml`. `bundle.json` is the index and records the baseline
 manifest hash, extractor identity/profile, source identities, and portable
-paths. The output directory must not already exist; no archive is created.
+paths; replay evidence records the exact `bundle.json` index hash. The output
+directory must not already exist; no archive is created.
 
 The only accepted flags are `--out DIR` (required) and `--json`. There are no
-config, adapter, or source override flags. Credentials are rejected from the
-captured config and extractor options. A missing optional reproducibility
-profile does not block ordinary runs, but it means deterministic replay cannot
-claim exactness.
+config, adapter, or source override flags. Credential protection is limited to
+the normalized exact denylist keys in mappings under `adapter_options` or
+`hook_options` in the config snapshot and in persisted manifest extractor
+options. Values, arbitrary fields or text, sources, raw artifacts, and logs are
+not scanned, so this cannot prove that sensitive data is absent. A missing
+optional reproducibility profile does not block ordinary runs, but it means
+deterministic replay cannot claim exactness.
 
 ## replay
 
