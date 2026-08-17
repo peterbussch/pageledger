@@ -40,6 +40,7 @@ def test_builtin_pdf_text_adapter_passes_conformance() -> None:
 
 
 def test_pdf_text_records_pypdf_backend_version(tmp_path: Path, monkeypatch) -> None:
+    pytest.importorskip("pypdf")
     monkeypatch.setattr(adapters_module, "_pdf_page_text", lambda source, page: "text")
     result = PdfTextAdapter().extract(
         tmp_path / "input.pdf",
@@ -49,6 +50,25 @@ def test_pdf_text_records_pypdf_backend_version(tmp_path: Path, monkeypatch) -> 
     )
 
     assert result.model == f"pypdf {importlib.metadata.version('pypdf')}"
+
+
+def test_pdf_text_records_unversioned_backend_when_metadata_is_missing(
+    tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.setattr(adapters_module, "_pdf_page_text", lambda source, page: "text")
+
+    def missing_distribution(name: str) -> str:
+        raise importlib.metadata.PackageNotFoundError(name)
+
+    monkeypatch.setattr(adapters_module.importlib.metadata, "version", missing_distribution)
+    result = PdfTextAdapter().extract(
+        tmp_path / "input.pdf",
+        page_id="doc_0001_page_0001",
+        page_number=1,
+        action="transcribe_text",
+    )
+
+    assert result.model == "pypdf"
 
 
 @pytest.mark.parametrize("adapter", [TextAdapter(), PdfTextAdapter(), PdfOcrAdapter()])
