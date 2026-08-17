@@ -79,6 +79,31 @@ def test_custom_deterministic_adapter_without_hook_has_no_profile() -> None:
     assert build_reproducibility_profile(CustomDeterministicAdapter()) is None
 
 
+def _run_custom_adapter_without_profile(
+    tmp_path: Path, *, action: str = "review"
+) -> tuple[Path, Path, Path]:
+    adapter_dir = tmp_path / "adapters"
+    adapter_dir.mkdir()
+    (adapter_dir / "review_adapter.py").write_text(
+        "from pageledger.adapters import ExtractionResult\n"
+        "class ReviewAdapter:\n"
+        "    name = 'review-custom'\n"
+        "    version = '1.0'\n"
+        "    deterministic = True\n"
+        "    input_types = ('text',)\n"
+        "    output_types = ('text',)\n"
+        "    capabilities = ('local',)\n"
+        "    def supports(self, action): return action == 'transcribe_text'\n"
+        "    def extract(self, source, *, page_id, page_number, action, prompt=None):\n"
+        "        return ExtractionResult(content='', format='text', confidence=None, model=None, warnings=[], usage={'pages': 1})\n",
+        encoding="utf-8",
+    )
+    config = MINIMAL_CONFIG.replace(
+        "default_action: transcribe_text", f"default_action: {action}"
+    ).replace("adapter: text", "adapter: review_adapter:ReviewAdapter")
+    return _run_text(tmp_path, config_text=config, adapter_path=adapter_dir)
+
+
 def test_profile_rejects_nonfinite_or_unexpected_hook_data() -> None:
     from pageledger.replay import build_reproducibility_profile
 
@@ -170,26 +195,7 @@ def test_execute_manifest_records_profile_but_provenance_does_not(tmp_path: Path
 
 
 def test_review_only_custom_adapter_without_hook_gets_planned_entry(tmp_path: Path) -> None:
-    adapter_dir = tmp_path / "adapters"
-    adapter_dir.mkdir()
-    (adapter_dir / "review_adapter.py").write_text(
-        "from pageledger.adapters import ExtractionResult\n"
-        "class ReviewAdapter:\n"
-        "    name = 'review-custom'\n"
-        "    version = '1.0'\n"
-        "    deterministic = True\n"
-        "    input_types = ('text',)\n"
-        "    output_types = ('text',)\n"
-        "    capabilities = ('local',)\n"
-        "    def supports(self, action): return action == 'transcribe_text'\n"
-        "    def extract(self, source, *, page_id, page_number, action, prompt=None):\n"
-        "        return ExtractionResult(content='', format='text', confidence=None, model=None, warnings=[], usage={'pages': 1})\n",
-        encoding="utf-8",
-    )
-    config = MINIMAL_CONFIG.replace(
-        "default_action: transcribe_text", "default_action: review"
-    ).replace("adapter: text", "adapter: review_adapter:ReviewAdapter")
-    out, _, _ = _run_text(tmp_path, config_text=config, adapter_path=adapter_dir)
+    out, _, _ = _run_custom_adapter_without_profile(tmp_path)
     manifest = json.loads((out / "manifest.json").read_text())
     assert manifest["extractors"] == [
         {
@@ -205,6 +211,19 @@ def test_review_only_custom_adapter_without_hook_gets_planned_entry(tmp_path: Pa
         }
     ]
     assert "reproducibility_profile" not in manifest["extractors"][0]
+
+
+def test_bundle_rejects_successful_custom_adapter_without_profile(tmp_path: Path) -> None:
+    from pageledger.replay import ReplayError, bundle_run
+
+    run_dir, _, _ = _run_custom_adapter_without_profile(tmp_path, action="transcribe_text")
+    manifest = json.loads((run_dir / "manifest.json").read_text(encoding="utf-8"))
+    assert manifest["execution_mode"] == "execute"
+    assert manifest["status"] == "completed"
+    with pytest.raises(ReplayError) as exc_info:
+        bundle_run(run_dir, tmp_path / "bundle")
+    assert exc_info.value.code == "profile_missing"
+    assert str(exc_info.value) == "Deterministic non-cloud extractor lacks a profile"
 
 
 def test_bundle_text_run_has_portable_layout(tmp_path: Path) -> None:
@@ -443,6 +462,42 @@ def test_bundle_rejects_noncanonical_manifest_artifact_key(tmp_path: Path) -> No
     manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     with pytest.raises(ReplayError):
         bundle_run(run_dir, tmp_path / "bundle")
+
+
+def test_bundle_rejects_wrong_manifest_artifact_path_at_canonical_gate(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import pageledger.verify as verify_module
+    from pageledger.replay import ReplayError, bundle_run
+
+    run_dir, _, _ = _run_text(tmp_path)
+    manifest_path = run_dir / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["artifacts"]["audit"] = "wrong-audit.json"
+    manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    monkeypatch.setattr(verify_module, "verify_run", lambda _: {"status": "pass"})
+    with pytest.raises(ReplayError) as exc_info:
+        bundle_run(run_dir, tmp_path / "bundle")
+    assert exc_info.value.code == "artifact_declarations_invalid"
+    assert str(exc_info.value) == "Manifest artifact declarations are not canonical"
+
+
+def test_bundle_rejects_generation_one_from_real_rerun_api(tmp_path: Path) -> None:
+    from pageledger.replay import ReplayError, bundle_run
+    from pageledger.runner import rerun
+
+    parent_dir, _, config_path = _run_text(
+        tmp_path, source_text="short\fclean second page with plenty of ordinary text\n"
+    )
+    child_dir = tmp_path / "rerun"
+    result = rerun(parent_dir=parent_dir, config_path=config_path, out_dir=child_dir)
+    child_manifest = json.loads((child_dir / "manifest.json").read_text(encoding="utf-8"))
+    assert result["rerun_depth"] == 1
+    assert child_manifest["run_depth"] == 1
+    with pytest.raises(ReplayError) as exc_info:
+        bundle_run(child_dir, tmp_path / "bundle")
+    assert exc_info.value.code == "run_ineligible"
+    assert str(exc_info.value) == "Replay bundles require generation zero"
 
 
 @pytest.mark.parametrize("unsafe_path", ["/tmp/escape", "../escape"])
