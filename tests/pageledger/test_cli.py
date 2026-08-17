@@ -119,6 +119,22 @@ def test_replay_cli_rejects_unapproved_overrides(flag: str) -> None:
     assert error.value.code == 2
 
 
+@pytest.mark.parametrize("flag", ["--o", "--ou"])
+def test_bundle_cli_rejects_out_abbreviations(flag: str) -> None:
+    from pageledger.cli import build_parser
+
+    with pytest.raises(SystemExit) as error:
+        build_parser().parse_args(["bundle", "run", flag, "out"])
+    assert error.value.code == 2
+
+
+def test_bundle_cli_accepts_exact_out_flag() -> None:
+    from pageledger.cli import build_parser
+
+    args = build_parser().parse_args(["bundle", "run", "--out", "out"])
+    assert args.out == Path("out")
+
+
 # =========================================================================
 # init-config
 # =========================================================================

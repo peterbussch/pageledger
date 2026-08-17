@@ -246,7 +246,7 @@ def build_parser() -> argparse.ArgumentParser:
     verify_parser.add_argument("--json", action="store_true", dest="json_output")
 
     bundle_parser = subparsers.add_parser(
-        "bundle", help="Create an inspectable verified replay bundle"
+        "bundle", help="Create an inspectable verified replay bundle", allow_abbrev=False
     )
     bundle_parser.add_argument("run_dir", type=Path)
     bundle_parser.add_argument("--out", required=True, type=Path)
