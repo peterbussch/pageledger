@@ -292,6 +292,28 @@ def test_relocated_text_replay_is_exact_without_original_source(tmp_path: Path) 
     assert verify_run(tmp_path / "replayed")["status"] == "pass"
 
 
+def test_relocated_replay_never_hashes_original_source(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import pageledger.verify as verify_module
+    from pageledger.replay import bundle_run, replay_bundle
+
+    run_dir, source, _ = _run_text(tmp_path)
+    bundle_dir = tmp_path / "bundle"
+    bundle_run(run_dir, bundle_dir)
+    original_hash = verify_module._sha256
+    original_path = source.resolve()
+
+    def guarded_hash(path: Path) -> str:
+        if path.resolve() == original_path:
+            raise AssertionError("replay hashed the original external source")
+        return original_hash(path)
+
+    monkeypatch.setattr(verify_module, "_sha256", guarded_hash)
+    result = replay_bundle(bundle_dir, tmp_path / "replayed")
+    assert result["outcome"] == "exact"
+
+
 def test_profile_mismatch_fails_before_output_creation(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -345,6 +367,175 @@ def test_nondeterministic_adapter_is_evidence_compared(tmp_path: Path) -> None:
     bundle_run(run_dir, bundle_dir)
     result = replay_bundle(bundle_dir, tmp_path / "replayed", adapter_path=adapter_dir)
     assert result["outcome"] == "evidence_compared"
+
+
+def test_matching_profile_raw_mismatch_is_inspectable_and_verifiable(tmp_path: Path) -> None:
+    from pageledger.replay import bundle_run, replay_bundle
+    from pageledger.verify import verify_run
+
+    adapter_dir = tmp_path / "trusted-adapters"
+    adapter_dir.mkdir()
+    state = tmp_path / "adapter-state.txt"
+    state.write_text("0", encoding="utf-8")
+    (adapter_dir / "stateful.py").write_text(
+        "from pageledger.adapters import ExtractionResult\n"
+        "from pathlib import Path\n"
+        f"STATE = Path({str(state)!r})\n"
+        "class Adapter:\n"
+        "    name = 'stateful'\n"
+        "    version = '1.0'\n"
+        "    deterministic = True\n"
+        "    input_types = ('text',)\n"
+        "    output_types = ('text',)\n"
+        "    capabilities = ('local',)\n"
+        "    def supports(self, action): return action == 'transcribe_text'\n"
+        "    def reproducibility_profile(self): return {'materials': []}\n"
+        "    def extract(self, source, *, page_id, page_number, action, prompt=None):\n"
+        "        value = int(STATE.read_text()) + 1\n"
+        "        STATE.write_text(str(value))\n"
+        "        return ExtractionResult(content=f'variant-{value}', format='text', confidence=None, model='stateful', warnings=[], usage={'pages': 1})\n",
+        encoding="utf-8",
+    )
+    config = MINIMAL_CONFIG.replace("adapter: text", "adapter: stateful:Adapter")
+    run_dir, _, _ = _run_text(tmp_path, config_text=config, adapter_path=adapter_dir)
+    bundle_dir = tmp_path / "bundle"
+    bundle_run(run_dir, bundle_dir)
+    replayed = tmp_path / "replayed"
+    result = replay_bundle(bundle_dir, replayed, adapter_path=adapter_dir)
+    assert result["outcome"] == "deterministic_mismatch"
+    assert result["raw"]["different"] == 2
+    assert (replayed / "replay.json").is_file()
+    assert verify_run(replayed)["status"] == "pass"
+
+
+def test_pdf_text_exact_replay(tmp_path: Path) -> None:
+    pypdf = pytest.importorskip("pypdf")
+    from pageledger.replay import bundle_run, replay_bundle
+    from pageledger.runner import run
+    from pageledger.verify import verify_run
+
+    source = tmp_path / "document.pdf"
+    writer = pypdf.PdfWriter()
+    writer.add_blank_page(width=72, height=72)
+    with source.open("wb") as handle:
+        writer.write(handle)
+    config = tmp_path / "pdf.yml"
+    config.write_text(MINIMAL_CONFIG.replace("adapter: text", "adapter: pdf_text"), encoding="utf-8")
+    run_dir = tmp_path / "run"
+    run(inputs=[source], config_path=config, out_dir=run_dir, dry_run=False)
+    bundle_dir = tmp_path / "bundle"
+    bundle_run(run_dir, bundle_dir)
+    source.unlink()
+    result = replay_bundle(bundle_dir, tmp_path / "replayed")
+    assert result["outcome"] == "exact"
+    assert verify_run(tmp_path / "replayed")["status"] == "pass"
+
+
+def test_recorded_pages_selection_is_replayed(tmp_path: Path) -> None:
+    from pageledger.replay import bundle_run, replay_bundle
+
+    run_dir, _, _ = _run_text(tmp_path, pages="2")
+    bundle_dir = tmp_path / "bundle"
+    bundle_run(run_dir, bundle_dir)
+    result = replay_bundle(bundle_dir, tmp_path / "replayed")
+    assert result["outcome"] == "exact"
+    replay_manifest = json.loads((tmp_path / "replayed" / "manifest.json").read_text())
+    assert replay_manifest["inputs"][0]["pages"] == "2"
+    assert replay_manifest["summary"]["pages_extracted"] == 1
+
+
+def test_routed_partial_review_replay_preserves_review_routes(tmp_path: Path) -> None:
+    from pageledger.replay import bundle_run, replay_bundle
+    from pageledger.runner import run
+
+    base, source, config = _run_text(tmp_path, name="base")
+    route = yaml.safe_load((base / "route-map.yml").read_text())
+    for document in route["documents"]:
+        for page in document["pages"]:
+            page["action"] = "review"
+            page["reason"] = "explicit review"
+    supplied_route = tmp_path / "review-route.yml"
+    supplied_route.write_text(yaml.safe_dump(route, sort_keys=False), encoding="utf-8")
+    run_dir = tmp_path / "routed"
+    run(inputs=[source], config_path=config, out_dir=run_dir, dry_run=False, routes_path=supplied_route)
+    bundle_dir = tmp_path / "bundle"
+    bundle_run(run_dir, bundle_dir)
+    result = replay_bundle(bundle_dir, tmp_path / "replayed")
+    assert result["outcome"] == "exact"
+    replay_manifest = json.loads((tmp_path / "replayed" / "manifest.json").read_text())
+    assert replay_manifest["status"] == "partial"
+    assert replay_manifest["summary"]["pages_routed_review"] == 2
+
+
+def test_multi_input_replay_preserves_order(tmp_path: Path) -> None:
+    from pageledger.replay import bundle_run, replay_bundle
+    from pageledger.runner import run
+
+    source_a = tmp_path / "a.txt"
+    source_b = tmp_path / "b.txt"
+    source_a.write_text("alpha\n", encoding="utf-8")
+    source_b.write_text("beta\n", encoding="utf-8")
+    config = tmp_path / "config.yml"
+    config.write_text(MINIMAL_CONFIG, encoding="utf-8")
+    run_dir = tmp_path / "run"
+    run(inputs=[source_a, source_b], config_path=config, out_dir=run_dir, dry_run=False)
+    bundle_dir = tmp_path / "bundle"
+    bundle_run(run_dir, bundle_dir)
+    replay_bundle(bundle_dir, tmp_path / "replayed")
+    provenance = [
+        json.loads(line)
+        for line in (tmp_path / "replayed" / "provenance.jsonl").read_text().splitlines()
+    ]
+    assert [entry["source"]["path"] for entry in provenance] == [
+        str((tmp_path / "bundle" / "sources" / "source-0001.txt").resolve()),
+        str((tmp_path / "bundle" / "sources" / "source-0002.txt").resolve()),
+    ]
+
+
+def test_external_alignment_snapshot_replays_without_original_schema(
+    tmp_path: Path,
+) -> None:
+    from pageledger.aligner import align_run
+    from pageledger.replay import bundle_run, replay_bundle
+    from pageledger.runner import run
+
+    adapter_dir = tmp_path / "trusted-adapters"
+    adapter_dir.mkdir()
+    (adapter_dir / "tableish.py").write_text(
+        "from pageledger.adapters import ExtractionResult\n"
+        "class Adapter:\n"
+        "    name = 'tableish'\n"
+        "    version = '1.0'\n"
+        "    deterministic = True\n"
+        "    input_types = ('text',)\n"
+        "    output_types = ('markdown_table',)\n"
+        "    capabilities = ('local',)\n"
+        "    def supports(self, action): return action == 'transcribe_text'\n"
+        "    def reproducibility_profile(self): return {'materials': []}\n"
+        "    def extract(self, source, *, page_id, page_number, action, prompt=None):\n"
+        "        return ExtractionResult(content='| place | total |\\n| --- | --- |\\n| X | 1 |', format='markdown_table', confidence=None, model='tableish', warnings=[], usage={'pages': 1})\n",
+        encoding="utf-8",
+    )
+    source = tmp_path / "table.txt"
+    source.write_text("table\n", encoding="utf-8")
+    config = tmp_path / "table.yml"
+    config.write_text(MINIMAL_CONFIG.replace("adapter: text", "adapter: tableish:Adapter"), encoding="utf-8")
+    run_dir = tmp_path / "run"
+    run(inputs=[source], config_path=config, out_dir=run_dir, dry_run=False, adapter_path=adapter_dir)
+    schema = tmp_path / "external-schema.yml"
+    schema.write_text(
+        "name: table\ncolumns:\n  - {name: place, type: string, required: true}\n  - {name: total, type: integer, required: true}\n",
+        encoding="utf-8",
+    )
+    align_run(run_dir, schema_path=schema)
+    schema.unlink()
+    bundle_dir = tmp_path / "bundle"
+    bundle_run(run_dir, bundle_dir)
+    result = replay_bundle(bundle_dir, tmp_path / "replayed", adapter_path=adapter_dir)
+    assert result["outcome"] == "exact"
+    replay_manifest = json.loads((tmp_path / "replayed" / "manifest.json").read_text())
+    assert replay_manifest["alignment"]["schema_sha256"]
+    assert (tmp_path / "replayed" / "normalized" / "doc_0001_page_0001.json").is_file()
 
 
 def test_replay_rejects_tampered_bundle_before_output_creation(tmp_path: Path) -> None:

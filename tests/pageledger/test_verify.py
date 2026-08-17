@@ -678,6 +678,34 @@ def test_verify_run_warns_when_external_source_is_missing(tmp_path):
     assert "source_missing" in _codes(report, "warnings")
 
 
+def test_portable_baseline_verification_skips_external_source_and_rerun_semantics(
+    tmp_path, monkeypatch
+):
+    import pageledger.verify as verify_module
+
+    out_dir, _ = _run(tmp_path)
+    original_load = verify_module._load_artifact
+
+    def guarded_load(key, path):
+        if key == "rerun_manifest":
+            raise AssertionError("portable verification parsed rerun-manifest.yml")
+        return original_load(key, path)
+
+    def forbidden_external_check(*args, **kwargs):
+        raise AssertionError("portable verification touched an external source")
+
+    monkeypatch.setattr(verify_module, "_load_artifact", guarded_load)
+    monkeypatch.setattr(verify_module, "_check_external_sources", forbidden_external_check)
+
+    report = verify_module.verify_run(
+        out_dir,
+        check_external_sources=False,
+        check_rerun_manifest=False,
+    )
+
+    assert report["status"] == "pass"
+
+
 def test_verify_run_uses_routed_absolute_path_for_relative_input(
     tmp_path, monkeypatch
 ):

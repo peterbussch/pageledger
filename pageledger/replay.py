@@ -425,7 +425,11 @@ def validate_bundle(bundle_dir: Path) -> dict[str, Any]:
     _validate_transport_allowlist(root, manifest, sources)
     from .verify import verify_run
 
-    baseline_report = verify_run(root / "baseline")
+    baseline_report = verify_run(
+        root / "baseline",
+        check_external_sources=False,
+        check_rerun_manifest=False,
+    )
     if baseline_report.get("status") != "pass":
         _fail("baseline_not_verified", "Transported baseline artifacts did not pass verification")
     config_path = root / replay["config"]

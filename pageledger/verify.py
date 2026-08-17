@@ -31,8 +31,18 @@ REQUIRED_ARTIFACTS = {
 }
 
 
-def verify_run(run_dir: Path) -> dict[str, Any]:
-    """Return a structured coherence report for a run directory."""
+def verify_run(
+    run_dir: Path,
+    *,
+    check_external_sources: bool = True,
+    check_rerun_manifest: bool = True,
+) -> dict[str, Any]:
+    """Return a structured coherence report for a run directory.
+
+    Portable transported baselines can disable checks that would dereference
+    historical external sources or treat a copied rerun plan as executable
+    evidence. Ordinary verification keeps both checks enabled by default.
+    """
     errors: list[dict[str, Any]] = []
     warnings: list[dict[str, Any]] = []
     counts = {
@@ -157,6 +167,8 @@ def verify_run(run_dir: Path) -> dict[str, Any]:
                 f"Manifest-declared artifact is missing: {relative}",
                 artifact=relative,
             )
+            continue
+        if key == "rerun_manifest" and not check_rerun_manifest:
             continue
         try:
             loaded[key] = _load_artifact(key, path)
@@ -428,7 +440,8 @@ def verify_run(run_dir: Path) -> dict[str, Any]:
                 actual="completed",
             )
 
-    _check_external_sources(manifest_inputs, route_sources, warnings)
+    if check_external_sources:
+        _check_external_sources(manifest_inputs, route_sources, warnings)
 
     provenance_entries = loaded.get("provenance")
     quality_entries = loaded.get("quality")
