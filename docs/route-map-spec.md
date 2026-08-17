@@ -9,6 +9,7 @@ called. `pageledger run --routes` executes the reviewed map.
 
 ```yaml
 schema_version: "0.1"
+pageledger_version: "0.3.0a1"
 run_id: classify-20260717T193000000000Z
 generated_at: "2026-07-17T19:30:00Z"
 classifier:
@@ -45,7 +46,8 @@ documents:
 
 | Field | Type | Required | Nullable | Meaning |
 |---|---|---|---|---|
-| `schema_version` | string | ✅ | no | Artifact schema version. It remains `"0.1"` in PageLedger 0.2.0. |
+| `schema_version` | string | ✅ | no | Artifact schema version. It remains `"0.1"` in PageLedger 0.3.0a1. |
+| `pageledger_version` | string | ✅ for new maps | no | PageLedger package version that generated the map. Missing only on legacy schema-0.1 maps. |
 | `run_id` | string | ✅ | no | Identifier of the classification or planning operation. An extraction run rebinds this to its own run ID. |
 | `generated_at` | string | ✅ | no | UTC ISO 8601 timestamp. |
 | `classifier` | object | ✅ | no | Classifier metadata. Null values mean no classifier ran; classified and imported maps preserve the supplied identity. |
@@ -98,6 +100,10 @@ readable.
   `doc_{NNNN}_page_{MMMM}` IDs, and reference exactly the CLI inputs. Relative
   source paths resolve from the map's directory. `pageledger classify` emits
   absolute source paths.
+- A route map written inside a rerun directory is intentionally a selected-page
+  ledger, not an input to `run --routes`: each document's `page_count` remains
+  the source's full size while `pages` contains only that generation's selected
+  pages. The child manifest records the same selection in `inputs[].pages`.
 - When `taxonomy.page_types` is nonempty, every page type must exist in it.
   `pageledger classify` checks up front that a nonempty taxonomy covers every
   type the built-in classifier or hook can emit. An empty taxonomy skips the
@@ -134,7 +140,7 @@ readable.
   map stored in the parent run.
 - Since route-map.yml is YAML, its field contract is documented in this spec
   rather than a JSON Schema file. These field tables define the v0.1 artifact
-  contract even when the PageLedger package version is 0.2.0.
+  contract even when the PageLedger package version is 0.3.0a1.
 - Schema validation tests (manual YAML assertions) are in
   `tests/pageledger/test_schemas.py`.
 

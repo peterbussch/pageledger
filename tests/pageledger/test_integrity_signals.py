@@ -76,7 +76,9 @@ def test_instruction_echo_does_not_match_generic_prose(tmp_path: Path) -> None:
 
 def test_rerun_flags_output_inflation_and_records_parent_evidence(tmp_path: Path) -> None:
     source = tmp_path / "page.txt"
-    source.write_text("archival transcription " * 80, encoding="utf-8")
+    # Long enough for inflation comparison, but intentionally fragmented so
+    # the parent policy derives a real quality-warning rerun candidate.
+    source.write_text("x " * 800, encoding="utf-8")
     parent_config = tmp_path / "parent.yml"
     parent_config.write_text(CONFIG, encoding="utf-8")
     parent_dir = tmp_path / "parent"
@@ -85,19 +87,8 @@ def test_rerun_flags_output_inflation_and_records_parent_evidence(tmp_path: Path
     parent_quality = _quality(parent_dir)
     rerun_path = parent_dir / "rerun-manifest.yml"
     manifest = yaml.safe_load(rerun_path.read_text(encoding="utf-8"))
-    manifest["rerun_executable"] = True
-    manifest["rerun_status"] = "executable"
-    manifest["items"] = [
-        {
-            "page_id": parent_quality["page_id"],
-            "page_number": 1,
-            "source": str(source.resolve()),
-            "action": "transcribe_text",
-            "reason": "manual_review",
-            "previous_grade": parent_quality["grade"],
-        }
-    ]
-    rerun_path.write_text(yaml.safe_dump(manifest, sort_keys=False), encoding="utf-8")
+    assert manifest["rerun_status"] == "executable"
+    assert manifest["items"][0]["reason"] == "quality_warning"
 
     adapter_module = tmp_path / "amplify_adapter.py"
     adapter_module.write_text(

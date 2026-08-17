@@ -106,8 +106,10 @@ executable. `run.max_rerun_depth` is an independent cap and takes precedence
 when both limits are reached. The supplied config
 is authoritative: if it disagrees with the parent's recorded next adapter,
 PageLedger prints an escalation warning and uses the config. Source-integrity
-changes are warned separately. `rerun` takes the same `--dry-run`, `--json`,
-`--log-level`, and `--adapter-path` flags as `run`.
+changes fail closed before the child directory is created. The parent ledger
+must pass `verify-run`, and its executable queue must still match the audit,
+routes, config, grades, quarantine, and lineage evidence. `rerun` takes the
+same `--dry-run`, `--json`, `--log-level`, and `--adapter-path` flags as `run`.
 
 ## align
 
@@ -128,6 +130,11 @@ section) is snapshotted into the run directory as
 manifest; records the mutation in `run.log` and a `manifest.json`
 `alignment` block. `--json` for machine-readable output.
 
+Human output prints separate `Grades (signals)` and `Grades (schema)`
+distributions. JSON retains `grade_distribution` for compatibility and adds
+`grade_distribution_by_basis` at the top level and in both `before` and
+`after`.
+
 `--dry-run` computes the complete replacement in memory and reports
 before/after grades, review-queue size, and normalized-record count without
 writing any artifact or schema snapshot. Applied alignment stages every
@@ -143,9 +150,21 @@ pageledger compare-runs runs/run-001/ runs/run-002/
 Page-by-page diff of two runs: character, word, and extraction-time deltas;
 warning and grade transitions; adapters; provenance identity; and cost.
 Directional totals such as “improved” and “resolved” are counted only when
-source bytes, source page, and adapter match. Cross-adapter, changed-source,
-and legacy-unknown transitions are shown but unranked. `--json` exposes the
-comparability evidence for every shared page id.
+source bytes, source page, and the effective extractor identity match. That
+identity includes the adapter and version, model, prompt hash, determinism,
+input/output types, capabilities, and a SHA-256 identity of the recorded
+adapter options (the comparison report does not copy their values). Grade
+direction has a second gate: both grades must come from the
+same PageLedger version and effective grading policy (merged thresholds plus
+the low-confidence floor from the retained config or external alignment
+schema), have the same evidence basis, and (for schema-aware grades) have the
+same recorded schema identity.
+Changed-source, cross-adapter,
+same-adapter/different-extractor, and legacy-unknown transitions are shown but
+unranked. `--json` exposes extraction and grade comparability separately for
+every shared page id. Comparison reads its manifest, quality, provenance, and
+optional cost evidence only from contained regular files; symlinks are rejected
+instead of followed.
 
 ## verify-run
 
@@ -156,10 +175,11 @@ pageledger verify-run runs/run-001/ --json
 
 Checks that the files in a run directory agree with one another: manifest
 declarations, identifiers, hashes, page counts, raw and normalized references,
-quality totals, audit/rerun items, and cost totals. Missing or changed external
-source files are warnings; malformed or inconsistent ledger artifacts are
-errors and produce exit code 1. Verification checks coherence, not extraction
-accuracy, and is not a replacement for the JSON Schema test suite.
+quality totals, audit/rerun items, alignment-schema snapshots, and cost totals.
+Missing or changed external source files are warnings; malformed or
+inconsistent ledger artifacts are errors and produce exit code 1. Verification
+checks coherence, not extraction accuracy, and is not a replacement for the
+JSON Schema test suite.
 
 ## inspect-run
 
@@ -169,10 +189,14 @@ pageledger inspect-run runs/run-001/ --csv > pages.csv
 ```
 
 Summarizes a run directory: status, page counts, warnings, failures,
-review-queue size, records normalized, grade distribution, cost, artifact
-presence. `--csv` writes one row per page (page id, counts, confidence,
-warnings, grade, cost, timing) for triage in a spreadsheet. `--json` for
-the summary as JSON.
+review-queue size, records normalized, grade distributions grouped by evidence
+basis, cost, and artifact presence. Human output labels each distribution as
+`Grades (signals)`, `Grades (schema)`, or `Grades (unknown)` for legacy graded
+entries; it never merges these into an unlabeled headline. JSON retains the
+aggregate `grade_distribution` for compatibility and adds
+`grade_distribution_by_basis`. `--csv` writes one row per page (page id,
+counts, confidence, warnings, grade, grade basis, cost, timing) for triage in a
+spreadsheet. `--json` emits the summary as JSON.
 
 ## init-config
 

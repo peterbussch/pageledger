@@ -13,6 +13,9 @@ from typing import Any
 
 import yaml
 
+from .artifacts import build_rerun_manifest, render_audit_markdown
+from .config import PageLedgerConfig
+
 REQUIRED_ARTIFACTS = {
     "config_snapshot",
     "route_map",
@@ -30,7 +33,6 @@ REQUIRED_ARTIFACTS = {
 
 def verify_run(run_dir: Path) -> dict[str, Any]:
     """Return a structured coherence report for a run directory."""
-    root = run_dir.expanduser().resolve()
     errors: list[dict[str, Any]] = []
     warnings: list[dict[str, Any]] = []
     counts = {
@@ -44,7 +46,33 @@ def verify_run(run_dir: Path) -> dict[str, Any]:
         "audit_references": 0,
         "rerun_references": 0,
     }
-    manifest_path = root / "manifest.json"
+    try:
+        declared_root = run_dir.expanduser()
+    except (OSError, RuntimeError, ValueError):
+        declared_root = run_dir
+    root = _safe_resolve(declared_root)
+    if root is None:
+        _add(
+            errors,
+            "run_path_invalid",
+            "Run directory cannot be resolved safely",
+            artifact=str(declared_root),
+        )
+        return _report(declared_root.absolute(), errors, warnings, counts)
+    declared_manifest_path = root / "manifest.json"
+    manifest_path = _safe_resolve(declared_manifest_path)
+    if (
+        declared_manifest_path.is_symlink()
+        or manifest_path is None
+        or manifest_path.parent != root
+    ):
+        _add(
+            errors,
+            "manifest_path_invalid",
+            "manifest.json must be a regular file contained in the run directory",
+            artifact="manifest.json",
+        )
+        return _report(root, errors, warnings, counts)
     if not manifest_path.is_file():
         _add(errors, "manifest_missing", "No manifest.json found", artifact="manifest.json")
         return _report(root, errors, warnings, counts)
@@ -71,6 +99,13 @@ def verify_run(run_dir: Path) -> dict[str, Any]:
             "manifest_identity_missing",
             "Manifest schema_version is missing or invalid",
         )
+    if not isinstance(manifest.get("pageledger_version"), str):
+        _add(
+            warnings,
+            "legacy_evidence_incomplete",
+            "Manifest predates PageLedger generator-version recording",
+            artifact="manifest.json",
+        )
 
     declarations = manifest.get("artifacts")
     if not isinstance(declarations, dict):
@@ -95,7 +130,15 @@ def verify_run(run_dir: Path) -> dict[str, Any]:
                 artifact=key,
             )
             continue
-        path = (root / relative).resolve()
+        path = _safe_resolve(root / relative)
+        if path is None:
+            _add(
+                errors,
+                "artifact_path_invalid",
+                f"Artifact path cannot be resolved safely: {relative}",
+                artifact=relative,
+            )
+            continue
         if path != root and root not in path.parents:
             _add(
                 errors,
@@ -162,6 +205,86 @@ def verify_run(run_dir: Path) -> dict[str, Any]:
             "Config snapshot schema_version does not match the manifest",
             artifact=paths["config_snapshot"].name,
         )
+
+    alignment = manifest.get("alignment")
+    if alignment is not None:
+        if not isinstance(alignment, dict):
+            _add(
+                errors,
+                "manifest_structure_invalid",
+                "Manifest alignment must be a mapping",
+                artifact="manifest.json",
+            )
+        else:
+            schema_source = alignment.get("schema_source")
+            expected_schema_hash = alignment.get("schema_sha256")
+            required_alignment_fields = (
+                "aligned_at",
+                "schema_source",
+                "schema_sha256",
+                "pageledger_version",
+            )
+            if any(
+                not isinstance(alignment.get(field), str)
+                or not alignment.get(field)
+                for field in required_alignment_fields
+            ):
+                _add(
+                    errors,
+                    "manifest_structure_invalid",
+                    "Manifest alignment fields must be non-empty strings",
+                    artifact="manifest.json",
+                )
+            else:
+                assert isinstance(schema_source, str)
+                assert isinstance(expected_schema_hash, str)
+                if schema_source == "config_snapshot":
+                    if config_path is not None and config_path.is_file():
+                        actual_schema_hash = _sha256(config_path)
+                        if actual_schema_hash != expected_schema_hash:
+                            _add(
+                                errors,
+                                "alignment_schema_hash_mismatch",
+                                "Alignment schema hash differs from config-snapshot.yml",
+                                artifact=config_path.name,
+                                expected=expected_schema_hash,
+                                actual=actual_schema_hash,
+                            )
+                else:
+                    declared_snapshot = root / "align-schema-snapshot.yml"
+                    alignment_snapshot = _safe_resolve(declared_snapshot)
+                    if alignment_snapshot is None:
+                        _add(
+                            errors,
+                            "alignment_schema_snapshot_invalid",
+                            "External alignment schema snapshot cannot be resolved safely",
+                            artifact=declared_snapshot.name,
+                        )
+                    elif alignment_snapshot != root and root not in alignment_snapshot.parents:
+                        _add(
+                            errors,
+                            "alignment_schema_snapshot_invalid",
+                            "External alignment schema snapshot resolves outside the run directory",
+                            artifact=declared_snapshot.name,
+                        )
+                    elif not alignment_snapshot.is_file():
+                        _add(
+                            errors,
+                            "alignment_schema_snapshot_missing",
+                            "External alignment schema snapshot is missing",
+                            artifact=declared_snapshot.name,
+                        )
+                    else:
+                        actual_schema_hash = _sha256(alignment_snapshot)
+                        if actual_schema_hash != expected_schema_hash:
+                            _add(
+                                errors,
+                                "alignment_schema_hash_mismatch",
+                                "Alignment schema hash differs from align-schema-snapshot.yml",
+                                artifact=declared_snapshot.name,
+                                expected=expected_schema_hash,
+                                actual=actual_schema_hash,
+                            )
 
     route = loaded.get("route_map")
     route_pages: dict[str, dict[str, Any]] = {}
@@ -242,6 +365,69 @@ def verify_run(run_dir: Path) -> dict[str, Any]:
             actual=counts["routed_pages"],
         )
 
+    routed_review_count = sum(
+        page.get("action") == "review" for page in route_pages.values()
+    )
+    skipped_page_count = sum(
+        page.get("action") == "skip" for page in route_pages.values()
+    )
+    if "pages_routed_review" not in summary:
+        _add(
+            warnings,
+            "legacy_evidence_incomplete",
+            "Manifest predates pages_routed_review accounting",
+        )
+    elif summary.get("pages_routed_review") != routed_review_count:
+        _add(
+            errors,
+            "routed_review_count_mismatch",
+            "Review-route count does not match manifest.summary.pages_routed_review",
+            expected=summary.get("pages_routed_review"),
+            actual=routed_review_count,
+        )
+    if summary.get("pages_skipped") != skipped_page_count:
+        _add(
+            errors,
+            "skipped_page_count_mismatch",
+            "Skip-route count does not match manifest.summary.pages_skipped",
+            expected=summary.get("pages_skipped"),
+            actual=skipped_page_count,
+        )
+    if "pages_routed_review" in summary:
+        accounting_values = {
+            "pages_total": summary.get("pages_total"),
+            "pages_extracted": summary.get("pages_extracted"),
+            "pages_failed": summary.get("pages_failed", 0),
+            "pages_not_attempted": summary.get("pages_not_attempted", 0),
+            "pages_skipped": summary.get("pages_skipped"),
+            "pages_routed_review": summary.get("pages_routed_review"),
+        }
+        if all(
+            isinstance(value, int) and not isinstance(value, bool)
+            for value in accounting_values.values()
+        ):
+            accounted = sum(
+                value
+                for key, value in accounting_values.items()
+                if key != "pages_total"
+            )
+            if accounting_values["pages_total"] != accounted:
+                _add(
+                    errors,
+                    "page_accounting_mismatch",
+                    "Manifest page buckets do not sum to pages_total",
+                    expected=accounting_values["pages_total"],
+                    actual=accounted,
+                )
+        if routed_review_count and manifest.get("status") == "completed":
+            _add(
+                errors,
+                "run_status_mismatch",
+                "A run with review-only routes cannot have completed status",
+                expected="partial",
+                actual="completed",
+            )
+
     _check_external_sources(manifest_inputs, route_sources, warnings)
 
     provenance_entries = loaded.get("provenance")
@@ -268,6 +454,13 @@ def verify_run(run_dir: Path) -> dict[str, Any]:
                 errors,
                 "unknown_page_reference",
                 f"Provenance references unrouted page {page_id}",
+                page_id=page_id,
+            )
+        elif route_page.get("action") in {"review", "skip"}:
+            _add(
+                errors,
+                "route_evidence_mismatch",
+                f"Provenance exists for non-extraction route {page_id}",
                 page_id=page_id,
             )
         source = entry.get("source")
@@ -321,8 +514,17 @@ def verify_run(run_dir: Path) -> dict[str, Any]:
                 page_id=page_id,
             )
             continue
-        raw_path = (root / raw_name).resolve()
-        raw_references.add(raw_path)
+        assert isinstance(result, dict)
+        raw_path = _safe_resolve(root / raw_name)
+        if raw_path is None:
+            _add(
+                errors,
+                "raw_artifact_path_invalid",
+                f"Raw artifact path cannot be resolved safely for {page_id}",
+                page_id=page_id,
+                artifact=raw_name,
+            )
+            continue
         if raw_path.stem != page_id:
             _add(
                 errors,
@@ -332,14 +534,16 @@ def verify_run(run_dir: Path) -> dict[str, Any]:
                 artifact=raw_name,
             )
         raw_dir = paths.get("raw_dir")
-        if raw_dir is not None and raw_path.parent != raw_dir:
+        if raw_dir is None or not raw_dir.is_dir() or raw_path.parent != raw_dir:
             _add(
                 errors,
                 "raw_artifact_path_invalid",
-                f"Raw artifact is outside the declared raw directory for {page_id}",
+                f"Raw artifact lacks a valid contained raw directory for {page_id}",
                 page_id=page_id,
                 artifact=raw_name,
             )
+            continue
+        raw_references.add(raw_path)
         if not raw_path.is_file():
             _add(
                 errors,
@@ -348,6 +552,26 @@ def verify_run(run_dir: Path) -> dict[str, Any]:
                 page_id=page_id,
                 artifact=raw_name,
             )
+        else:
+            expected_raw_hash = result.get("raw_sha256")
+            if expected_raw_hash is None:
+                _add(
+                    errors,
+                    "raw_artifact_hash_missing",
+                    f"Provenance lacks a raw artifact hash for {page_id}",
+                    page_id=page_id,
+                )
+            elif (
+                not isinstance(expected_raw_hash, str)
+                or _sha256(raw_path) != expected_raw_hash
+            ):
+                _add(
+                    errors,
+                    "raw_artifact_hash_mismatch",
+                    f"Raw artifact SHA-256 differs from provenance for {page_id}",
+                    page_id=page_id,
+                    artifact=raw_name,
+                )
 
     for page_id, entry in quality.items():
         _check_schema(entry, schema_version, errors, "quality.jsonl", page_id)
@@ -391,7 +615,36 @@ def verify_run(run_dir: Path) -> dict[str, Any]:
 
     raw_dir = paths.get("raw_dir")
     if raw_dir is not None and raw_dir.is_dir():
-        raw_files = {path.resolve() for path in raw_dir.rglob("*") if path.is_file()}
+        raw_files: set[Path] = set()
+        for candidate in raw_dir.rglob("*"):
+            if candidate.is_symlink():
+                _add(
+                    errors,
+                    "raw_artifact_path_invalid",
+                    "Raw artifact inventory contains a symbolic link",
+                    artifact=str(candidate.relative_to(root)),
+                )
+                continue
+            if not candidate.is_file():
+                continue
+            resolved = _safe_resolve(candidate)
+            if resolved is None:
+                _add(
+                    errors,
+                    "raw_artifact_path_invalid",
+                    "Raw artifact inventory path cannot be resolved safely",
+                    artifact=str(candidate.relative_to(root)),
+                )
+                continue
+            if resolved != raw_dir and raw_dir not in resolved.parents:
+                _add(
+                    errors,
+                    "raw_artifact_path_invalid",
+                    "Raw artifact inventory resolves outside the declared raw directory",
+                    artifact=str(candidate.relative_to(root)),
+                )
+                continue
+            raw_files.add(resolved)
         counts["raw_artifacts"] = len(raw_files)
         for extra in sorted(raw_files - raw_references):
             _add(
@@ -438,6 +691,25 @@ def verify_run(run_dir: Path) -> dict[str, Any]:
                     expected=summary.get("pages_quarantined"),
                     actual=len(quarantined),
                 )
+        audit_markdown = loaded.get("audit_md")
+        if isinstance(audit_markdown, str):
+            try:
+                expected_audit_markdown = render_audit_markdown(audit)
+            except (AttributeError, KeyError, TypeError, ValueError) as exc:
+                _add(
+                    errors,
+                    "artifact_structure_invalid",
+                    f"audit.json cannot be rendered safely: {exc}",
+                    artifact=paths["audit"].name,
+                )
+            else:
+                if audit_markdown != expected_audit_markdown:
+                    _add(
+                        errors,
+                        "audit_render_mismatch",
+                        "audit.md is not the current rendering of audit.json",
+                        artifact=paths["audit_md"].name,
+                    )
 
     rerun = loaded.get("rerun_manifest")
     if isinstance(rerun, dict):
@@ -455,6 +727,21 @@ def verify_run(run_dir: Path) -> dict[str, Any]:
         else:
             counts["rerun_references"] = len(items)
             _check_references(items, route_pages, errors, paths["rerun_manifest"].name)
+        if (
+            isinstance(config, dict)
+            and isinstance(route, dict)
+            and isinstance(audit, dict)
+        ):
+            _check_rerun_plan(
+                rerun,
+                manifest,
+                config,
+                route,
+                audit,
+                quality,
+                errors,
+                warnings,
+            )
 
     cost = loaded.get("cost")
     if isinstance(cost, dict):
@@ -532,6 +819,151 @@ def verify_run(run_dir: Path) -> dict[str, Any]:
             )
 
     return _report(root, errors, warnings, counts)
+
+
+def _check_rerun_plan(
+    rerun: dict[str, Any],
+    manifest: dict[str, Any],
+    config: dict[str, Any],
+    route: dict[str, Any],
+    audit: dict[str, Any],
+    quality: dict[str, dict[str, Any]],
+    errors: list[dict[str, Any]],
+    warnings: list[dict[str, Any]],
+) -> None:
+    """Re-derive the executable queue from parent evidence and compare it."""
+    schema_version = manifest.get("schema_version")
+    run_id = manifest.get("run_id")
+    if not isinstance(schema_version, str) or not isinstance(run_id, str):
+        return
+    raw_depth = manifest.get("run_depth")
+    if isinstance(raw_depth, int) and not isinstance(raw_depth, bool) and raw_depth >= 0:
+        run_depth = raw_depth
+    elif manifest.get("parent_run_id") is None:
+        run_depth = 0
+        _add(
+            warnings,
+            "legacy_evidence_incomplete",
+            "Manifest predates durable run_depth recording; inferred generation 0",
+            artifact="manifest.json",
+        )
+    else:
+        raw_rerun_depth = rerun.get("rerun_depth")
+        if not isinstance(raw_rerun_depth, int) or isinstance(raw_rerun_depth, bool):
+            return
+        run_depth = raw_rerun_depth
+        _add(
+            warnings,
+            "legacy_evidence_incomplete",
+            "Rerun lineage predates durable manifest run_depth recording",
+            artifact="manifest.json",
+        )
+
+    run_config = config.get("run")
+    if not isinstance(run_config, dict):
+        run_config = {}
+    max_rerun_depth = run_config.get("max_rerun_depth", 2)
+    if (
+        not isinstance(max_rerun_depth, int)
+        or isinstance(max_rerun_depth, bool)
+        or max_rerun_depth < 0
+    ):
+        return
+
+    try:
+        configured_order = PageLedgerConfig(
+            schema_version=schema_version,
+            data=config,
+        ).adapter_order
+    except ValueError as exc:
+        _add(
+            errors,
+            "config_adapter_order_invalid",
+            f"Config snapshot adapter chain is invalid: {exc}",
+            artifact="config-snapshot.yml",
+        )
+        return
+
+    adapter_order = (
+        [str(entry["adapter"]) for entry in configured_order]
+        if configured_order is not None
+        else None
+    )
+    expected_manifest_escalation = (
+        {"adapter_order": adapter_order, "step": run_depth}
+        if adapter_order is not None
+        else None
+    )
+    if manifest.get("escalation") != expected_manifest_escalation:
+        _add(
+            errors,
+            "manifest_escalation_mismatch",
+            "Manifest adapter escalation does not match config-snapshot.yml",
+            artifact="manifest.json",
+            expected=expected_manifest_escalation,
+            actual=manifest.get("escalation"),
+        )
+
+    rerun_escalation: dict[str, Any] | None = None
+    if adapter_order is not None:
+        rerun_escalation = {
+            "adapter_order": adapter_order,
+            "step": run_depth,
+            "next_adapter": (
+                adapter_order[run_depth + 1]
+                if run_depth + 1 < len(adapter_order)
+                else None
+            ),
+        }
+
+    try:
+        expected = build_rerun_manifest(
+            schema_version=schema_version,
+            run_id=run_id,
+            parent_run_id=run_id,
+            created_at=str(rerun.get("created_at", "")),
+            max_rerun_depth=max_rerun_depth,
+            reason=(
+                "dry_run"
+                if manifest.get("execution_mode") == "dry_run"
+                else "audit_policy"
+            ),
+            audit=audit,
+            route_map=route,
+            run_depth=run_depth,
+            grades={
+                page_id: entry["grade"]
+                for page_id, entry in quality.items()
+                if isinstance(entry.get("grade"), str)
+            },
+            escalation=rerun_escalation,
+        )
+    except (AttributeError, KeyError, TypeError, ValueError):
+        # Malformed audit/route evidence is already reported by the structural
+        # and reference checks; re-derivation must not turn it into a crash.
+        return
+    fields = (
+        "schema_version",
+        "run_id",
+        "parent_run_id",
+        "parent_manifest",
+        "rerun_depth",
+        "max_rerun_depth",
+        "reason",
+        "rerun_executable",
+        "rerun_status",
+        "items",
+        "escalation",
+    )
+    differing = [field for field in fields if rerun.get(field) != expected.get(field)]
+    if differing:
+        _add(
+            errors,
+            "rerun_plan_mismatch",
+            "Rerun manifest is not the queue derived from audit, route, config, and grade evidence",
+            artifact="rerun-manifest.yml",
+            differing_fields=differing,
+        )
 
 
 def render_verification(report: dict[str, Any]) -> str:
@@ -613,7 +1045,26 @@ def _check_normalized(
 ) -> None:
     if normalized_dir is None or not normalized_dir.is_dir():
         return
-    for path in sorted(item for item in normalized_dir.rglob("*") if item.is_file()):
+    for declared_path in sorted(normalized_dir.rglob("*")):
+        if declared_path.is_symlink():
+            _add(
+                errors,
+                "normalized_artifact_path_invalid",
+                "Normalized artifact must not be a symbolic link",
+                artifact=str(declared_path.relative_to(root)),
+            )
+            continue
+        if not declared_path.is_file():
+            continue
+        path = _safe_resolve(declared_path)
+        if path is None or (path != normalized_dir and normalized_dir not in path.parents):
+            _add(
+                errors,
+                "normalized_artifact_path_invalid",
+                "Normalized artifact resolves outside the declared directory",
+                artifact=str(declared_path.relative_to(root)),
+            )
+            continue
         counts["normalized_pages"] += 1
         try:
             entry = json.loads(path.read_text(encoding="utf-8"))
@@ -688,7 +1139,15 @@ def _check_references(
     artifact: str,
 ) -> None:
     for entry in entries:
-        page_id = entry.get("page_id") if isinstance(entry, dict) else None
+        if not isinstance(entry, dict):
+            _add(
+                errors,
+                "artifact_structure_invalid",
+                f"{artifact} queue item must be a mapping",
+                artifact=artifact,
+            )
+            continue
+        page_id = entry.get("page_id")
         route_page = route_pages.get(page_id) if isinstance(page_id, str) else None
         if route_page is None:
             _add(
@@ -823,6 +1282,30 @@ def _sha256(path: Path) -> str:
         for chunk in iter(lambda: handle.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def _safe_resolve(path: Path) -> Path | None:
+    """Resolve safely across Python versions, retaining only missing tail parts."""
+    unresolved: list[str] = []
+    candidate = path
+    while True:
+        try:
+            resolved = candidate.resolve(strict=True)
+        except FileNotFoundError:
+            try:
+                if candidate.is_symlink():
+                    return None
+            except (OSError, ValueError):
+                return None
+            parent = candidate.parent
+            if parent == candidate:
+                return None
+            unresolved.append(candidate.name)
+            candidate = parent
+        except (OSError, RuntimeError, ValueError):
+            return None
+        else:
+            return resolved.joinpath(*reversed(unresolved))
 
 
 def _add(issues: list[dict[str, Any]], code: str, message: str, **details: Any) -> None:

@@ -115,6 +115,13 @@ null, warning items are strings, `confidence_detail` is a JSON-serializable
 mapping or null, and numeric usage values are finite numbers rather than
 booleans. `NaN` and infinity are rejected at the adapter boundary.
 
+Use `model` for the concrete runtime identity that could affect output, not
+only a marketing model name. The built-in `pdf_text` adapter records the
+installed pypdf version. The built-in `pdf_ocr` adapter records the Tesseract
+and Poppler renderer versions plus the effective DPI and language selection.
+Custom adapters should likewise include model/revision, renderer, and material
+inference settings when the backend exposes them.
+
 Adapters do **not** have to know dollar prices. Report `cost_usd` only if the
 backend returns it directly (e.g. an OpenRouter-style gateway); otherwise leave
 it `null` and PageLedger derives cost from configured unit rates
@@ -177,6 +184,56 @@ pageledger run scan.pdf --config custom.yml --out runs/custom \
 The directory is prepended to `sys.path` before the config is validated.
 `rerun` accepts the same flag.
 
+### Local Docling example
+
+[`examples/docling_adapter.py`](../examples/docling_adapter.py) is a functional
+adapter for the machine-level Docling CLI. Install Docling outside the project
+environment so its ML stack does not become a PageLedger dependency:
+
+```bash
+uv tool install docling
+docling --version
+```
+
+Select the custom adapter in config (the `--adapter` shortcut intentionally
+accepts built-ins only):
+
+```yaml
+run:
+  adapter: docling_adapter:DoclingAdapter
+  adapter_options:
+    pipeline: standard
+```
+
+```bash
+pageledger run report.pdf --config pageledger.yml \
+  --adapter-path ./examples --out runs/docling
+```
+
+The standard pipeline performs local OCR, layout analysis, and table
+recognition. For the dogfooded local VLM pass, set `pipeline: vlm` and
+`vlm_model: smoldocling`. The example never enables
+Docling remote services or external plugins. Docling may download model assets
+on first use, so prewarm it before an offline run.
+
+Action support is pipeline-specific: standard mode accepts
+`transcribe_text` and `extract_table`, while VLM mode additionally accepts
+`vlm_table`. The example rejects route prompts because the Docling CLI command
+does not apply them; this prevents provenance from hashing a prompt that had no
+effect on extraction.
+
+One adapter instance is shared by the run. Standard mode converts each source
+document once, caches the structured result in memory, and derives one Markdown
+artifact per PDF page. Its conversion compute time is amortized across the
+source pages. VLM mode instead passes `--page-range N-N` and caches each
+requested page, so a selective rerun does not process every page in the source.
+`usage.pages` remains 1 for every extraction call, while provenance records the
+Docling version, pipeline, local VLM preset when applicable, and batch mode.
+Local VLM conversion is much slower and is intended for selected audit/rerun
+pages, not as an automatic first pass over a large corpus. Every VLM result
+carries `docling_vlm_uncalibrated`, ensuring generative OCR remains in the
+review queue even when text-shape and character-volume signals look clean.
+
 ### Remaining limits
 
 - Async extraction is not supported (the runner is synchronous).
@@ -233,9 +290,17 @@ Adapters that shell out to external commands (e.g. `pdftoppm`, `tesseract`,
   or a descriptive `RuntimeError` so PageLedger can record the failure in
   `run.log`. The default stops the run; `run.on_page_error: continue` proceeds
   to the next page, subject to `max_consecutive_failures`.
-- Capture `stdout` and `stderr` so the error envelope has diagnostic content.
-- Do not pass secrets or environment variables to subprocess stdout/stderr
-  capture without redaction.
+- Capture `stdout` and `stderr` when the adapter needs them for local control
+  flow, but do not expect PageLedger to persist their contents. Failure
+  envelopes are fail-closed: they retain the exception class and whether
+  stdout/stderr existed, replacing all adapter-controlled diagnostic text with
+  `<redacted>`. This prevents provider and subprocess errors from becoming a
+  credential-exfiltration path through `run.log` or terminal output.
+
+Adapter options are durable evidence, not a secret channel: PageLedger copies
+them into `config-snapshot.yml` and records non-empty options in the manifest.
+Do not pass credentials through `run.adapter_options`; resolve them from the
+adapter's external credential store or environment instead.
 
 Example pattern:
 
@@ -288,7 +353,7 @@ Adapters should return `ExtractionResult` instances with:
 | `format` | string | `markdown`, `json`, `csv`, `text`, or `markdown_table`. |
 | `confidence` | number or null | Adapter confidence when available. Serialize null as JSON `null`. |
 | `model` | string or null | Model or OCR engine identifier. |
-| `warnings` | array | Non-fatal issues (empty list if none). |
+| `warnings` | array | Non-fatal quality issues (empty list if none). Preserved in provenance and copied into `quality.jsonl`, so they affect grades and audit routing. |
 | `usage` | object | **`pages` must be 1**; `tokens`, `compute_seconds`, `cost_usd` optional/nullable. |
 | `confidence_detail` | object or null | Optional engine-native confidence evidence, adapter-defined shape; recorded into `quality.jsonl` verbatim. `pdf_ocr` fills Tesseract per-word statistics (`scale`, `word_count`, `mean`, `min`, `below_60_count`, `below_60_ratio`). |
 
@@ -308,6 +373,8 @@ is a custom adapter; the adapter contract matters more than adapter breadth.
 Copy-paste examples live in `examples/`:
 
 - `tesseract_pdftoppm_adapter.py`
+- `docling_adapter.py`: machine-level standard or local-VLM Docling conversion,
+  document-batched into page-level Markdown
 - `cloud_vlm_adapter_skeleton.py`
 - `prereform_normalizer_adapter.py`: OCR plus pre-1918 Russian orthography
   canonicalization, with the rewrite recorded as a result warning

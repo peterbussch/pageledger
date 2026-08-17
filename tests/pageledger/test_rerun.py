@@ -9,7 +9,7 @@ Verifies:
   - Execute manifests: reason=audit_policy, items from quality_warning + configured_review
   - parent_run_id references the generating run correctly
   - `rerun` executes only the listed pages, preserves page ids, records lineage,
-    enforces the depth cap, and warns on changed sources
+    enforces the depth cap, and refuses changed sources or edited plans
 """
 
 from __future__ import annotations
@@ -370,10 +370,34 @@ def test_rerun_records_parent_lineage(tmp_path):
     result, rerun_out = _do_rerun(parent_out, tmp_path)
     child_manifest = json.loads((rerun_out / "manifest.json").read_text(encoding="utf-8"))
     assert child_manifest["parent_run_id"] == parent_manifest["run_id"]
+    assert parent_manifest["run_depth"] == 0
+    assert child_manifest["run_depth"] == 1
     assert result["parent_run_id"] == parent_manifest["run_id"]
     assert result["rerun_depth"] == 1
     child_rerun = _load_rerun(rerun_out)
     assert child_rerun["rerun_depth"] == 1
+
+
+def test_rerun_preserves_full_source_page_count_and_records_selection(tmp_path):
+    source, parent_out = _parent_with_flagged_page(tmp_path)
+    _, rerun_out = _do_rerun(parent_out, tmp_path)
+
+    child_manifest = json.loads((rerun_out / "manifest.json").read_text(encoding="utf-8"))
+    child_route = yaml.safe_load((rerun_out / "route-map.yml").read_text(encoding="utf-8"))
+    assert child_manifest["inputs"] == [
+        {
+            "path": str(source.resolve()),
+            "sha256": child_manifest["inputs"][0]["sha256"],
+            "page_count": 2,
+            "pages": "1",
+        }
+    ]
+    assert child_route["documents"][0]["page_count"] == 2
+    assert len(child_route["documents"][0]["pages"]) == 1
+
+    from pageledger.verify import verify_run
+
+    assert verify_run(rerun_out)["status"] == "pass"
 
 
 def test_rerun_refuses_empty_manifest(tmp_path):
@@ -411,13 +435,44 @@ def test_rerun_enforces_depth_cap(tmp_path):
         rerun_fn(parent_dir=child_out, config_path=config_path, out_dir=grandchild_out)
 
 
-def test_rerun_warns_on_changed_source(tmp_path):
+def test_rerun_refuses_changed_source_before_creating_child(tmp_path):
+    import pytest
+
     source, parent_out = _parent_with_flagged_page(tmp_path)
     source.write_text("short\fmodified second page content since the parent run\n", encoding="utf-8")
-    result, rerun_out = _do_rerun(parent_out, tmp_path)
-    warnings = result.get("source_integrity_warnings", [])
-    assert len(warnings) == 1
-    assert "sha256" in warnings[0]
+    with pytest.raises(ValueError, match="Source changed since parent run"):
+        _do_rerun(parent_out, tmp_path)
+    assert not (tmp_path / "rerun-out").exists()
+
+
+def test_rerun_refuses_edited_executable_plan(tmp_path):
+    import pytest
+
+    _, parent_out = _parent_with_flagged_page(tmp_path)
+    rerun = _load_rerun(parent_out)
+    rerun["items"][0]["page_number"] = 2
+    (parent_out / "rerun-manifest.yml").write_text(
+        yaml.safe_dump(rerun, sort_keys=False), encoding="utf-8"
+    )
+
+    with pytest.raises(ValueError, match="parent run verification failed"):
+        _do_rerun(parent_out, tmp_path)
+    assert not (tmp_path / "rerun-out").exists()
+
+
+def test_rerun_requires_executable_status_and_flag(tmp_path):
+    import pytest
+
+    _, parent_out = _parent_with_flagged_page(tmp_path)
+    rerun = _load_rerun(parent_out)
+    rerun["rerun_status"] = "empty_queue"
+    rerun["rerun_executable"] = False
+    (parent_out / "rerun-manifest.yml").write_text(
+        yaml.safe_dump(rerun, sort_keys=False), encoding="utf-8"
+    )
+
+    with pytest.raises(ValueError, match="parent run verification failed"):
+        _do_rerun(parent_out, tmp_path)
 
 
 def test_rerun_cli_roundtrip(tmp_path):

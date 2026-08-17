@@ -35,7 +35,8 @@ metadata needed to understand and reconstruct the recorded method.
     "format": "markdown_table",
     "confidence": 0.84,
     "warnings": ["missing_optional_column"],
-    "raw_artifact": "raw/doc_0001_page_0002.markdown_table"
+    "raw_artifact": "raw/doc_0001_page_0002.markdown_table",
+    "raw_sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
   },
   "usage": {
     "pages": 1,
@@ -85,7 +86,7 @@ Normalized records should preserve links back to provenance lines:
 | `source` | object | Source path, page number, and source checksum. |
 | `route` | object | Page type, action, and route confidence. |
 | `extractor` | object | Adapter, adapter version, model, prompt hash, determinism flag, and adapter capability metadata. |
-| `result` | object | Output format, confidence, warnings, and raw artifact path. |
+| `result` | object | Output format, confidence, warnings, raw artifact path, and (for current writers) the exact raw artifact SHA-256. |
 | `usage` | object | Canonical usage fields: `pages`, `tokens`, `compute_seconds`, and `cost_usd`. |
 | `metrics` | object | Flat copy of `usage` for analytical workflows. |
 | `cost` | object | Optional PageLedger-resolved per-page cost: `usd` plus `basis` (`adapter_reported`, `configured_rate`, or null). |
@@ -110,6 +111,13 @@ Normalized records should preserve links back to provenance lines:
 - `usage.cost_usd` remains adapter-reported evidence. `cost.usd` is the value
   PageLedger actually uses after applying adapter-reported cost first and then
   configured unit rates. Missing token usage never becomes a known zero cost.
+- `result.raw_sha256` is optional for compatibility with older schema-0.1
+  ledgers whose manifest also predates `pageledger_version`. Current writers
+  always emit it. `verify-run` fails if raw bytes differ or if any digest is
+  absent. Older evidence remains parseable and receives an incomplete-evidence
+  warning, but it cannot receive an integrity PASS without a raw digest. This
+  detects accidental or local modification; it is not authenticity without an
+  externally trusted or signed manifest/provenance set.
 - The JSON Schema for this artifact is at `schemas/provenance-line.schema.json`.
 - Schema validation tests are in `tests/pageledger/test_schemas.py`.
 
@@ -125,10 +133,10 @@ not a calibrated accuracy score. Fields:
 | `page_number` | integer | ✅ | no | One-based page number. |
 | `adapter` | string | ✅ | no | Adapter name for diagnostics attribution. |
 | `character_count` | integer | ✅ | no | Total characters in extractor output. |
-| `word_count` | integer | ✅ | no | Regex word count (`\w+`). |
+| `word_count` | integer | ✅ | no | Count of Unicode letter tokens; combining marks remain attached to their base-letter token. |
 | `confidence` | number or null | ❌ | yes | Adapter-reported page confidence, 0–1. Emitted by current runs; optional so original 0.1 lines remain valid. |
 | `confidence_detail` | object or null | ❌ | yes | Engine-native confidence evidence. Emitted by current runs; optional for original 0.1 compatibility. |
-| `warnings` | array of strings | ✅ | no | Quality warnings (see taxonomy below). |
+| `warnings` | array of strings | ✅ | no | Adapter-native warnings plus PageLedger-derived quality warnings (see taxonomy below). Adapter warnings are also retained in the provenance result. |
 | `text_quality` | object | ✅ | no | Sub-metrics (see below). |
 | `embedded_text_comparison` | object | ❌ | yes | Comparison with PDF embedded text layer. Null for non-PDF sources. |
 | `output_integrity` | object | ❌ | no | Conservative chat-template-marker and parent-rerun size evidence. Present on new 0.1.4 quality lines; optional so older lines remain valid. |
@@ -156,7 +164,7 @@ Confidence/coverage/pass-rate thresholds are overridable under
 coverage below `minimum_required_column_coverage` forces the schema axis
 to F, and page confidence under `low_confidence_threshold` caps the final
 grade at C. The structured-format prose heuristics
-(`suspicious_symbol_density`, `fragmented_text`) do not fire on
+(`suspicious_symbol_density`, `fragmented_text`, `joined_text`) do not fire on
 `markdown_table`/`json`/`csv` pages: pipes and braces are construction,
 not garble.
 
@@ -170,7 +178,10 @@ not garble.
 | `suspicious_symbol_ratio` | number (0–1) | `suspicious_symbol_count / character_count`. |
 | `alpha_token_count` | integer | Unicode letter tokens on the page; combining marks remain attached to their base-letter token. |
 | `mean_token_length` | number or null | Mean Unicode letter-plus-mark token length; null with no tokens. The `<3` warning boundary is a fragment-noise heuristic, not a cross-language quality score. |
+| `max_token_length` | integer | Maximum Unicode letter-plus-mark token length. |
 | `short_token_ratio` | number (0–1) or null | Share of Unicode letter-plus-mark tokens with 1–2 code points. |
+| `whitespace_character_ratio` | number (0–1) | Share of output characters for which `str.isspace()` is true. |
+| `latin_letter_ratio` | number (0–1) | Share of Unicode letters identified as Latin-script letters; used only as a conservative joined-text guard. |
 | `prereform_letter_count` | integer | Cyrillic letters abolished by the 1918 Russian reform (ѣ, ѳ, ѵ). Modern Ukrainian/Belarusian і is deliberately not counted. |
 | `terminal_hard_sign_count` | integer | Word-final hard signs (ъ): mandatory before 1918, absent from modern Russian. This is the pre-reform signal that survives OCR: engines trained on modern text destroy the abolished letters but keep ъ. |
 
@@ -178,12 +189,13 @@ not garble.
 
 | Warning | Trigger |
 |---|---|
-| `empty_text` | `character_count == 0`. |
+| `empty_text` | Output contains no Unicode letters or digits (including truly empty, whitespace-only, and OCR-speck/punctuation-only output). |
 | `short_text` | `character_count < 10`. |
 | `replacement_characters` | `replacement_character_count > 0`. |
 | `control_characters` | `control_character_count > 0`. |
 | `suspicious_symbol_density` | `suspicious_symbol_ratio >= 0.03` AND `suspicious_symbol_count >= 5`. |
 | `fragmented_text` | `mean_token_length < 3.0` AND `alpha_token_count >= 20`. Catches OCR fragment noise; does not catch word-level misrecognition. |
+| `joined_text` | `mean_token_length >= 10`, `max_token_length >= 80`, `alpha_token_count >= 20`, `whitespace_character_ratio <= 0.03`, and `latin_letter_ratio >= 0.8`. Catches collapsed Latin word boundaries; it is review evidence, not proof of corruption. |
 | `suspicious_embedded_text_delta` | PDF embedded text character ratio < 0.5 or > 1.8, when embedded text is available and adapter does not report `embedded_text` capability. |
 | `historical_orthography` | `prereform_letter_count >= 2`, OR `terminal_hard_sign_count >= 2` at a density of ≥1 per 100 alphabetic tokens over ≥20 tokens. The page is pre-1918 Russian orthography and an OCR model trained on modern text is probably mismatched. Measured on an 1850 gubernia review: 21 terminal ъ per 100 tokens vs 0.00 in modern text. |
 | `low_confidence` | `confidence_detail.below_60_ratio >= 0.25` over ≥10 words. A quarter of the words under engine confidence 60 marks the page for review; a mean can hide one illegible paragraph on an otherwise clean page. |

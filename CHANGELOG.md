@@ -6,6 +6,74 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to the artifact compatibility policy documented in
 `docs/run-manifest-spec.md` → Compatibility Policy.
 
+## 0.3.0a1 - 2026-08-16
+
+### Added
+
+- **Auditable local Docling example:** `examples/docling_adapter.py` invokes a
+  machine-level Docling installation without adding its ML stack to PageLedger
+  core. Standard mode converts once per document and derives page-level
+  Markdown; local VLM mode processes only requested pages. Provenance records
+  the Docling version, pipeline, VLM preset, and batch mode, while known visual
+  or table serialization losses become adapter-native warnings.
+- Raw extraction artifacts now carry SHA-256 identities in provenance and are
+  checked by `verify-run`. Current manifests and route maps record the
+  PageLedger package version; built-in PDF adapters record their effective
+  parser, OCR, renderer, and material runtime settings.
+- Latin-script joined/run-on hidden text now produces explicit quality and
+  classifier evidence instead of silently receiving an A signals grade.
+
+### Fixed
+
+- Adapter-controlled exception messages, stdout, and stderr are omitted from
+  default terminal/log error envelopes, preventing heuristic redaction misses
+  from becoming secret disclosures.
+- Adapter-native result warnings now enter `quality.jsonl`, grading, and audit
+  routing as well as provenance; backends can no longer report known partial
+  output without affecting review.
+- The Docling example now advertises actions and capabilities by pipeline and
+  rejects route prompts it cannot apply, so standard extraction cannot be
+  mistaken for a VLM call or record a no-op prompt hash.
+- Review-only routes have explicit accounting, grade distributions are labeled
+  by evidence basis, and audit Markdown is verified as a rendering of
+  `audit.json` rather than an independent source of truth.
+- `compare-runs` now ranks transitions only when the full effective extractor
+  identity, including adapter-option hashes, matches. Grade direction also
+  requires matching PageLedger versions, effective grading policy, evidence
+  bases, and schema identity, so incompatible claims remain visible but
+  unranked.
+- Reruns verify the parent ledger and source bytes before extraction, rederive
+  their executable plan, preserve the source document page count, and record
+  durable lineage depth.
+- Verification now checks retained alignment-schema hashes and comparison uses
+  canonical schema content, so pre/post-alignment grades can be related without
+  trusting a mutable or missing schema snapshot.
+- Missing raw hashes now fail integrity verification even for readable legacy
+  evidence, so deleting generator-version metadata cannot obtain warning-only
+  treatment; manifest, raw, normalized, and alignment symlinks also cannot make
+  verification or comparison read outside the run directory.
+
+### Release process
+
+- Package publication is now a manual, tag-only, environment-gated workflow
+  that verifies exact release metadata and smoke-tests the exact built wheel
+  before any PyPI upload. Verification is the safe default; production also
+  requires the exact tag to be typed and a reviewer-protected, non-bypassable,
+  tag-restricted GitHub environment. CI keeps a frozen dependency lane
+  alongside latest-dependency coverage, with third-party actions pinned to
+  commit SHAs.
+- The tracked Archivo font subset now carries its upstream OFL and copyright
+  notice inside the brand archive; distributable third-party notices are
+  included while brand source assets remain excluded from package archives.
+
+### Compatibility
+
+- Artifact schema version remains `0.1`. New fields are additive and optional
+  for older artifacts. Current verification is stricter for raw-file tampering,
+  rerun lineage/source drift, and audit-render divergence.
+- Core still depends only on PyYAML. Docling remains an optional machine-level
+  example integration and is not added to PageLedger dependencies or `uv.lock`.
+
 ## 0.2.0 - 2026-07-17
 
 ### Added

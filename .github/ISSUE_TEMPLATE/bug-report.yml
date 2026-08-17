@@ -6,7 +6,7 @@ body:
     id: version
     attributes:
       label: Version and environment
-      placeholder: "e.g. pageledger 0.2.0, Python 3.12, macOS 15"
+      placeholder: "e.g. pageledger 0.3.0a1, Python 3.12, macOS 15"
     validations:
       required: true
   - type: textarea
@@ -27,6 +27,7 @@ body:
     id: logs
     attributes:
       label: Output / traceback
+      description: Review before posting; remove credentials, private paths, document contents, and other sensitive data.
       render: text
     validations:
       required: false

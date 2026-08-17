@@ -369,7 +369,7 @@ def align_run(
     """
     from .artifacts import build_rerun_manifest, read_jsonl, render_audit_markdown
     from .config import load_config
-    from .grading import grade_distribution, grade_page
+    from .grading import grade_distribution, grade_distributions_by_basis, grade_page
     from .policy import rebuild_policy_queues
 
     out_dir = Path(run_dir).expanduser().resolve()
@@ -392,6 +392,7 @@ def align_run(
     provenance_entries = read_jsonl(out_dir / "provenance.jsonl")
     quality_entries = read_jsonl(out_dir / "quality.jsonl")
     grades_before = grade_distribution(quality_entries)
+    grades_by_basis_before = grade_distributions_by_basis(quality_entries)
     alignments: dict[str, dict[str, Any]] = {}
     for entry in provenance_entries:
         fmt = entry["result"]["format"]
@@ -470,7 +471,7 @@ def align_run(
     )
 
     records_normalized = sum(len(alignment["records"]) for alignment in alignments.values())
-    from pageledger import __version__
+    from ._version import __version__
 
     manifest["summary"]["records_normalized"] = records_normalized
     manifest["alignment"] = {
@@ -491,13 +492,17 @@ def align_run(
         run_log += "\n"
     run_log += json.dumps(log_line, sort_keys=True, allow_nan=False) + "\n"
 
+    grades_after = grade_distribution(quality_entries)
+    grades_by_basis_after = grade_distributions_by_basis(quality_entries)
     before = {
         "grade_distribution": grades_before,
+        "grade_distribution_by_basis": grades_by_basis_before,
         "review_queue_count": review_queue_before,
         "records_normalized": records_before,
     }
     after = {
-        "grade_distribution": grade_distribution(quality_entries),
+        "grade_distribution": grades_after,
+        "grade_distribution_by_basis": grades_by_basis_after,
         "review_queue_count": len(review_queue),
         "records_normalized": records_normalized,
     }
@@ -522,6 +527,7 @@ def align_run(
         "pages_aligned": len(alignments),
         "records_normalized": records_normalized,
         "grade_distribution": after["grade_distribution"],
+        "grade_distribution_by_basis": after["grade_distribution_by_basis"],
         "review_queue_count": len(review_queue),
         "applied": not dry_run,
         "before": before,

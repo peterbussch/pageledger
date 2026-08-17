@@ -8,6 +8,7 @@ from typing import Any
 
 import yaml
 
+from ._version import __version__
 from .grading import format_grade
 
 ARTIFACT_PATHS = {
@@ -75,6 +76,7 @@ def build_route_map(
 ) -> dict[str, Any]:
     return {
         "schema_version": schema_version,
+        "pageledger_version": __version__,
         "run_id": run_id,
         "generated_at": generated_at,
         "classifier": classifier or {
@@ -99,10 +101,12 @@ def build_manifest(
     dataset_citation: dict[str, str] | None,
     pages_total: int,
     parent_run_id: str | None = None,
+    run_depth: int = 0,
     pages_extracted: int = 0,
     pages_failed: int = 0,
     pages_not_attempted: int = 0,
     pages_skipped: int = 0,
+    pages_routed_review: int = 0,
     pages_quarantined: int = 0,
     records_normalized: int = 0,
     estimated_cost_usd: float = 0.0,
@@ -114,8 +118,10 @@ def build_manifest(
 ) -> dict[str, Any]:
     manifest: dict[str, Any] = {
         "schema_version": schema_version,
+        "pageledger_version": __version__,
         "run_id": run_id,
         "parent_run_id": parent_run_id,
+        "run_depth": run_depth,
         "execution_mode": execution_mode,
         "started_at": started_at,
         "completed_at": completed_at,
@@ -133,6 +139,7 @@ def build_manifest(
             "pages_total": pages_total,
             "pages_extracted": pages_extracted,
             "pages_skipped": pages_skipped,
+            "pages_routed_review": pages_routed_review,
             "pages_quarantined": pages_quarantined,
             "records_normalized": records_normalized,
             "estimated_cost_usd": estimated_cost_usd,

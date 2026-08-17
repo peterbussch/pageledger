@@ -12,8 +12,12 @@ manifest, and enforcing `run.max_rerun_depth` from the supplied config. The
 config may name a different, typically stronger, adapter, or an
 `adapter_order` chain whose entry at the new generation is selected. That is
 the point.
-If a listed source file's checksum no longer matches the parent manifest,
-the rerun proceeds but reports a source-integrity warning.
+Before extraction, PageLedger verifies the parent ledger and re-derives the
+rerun queue from its audit, route, config, grade, quarantine, depth, and adapter
+chain evidence. An edited or inconsistent plan is rejected. If a listed source
+file's checksum no longer matches the parent manifest, the rerun fails before
+creating the child directory; changed bytes are a new input, not the same
+lineage.
 
 The supplied config is the execution authority. The optional `escalation`
 block records what the producing run planned; it does not pin a future rerun
@@ -163,10 +167,15 @@ A mismatch is returned and printed as an `escalation_warnings` entry; the
 config wins. This makes the artifact an auditable plan without turning stale
 configuration into hidden authority.
 
+`verify-run` independently normalizes `run.adapter_order` from the retained
+`config-snapshot.yml`, checks the manifest chain and generation against it,
+and derives the expected rerun escalation only from that snapshot. Editing the
+manifest and rerun plan together cannot substitute an unconfigured adapter.
+
 ## Design notes
 
 - The rerun manifest should be generated from audit policy, not edited into
-  the parent manifest.
+  the parent manifest. `pageledger rerun` rejects edited executable plans.
 - Top-level `reason` values: `dry_run` or `audit_policy`.
 - Item-level `reason` values: `no_classifier_available`, `configured_review`,
   `quality_warning`, `grade_below_threshold`, `extraction_failed`,

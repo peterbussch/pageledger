@@ -46,6 +46,7 @@ from .policy import rebuild_policy_queues
 from .routing import load_route_map
 
 LOG_LEVELS = {"DEBUG": 10, "INFO": 20, "WARNING": 30, "ERROR": 40}
+ERROR_TYPE_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_.]*")
 
 
 # Compatibility aliases: these helpers lived in runner.py before the
@@ -88,13 +89,17 @@ class AdapterExecutionError(RuntimeError):
         stdout: str | None = None,
         stderr: str | None = None,
     ) -> None:
-        super().__init__(f"Adapter '{adapter}' {status} for {page_id}: {message}")
+        error_type = message.partition(":")[0].strip()
+        if not ERROR_TYPE_NAME.fullmatch(error_type):
+            error_type = "AdapterError"
+        redacted_message = f"{error_type}: <redacted>"
+        super().__init__(f"Adapter '{adapter}' {status} for {page_id}: {redacted_message}")
         self.adapter = adapter
         self.page_id = page_id
         self.status = status
-        self.message = message
-        self.stdout = _snippet(stdout)
-        self.stderr = _snippet(stderr)
+        self.message = redacted_message
+        self.stdout = "<redacted>" if stdout is not None else None
+        self.stderr = "<redacted>" if stderr is not None else None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -231,6 +236,7 @@ def run(
     page_selection: list[dict[str, Any]] | None = None,
     parent_run_id: str | None = None,
     parent_quality_by_page: dict[str, dict[str, Any]] | None = None,
+    source_page_counts: dict[Path, int] | None = None,
     run_depth: int = 0,
     adapter_path: Path | None = None,
     routes_path: Path | None = None,
@@ -352,6 +358,7 @@ def run(
     pages_failed = 0
     pages_not_attempted = 0
     pages_skipped = 0
+    pages_routed_review = 0
     tokens_total = 0
     estimated_cost_usd = 0.0
     cost_is_partial = False
@@ -395,8 +402,23 @@ def run(
             ]
         else:
             selected = selection_by_source[source]
-            page_count = len(selected)
+            declared_page_count = (
+                source_page_counts.get(source.resolve())
+                if source_page_counts is not None
+                else None
+            )
+            page_count = (
+                declared_page_count
+                if declared_page_count is not None
+                else _planned_page_count(
+                    source, adapter=adapter, adapter_name=effective_adapter_name
+                )
+            )
             planned = [(item["page_id"], int(item["page_number"])) for item in selected]
+            if any(page_number > page_count for _, page_number in planned):
+                raise ValueError(
+                    f"Rerun selection exceeds the recorded source page count for {source}"
+                )
         if imported_routes is None:
             routed_pages = []
             for page_id, page_number in planned:
@@ -417,6 +439,7 @@ def run(
             action = cast(str, page["action"])
             if action == "review":
                 review_queue.append(_review_queue_entry(page))
+                pages_routed_review += 1
             if action == "skip":
                 pages_skipped += 1
             planned_pages.append((source, page))
@@ -433,6 +456,10 @@ def run(
         }
         if selected_page_numbers is not None:
             input_entry["pages"] = pages
+        elif selection_by_source is not None:
+            input_entry["pages"] = ",".join(
+                str(item["page_number"]) for item in selection_by_source[source]
+            )
         input_entries.append(input_entry)
         declared_sha256 = (
             imported_by_source[resolved_source].get("source_sha256")
@@ -520,6 +547,7 @@ def run(
                 else json.dumps(result.content, ensure_ascii=False, allow_nan=False)
             )
             (out_dir / raw_artifact).write_text(raw_text, encoding="utf-8")
+            raw_sha256 = _sha256_path(out_dir / raw_artifact)
             page_tokens = usage.get("tokens")
             page_cost, page_cost_basis = _derive_cost(
                 usage,
@@ -593,6 +621,7 @@ def run(
                     result=result,
                     usage=usage,
                     raw_artifact=raw_artifact,
+                    raw_sha256=raw_sha256,
                     prompt_hash=prompt_hash,
                     timestamp=extraction_started_at,
                     extraction_seconds=extraction_seconds,
@@ -696,7 +725,7 @@ def run(
 
     if failure_error:
         status = "failed"
-    elif dry_run or pages_failed:
+    elif dry_run or pages_failed or pages_routed_review:
         status = "partial"
     else:
         status = "completed"
@@ -711,6 +740,7 @@ def run(
         completed_at=_utc_now(),
         inputs=input_entries,
         parent_run_id=parent_run_id,
+        run_depth=run_depth,
         config_sha256=_sha256_path(config_snapshot),
         config_source_paths=[str(config_path.resolve())],
         dataset_citation=config.dataset_citation,
@@ -719,6 +749,7 @@ def run(
         pages_failed=pages_failed,
         pages_not_attempted=pages_not_attempted,
         pages_skipped=pages_skipped,
+        pages_routed_review=pages_routed_review,
         pages_quarantined=len(quarantined_page_ids),
         records_normalized=sum(
             len(alignment["records"]) for alignment in alignments.values()
@@ -812,6 +843,7 @@ def run(
                 "pages_total": pages_total,
                 "pages_extracted": pages_extracted,
                 "pages_skipped": pages_skipped,
+                "pages_routed_review": pages_routed_review,
             }
         ]
     )
@@ -866,8 +898,8 @@ def rerun(
     with a stronger engine to re-extract weak pages.
 
     Enforces ``run.max_rerun_depth`` from the supplied config against the
-    parent's recorded ``rerun_depth``. Warns (without failing) when a source
-    file's checksum no longer matches the parent run's manifest.
+    parent's recorded ``rerun_depth``. The parent ledger and derived rerun
+    plan must verify, and every source must still match the parent checksum.
     """
     parent = parent_dir.expanduser().resolve()
     manifest_path = parent / "manifest.json"
@@ -876,10 +908,22 @@ def rerun(
         raise ValueError(f"No manifest.json found in {parent}; not a run directory")
     if not rerun_path.is_file():
         raise ValueError(f"No rerun-manifest.yml found in {parent}")
+    from .verify import verify_run
+
+    parent_verification = verify_run(parent)
+    if parent_verification["status"] != "pass":
+        codes = sorted({error["code"] for error in parent_verification["errors"]})
+        raise ValueError(
+            "parent run verification failed; refusing rerun: " + ", ".join(codes)
+        )
     parent_manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     parent_rerun = yaml.safe_load(rerun_path.read_text(encoding="utf-8"))
     if not isinstance(parent_rerun, dict):
         raise ValueError(f"Invalid rerun manifest: {rerun_path}")
+    if "run_depth" not in parent_manifest and parent_manifest.get("parent_run_id") is not None:
+        raise ValueError(
+            "Parent rerun predates durable run_depth evidence; refusing ambiguous lineage"
+        )
 
     _apply_adapter_path(adapter_path)
     config = load_config(config_path, validate_adapter=False)
@@ -923,22 +967,34 @@ def rerun(
             f"(rerun_status: {parent_rerun.get('rerun_status', 'unknown')})"
         )
 
-    recorded_hashes = {
-        str(Path(entry["path"]).resolve()): entry.get("sha256")
-        for entry in parent_manifest.get("inputs", [])
-        if isinstance(entry, dict) and "path" in entry
-    }
-    integrity_warnings: list[str] = []
+    parent_route_path = parent / parent_manifest["artifacts"]["route_map"]
+    parent_route = yaml.safe_load(parent_route_path.read_text(encoding="utf-8"))
+    parent_inputs = parent_manifest.get("inputs", [])
+    recorded_inputs: dict[str, dict[str, Any]] = {}
+    for index, document in enumerate(parent_route.get("documents", [])):
+        if (
+            isinstance(document, dict)
+            and isinstance(document.get("source"), str)
+            and index < len(parent_inputs)
+            and isinstance(parent_inputs[index], dict)
+        ):
+            recorded_inputs[str(Path(document["source"]).resolve())] = parent_inputs[index]
+    source_page_counts: dict[Path, int] = {}
     for source_str in sorted({str(item["source"]) for item in items}):
         source = Path(source_str)
         if not source.exists():
             raise ValueError(f"Rerun source no longer exists: {source}")
-        recorded = recorded_hashes.get(str(source.resolve()))
-        if recorded is not None and _sha256_path(source) != recorded:
-            integrity_warnings.append(
+        recorded_input = recorded_inputs.get(str(source.resolve()))
+        recorded = recorded_input.get("sha256") if recorded_input else None
+        if not isinstance(recorded, str) or _sha256_path(source) != recorded:
+            raise ValueError(
                 f"Source changed since parent run: {source} "
-                "(sha256 no longer matches parent manifest)"
+                "(sha256 does not match parent manifest)"
             )
+        page_count = recorded_input.get("page_count") if recorded_input else None
+        if not isinstance(page_count, int) or isinstance(page_count, bool) or page_count < 1:
+            raise ValueError(f"Parent manifest lacks a valid source page_count for {source}")
+        source_page_counts[source.resolve()] = page_count
 
     result = run(
         inputs=[],
@@ -951,11 +1007,10 @@ def rerun(
         parent_quality_by_page={
             entry["page_id"]: entry for entry in read_jsonl(parent / "quality.jsonl")
         },
+        source_page_counts=source_page_counts,
         run_depth=child_depth,
         adapter_path=adapter_path,
     )
-    if integrity_warnings:
-        result["source_integrity_warnings"] = integrity_warnings
     if escalation_warnings:
         result["escalation_warnings"] = escalation_warnings
     return result
@@ -1225,6 +1280,7 @@ def _build_provenance_entry(
     result: Any,
     usage: dict[str, Any],
     raw_artifact: Path,
+    raw_sha256: str,
     prompt_hash: str,
     timestamp: str,
     extraction_seconds: float | None,
@@ -1263,6 +1319,7 @@ def _build_provenance_entry(
             "confidence": result.confidence,
             "warnings": result.warnings,
             "raw_artifact": raw_artifact.as_posix(),
+            "raw_sha256": raw_sha256,
         },
         "usage": usage,
         "metrics": usage,
@@ -1299,10 +1356,3 @@ def _sha256_path(path: Path) -> str:
 
 def _sha256_text(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
-
-
-def _snippet(value: Any, *, limit: int = 1000) -> str | None:
-    if value is None:
-        return None
-    text = value.decode("utf-8", errors="replace") if isinstance(value, bytes) else str(value)
-    return text[:limit]

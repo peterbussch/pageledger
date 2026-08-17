@@ -1,6 +1,6 @@
 # Capabilities and limits
 
-What PageLedger 0.2.0 does, what it leaves to you, and what is documented
+What PageLedger 0.3.0a1 does, what it leaves to you, and what is documented
 design rather than working code. This is the honest-scope page; the README
 stays short because this exists.
 
@@ -9,6 +9,8 @@ stays short because this exists.
 - `pageledger run` for text fixtures (form-feed pagination), born-digital
   PDF text layers (`pdf_text`, via `pageledger[pdf]`), and scanned PDFs
   (`pdf_ocr`, using locally installed `pdftoppm` + `tesseract`).
+  Per-page provenance identifies the installed pypdf backend for `pdf_text`,
+  or the Tesseract and Poppler versions plus DPI/language for `pdf_ocr`.
 - `pageledger run --adapter text|pdf_text|pdf_ocr` runs a built-in adapter
   without a YAML config. The generated defaults are recorded in
   `config-snapshot.yml`; PageLedger never reads a config file it was not
@@ -66,8 +68,9 @@ stays short because this exists.
   failure circuit breaker and failed/not-attempted pages added to rerun work.
 - `pageledger rerun`: re-extracts exactly the pages listed in a previous
   run's rerun manifest (typically with a stronger adapter), preserving page
-  ids, recording parent lineage, enforcing `max_rerun_depth`, and warning
-  if a source file changed since the parent run.
+  ids, recording parent lineage, enforcing `max_rerun_depth`, re-deriving the
+  queue from parent evidence, and refusing changed source bytes or edited
+  executable plans before creating the child run.
 - Multi-adapter escalation chains through `run.adapter_order`. Generation zero
   uses the first adapter, each explicit `pageledger rerun` advances to the next,
   and manifests record the selected step and planned next adapter. Exhausting
@@ -102,10 +105,20 @@ stays short because this exists.
 - `pageledger compare-runs`: page-by-page diff of two runs. Character and
   word deltas, warning and grade transitions, adapters, and cost. Directional
   improvement/resolution totals are reported only when source identity and
-  adapter match; cross-adapter and changed-source transitions are unranked.
+  the complete effective extractor identity (including a hash of adapter
+  options) match. Grade direction additionally requires the same PageLedger
+  version, effective grading policy, evidence basis, and (for schema-aware
+  grades) the same schema identity. Changed-source,
+  cross-adapter, and same-adapter/different-extractor transitions are unranked.
 - `pageledger verify-run`: checks cross-artifact ledger coherence, identifiers,
-  counts, hashes, and references without claiming OCR correctness or requiring
-  a runtime JSON Schema dependency.
+  route-action/page-bucket counts, hashes, and references without claiming OCR
+  correctness or requiring a runtime JSON Schema dependency. Current manifests
+  count review-only routes separately so incomplete extraction coverage cannot
+  hide behind extracted/skipped totals. Current provenance also hashes exact
+  raw-output bytes, and the verifier checks that `audit.md` is the deterministic
+  rendering of `audit.json`. A missing raw hash is always an integrity error;
+  legacy manifests also receive an incomplete-evidence warning and remain
+  readable, but do not receive a verifier PASS without byte-integrity evidence.
 - `pageledger inspect-run --csv`: one row per page (counts, confidence,
   warnings, grade, cost, timing) for spreadsheet triage.
 - Cost provenance: `cost.json` records `cost_basis` (`adapter_reported`,
@@ -185,9 +198,12 @@ Details and examples live in [`design.md`](design.md).
   or large rerun expansion queues review; it does not prove that an adapter
   hallucinated, and absence of a warning does not prove faithful output.
 - Grades are deterministic summaries of that same evidence, not accuracy.
-  A grade is only comparable within one adapter: confidence is
-  uncalibrated across engines, so an `A` from one extractor and a `B`
-  from another are not orderable claims. A `signals_only` grade from an
+  A grade is only comparable when the effective extractor identity, PageLedger
+  version, effective grading policy, evidence basis, and any schema-aware
+  schema identity match:
+  confidence is uncalibrated across engines, versions, models, and prompts, so
+  an `A` from one extractor and a `B` from another are not orderable claims. A
+  `signals_only` grade from an
   adapter that reports no confidence rests on warning counts alone. The
   `(signals)`/`(schema)` label exists so that weaker evidence is never
   mistaken for schema-checked records.

@@ -93,6 +93,8 @@ def test_run_executes_reviewed_routes(tmp_path: Path) -> None:
 
     assert result["summary"]["pages_extracted"] == 1
     assert result["summary"]["pages_skipped"] == 1
+    assert result["summary"]["pages_routed_review"] == 1
+    assert result["status"] == "partial"
     assert (out_dir / "raw/doc_0001_page_0001.txt").read_text() == "first page"
     assert not (out_dir / "raw/doc_0001_page_0002.txt").exists()
     written = yaml.safe_load((out_dir / "route-map.yml").read_text(encoding="utf-8"))

@@ -93,7 +93,7 @@ a warning list (`empty_text`, `low_confidence`, `instruction_echo`,
 `output_inflation`, and others), and a grade
 (`A`–`F` with `grade_basis` and per-axis detail). These are diagnostics
 for a human, not accuracy scores; a grade is a deterministic summary of
-this evidence, comparable only within one adapter.
+this evidence, comparable only when the effective extractor identity matches.
 Spec: [`provenance-spec.md`](provenance-spec.md) (companion section).
 
 `normalized/` holds what the schema aligner extracted, one
@@ -139,6 +139,10 @@ strings such as `rerun_if:grade_below` and
 confidence, including real confidence from `pageledger classify`; null still
 means the classifier could not make a confident decision or no classifier
 ran.
+`verify-run` regenerates the Markdown rendering in memory and fails when
+`audit.md` is stale or edited. It also requires and verifies
+`result.raw_sha256` for every provenance line; readable legacy evidence without
+that digest fails integrity verification.
 Spec: [`audit-spec.md`](audit-spec.md).
 
 `rerun-manifest.yml` records what to do next. It is an executable list of flagged
@@ -172,16 +176,32 @@ when the preview is applied.
 
 `pageledger verify-run <run-dir>` checks the relationships among these files:
 declared paths, identifiers, hashes, page counts, raw/normalized provenance,
-quality totals, audit/rerun references, and cost totals. Internal corruption is
-an error; a missing or changed external source is a warning because the ledger
-itself remains inspectable. Verification does not judge OCR accuracy and does
-not replace the build-time JSON Schema suite.
+quality totals, audit/rerun references, configured adapter chains, and cost
+totals. Malformed evidence produces a structured failure rather than reaching
+artifact renderers. `manifest.json` and normalized artifacts must be contained
+regular files, not symbolic links. Raw references are rejected without opening
+or hashing the target when the declared `raw/` directory is absent, invalid,
+or escaped; symbolic links are not accepted as raw artifacts. Re-alignment
+hashes must match either `config-snapshot.yml` or a contained, non-escaping
+`align-schema-snapshot.yml`. Unresolvable and looped links fail structurally.
+Internal corruption is an error; a missing or changed external source is a
+warning because the ledger itself remains inspectable. Verification does not
+judge OCR accuracy and does not replace the build-time JSON Schema suite.
+
+`compare-runs` applies the same no-follow boundary to each run's manifest,
+quality, provenance, and optional cost evidence. Those inputs must be contained
+regular files; malformed paths and unresolvable or looped links fail closed.
+
+`verify-run` requires `result.raw_sha256` on every provenance line. A missing
+hash is an integrity error even for an otherwise readable legacy manifest;
+deleting generator-version evidence cannot downgrade it to a warning-only
+PASS.
 
 ## Compatibility
 
 Artifact fields follow the compatibility policy in
 [`run-manifest-spec.md`](run-manifest-spec.md): additions are backward
-compatible within a schema version. PageLedger 0.2.0 therefore retains
+compatible within a schema version. PageLedger 0.3.0a1 therefore retains
 `schema_version: "0.1"` for its optional classifier, escalation, alert, and
 rollup fields. The schemas in
 [`schemas/`](../schemas/) are the machine-readable authority, enforced by

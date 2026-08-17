@@ -3,7 +3,7 @@
 This document explains the shipped architecture and the remaining targets.
 The release contract is what `capabilities-and-limits.md` lists as built in
 and what the JSON Schemas in [`../schemas/`](../schemas/) validate. PageLedger
-0.2.0 has the run controller, adapter protocol, structural classifier, route
+0.3.0a1 has the run controller, adapter protocol, structural classifier, route
 executor, generation-indexed adapter chains, schema aligner, per-page grading,
 audit queues, rerun execution, comparison, and ledger verification.
 
@@ -263,5 +263,6 @@ not be the default first-use experience. That stays `pageledger run`.
 - How should quality scores be calibrated across extractors that do not
   expose comparable confidences? (0.1.3 answers this by *labeling*, not
   calibrating. Every rendered grade carries its basis, `A (signals)` or
-  `A (schema)`, and the docs state that grades are only comparable within
-  one adapter. True cross-extractor calibration remains open.)
+  `A (schema)`, and the docs state that grades are only comparable when the
+  effective extractor identity matches. True cross-extractor calibration
+  remains open.)

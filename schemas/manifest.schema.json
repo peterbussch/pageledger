@@ -22,6 +22,10 @@
       "description": "Manifest schema version. This release is '0.1'.",
       "const": "0.1"
     },
+    "pageledger_version": {
+      "type": "string",
+      "description": "PageLedger package version that generated this manifest. Optional for compatibility with older schema-0.1 artifacts; current writers always emit it."
+    },
     "run_id": {
       "type": "string",
       "description": "Stable identifier for this run (e.g. 'run-20260619T193000000000Z')."
@@ -29,6 +33,11 @@
     "parent_run_id": {
       "type": ["string", "null"],
       "description": "Previous run identifier if this is a rerun. Null for first runs."
+    },
+    "run_depth": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Zero-based rerun generation. Optional for compatibility with older schema-0.1 artifacts; current writers always emit it."
     },
     "execution_mode": {
       "type": "string",
@@ -94,7 +103,7 @@
           "capabilities": { "type": "array", "items": { "type": "string" } },
           "options": {
             "type": "object",
-            "description": "run.adapter_options the adapter was constructed with."
+            "description": "run.adapter_options the adapter was constructed with. Stored verbatim as durable evidence; must not contain credentials."
           }
         },
         "additionalProperties": false
@@ -146,6 +155,11 @@
         "pages_failed": { "type": "integer", "minimum": 0 },
         "pages_not_attempted": { "type": "integer", "minimum": 0 },
         "pages_skipped": { "type": "integer", "minimum": 0 },
+        "pages_routed_review": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Pages whose route action was review, so extraction was deliberately deferred. Optional for compatibility with older schema-0.1 manifests; current writers always emit it."
+        },
         "pages_quarantined": { "type": "integer", "minimum": 0 },
         "records_normalized": { "type": "integer", "minimum": 0 },
         "estimated_cost_usd": { "type": "number" },

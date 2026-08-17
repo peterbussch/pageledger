@@ -10,7 +10,7 @@ import subprocess
 import sys
 from typing import Any
 
-from . import __version__
+from ._version import __version__
 
 EXTERNAL_COMMANDS = {
     "pdftoppm": (

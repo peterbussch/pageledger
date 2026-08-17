@@ -20,6 +20,8 @@ import json
 import sys
 import textwrap
 
+import pytest
+
 
 def _run(inputs, config_text, tmp_path, *, dry_run=False):
     """Run PageLedger programmatically and return the output directory."""
@@ -176,6 +178,31 @@ def test_empty_page_produces_empty_text_warning(tmp_path):
     assert len(audit["review_queue"]) == 1
     assert audit["review_queue"][0]["reason"] == "quality_warning"
     assert audit["review_queue"][0]["page_id"] == "doc_0001_page_0001"
+
+
+@pytest.mark.parametrize("content", ["   \n", "·", "— …"])  # OCR specks are not text.
+def test_punctuation_or_whitespace_only_output_is_empty_meaningful_text(
+    tmp_path, content: str
+):
+    source = tmp_path / "noise-only.txt"
+    source.write_text(content, encoding="utf-8")
+    out_dir = _run(
+        [source],
+        textwrap.dedent("""\
+            schema_version: "0.1"
+            taxonomy:
+              page_types:
+                prose:
+                  default_action: transcribe_text
+            run:
+              adapter: text
+            """),
+        tmp_path,
+    )
+
+    entry = json.loads((out_dir / "quality.jsonl").read_text(encoding="utf-8"))
+    assert "empty_text" in entry["warnings"]
+    assert entry["grade"] == "F"
 
 
 # =========================================================================
@@ -372,6 +399,62 @@ def test_fragmented_text_not_triggered_by_prose_or_few_tokens(tmp_path):
     assert entries[0]["text_quality"]["mean_token_length"] > 3.0
 
 
+def test_joined_text_triggers_warning_and_caps_signals_grade(tmp_path):
+    """Collapsed Latin word boundaries become review evidence, not an A."""
+    source = tmp_path / "joined.txt"
+    source.write_text(" ".join(["a" * 100] * 25), encoding="utf-8")
+    out_dir = _run(
+        [source],
+        textwrap.dedent("""\
+            schema_version: "0.1"
+            taxonomy:
+              page_types:
+                prose:
+                  default_action: transcribe_text
+            run:
+              adapter: text
+            """),
+        tmp_path,
+    )
+
+    entry = json.loads((out_dir / "quality.jsonl").read_text(encoding="utf-8"))
+    assert "joined_text" in entry["warnings"]
+    assert entry["grade"] == "B"
+    assert entry["text_quality"]["max_token_length"] == 100
+    assert entry["text_quality"]["whitespace_character_ratio"] < 0.03
+    assert entry["text_quality"]["latin_letter_ratio"] == 1.0
+
+
+def test_joined_text_guard_does_not_flag_cjk_or_normal_prose(tmp_path):
+    source = tmp_path / "guards.txt"
+    source.write_text(
+        " ".join(["漢" * 100] * 25)
+        + "\f"
+        + " ".join(["ordinary"] * 30),
+        encoding="utf-8",
+    )
+    out_dir = _run(
+        [source],
+        textwrap.dedent("""\
+            schema_version: "0.1"
+            taxonomy:
+              page_types:
+                prose:
+                  default_action: transcribe_text
+            run:
+              adapter: text
+            """),
+        tmp_path,
+    )
+
+    entries = [
+        json.loads(line)
+        for line in (out_dir / "quality.jsonl").read_text(encoding="utf-8").splitlines()
+    ]
+    assert all("joined_text" not in entry["warnings"] for entry in entries)
+    assert entries[0]["text_quality"]["latin_letter_ratio"] == 0.0
+
+
 # =========================================================================
 # Multi-page: mixed quality signals, aggregate counts
 # =========================================================================
@@ -500,6 +583,7 @@ def test_custom_adapter_output_quality_diagnostics(tmp_path):
     ]
     assert len(quality_entries) == 1
     assert "replacement_characters" in quality_entries[0]["warnings"]
+    assert "low_confidence" in quality_entries[0]["warnings"]
     assert quality_entries[0]["adapter"] == "custom-ocr"
 
     # Audit review queue should have the page

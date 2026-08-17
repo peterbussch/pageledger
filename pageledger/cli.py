@@ -10,12 +10,12 @@ import tempfile
 import textwrap
 from pathlib import Path
 
-from . import __version__
+from ._version import __version__
 from .aligner import align_run
 from .classifier import classify
 from .compare import compare_runs, render_comparison
 from .doctor import build_doctor_report
-from .grading import GRADES
+from .grading import GRADES, grade_basis_label
 from .reports import inspect_run, run_pages_csv
 from .runner import rerun, run
 from .verify import render_verification, verify_run
@@ -322,16 +322,19 @@ def _print_inspect_report(report: dict) -> None:
     print(f"Execution mode: {report['execution_mode']}")
     print(f"Pages: {report['pages_total']} total / "
           f"{report['pages_extracted']} extracted / "
-          f"{report['pages_skipped']} skipped")
+          f"{report['pages_skipped']} skipped / "
+          f"{report['pages_routed_review']} routed to review")
     print(f"Quality warnings: {report['quality_warning_pages']}")
     print(f"Failed pages: {report['failed_page_count']}")
     if report["pages_not_attempted"]:
         print(f"Pages not attempted: {report['pages_not_attempted']}")
     print(f"Review queue: {report['review_queue_count']}")
     print(f"Records normalized: {report['records_normalized']}")
-    distribution = report["grade_distribution"]
-    if distribution:
-        print("Grades: " + " ".join(f"{g}={distribution[g]}" for g in GRADES))
+    for basis, distribution in report["grade_distribution_by_basis"].items():
+        print(
+            f"Grades ({grade_basis_label(basis)}): "
+            + " ".join(f"{grade}={distribution[grade]}" for grade in GRADES)
+        )
     print(f"Cost known: {report['cost_known']}")
     if report["estimated_cost_usd"] is not None:
         print(f"Estimated cost USD: {report['estimated_cost_usd']}")
@@ -361,8 +364,11 @@ def _cmd_align(args: argparse.Namespace) -> int:
         print(f"Schema source: {report['schema_source']}")
         print(f"Pages aligned: {report['pages_aligned']}")
         print(f"Records normalized: {report['records_normalized']}")
-        distribution = report["grade_distribution"]
-        print("Grades: " + " ".join(f"{g}={distribution[g]}" for g in GRADES))
+        for basis, distribution in report["grade_distribution_by_basis"].items():
+            print(
+                f"Grades ({grade_basis_label(basis)}): "
+                + " ".join(f"{grade}={distribution[grade]}" for grade in GRADES)
+            )
         print(f"Review queue: {report['review_queue_count']}")
     return 0
 
@@ -455,7 +461,11 @@ def _cmd_run(args: argparse.Namespace) -> int:
             print(f"Config warnings ({len(config_warnings)}):")
             for w in config_warnings:
                 print(f"  - {w}")
-    return 1 if result["status"] == "partial" and not result["dry_run"] else 0
+    summary = result["summary"]
+    execution_failed = bool(
+        summary.get("pages_failed") or summary.get("pages_not_attempted")
+    )
+    return 1 if result["status"] == "partial" and execution_failed else 0
 
 
 # -- classify -----------------------------------------------------------------
@@ -523,8 +533,6 @@ def _cmd_rerun(args: argparse.Namespace) -> int:
             print(f"Escalation step: {step} ({adapter})")
         _print_budget_alerts(result)
         for warning in result.get("config_warnings", []):
-            print(f"WARNING: {warning}")
-        for warning in result.get("source_integrity_warnings", []):
             print(f"WARNING: {warning}")
         for warning in result.get("escalation_warnings", []):
             print(f"WARNING: {warning}")

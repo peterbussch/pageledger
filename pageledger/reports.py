@@ -8,7 +8,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from .grading import grade_distribution
+from .grading import grade_distribution, grade_distributions_by_basis
 
 
 def inspect_run(run_dir: Path) -> dict[str, Any]:
@@ -85,6 +85,7 @@ def inspect_run(run_dir: Path) -> dict[str, Any]:
     distribution = grade_distribution(graded_entries)
     if not any(distribution.values()):
         distribution = {}
+    distributions_by_basis = grade_distributions_by_basis(graded_entries)
 
     return {
         "run_id": manifest["run_id"],
@@ -94,6 +95,7 @@ def inspect_run(run_dir: Path) -> dict[str, Any]:
         "pages_total": summary.get("pages_total", 0),
         "pages_extracted": summary.get("pages_extracted", 0),
         "pages_skipped": summary.get("pages_skipped", 0),
+        "pages_routed_review": summary.get("pages_routed_review", 0),
         "pages_not_attempted": summary.get("pages_not_attempted", 0),
         "provenance_count": provenance_count,
         "quality_warning_pages": quality_warning_pages,
@@ -101,6 +103,7 @@ def inspect_run(run_dir: Path) -> dict[str, Any]:
         "review_queue_count": review_queue_count,
         "records_normalized": summary.get("records_normalized", 0),
         "grade_distribution": distribution,
+        "grade_distribution_by_basis": distributions_by_basis,
         "cost_known": cost_known,
         "estimated_cost_usd": estimated_cost_usd,
         "artifacts_present": artifacts_present,

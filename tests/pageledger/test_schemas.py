@@ -359,6 +359,7 @@ def test_provenance_execute_success(tmp_path: Path) -> None:
     out_dir = _run_pageledger(tmp_path, config_yaml=MINIMAL_CONFIG, inputs=[str(source)])
     entries = _validate_jsonl(out_dir / "provenance.jsonl", _provenance_schema, "provenance")
     assert len(entries) == 3
+    assert all(len(entry["result"]["raw_sha256"]) == 64 for entry in entries)
     manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
     assert len(entries) == manifest["summary"]["pages_extracted"]
 
@@ -487,6 +488,9 @@ def test_route_map_dry_run(tmp_path: Path) -> None:
     route_map = yaml.safe_load((out_dir / "route-map.yml").read_text(encoding="utf-8"))
     # Top-level
     assert route_map["schema_version"] == "0.1"
+    import pageledger
+
+    assert route_map["pageledger_version"] == pageledger.__version__
     assert "run_id" in route_map
     assert "generated_at" in route_map
     assert route_map["classifier"] == {
@@ -597,7 +601,12 @@ def test_manifest_summary_keys(tmp_path: Path) -> None:
     source.write_text("first page\n", encoding="utf-8")
     out_dir = _run_pageledger(tmp_path, config_yaml=MINIMAL_CONFIG, inputs=[str(source)])
     manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
+    import pageledger
+
+    assert manifest["pageledger_version"] == pageledger.__version__
+    assert manifest["run_depth"] == 0
     required_summary = {"pages_total", "pages_extracted", "pages_skipped",
+                        "pages_routed_review",
                         "pages_quarantined", "records_normalized", "estimated_cost_usd",
                         "quality_warning_pages"}
     assert required_summary <= set(manifest["summary"].keys())

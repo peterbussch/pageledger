@@ -54,7 +54,12 @@
         "format": { "type": "string" },
         "confidence": { "type": ["number", "null"], "minimum": 0, "maximum": 1 },
         "warnings": { "type": "array", "items": { "type": "string" } },
-        "raw_artifact": { "type": "string" }
+        "raw_artifact": { "type": "string" },
+        "raw_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$",
+          "description": "SHA-256 of the exact raw artifact bytes. Optional in the schema so older schema-0.1 provenance remains readable; current writers always emit it and verify-run cannot pass without it."
+        }
       },
       "additionalProperties": false
     },

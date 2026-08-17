@@ -152,7 +152,10 @@ not currently used by the built-in cascade.
 | `suspicious_symbol_ratio` | Suspicious symbols divided by `character_count`. |
 | `alpha_token_count` | Unicode letter-token count, with combining marks kept with their base token. |
 | `mean_token_length` | Mean Unicode letter-token length, or null when there are no letter tokens. |
+| `max_token_length` | Maximum Unicode letter-token length, or `0` when there are no letter tokens. |
 | `short_token_ratio` | Share of letter tokens whose length is at most two, or null when there are none. |
+| `whitespace_character_ratio` | Share of all output characters for which `str.isspace()` is true. |
+| `latin_letter_ratio` | Share of Unicode letters identified as Latin-script letters. |
 | `prereform_letter_count` | Pre-1918 Russian letters retained as quality evidence. |
 | `terminal_hard_sign_count` | Russian word-final hard signs retained as quality evidence. |
 | `pipe_line_ratio` | Fraction of nonempty lines containing `|`. |
@@ -175,6 +178,11 @@ Set overrides under `classify.thresholds`. Omitted values retain these defaults:
 | `table_digit_ratio` | `0.25` | Minimum digit share paired with column evidence. |
 | `fragmented_mean_token_length` | `3.0` | Exclusive upper bound for fragmented text. |
 | `fragmented_min_alpha_tokens` | `20` | Minimum letter-token count for fragmented text. |
+| `joined_mean_token_length` | `10.0` | Inclusive mean-token floor for joined-text evidence. |
+| `joined_max_token_length` | `80` | Inclusive maximum-token floor for joined-text evidence. |
+| `joined_min_alpha_tokens` | `20` | Minimum letter-token count for joined-text evidence. |
+| `joined_max_whitespace_ratio` | `0.03` | Maximum whitespace share for joined-text evidence. |
+| `joined_min_latin_letter_ratio` | `0.8` | Minimum Latin-letter share for joined-text evidence. |
 | `low_confidence_below_60_ratio` | `0.25` | Engine-confidence tail that triggers the confidence penalty. |
 | `low_confidence_penalty` | `0.2` | Amount subtracted from a non-null fixed confidence. |
 
@@ -198,11 +206,12 @@ not probabilities.
 | 1 | Visible characters are at most `blank_max_characters`, and the source is a PDF probed through an adapter with `embedded_text` capability | `unknown` | null | `empty_pdf_text_ambiguous` |
 | 1 | The same character condition for any other probe | `blank` | `0.95` | `blank_text` |
 | 2 | `result_format` is `json`, `csv`, or `markdown_table` | `table_likely` | `0.85` | `structured_payload:<format>` |
-| 3 | Enough lines and pipe density meets its threshold | `table_likely` | `0.75` | `pipe_line_density` |
-| 4 | Enough lines, column-run density, and digit density meet their thresholds | `table_likely` | `0.6` | `column_digit_density` |
-| 5 | Mean token length is below its threshold and the minimum token count is met | `unknown` | null | `fragmented_text` |
-| 6 | `word_count` is at most `sparse_max_words` | `sparse` | `0.6` | `sparse_text` |
-| 7 | No earlier rule matched | `prose` | `0.7` | `prose_text` |
+| 3 | Mean/max token length, token count, low whitespace, and Latin-letter share meet the joined-text thresholds | `unknown` | null | `joined_text` |
+| 4 | Enough lines and pipe density meets its threshold | `table_likely` | `0.75` | `pipe_line_density` |
+| 5 | Enough lines, column-run density, and digit density meet their thresholds | `table_likely` | `0.6` | `column_digit_density` |
+| 6 | Mean token length is below its threshold and the minimum token count is met | `unknown` | null | `fragmented_text` |
+| 7 | `word_count` is at most `sparse_max_words` | `sparse` | `0.6` | `sparse_text` |
+| 8 | No earlier rule matched | `prose` | `0.7` | `prose_text` |
 
 After the cascade, `below_60_ratio` at or above its threshold subtracts the
 configured penalty from a non-null confidence, with a floor of zero. The

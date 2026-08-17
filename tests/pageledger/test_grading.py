@@ -19,6 +19,7 @@ from pageledger.grading import (
     DEFAULT_THRESHOLDS,
     format_grade,
     grade_distribution,
+    grade_distributions_by_basis,
     grade_is_below,
     grade_page,
     merge_thresholds,
@@ -283,3 +284,18 @@ def test_grade_helpers():
 def test_grade_distribution_skips_ungraded_entries():
     entries = [{"grade": "A"}, {"grade": "F"}, {"grade": "A"}, {}]
     assert grade_distribution(entries) == {"A": 2, "B": 0, "C": 0, "D": 0, "F": 1}
+
+
+def test_grade_distributions_by_basis_never_merges_evidence_claims():
+    entries = [
+        {"grade": "A", "grade_basis": "signals_only"},
+        {"grade": "A", "grade_basis": "schema_aware"},
+        {"grade": "F"},
+        {},
+    ]
+
+    assert grade_distributions_by_basis(entries) == {
+        "signals_only": {"A": 1, "B": 0, "C": 0, "D": 0, "F": 0},
+        "schema_aware": {"A": 1, "B": 0, "C": 0, "D": 0, "F": 0},
+        "unknown": {"A": 0, "B": 0, "C": 0, "D": 0, "F": 1},
+    }

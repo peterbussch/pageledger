@@ -927,8 +927,19 @@ def test_align_reuses_config_snapshot_schema(tmp_path: Path) -> None:
     assert report["pages_aligned"] == 1
     # "town" matches no v1 alias: required coverage 0.5 lands in the D band
     assert report["grade_distribution"]["D"] == 1
+    assert report["grade_distribution_by_basis"] == {
+        "schema_aware": {"A": 0, "B": 0, "C": 0, "D": 1, "F": 0}
+    }
     manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
     assert manifest["alignment"]["schema_source"] == "config_snapshot"
+    from pageledger.verify import verify_run
+
+    assert verify_run(out_dir)["status"] == "pass"
+
+    exit_code, stdout, stderr = _run_cli(["align", str(out_dir), "--dry-run"])
+    assert exit_code == 0, stderr
+    assert "Grades (schema): A=0 B=0 C=0 D=1 F=0" in stdout
+    assert "\nGrades: " not in stdout
 
 
 def test_align_with_schema_override_improves_grades(tmp_path: Path) -> None:
@@ -956,6 +967,9 @@ def test_align_with_schema_override_improves_grades(tmp_path: Path) -> None:
     # review queue no longer holds a grade_below page; rerun manifest agrees
     audit = json.loads((out_dir / "audit.json").read_text(encoding="utf-8"))
     assert all(i["reason"] != "grade_below_threshold" for i in audit["review_queue"])
+    from pageledger.verify import verify_run
+
+    assert verify_run(out_dir)["status"] == "pass"
 
 
 def test_align_is_idempotent(tmp_path: Path) -> None:
@@ -1002,6 +1016,9 @@ def test_inspect_run_reports_grades_and_csv_columns(tmp_path: Path) -> None:
     assert exit_code == 0
     report = json.loads(stdout)
     assert report["grade_distribution"]["D"] == 1
+    assert report["grade_distribution_by_basis"] == {
+        "schema_aware": {"A": 0, "B": 0, "C": 0, "D": 1, "F": 0}
+    }
     assert report["records_normalized"] == 1  # row kept; unmatched column is null
 
     exit_code, stdout, _ = _run_cli(["inspect-run", str(out_dir), "--csv"])
@@ -1013,4 +1030,5 @@ def test_inspect_run_reports_grades_and_csv_columns(tmp_path: Path) -> None:
 
     exit_code, stdout, _ = _run_cli(["inspect-run", str(out_dir)])
     assert exit_code == 0
-    assert "Grades: A=0 B=0 C=0 D=1 F=0" in stdout
+    assert "Grades (schema): A=0 B=0 C=0 D=1 F=0" in stdout
+    assert "\nGrades: " not in stdout

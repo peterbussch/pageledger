@@ -2,10 +2,10 @@
 
 A grade is a deterministic summary of recorded evidence, not a calibrated
 accuracy estimate. Confidence values come from uncalibrated extractors, so
-grades are only comparable within one adapter. Every rendered surface
-labels the basis — ``A (signals)`` and ``A (schema)`` are never the same
-string — because a page graded on text signals alone carries far weaker
-evidence than one whose records passed schema checks.
+grades are only comparable when the effective extractor identity matches.
+Every rendered surface labels the basis — ``A (signals)`` and ``A (schema)``
+are never the same string — because a page graded on text signals alone
+carries far weaker evidence than one whose records passed schema checks.
 """
 
 from __future__ import annotations
@@ -44,6 +44,11 @@ def format_grade(grade: str | None, basis: str | None) -> str:
         return ""
     label = _BASIS_LABELS.get(basis or "", basis)
     return f"{grade} ({label})" if label else grade
+
+
+def grade_basis_label(basis: str) -> str:
+    """Return the compact public label for a recorded grade basis."""
+    return _BASIS_LABELS.get(basis, basis)
 
 
 def merge_thresholds(overrides: dict[str, Any] | None) -> dict[str, dict[str, float]]:
@@ -151,6 +156,33 @@ def grade_distribution(entries: list[dict[str, Any]]) -> dict[str, int]:
         if grade in distribution:
             distribution[grade] += 1
     return distribution
+
+
+def grade_distributions_by_basis(
+    entries: list[dict[str, Any]],
+) -> dict[str, dict[str, int]]:
+    """Count grades without combining unlike evidence bases.
+
+    Legacy graded entries without ``grade_basis`` are isolated under
+    ``unknown`` rather than being presented as signals- or schema-backed.
+    """
+    buckets: dict[str, dict[str, int]] = {}
+    for entry in entries:
+        grade = entry.get("grade")
+        if grade not in GRADES:
+            continue
+        raw_basis = entry.get("grade_basis")
+        basis = raw_basis if isinstance(raw_basis, str) and raw_basis else "unknown"
+        distribution = buckets.setdefault(basis, {letter: 0 for letter in GRADES})
+        distribution[grade] += 1
+
+    ordered: dict[str, dict[str, int]] = {}
+    for basis in ("signals_only", "schema_aware", "unknown"):
+        if basis in buckets:
+            ordered[basis] = buckets.pop(basis)
+    for basis in sorted(buckets):
+        ordered[basis] = buckets[basis]
+    return ordered
 
 
 def _schema_grade(
