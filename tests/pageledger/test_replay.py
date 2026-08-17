@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 from pathlib import Path
 
 import pytest
@@ -29,6 +30,7 @@ def _run_text(
     adapter_path: Path | None = None,
     pages: str | None = None,
     routes_path: Path | None = None,
+    dry_run: bool = False,
 ) -> tuple[Path, Path, Path]:
     from pageledger.runner import run
 
@@ -41,7 +43,7 @@ def _run_text(
         inputs=[source],
         config_path=config,
         out_dir=out,
-        dry_run=False,
+        dry_run=dry_run,
         adapter_path=adapter_path,
         pages=pages,
         routes_path=routes_path,
@@ -223,3 +225,169 @@ def test_bundle_text_run_has_portable_layout(tmp_path: Path) -> None:
     assert yaml.safe_load((bundle_dir / "replay-route-map.yml").read_text())["documents"][0]["source"] == "sources/source-0001.txt"
     assert all(entry["path"] != "bundle.json" for entry in bundle["files"])
     assert validate_bundle(bundle_dir)["baseline"]["run_id"] == manifest["run_id"]
+
+
+def _refresh_bundle_inventory(bundle_dir: Path) -> dict:
+    bundle_path = bundle_dir / "bundle.json"
+    bundle = json.loads(bundle_path.read_text(encoding="utf-8"))
+    bundle["files"] = [
+        {
+            "path": path.relative_to(bundle_dir).as_posix(),
+            "size": path.stat().st_size,
+            "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+        }
+        for path in sorted(bundle_dir.rglob("*"))
+        if path.is_file() and path.name != "bundle.json"
+    ]
+    bundle_path.write_text(json.dumps(bundle, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    return bundle
+
+
+@pytest.mark.parametrize("new_name", ["sources/source-0001.TXT", "sources/nested/source-0001.txt"])
+def test_bundle_rejects_noncanonical_source_filename(tmp_path: Path, new_name: str) -> None:
+    from pageledger.replay import ReplayError, bundle_run, validate_bundle
+
+    run_dir, _, _ = _run_text(tmp_path)
+    bundle_dir = tmp_path / "bundle"
+    bundle_run(run_dir, bundle_dir)
+    bundle = json.loads((bundle_dir / "bundle.json").read_text(encoding="utf-8"))
+    old_name = bundle["sources"][0]["path"]
+    old_path = bundle_dir / old_name
+    new_path = bundle_dir / new_name
+    new_path.parent.mkdir(parents=True, exist_ok=True)
+    old_path.rename(new_path)
+    bundle["sources"][0]["path"] = new_name
+    bundle["files"] = [
+        {**entry, "path": new_name} if entry["path"] == old_name else entry
+        for entry in bundle["files"]
+    ]
+    route = yaml.safe_load((bundle_dir / "replay-route-map.yml").read_text(encoding="utf-8"))
+    route["documents"][0]["source"] = new_name
+    (bundle_dir / "replay-route-map.yml").write_text(yaml.safe_dump(route, sort_keys=False), encoding="utf-8")
+    (bundle_dir / "bundle.json").write_text(json.dumps(bundle, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    with pytest.raises(ReplayError):
+        validate_bundle(bundle_dir)
+
+
+def test_bundle_rejects_regular_file_outside_canonical_allowlist(tmp_path: Path) -> None:
+    from pageledger.replay import ReplayError, bundle_run, validate_bundle
+
+    run_dir, _, _ = _run_text(tmp_path)
+    bundle_dir = tmp_path / "bundle"
+    bundle_run(run_dir, bundle_dir)
+    (bundle_dir / "baseline" / "rogue.txt").write_text("undeclared", encoding="utf-8")
+    _refresh_bundle_inventory(bundle_dir)
+    with pytest.raises(ReplayError, match="undeclared"):
+        validate_bundle(bundle_dir)
+
+
+def test_bundle_profile_validation_rejects_path_and_mutable_material(tmp_path: Path) -> None:
+    from pageledger.replay import ReplayError, bundle_run, profile_sha256, validate_bundle
+
+    run_dir, _, _ = _run_text(tmp_path)
+    bundle_dir = tmp_path / "bundle"
+    bundle_run(run_dir, bundle_dir)
+    bundle = json.loads((bundle_dir / "bundle.json").read_text(encoding="utf-8"))
+    profile = bundle["baseline"]["extractor"]["reproducibility_profile"]
+    profile["materials"] = [{"kind": "asset", "name": "/tmp/model", "version": "latest", "sha256": "0" * 64}]
+    profile["profile_sha256"] = profile_sha256(profile)
+    manifest_path = bundle_dir / "baseline" / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["extractors"][0]["reproducibility_profile"] = profile
+    manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    bundle["baseline"]["extractor"]["reproducibility_profile"] = profile
+    bundle["baseline"]["manifest_sha256"] = hashlib.sha256(manifest_path.read_bytes()).hexdigest()
+    (bundle_dir / "bundle.json").write_text(json.dumps(bundle, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    _refresh_bundle_inventory(bundle_dir)
+    with pytest.raises(ReplayError, match="paths|exact revision"):
+        validate_bundle(bundle_dir)
+
+
+def test_bundle_positive_prose_and_budget_token_text_is_not_scanned(tmp_path: Path) -> None:
+    from pageledger.replay import bundle_run
+
+    config = MINIMAL_CONFIG.replace(
+        "run:\n  adapter: text", "run:\n  adapter: text\n  budget:\n    max_tokens: 10"
+    )
+    run_dir, _, _ = _run_text(tmp_path, config_text=config, source_text="ordinary token prose\fsecond page\n")
+    bundle_run(run_dir, tmp_path / "bundle")
+
+
+@pytest.mark.parametrize(
+    "forbidden_key",
+    [
+        "api-key", "api_token", "token", "access-token", "auth_token", "bearer-token",
+        "refresh_token", "client-secret", "secret_key", "password", "credential",
+        "credentials", "authorization", "private-key", "access_key",
+    ],
+)
+def test_bundle_rejects_exact_forbidden_credential_keys(tmp_path: Path, forbidden_key: str) -> None:
+    from pageledger.replay import ReplayError, bundle_run, validate_bundle
+
+    run_dir, _, _ = _run_text(tmp_path)
+    bundle_dir = tmp_path / "bundle"
+    bundle_run(run_dir, bundle_dir)
+    bundle = json.loads((bundle_dir / "bundle.json").read_text(encoding="utf-8"))
+    bundle["baseline"]["extractor"]["options"] = {forbidden_key: "secret"}
+    (bundle_dir / "bundle.json").write_text(json.dumps(bundle, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    with pytest.raises(ReplayError, match="Credential option key"):
+        validate_bundle(bundle_dir)
+
+
+def test_bundle_rejects_dry_run(tmp_path: Path) -> None:
+    from pageledger.replay import ReplayError, bundle_run
+
+    run_dir, _, _ = _run_text(tmp_path, dry_run=True)
+    with pytest.raises(ReplayError, match="execute mode"):
+        bundle_run(run_dir, tmp_path / "bundle")
+
+
+@pytest.mark.parametrize("source_state", ["changed", "missing"])
+def test_bundle_rejects_changed_or_missing_source(tmp_path: Path, source_state: str) -> None:
+    from pageledger.replay import ReplayError, bundle_run
+
+    run_dir, source, _ = _run_text(tmp_path)
+    if source_state == "changed":
+        source.write_text("changed bytes", encoding="utf-8")
+    else:
+        source.unlink()
+    with pytest.raises(ReplayError, match="[Ss]ource"):
+        bundle_run(run_dir, tmp_path / "bundle")
+
+
+@pytest.mark.parametrize("link_kind", ["symlink", "hardlink"])
+def test_bundle_rejects_linked_source(tmp_path: Path, link_kind: str) -> None:
+    from pageledger.replay import ReplayError, bundle_run
+
+    run_dir, source, _ = _run_text(tmp_path)
+    if link_kind == "hardlink":
+        (tmp_path / "source-alias.txt").hardlink_to(source)
+    else:
+        target = tmp_path / "source-target.txt"
+        source.rename(target)
+        source.symlink_to(target)
+    with pytest.raises(ReplayError, match="Unsafe bundle file"):
+        bundle_run(run_dir, tmp_path / "bundle")
+
+
+@pytest.mark.skipif(not hasattr(os, "mkfifo"), reason="FIFO unsupported on this platform")
+def test_bundle_rejects_fifo_source(tmp_path: Path) -> None:
+    from pageledger.replay import ReplayError, bundle_run
+
+    run_dir, source, _ = _run_text(tmp_path)
+    source.unlink()
+    os.mkfifo(source)
+    with pytest.raises(ReplayError, match="Unsafe bundle file"):
+        bundle_run(run_dir, tmp_path / "bundle")
+
+
+def test_bundle_rejects_noncanonical_manifest_artifact_key(tmp_path: Path) -> None:
+    from pageledger.replay import ReplayError, bundle_run
+
+    run_dir, _, _ = _run_text(tmp_path)
+    manifest_path = run_dir / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["artifacts"]["rogue"] = "rogue.txt"
+    manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    with pytest.raises(ReplayError):
+        bundle_run(run_dir, tmp_path / "bundle")

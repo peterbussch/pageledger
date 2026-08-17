@@ -21,6 +21,7 @@ from typing import Any, cast
 import yaml
 
 from ._version import __version__
+from .artifacts import ARTIFACT_PATHS
 
 PROFILE_VERSION = "0.1"
 _MATERIAL_KINDS = {"binary", "package", "model", "asset"}
@@ -39,6 +40,7 @@ _MUTABLE_VERSION_ALIASES = {
 }
 
 _BUNDLE_VERSION = "0.1"
+_CANONICAL_ARTIFACTS = dict(ARTIFACT_PATHS)
 _FORBIDDEN_OPTION_KEYS = {
     "apikey",
     "apitoken",
@@ -299,6 +301,7 @@ def bundle_run(run_dir: Path, out_dir: Path) -> dict[str, Any]:
         raise ReplayError("run_not_verified", "Run directory did not pass verification")
     manifest = _read_json_object(run_root / "manifest.json", "manifest")
     _check_bundle_eligibility(manifest)
+    _validate_manifest_artifacts(manifest)
     extractor = _ordinary_extractor_identity(manifest)
     config_source = _declared_file(run_root, manifest, "config_snapshot")
     config_data = _read_yaml_mapping(config_source, "config snapshot")
@@ -418,6 +421,12 @@ def validate_bundle(bundle_dir: Path) -> dict[str, Any]:
     if _canonical(identity) != _canonical(extractor):
         _fail("bundle_extractor_mismatch", "Bundle extractor differs from baseline manifest")
     _validate_baseline_artifacts(root, manifest)
+    _validate_transport_allowlist(root, manifest, sources)
+    from .verify import verify_run
+
+    baseline_report = verify_run(root / "baseline")
+    if baseline_report.get("status") != "pass":
+        _fail("baseline_not_verified", "Transported baseline artifacts did not pass verification")
     config_path = root / replay["config"]
     config = _read_yaml_mapping(config_path, "bundle config snapshot")
     _check_config_credentials(config)
@@ -556,6 +565,10 @@ def _validate_profile(profile: Any, identity: dict[str, Any]) -> None:
             _fail("profile_invalid", "Profile material has invalid fields")
         if material["kind"] not in _MATERIAL_KINDS or not _is_sha256(material["sha256"]):
             _fail("profile_invalid", "Profile material kind or hash is invalid")
+        if _looks_like_path(material["name"]) or _looks_like_path(material["version"]):
+            _fail("profile_invalid", "Profile material names and versions must not contain paths")
+        if material["version"].casefold() in _MUTABLE_VERSION_ALIASES:
+            _fail("profile_invalid", "Profile material version must be an exact revision")
         pair = (material["kind"], material["name"])
         if previous is not None and pair <= previous:
             _fail("profile_invalid", "Profile materials must be sorted and unique")
@@ -599,13 +612,17 @@ def _bundle_sources(run_root: Path, manifest: dict[str, Any]) -> tuple[list[dict
     return records, paths
 
 
+def _validate_manifest_artifacts(manifest: dict[str, Any]) -> dict[str, str]:
+    declarations = manifest.get("artifacts")
+    if not isinstance(declarations, dict) or declarations != _CANONICAL_ARTIFACTS:
+        _fail("artifact_declarations_invalid", "Manifest artifact declarations are not canonical")
+    return cast(dict[str, str], declarations)
+
+
 def _copy_baseline(run_root: Path, manifest: dict[str, Any], destination: Path) -> None:
     manifest_out = destination / "baseline" / "manifest.json"
     shutil.copyfile(run_root / "manifest.json", manifest_out)
-    declarations = manifest.get("artifacts")
-    if not isinstance(declarations, dict):
-        _fail("artifact_declarations_missing", "Manifest artifacts must be a mapping")
-    declarations = cast(dict[str, Any], declarations)
+    declarations = _validate_manifest_artifacts(manifest)
     for key, relative in declarations.items():
         if not isinstance(relative, str):
             _fail("artifact_path_invalid", f"Artifact path for {key} is invalid")
@@ -738,6 +755,17 @@ def _validate_sources_against_manifest(root: Path, manifest: dict[str, Any], sou
             _fail("source_manifest_mismatch", "Bundle source metadata disagrees with baseline manifest")
         if "pages" in original and original.get("pages") != transported.get("pages"):
             _fail("source_manifest_mismatch", "Bundle source page selection disagrees with baseline manifest")
+        original_path = original.get("path")
+        if not isinstance(original_path, str):
+            _fail("source_manifest_mismatch", "Baseline manifest source path is invalid")
+        expected = _expected_source_path(transported["index"], original_path)
+        if transported.get("path") != expected:
+            _fail("source_path_invalid", "Bundle source filename does not match baseline input suffix")
+
+
+def _expected_source_path(index: int, original_path: str) -> str:
+    suffix = Path(original_path).suffix.lower()
+    return f"sources/source-{index:04d}{suffix}"
 
 
 def _validate_source_files(root: Path, sources: list[Any]) -> None:
@@ -749,10 +777,7 @@ def _validate_source_files(root: Path, sources: list[Any]) -> None:
 
 
 def _validate_baseline_artifacts(root: Path, manifest: dict[str, Any]) -> None:
-    declarations = manifest.get("artifacts")
-    if not isinstance(declarations, dict):
-        _fail("artifact_declarations_missing", "Baseline manifest artifacts are missing")
-    declarations = cast(dict[str, Any], declarations)
+    declarations = _validate_manifest_artifacts(manifest)
     for key, value in declarations.items():
         if not isinstance(value, str):
             _fail("artifact_path_invalid", f"Baseline artifact path is invalid: {key}")
@@ -773,6 +798,38 @@ def _validate_baseline_artifacts(root: Path, manifest: dict[str, Any]) -> None:
         _require_regular(snapshot, "align-schema-snapshot.yml")
         if alignment.get("schema_sha256") != _sha256_file(snapshot):
             _fail("bundle_hash_mismatch", "Alignment schema snapshot hash does not match manifest")
+
+
+def _validate_transport_allowlist(root: Path, manifest: dict[str, Any], sources: list[Any]) -> None:
+    """Reject regular files outside the canonical baseline/source/replay layout."""
+    allowed = {
+        "baseline/manifest.json",
+        "replay-route-map.yml",
+        *(entry["path"] for entry in sources),
+    }
+    for key, relative in _validate_manifest_artifacts(manifest).items():
+        if key in {"raw_dir", "normalized_dir"}:
+            prefix = f"baseline/{relative.rstrip('/')}/"
+            allowed.update(
+                path.relative_to(root).as_posix()
+                for path in _walk_no_follow(root / "baseline" / relative.rstrip("/"))
+                if path.relative_to(root).as_posix().startswith(prefix)
+            )
+        elif key == "route_map":
+            allowed.add("baseline/route-map.yml")
+        else:
+            allowed.add(f"baseline/{relative}")
+    alignment = manifest.get("alignment")
+    if isinstance(alignment, dict) and alignment.get("schema_source") != "config_snapshot":
+        allowed.add("baseline/align-schema-snapshot.yml")
+    actual = {
+        path.relative_to(root).as_posix()
+        for path in _walk_no_follow(root)
+        if path.name != "bundle.json"
+    }
+    if actual != allowed:
+        unexpected = sorted(actual - allowed)
+        _fail("inventory_mismatch", f"Bundle contains undeclared transported files: {unexpected}")
 
 
 def _check_source_route(run_root: Path, manifest: dict[str, Any], route_map: dict[str, Any], source_paths: list[Path]) -> None:
