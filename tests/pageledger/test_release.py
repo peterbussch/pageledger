@@ -37,7 +37,7 @@ def _write_release_fixture(root: Path, *, citation_version: str = "1.2.3") -> No
 
 
 def test_release_metadata_agrees_for_current_version() -> None:
-    assert check_release(REPO, "v0.3.0a1") == []
+    assert check_release(REPO, "v0.4.0") == []
 
 
 def test_release_check_rejects_tag_and_metadata_mismatches(tmp_path: Path) -> None:
@@ -79,6 +79,22 @@ def test_publish_is_manual_tag_only_and_verifies_before_upload() -> None:
     assert "uv sync --frozen" in workflow
     assert "Publish to TestPyPI" not in workflow
     assert workflow.index("needs: verify") < workflow.index("Publish to PyPI")
+
+    for workflow_path in (
+        REPO / ".github" / "workflows" / "ci.yml",
+        REPO / ".github" / "workflows" / "publish.yml",
+    ):
+        smoke = workflow_path.read_text(encoding="utf-8")
+        for schema_name in (
+            "manifest.schema.json",
+            "bundle.schema.json",
+            "replay.schema.json",
+        ):
+            assert schema_name in smoke
+        assert smoke.index("pageledger verify-run") < smoke.index("pageledger bundle")
+        assert smoke.index("pageledger bundle") < smoke.index("mv \"$SOURCE\"")
+        assert smoke.index("mv \"$SOURCE\"") < smoke.index("pageledger replay")
+        assert smoke.index("pageledger replay") < smoke.rindex("pageledger verify-run")
 
     parsed = yaml.safe_load(workflow)
     jobs = parsed["jobs"]

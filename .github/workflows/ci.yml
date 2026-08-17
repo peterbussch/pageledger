@@ -57,19 +57,37 @@ jobs:
           /tmp/venv-wheel/bin/pip install "$(ls dist/pageledger-*.whl)[pdf]"
           /tmp/venv-wheel/bin/pageledger init-config
           /tmp/venv-wheel/bin/pageledger doctor --json
-          (cd /tmp && /tmp/venv-wheel/bin/python -c 'from importlib.metadata import files; assert any(str(p).endswith("share/pageledger/schemas/manifest.schema.json") for p in (files("pageledger") or []))')
-          echo "first page" > /tmp/smoke.txt
+          (cd /tmp && /tmp/venv-wheel/bin/python -c 'from importlib.metadata import files; names={str(p) for p in (files("pageledger") or [])}; assert all(any(name.endswith("share/pageledger/schemas/" + schema) for name in names) for schema in ("manifest.schema.json", "bundle.schema.json", "replay.schema.json"))')
+          SOURCE=/tmp/smoke.txt
+          RUN=/tmp/smoke-run
+          BUNDLE=/tmp/smoke-bundle
+          REPLAY=/tmp/smoke-replay
+          echo "first page" > "$SOURCE"
           /tmp/venv-wheel/bin/pageledger init-config --out /tmp/smoke-config.yml
-          /tmp/venv-wheel/bin/pageledger run /tmp/smoke.txt --config /tmp/smoke-config.yml --out /tmp/smoke-run --json
+          /tmp/venv-wheel/bin/pageledger run "$SOURCE" --config /tmp/smoke-config.yml --out "$RUN" --json
+          /tmp/venv-wheel/bin/pageledger verify-run "$RUN"
+          /tmp/venv-wheel/bin/pageledger bundle "$RUN" --out "$BUNDLE" --json
+          mv "$SOURCE" "$SOURCE.moved"
+          /tmp/venv-wheel/bin/pageledger replay "$BUNDLE" --out "$REPLAY" --json
+          /tmp/venv-wheel/bin/pageledger verify-run "$REPLAY"
       - name: Smoke test sdist install
         run: |
           python -m venv /tmp/venv-sdist
           /tmp/venv-sdist/bin/pip install "$(ls dist/pageledger-*.tar.gz)[pdf]"
           /tmp/venv-sdist/bin/pageledger init-config
           /tmp/venv-sdist/bin/pageledger doctor --json
-          echo "page one\fpage two" > /tmp/smoke2.txt
+          SOURCE=/tmp/smoke2.txt
+          RUN=/tmp/smoke2-run
+          BUNDLE=/tmp/smoke2-bundle
+          REPLAY=/tmp/smoke2-replay
+          printf 'page one\fpage two' > "$SOURCE"
           /tmp/venv-sdist/bin/pageledger init-config --out /tmp/smoke2-config.yml
-          /tmp/venv-sdist/bin/pageledger run /tmp/smoke2.txt --config /tmp/smoke2-config.yml --out /tmp/smoke2-run --json
+          /tmp/venv-sdist/bin/pageledger run "$SOURCE" --config /tmp/smoke2-config.yml --out "$RUN" --json
+          /tmp/venv-sdist/bin/pageledger verify-run "$RUN"
+          /tmp/venv-sdist/bin/pageledger bundle "$RUN" --out "$BUNDLE" --json
+          mv "$SOURCE" "$SOURCE.moved"
+          /tmp/venv-sdist/bin/pageledger replay "$BUNDLE" --out "$REPLAY" --json
+          /tmp/venv-sdist/bin/pageledger verify-run "$REPLAY"
 
   locked:
     runs-on: ubuntu-latest

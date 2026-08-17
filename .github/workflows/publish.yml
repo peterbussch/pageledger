@@ -12,7 +12,7 @@ on:
           - verify
           - pypi
       production_confirmation:
-        description: For PyPI, type the exact release tag (for example v0.3.0a1)
+        description: For PyPI, type the exact release tag (for example v0.4.0)
         required: false
         type: string
 
@@ -133,16 +133,24 @@ jobs:
           uv run --frozen --extra dev python scripts/check_release.py "$RELEASE_TAG"
           uv run --frozen --extra dev python -m build
           uv run --frozen --extra dev twine check dist/*
-          uv run --frozen --extra dev python -c 'from pathlib import Path; from zipfile import ZipFile; wheel=next(Path("dist").glob("*.whl")); names=ZipFile(wheel).namelist(); assert any(name.endswith(".data/data/share/pageledger/schemas/manifest.schema.json") for name in names)'
+          uv run --frozen --extra dev python -c 'from pathlib import Path; from zipfile import ZipFile; wheel=next(Path("dist").glob("*.whl")); names=ZipFile(wheel).namelist(); assert all(any(name.endswith(".data/data/share/pageledger/schemas/" + schema) for name in names) for schema in ("manifest.schema.json", "bundle.schema.json", "replay.schema.json"))'
       - name: Smoke-test the exact wheel
         run: |
           python -m venv /tmp/pageledger-release-wheel
           /tmp/pageledger-release-wheel/bin/pip install "$(ls dist/pageledger-*.whl)[pdf]"
           /tmp/pageledger-release-wheel/bin/pageledger --version
           /tmp/pageledger-release-wheel/bin/pageledger doctor --json
-          printf 'first page\fsecond page\n' > /tmp/pageledger-release-smoke.txt
-          /tmp/pageledger-release-wheel/bin/pageledger run /tmp/pageledger-release-smoke.txt --adapter text --out /tmp/pageledger-release-run --json
-          /tmp/pageledger-release-wheel/bin/pageledger verify-run /tmp/pageledger-release-run
+          SOURCE=/tmp/pageledger-release-smoke.txt
+          RUN=/tmp/pageledger-release-run
+          BUNDLE=/tmp/pageledger-release-bundle
+          REPLAY=/tmp/pageledger-release-replay
+          printf 'first page\fsecond page\n' > "$SOURCE"
+          /tmp/pageledger-release-wheel/bin/pageledger run "$SOURCE" --adapter text --out "$RUN" --json
+          /tmp/pageledger-release-wheel/bin/pageledger verify-run "$RUN"
+          /tmp/pageledger-release-wheel/bin/pageledger bundle "$RUN" --out "$BUNDLE" --json
+          mv "$SOURCE" "$SOURCE.moved"
+          /tmp/pageledger-release-wheel/bin/pageledger replay "$BUNDLE" --out "$REPLAY" --json
+          /tmp/pageledger-release-wheel/bin/pageledger verify-run "$REPLAY"
       - name: Record distribution hashes
         run: sha256sum dist/pageledger-* > dist/SHA256SUMS
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7

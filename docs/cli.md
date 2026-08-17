@@ -1,6 +1,6 @@
 # CLI reference
 
-Nine commands ship. `run` and `rerun` extract; `classify` produces an
+Eleven commands ship. `run` and `rerun` extract; `classify` produces an
 inspectable route map; `align` re-derives normalized records and grades from
 an existing run; the rest inspect, compare, diagnose, or scaffold.
 
@@ -180,6 +180,50 @@ Missing or changed external source files are warnings; malformed or
 inconsistent ledger artifacts are errors and produce exit code 1. Verification
 checks coherence, not extraction accuracy, and is not a replacement for the
 JSON Schema test suite.
+
+## bundle
+
+```bash
+pageledger bundle RUN_DIR --out BUNDLE_DIR
+pageledger bundle RUN_DIR --out BUNDLE_DIR --json
+```
+
+Creates a new directory bundle only after `RUN_DIR` passes `verify-run` and is
+an ordinary, generation-zero execute run. The bundle contains an unchanged
+`baseline/` run (manifest, config, and all declared artifacts), copied source
+files under `sources/`, an inventory with SHA-256 hashes, and
+`replay-route-map.yml`. `bundle.json` is the index and records the baseline
+manifest hash, extractor identity/profile, source identities, and portable
+paths. The output directory must not already exist; no archive is created.
+
+The only accepted flags are `--out DIR` (required) and `--json`. There are no
+config, adapter, or source override flags. Credentials are rejected from the
+captured config and extractor options. A missing optional reproducibility
+profile does not block ordinary runs, but it means deterministic replay cannot
+claim exactness.
+
+## replay
+
+```bash
+pageledger replay BUNDLE_DIR --out RUN_DIR
+pageledger replay BUNDLE_DIR --out RUN_DIR --adapter-path TRUSTED_DIR --json
+```
+
+Validates the untrusted directory bundle, checks its baseline and inventory,
+loads the locally available adapter named by the bundle, and runs the ordinary
+PageLedger extraction path against the bundled sources. `--adapter-path DIR`
+is the only optional override and is a locally trusted import path; it must
+not point inside the bundle. `--out DIR` is required and must not already
+exist. `--json` emits the result and `replay.json` records baseline/local
+extractor linkage, profile match, raw equal/different/missing counts, and the
+comparison object.
+
+Exit codes are consistent across these commands: 0 means bundle creation or a
+successful replay (`exact` or `evidence_compared`); 1 means a verified-run,
+bundle, adapter, source, or replay-integrity failure (including
+`deterministic_mismatch`); 2 is argparse usage failure such as a missing
+required flag or an unapproved flag. Human replay output names the outcome;
+`--json` includes `outcome` and structured `error`/`code` fields on failure.
 
 ## inspect-run
 

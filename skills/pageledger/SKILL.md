@@ -32,6 +32,8 @@ authoritative scope list.
 | Preview re-alignment | add `--dry-run` (no run artifacts change) |
 | Diff two runs | `pageledger compare-runs runs/a runs/b` (ranks only same-source, same-adapter evidence) |
 | Verify ledger coherence | `pageledger verify-run runs/a` |
+| Create a portable verified bundle | `pageledger bundle runs/a --out bundles/a --json` |
+| Replay a relocated bundle | `pageledger replay bundles/a --out runs/replayed --json` |
 | Summarize a run | `pageledger inspect-run runs/a` (`--csv` for per-page rows, `--json` for scripts) |
 | Write a starter config | `pageledger init-config --adapter pdf_ocr --out pageledger.yml` |
 | Check environment | `pageledger doctor --json` (includes installed OCR languages) |
@@ -45,6 +47,12 @@ a missing language pack.
 `--routes` requires `--config` and a complete map covering every input page.
 It executes decisions from `pageledger classify`, a human, or an external
 classifier after validating complete coverage and adapter action support.
+
+`bundle` and `replay` accept only their documented flags. Bundle output and
+replay output must be new directories. `replay --adapter-path` is a locally
+trusted import directory and must not be inside the bundle. Replay preserves
+source bytes and records profile, extractor, and raw-comparison evidence; it
+does not install environments or adapter/model materials.
 
 ## Operating loop
 
@@ -73,7 +81,11 @@ classifier after validating complete coverage and adapter action support.
    match.
 6. Run `verify-run` before publishing or archiving a ledger. It checks
    cross-artifact coherence, not OCR correctness.
-7. Merging parent and rerun output into a corpus is the project's call —
+7. For transport, run `bundle` only after verification, relocate or remove
+   the original source, then run `replay` and `verify-run` on the new run.
+   Treat `exact`, `evidence_compared`, and `deterministic_mismatch` as evidence
+   outcomes, not accuracy claims.
+8. Merging parent and rerun output into a corpus is the project's call —
    present the compare-runs evidence rather than deciding silently.
 
 ## Configuration essentials
@@ -110,10 +122,11 @@ domain types belong in a hook.
   voting stay out of core.
 - Grades are deterministic evidence summaries, never calibrated accuracy;
   do not compare grades across adapters or drop the basis label.
-- Still out of scope: classification invoked implicitly inside `run`, the
-  `extract` and `audit` staged commands, region-level routing, or same-run
-  adapter fallback. Explicit `classify` and generation-indexed rerun chains
-  ship in 0.2.0.
+- Still out of scope: classification invoked implicitly inside `run`, region-
+  level routing, same-run adapter fallback, environment installation, adapter
+  or model bundling, signatures, and cloud identity. Explicit `classify`,
+  generation-indexed rerun chains, and the verified `bundle`/`replay` lifecycle
+  ship in 0.4.0.
 
 ## Where to read more
 

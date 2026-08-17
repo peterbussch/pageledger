@@ -3,7 +3,7 @@
 This document explains the shipped architecture and the remaining targets.
 The release contract is what `capabilities-and-limits.md` lists as built in
 and what the JSON Schemas in [`../schemas/`](../schemas/) validate. PageLedger
-0.3.0a1 has the run controller, adapter protocol, structural classifier, route
+0.4.0 has the run controller, adapter protocol, structural classifier, route
 executor, generation-indexed adapter chains, schema aligner, per-page grading,
 audit queues, rerun execution, comparison, and ledger verification.
 
@@ -20,6 +20,8 @@ flowchart LR
         ER["Executable routing (0.1.6)<br/>classified/reviewed route maps"]
         RR["pageledger rerun<br/>page-scoped re-extraction"]
         CMP["pageledger compare-runs"]
+        VB["pageledger bundle<br/>directory transport"]
+        RP["pageledger replay<br/>raw comparison + evidence"]
     end
     CL --> ER
     ER --> RC
@@ -29,6 +31,7 @@ flowchart LR
     CHAIN --> RR
     SA -- "consumes raw/" --> AG
     AG --> RIF --> RR
+    RC --> VB --> RP
 ```
 
 ## The canonical unit: pages
@@ -219,24 +222,28 @@ Each entry can carry its own adapter options. Chain exhaustion and
 review queue when the chain ends; PageLedger does not silently quarantine
 them or try another adapter inside the same run.
 
-## 4. Staged CLI *(partially shipped)*
+## 4. Verified replay lifecycle
 
-Classification is now separately inspectable; extraction and audit remain
-future stage commands:
+`run` remains the sole extraction/audit transaction: it writes the raw,
+provenance, quality, cost, route, audit, rerun, and manifest artifacts as one
+run. There are no separate staged `extract` or `audit` commands. After the run
+is complete, the supported two-command transport lifecycle is:
 
 ```bash
-pageledger classify scans/ --config pageledger.yml --out route-map.yml
-pageledger extract scans/ --routes route-map.yml --out runs/run-001/
-pageledger audit runs/run-001/ --out runs/run-001/audit.md
+pageledger verify-run runs/run-001
+pageledger bundle runs/run-001 --out bundles/run-001
+# relocate or remove the original source; the bundle owns its source copy
+pageledger replay bundles/run-001 --out runs/replayed
+pageledger verify-run runs/replayed
 ```
 
-Only `classify` is implemented in the example above. Use `pageledger run
---routes route-map.yml` for extraction, and inspect `audit.json` / `audit.md`
-from the run directory until separate `extract` and `audit` commands exist.
-
-(`rerun` and `align` graduated earlier; `classify` graduated in 0.2.0.) The staged
-commands are useful for debugging and advanced composition, but they should
-not be the default first-use experience. That stays `pageledger run`.
+`bundle` validates the baseline, copies source bytes, preserves the unchanged
+run and portable route map, and writes one inventory index. `replay` validates
+that directory, uses the locally available adapter through the ordinary `run`
+path, and writes `replay.json` with extractor/profile linkage and raw
+comparison. `exact`, `evidence_compared`, and `deterministic_mismatch` are
+evidence outcomes; none claims environment installation, cloud identity, code
+or model transport, signatures, or hermetic reproduction.
 
 ## What it should not do first
 

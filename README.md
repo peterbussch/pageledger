@@ -46,14 +46,25 @@ lists your installed OCR languages):
 
 ```bash
 pageledger run scan.pdf --adapter pdf_ocr --out runs/first
-pageledger inspect-run runs/first
+pageledger verify-run runs/first
+pageledger bundle runs/first --out bundles/first --json
+mv scan.pdf scan.pdf.moved                 # the bundle carries its source copy
+pageledger replay bundles/first --out runs/replayed --json
+pageledger verify-run runs/replayed
 ```
 
 `runs/first/` now holds the extracted text plus the ledger: a manifest,
 per-page provenance, quality warnings, aggregate word-level OCR confidence
-evidence, cost evidence, and a review queue. Flagged pages are already listed
-in an executable rerun plan, so escalating just those pages to a stronger
-engine is one command, and comparing the two runs is another:
+evidence, cost evidence, and a review queue. Verify the ledger before making a
+portable directory bundle. The bundle includes the unchanged baseline and
+source bytes, so the original source can be relocated before replay. Replay
+writes `replay.json`; its outcome distinguishes exact bytes, evidence-only
+comparison, and deterministic mismatch. This is a locally verified transport
+workflow, not a hermetic environment reproduction.
+
+Flagged pages are already listed in an executable rerun plan, so escalating just
+those pages to a stronger engine is one command, and comparing the two runs is
+another:
 
 ```bash
 pageledger rerun runs/first --config stronger.yml --out runs/second
@@ -145,6 +156,12 @@ Every box on the right is a plain file in the run directory.
 - Page-scoped reruns with lineage and optional generation-indexed adapter
   chains; provenance-aware cross-run diffs, runtime ledger verification, CSV
   export, and environment diagnostics.
+- Verified directory bundles and replay: `bundle` preserves the baseline run,
+  source copies, inventory, and a portable route map; `replay` records raw
+  comparison, extractor/profile linkage, and an exact/evidence/mismatch outcome.
+- Optional adapter reproducibility profiles that may report exact material
+  hashes. Missing profile evidence limits deterministic exactness but does not
+  prevent an ordinary extraction run.
 - JSON Schemas for JSON/JSONL artifacts, shipped in source and wheel
   distributions, plus field-contract tests for YAML, enforced in CI, and an
   [`AGENTS.md`](AGENTS.md) so AI coding agents can operate the tool and

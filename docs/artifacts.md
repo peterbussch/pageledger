@@ -197,13 +197,48 @@ hash is an integrity error even for an otherwise readable legacy manifest;
 deleting generator-version evidence cannot downgrade it to a warning-only
 PASS.
 
+## Verified replay bundle
+
+`pageledger bundle` creates a directory transport only from a verified,
+generation-zero execute run. Its contract is intentionally inspectable:
+
+```text
+bundle/
+├── bundle.json                 # index, baseline hash, sources, file inventory
+├── baseline/                   # unchanged run artifacts and config snapshot
+│   ├── manifest.json
+│   ├── config-snapshot.yml
+│   ├── route-map.yml
+│   ├── raw/ normalized/ ...
+├── sources/                    # copied source bytes, with recorded hashes
+└── replay-route-map.yml        # same page decisions, relocated source paths
+```
+
+`bundle.json` is the sole bundle index. `baseline` identifies the unchanged
+manifest and its SHA-256, `extractor` carries the effective identity and
+optional reproducibility profile, `sources` carries source path/size/hash/page
+metadata, and `files` inventories every transported regular file. The baseline
+manifest and all artifacts are retained so the bundle does not create a second
+run ledger. The portable route map preserves page IDs, page selection, and
+route decisions while replacing source paths with the bundled copies.
+
+`pageledger replay` validates this index and inventory before running the normal
+adapter path. It writes the replay run plus `replay.json`, which links the
+baseline and replay IDs, bundle manifest hash, local/baseline extractor
+identities, profile match, raw equal/different/missing counts, and the complete
+comparison evidence. Outcomes are `exact` (deterministic raw bytes match),
+`evidence_compared` (for non-deterministic or cloud adapters), or
+`deterministic_mismatch`. A source may be moved or removed after bundling;
+replay uses only the copied source bytes. The bundle is not an archive and does
+not install an environment, code, model, provider identity, or credentials.
+
 ## Compatibility
 
 Artifact fields follow the compatibility policy in
 [`run-manifest-spec.md`](run-manifest-spec.md): additions are backward
-compatible within a schema version. PageLedger 0.3.0a1 therefore retains
+compatible within a schema version. PageLedger 0.4.0 therefore retains
 `schema_version: "0.1"` for its optional classifier, escalation, alert, and
-rollup fields. The schemas in
+rollup, and replay-linkage fields. The schemas in
 [`schemas/`](../schemas/) are the machine-readable authority, enforced by
 `tests/pageledger/test_schemas.py`. Built wheels install the same contracts
 under the environment's `share/pageledger/schemas/` directory.

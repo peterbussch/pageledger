@@ -171,6 +171,38 @@ the offending keys named. Options used in a run are recorded in
 `manifest.extractors[].options`. Import strings that resolve to an already
 constructed *instance* cannot take options: pass a class or factory instead.
 
+### Optional reproducibility profile
+
+Adapters may expose a `reproducibility_profile()` hook. It is an evidence hook,
+not a packaging or environment-management API. The hook must return exactly:
+
+```python
+{
+    "materials": [
+        {
+            "kind": "binary" | "package" | "model" | "asset",
+            "name": "tesseract",
+            "version": "5.4.0",       # exact revision, not `latest`/`main`
+            "sha256": "<64 lowercase hex characters>",
+        }
+    ]
+}
+```
+
+`materials` may be empty. Each material has exactly the four string keys
+`kind`, `name`, `version`, and `sha256`; kind is one of `binary`, `package`,
+`model`, or `asset`, names and versions must be non-empty path-free strings,
+and `(kind, name)` pairs are unique. The hook must return no paths, secrets,
+credentials, tokens, arbitrary metadata, or mutable version aliases. PageLedger
+adds the package/adapter/runtime envelope and a `profile_sha256` to the
+manifest and bundle; it does not copy or install the named material.
+
+The hook is optional. Its absence never blocks an ordinary `run`, but a
+deterministic local adapter without a profile cannot establish the strict
+material identity required for an `exact` verified replay. Cloud adapters are
+evidence-compared because cloud identity and service state are outside this
+contract. This feature is intentionally non-hermetic.
+
 ### Finding the adapter module
 
 The module in an import string must be importable. Instead of setting

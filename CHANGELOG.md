@@ -6,6 +6,24 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to the artifact compatibility policy documented in
 `docs/run-manifest-spec.md` → Compatibility Policy.
 
+## 0.4.0 - 2026-08-17
+
+### Added
+
+- Verified directory bundles and replay evidence preserve the baseline run,
+  source files, portable route map, and inventory for relocation and replay.
+- Reproducibility profiles record adapter-declared material hashes when an
+  adapter can provide them, with explicit exact/evidence limitations.
+- Raw comparison evidence and replay linkage make exact, mismatch, and
+  evidence-only outcomes inspectable without adding a runtime dependency.
+
+### Compatibility
+
+- Verified replay is intentionally non-hermetic: it does not install an
+  environment, bundle code or models, establish cloud identity, or guarantee
+  identical external services. Missing optional material evidence blocks
+  deterministic exactness but does not block ordinary runs.
+
 ## 0.3.0a1 - 2026-08-16
 
 ### Added
