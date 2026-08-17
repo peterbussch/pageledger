@@ -87,8 +87,8 @@ def compare_runs(run_dir_a: Path, run_dir_b: Path) -> dict[str, Any]:
         grade_basis_b = qb.get("grade_basis")
         grade_generator_a = _grade_generator_identity(a["manifest"])
         grade_generator_b = _grade_generator_identity(b["manifest"])
-        grade_config_identity_a = _grade_config_identity(a["config"])
-        grade_config_identity_b = _grade_config_identity(b["config"])
+        grade_config_identity_a = a["grade_config_identity"]
+        grade_config_identity_b = b["grade_config_identity"]
         grade_schema_identity_a = _grade_schema_identity(
             a["schema_identity"], grade_basis_a
         )
@@ -249,26 +249,52 @@ def render_comparison(report: dict[str, Any]) -> str:
 
 
 def _load_run(run_dir: Path, *, label: str) -> dict[str, Any]:
-    out_dir = run_dir.expanduser().resolve()
-    manifest_path = out_dir / "manifest.json"
-    if not manifest_path.is_file():
-        raise ValueError(f"Run {label}: no manifest.json found in {out_dir}")
+    try:
+        declared_dir = run_dir.expanduser()
+    except (OSError, RuntimeError, ValueError) as exc:
+        raise ValueError(f"Run {label}: run directory cannot be resolved safely") from exc
+    out_dir = _safe_resolve(declared_dir)
+    if out_dir is None:
+        raise ValueError(f"Run {label}: run directory cannot be resolved safely")
+
+    manifest_path = _contained_regular_file(out_dir, "manifest.json", label=label)
+    assert manifest_path is not None
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
 
+    quality_path = _contained_regular_file(out_dir, "quality.jsonl", label=label)
+    assert quality_path is not None
     quality = {
-        entry["page_id"]: entry for entry in read_jsonl(out_dir / "quality.jsonl")
+        entry["page_id"]: entry for entry in read_jsonl(quality_path)
     }
 
     cost: dict[str, Any] = {}
-    cost_path = out_dir / "cost.json"
-    if cost_path.is_file():
+    cost_path = _contained_regular_file(
+        out_dir, "cost.json", label=label, required=False
+    )
+    if cost_path is not None:
         cost = json.loads(cost_path.read_text(encoding="utf-8"))
 
+    provenance_path = _contained_regular_file(
+        out_dir, "provenance.jsonl", label=label
+    )
+    assert provenance_path is not None
     provenance = {
-        entry["page_id"]: entry for entry in read_jsonl(out_dir / "provenance.jsonl")
+        entry["page_id"]: entry for entry in read_jsonl(provenance_path)
     }
     config = _load_config_snapshot(out_dir, manifest)
-    schema_identity = _load_grade_schema_identity(out_dir, manifest, config)
+    effective_schema, schema_known = _load_effective_grade_schema(
+        out_dir, manifest, config
+    )
+    schema_identity = (
+        _canonical_mapping_hash(effective_schema)
+        if schema_known and effective_schema is not None
+        else None
+    )
+    grade_config_identity = _grade_config_identity(
+        config,
+        effective_schema=effective_schema,
+        schema_known=schema_known,
+    )
 
     return {
         "dir": out_dir,
@@ -278,6 +304,7 @@ def _load_run(run_dir: Path, *, label: str) -> dict[str, Any]:
         "cost": cost,
         "config": config,
         "schema_identity": schema_identity,
+        "grade_config_identity": grade_config_identity,
     }
 
 
@@ -481,7 +508,12 @@ def _grade_generator_identity(manifest: Any) -> str | None:
     return version if isinstance(version, str) and version else None
 
 
-def _grade_config_identity(config: Any) -> str | None:
+def _grade_config_identity(
+    config: Any,
+    *,
+    effective_schema: dict[str, Any] | None = None,
+    schema_known: bool = True,
+) -> str | None:
     if not isinstance(config, dict):
         return None
     run_config = config.get("run")
@@ -500,11 +532,9 @@ def _grade_config_identity(config: Any) -> str | None:
     except (AttributeError, TypeError, ValueError):
         return None
 
-    schema = config.get("schema", {})
-    if schema is None:
-        schema = {}
-    if not isinstance(schema, dict):
+    if not schema_known:
         return None
+    schema = effective_schema or {}
     quality = schema.get("quality", {})
     if quality is None:
         quality = {}
@@ -550,7 +580,9 @@ def _load_config_snapshot(out_dir: Path, manifest: dict[str, Any]) -> dict[str, 
     relative = manifest_config.get("path")
     if not isinstance(relative, str) or not relative:
         return None
-    path = (out_dir / relative).resolve()
+    path = _safe_resolve(out_dir / relative)
+    if path is None:
+        return None
     if path != out_dir and out_dir not in path.parents:
         return None
     expected_hash = manifest_config.get("sha256")
@@ -566,23 +598,25 @@ def _load_config_snapshot(out_dir: Path, manifest: dict[str, Any]) -> dict[str, 
     return loaded if isinstance(loaded, dict) else None
 
 
-def _load_grade_schema_identity(
+def _load_effective_grade_schema(
     out_dir: Path,
     manifest: dict[str, Any],
     config: dict[str, Any] | None,
-) -> str | None:
+) -> tuple[dict[str, Any] | None, bool]:
     if not isinstance(config, dict):
-        return None
-    config_schema = _canonical_mapping_hash(config.get("schema"))
+        return None, False
+    config_schema = config.get("schema")
+    if config_schema is not None and not isinstance(config_schema, dict):
+        return None, False
     alignment = manifest.get("alignment")
     if alignment is None:
-        return config_schema
+        return config_schema, True
     if not isinstance(alignment, dict):
-        return None
+        return None, False
     source = alignment.get("schema_source")
     expected_hash = alignment.get("schema_sha256")
     if not isinstance(source, str) or not isinstance(expected_hash, str):
-        return None
+        return None, False
     if source == "config_snapshot":
         manifest_config = manifest.get("config")
         relative = (
@@ -591,24 +625,29 @@ def _load_grade_schema_identity(
             else None
         )
         if not isinstance(relative, str):
-            return None
-        config_path = (out_dir / relative).resolve()
+            return None, False
+        config_path = _safe_resolve(out_dir / relative)
+        if config_path is None:
+            return None, False
         if not _file_hash_matches(config_path, expected_hash):
-            return None
-        return config_schema
+            return None, False
+        return config_schema, config_schema is not None
 
-    schema_path = (out_dir / "align-schema-snapshot.yml").resolve()
+    schema_path = _safe_resolve(out_dir / "align-schema-snapshot.yml")
+    if schema_path is None:
+        return None, False
     if schema_path != out_dir and out_dir not in schema_path.parents:
-        return None
+        return None, False
     if not _file_hash_matches(schema_path, expected_hash):
-        return None
+        return None, False
     try:
         loaded = yaml.safe_load(schema_path.read_text(encoding="utf-8"))
     except (OSError, UnicodeError, yaml.YAMLError):
-        return None
+        return None, False
     if not isinstance(loaded, dict):
-        return None
-    return _canonical_mapping_hash(loaded.get("schema", loaded))
+        return None, False
+    schema = loaded.get("schema", loaded)
+    return (schema, True) if isinstance(schema, dict) else (None, False)
 
 
 def _file_sha256(path: Path) -> str:
@@ -620,6 +659,34 @@ def _file_hash_matches(path: Path, expected: str) -> bool:
         return path.is_file() and _file_sha256(path) == expected
     except OSError:
         return False
+
+
+def _safe_resolve(path: Path) -> Path | None:
+    try:
+        return path.resolve()
+    except (OSError, RuntimeError, ValueError):
+        return None
+
+
+def _contained_regular_file(
+    out_dir: Path,
+    name: str,
+    *,
+    label: str,
+    required: bool = True,
+) -> Path | None:
+    """Return a fixed run artifact only when it is regular and contained."""
+    declared = out_dir / name
+    if declared.is_symlink():
+        raise ValueError(f"Run {label}: {name} must be a contained regular file")
+    resolved = _safe_resolve(declared)
+    if resolved is None or resolved.parent != out_dir:
+        raise ValueError(f"Run {label}: {name} must be a contained regular file")
+    if not resolved.is_file():
+        if not required and not resolved.exists():
+            return None
+        raise ValueError(f"Run {label}: {name} must be a contained regular file")
+    return resolved
 
 
 def _grade_comparability(

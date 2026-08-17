@@ -49,6 +49,31 @@ def test_verify_run_accepts_coherent_ledger(tmp_path):
     assert report["counts"]["quality_warning_pages"] == 1
 
 
+def test_verify_run_does_not_follow_manifest_symlink(tmp_path, monkeypatch):
+    from pathlib import Path
+
+    import pageledger.verify as verify_module
+
+    out_dir, _ = _run(tmp_path)
+    manifest_path = out_dir / "manifest.json"
+    outside = tmp_path / "outside-manifest.json"
+    manifest_path.replace(outside)
+    manifest_path.symlink_to(outside)
+    original_read_text = Path.read_text
+
+    def guarded_read_text(path, *args, **kwargs):  # noqa: ANN001, ANN202
+        if path.resolve() == outside.resolve():
+            raise AssertionError("verifier read an out-of-run manifest")
+        return original_read_text(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", guarded_read_text)
+
+    report = verify_module.verify_run(out_dir)
+
+    assert report["status"] == "fail"
+    assert "manifest_path_invalid" in _codes(report, "errors")
+
+
 @pytest.mark.parametrize(
     "artifact",
     [
@@ -169,6 +194,70 @@ def test_verify_run_does_not_follow_external_alignment_schema_symlink(
 
     assert report["status"] == "fail"
     assert "alignment_schema_snapshot_invalid" in _codes(report, "errors")
+
+
+def test_verify_run_handles_alignment_schema_symlink_loop(tmp_path):
+    from pageledger.verify import verify_run
+
+    out_dir, _ = _run(tmp_path)
+    (out_dir / "align-schema-snapshot.yml").symlink_to("align-schema-snapshot.yml")
+    manifest_path = out_dir / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["alignment"] = {
+        "aligned_at": "2026-08-16T00:00:00Z",
+        "schema_source": "/external/schema.yml",
+        "schema_sha256": "0" * 64,
+        "pageledger_version": "0.3.0a1",
+    }
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    report = verify_run(out_dir)
+
+    assert report["status"] == "fail"
+    assert "alignment_schema_snapshot_invalid" in _codes(report, "errors")
+
+
+def test_verify_run_handles_manifest_artifact_symlink_loop(tmp_path):
+    from pageledger.verify import verify_run
+
+    out_dir, _ = _run(tmp_path)
+    raw_dir = out_dir / "raw"
+    for child in raw_dir.iterdir():
+        child.unlink()
+    raw_dir.rmdir()
+    raw_dir.symlink_to("raw")
+
+    report = verify_run(out_dir)
+
+    assert report["status"] == "fail"
+    assert "artifact_path_invalid" in _codes(report, "errors")
+
+
+def test_verify_run_handles_embedded_null_artifact_path(tmp_path):
+    from pageledger.verify import verify_run
+
+    out_dir, _ = _run(tmp_path)
+    manifest_path = out_dir / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["artifacts"]["raw_dir"] = "raw\x00escaped"
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    report = verify_run(out_dir)
+
+    assert report["status"] == "fail"
+    assert "artifact_path_invalid" in _codes(report, "errors")
+
+
+def test_verify_run_handles_run_directory_symlink_loop(tmp_path):
+    from pageledger.verify import verify_run
+
+    loop = tmp_path / "loop"
+    loop.symlink_to("loop")
+
+    report = verify_run(loop)
+
+    assert report["status"] == "fail"
+    assert "run_path_invalid" in _codes(report, "errors")
 
 
 def test_verify_run_handles_malformed_manifest_sections(tmp_path):
@@ -371,6 +460,44 @@ def test_verify_run_rejects_raw_symlink_without_following_inventory_target(tmp_p
 
     assert report["status"] == "fail"
     assert "raw_artifact_path_invalid" in _codes(report, "errors")
+
+
+def test_verify_run_handles_raw_artifact_symlink_loop(tmp_path):
+    from pageledger.verify import verify_run
+
+    out_dir, _ = _run(tmp_path)
+    raw_path = out_dir / "raw" / "doc_0001_page_0001.txt"
+    raw_path.unlink()
+    raw_path.symlink_to(raw_path.name)
+
+    report = verify_run(out_dir)
+
+    assert report["status"] == "fail"
+    assert "raw_artifact_path_invalid" in _codes(report, "errors")
+
+
+def test_verify_run_does_not_follow_normalized_symlink(tmp_path, monkeypatch):
+    from pathlib import Path
+
+    import pageledger.verify as verify_module
+
+    out_dir, _ = _run(tmp_path)
+    outside = tmp_path / "outside-normalized.json"
+    outside.write_text('{"outside": true}\n', encoding="utf-8")
+    (out_dir / "normalized" / "outside.json").symlink_to(outside)
+    original_read_text = Path.read_text
+
+    def guarded_read_text(path, *args, **kwargs):  # noqa: ANN001, ANN202
+        if path.resolve() == outside.resolve():
+            raise AssertionError("verifier read an out-of-run normalized artifact")
+        return original_read_text(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", guarded_read_text)
+
+    report = verify_module.verify_run(out_dir)
+
+    assert report["status"] == "fail"
+    assert "normalized_artifact_path_invalid" in _codes(report, "errors")
 
 
 def test_verify_run_rejects_missing_raw_hash_from_new_run(tmp_path):

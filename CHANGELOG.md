@@ -50,8 +50,8 @@ and this project adheres to the artifact compatibility policy documented in
   trusting a mutable or missing schema snapshot.
 - Missing raw hashes now fail integrity verification even for readable legacy
   evidence, so deleting generator-version metadata cannot obtain warning-only
-  treatment; raw/alignment symlinks also cannot make verification or comparison
-  read outside the run directory.
+  treatment; manifest, raw, normalized, and alignment symlinks also cannot make
+  verification or comparison read outside the run directory.
 
 ### Release process
 

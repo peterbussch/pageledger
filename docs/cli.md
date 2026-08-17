@@ -156,12 +156,15 @@ input/output types, capabilities, and a SHA-256 identity of the recorded
 adapter options (the comparison report does not copy their values). Grade
 direction has a second gate: both grades must come from the
 same PageLedger version and effective grading policy (merged thresholds plus
-the schema low-confidence floor), have the same evidence basis, and (for
-schema-aware grades) have the same recorded schema identity.
+the low-confidence floor from the retained config or external alignment
+schema), have the same evidence basis, and (for schema-aware grades) have the
+same recorded schema identity.
 Changed-source, cross-adapter,
 same-adapter/different-extractor, and legacy-unknown transitions are shown but
 unranked. `--json` exposes extraction and grade comparability separately for
-every shared page id.
+every shared page id. Comparison reads its manifest, quality, provenance, and
+optional cost evidence only from contained regular files; symlinks are rejected
+instead of followed.
 
 ## verify-run
 

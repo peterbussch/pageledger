@@ -98,6 +98,7 @@ jobs:
           if (
               policies.get("total_count") != 1
               or len(entries) != 1
+              or entries[0].get("type") != "tag"
               or allowed_policy_names != {"v*"}
           ):
               raise SystemExit("PyPI environment must have only the v* deployment pattern")

@@ -33,7 +33,6 @@ REQUIRED_ARTIFACTS = {
 
 def verify_run(run_dir: Path) -> dict[str, Any]:
     """Return a structured coherence report for a run directory."""
-    root = run_dir.expanduser().resolve()
     errors: list[dict[str, Any]] = []
     warnings: list[dict[str, Any]] = []
     counts = {
@@ -47,7 +46,33 @@ def verify_run(run_dir: Path) -> dict[str, Any]:
         "audit_references": 0,
         "rerun_references": 0,
     }
-    manifest_path = root / "manifest.json"
+    try:
+        declared_root = run_dir.expanduser()
+    except (OSError, RuntimeError, ValueError):
+        declared_root = run_dir
+    root = _safe_resolve(declared_root)
+    if root is None:
+        _add(
+            errors,
+            "run_path_invalid",
+            "Run directory cannot be resolved safely",
+            artifact=str(declared_root),
+        )
+        return _report(declared_root.absolute(), errors, warnings, counts)
+    declared_manifest_path = root / "manifest.json"
+    manifest_path = _safe_resolve(declared_manifest_path)
+    if (
+        declared_manifest_path.is_symlink()
+        or manifest_path is None
+        or manifest_path.parent != root
+    ):
+        _add(
+            errors,
+            "manifest_path_invalid",
+            "manifest.json must be a regular file contained in the run directory",
+            artifact="manifest.json",
+        )
+        return _report(root, errors, warnings, counts)
     if not manifest_path.is_file():
         _add(errors, "manifest_missing", "No manifest.json found", artifact="manifest.json")
         return _report(root, errors, warnings, counts)
@@ -105,7 +130,15 @@ def verify_run(run_dir: Path) -> dict[str, Any]:
                 artifact=key,
             )
             continue
-        path = (root / relative).resolve()
+        path = _safe_resolve(root / relative)
+        if path is None:
+            _add(
+                errors,
+                "artifact_path_invalid",
+                f"Artifact path cannot be resolved safely: {relative}",
+                artifact=relative,
+            )
+            continue
         if path != root and root not in path.parents:
             _add(
                 errors,
@@ -219,8 +252,15 @@ def verify_run(run_dir: Path) -> dict[str, Any]:
                             )
                 else:
                     declared_snapshot = root / "align-schema-snapshot.yml"
-                    alignment_snapshot = declared_snapshot.resolve()
-                    if alignment_snapshot != root and root not in alignment_snapshot.parents:
+                    alignment_snapshot = _safe_resolve(declared_snapshot)
+                    if alignment_snapshot is None:
+                        _add(
+                            errors,
+                            "alignment_schema_snapshot_invalid",
+                            "External alignment schema snapshot cannot be resolved safely",
+                            artifact=declared_snapshot.name,
+                        )
+                    elif alignment_snapshot != root and root not in alignment_snapshot.parents:
                         _add(
                             errors,
                             "alignment_schema_snapshot_invalid",
@@ -475,7 +515,16 @@ def verify_run(run_dir: Path) -> dict[str, Any]:
             )
             continue
         assert isinstance(result, dict)
-        raw_path = (root / raw_name).resolve()
+        raw_path = _safe_resolve(root / raw_name)
+        if raw_path is None:
+            _add(
+                errors,
+                "raw_artifact_path_invalid",
+                f"Raw artifact path cannot be resolved safely for {page_id}",
+                page_id=page_id,
+                artifact=raw_name,
+            )
+            continue
         if raw_path.stem != page_id:
             _add(
                 errors,
@@ -578,7 +627,15 @@ def verify_run(run_dir: Path) -> dict[str, Any]:
                 continue
             if not candidate.is_file():
                 continue
-            resolved = candidate.resolve()
+            resolved = _safe_resolve(candidate)
+            if resolved is None:
+                _add(
+                    errors,
+                    "raw_artifact_path_invalid",
+                    "Raw artifact inventory path cannot be resolved safely",
+                    artifact=str(candidate.relative_to(root)),
+                )
+                continue
             if resolved != raw_dir and raw_dir not in resolved.parents:
                 _add(
                     errors,
@@ -988,7 +1045,26 @@ def _check_normalized(
 ) -> None:
     if normalized_dir is None or not normalized_dir.is_dir():
         return
-    for path in sorted(item for item in normalized_dir.rglob("*") if item.is_file()):
+    for declared_path in sorted(normalized_dir.rglob("*")):
+        if declared_path.is_symlink():
+            _add(
+                errors,
+                "normalized_artifact_path_invalid",
+                "Normalized artifact must not be a symbolic link",
+                artifact=str(declared_path.relative_to(root)),
+            )
+            continue
+        if not declared_path.is_file():
+            continue
+        path = _safe_resolve(declared_path)
+        if path is None or (path != normalized_dir and normalized_dir not in path.parents):
+            _add(
+                errors,
+                "normalized_artifact_path_invalid",
+                "Normalized artifact resolves outside the declared directory",
+                artifact=str(declared_path.relative_to(root)),
+            )
+            continue
         counts["normalized_pages"] += 1
         try:
             entry = json.loads(path.read_text(encoding="utf-8"))
@@ -1206,6 +1282,14 @@ def _sha256(path: Path) -> str:
         for chunk in iter(lambda: handle.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def _safe_resolve(path: Path) -> Path | None:
+    """Resolve a run path without propagating malformed-path or link failures."""
+    try:
+        return path.resolve()
+    except (OSError, RuntimeError, ValueError):
+        return None
 
 
 def _add(issues: list[dict[str, Any]], code: str, message: str, **details: Any) -> None:

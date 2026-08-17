@@ -13,6 +13,8 @@ from __future__ import annotations
 import hashlib
 import json
 
+import pytest
+
 MINIMAL = """\
 schema_version: "0.1"
 taxonomy:
@@ -113,6 +115,62 @@ def test_compare_errors_on_non_run_directory(tmp_path):
     empty.mkdir()
     with pytest.raises(ValueError, match="manifest.json"):
         compare_runs(out_a, empty)
+
+
+def test_compare_rejects_manifest_symlink_without_reading_target(tmp_path, monkeypatch):
+    from pathlib import Path
+
+    import pageledger.compare as compare_module
+
+    source = tmp_path / "doc.txt"
+    source.write_text("some clean page text\n", encoding="utf-8")
+    out_a = _run([source], tmp_path, "a")
+    out_b = _run([source], tmp_path, "b")
+    manifest_path = out_b / "manifest.json"
+    outside = tmp_path / "outside-manifest.json"
+    manifest_path.replace(outside)
+    manifest_path.symlink_to(outside)
+    original_read_text = Path.read_text
+
+    def guarded_read_text(path, *args, **kwargs):  # noqa: ANN001, ANN202
+        if path.resolve() == outside.resolve():
+            raise AssertionError("comparison read an out-of-run manifest")
+        return original_read_text(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", guarded_read_text)
+
+    with pytest.raises(ValueError, match="manifest.json.*contained regular file"):
+        compare_module.compare_runs(out_a, out_b)
+
+
+@pytest.mark.parametrize("artifact", ["quality.jsonl", "provenance.jsonl", "cost.json"])
+def test_compare_rejects_symlinked_core_evidence(tmp_path, artifact):
+    from pageledger.compare import compare_runs
+
+    source = tmp_path / "doc.txt"
+    source.write_text("some clean page text\n", encoding="utf-8")
+    out_a = _run([source], tmp_path, "a")
+    out_b = _run([source], tmp_path, "b")
+    artifact_path = out_b / artifact
+    outside = tmp_path / f"outside-{artifact}"
+    artifact_path.replace(outside)
+    artifact_path.symlink_to(outside)
+
+    with pytest.raises(ValueError, match=f"{artifact}.*contained regular file"):
+        compare_runs(out_a, out_b)
+
+
+def test_compare_handles_run_directory_symlink_loop(tmp_path):
+    from pageledger.compare import compare_runs
+
+    source = tmp_path / "doc.txt"
+    source.write_text("some clean page text\n", encoding="utf-8")
+    out_a = _run([source], tmp_path, "a")
+    loop = tmp_path / "loop"
+    loop.symlink_to("loop")
+
+    with pytest.raises(ValueError, match="run directory cannot be resolved safely"):
+        compare_runs(out_a, loop)
 
 
 def test_compare_cli_text_and_json(tmp_path, capsys):
@@ -470,6 +528,39 @@ def test_compare_does_not_follow_external_alignment_schema_symlink(
     assert page["grade_comparability"] == "incomparable_unknown"
 
 
+def test_compare_handles_external_alignment_schema_symlink_loop(tmp_path):
+    from pageledger.compare import compare_runs
+
+    source = tmp_path / "doc.txt"
+    source.write_text("short\n", encoding="utf-8")
+    out_a = _run([source], tmp_path, "a")
+    out_b = _run([source], tmp_path, "b")
+    for out_dir, grade in ((out_a, "B"), (out_b, "A")):
+        quality_path = out_dir / "quality.jsonl"
+        quality = [json.loads(line) for line in quality_path.read_text().splitlines()]
+        quality[0].update(grade=grade, grade_basis="schema_aware")
+        quality_path.write_text(json.dumps(quality[0]) + "\n", encoding="utf-8")
+    schema_text = "name: demo\ncolumns: []\n"
+    (out_a / "align-schema-snapshot.yml").write_text(schema_text, encoding="utf-8")
+    (out_b / "align-schema-snapshot.yml").symlink_to("align-schema-snapshot.yml")
+    for out_dir in (out_a, out_b):
+        manifest_path = out_dir / "manifest.json"
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        manifest["alignment"] = {
+            "aligned_at": "2026-08-16T00:00:00Z",
+            "schema_source": "/external/schema.yml",
+            "schema_sha256": hashlib.sha256(schema_text.encode("utf-8")).hexdigest(),
+            "pageledger_version": "0.3.0a1",
+        }
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    report = compare_runs(out_a, out_b)
+
+    page = report["pages"][0]
+    assert page["grade_schema_identity_b"] is None
+    assert page["grade_comparability"] == "incomparable_unknown"
+
+
 def test_compare_recognizes_same_config_schema_after_alignment(tmp_path):
     from pageledger.compare import compare_runs
 
@@ -571,6 +662,44 @@ def test_compare_does_not_rank_grades_with_different_schema_quality_floor(tmp_pa
         quality = [json.loads(line) for line in quality_path.read_text().splitlines()]
         quality[0]["grade"] = grade
         quality_path.write_text(json.dumps(quality[0]) + "\n", encoding="utf-8")
+
+    report = compare_runs(out_a, out_b)
+
+    page = report["pages"][0]
+    assert page["grade_comparability"] == "incomparable_grade_config"
+    assert page["grade_config_identity_a"] != page["grade_config_identity_b"]
+    assert report["grades_regressed_total"] == 0
+
+
+def test_compare_uses_external_schema_floor_for_signals_only_grades(tmp_path):
+    from pageledger.compare import compare_runs
+
+    source = tmp_path / "doc.txt"
+    source.write_text("short\n", encoding="utf-8")
+    out_a = _run([source], tmp_path, "a")
+    out_b = _run([source], tmp_path, "b")
+    for out_dir, grade, floor in ((out_a, "B", 0.88), (out_b, "C", 0.90)):
+        quality_path = out_dir / "quality.jsonl"
+        quality = [json.loads(line) for line in quality_path.read_text().splitlines()]
+        quality[0].update(grade=grade, grade_basis="signals_only")
+        quality_path.write_text(json.dumps(quality[0]) + "\n", encoding="utf-8")
+        schema_text = (
+            "name: external\n"
+            "columns:\n"
+            "  - {name: value, type: string}\n"
+            "quality:\n"
+            f"  low_confidence_threshold: {floor}\n"
+        )
+        (out_dir / "align-schema-snapshot.yml").write_text(schema_text, encoding="utf-8")
+        manifest_path = out_dir / "manifest.json"
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        manifest["alignment"] = {
+            "aligned_at": "2026-08-16T00:00:00Z",
+            "schema_source": "/external/schema.yml",
+            "schema_sha256": hashlib.sha256(schema_text.encode("utf-8")).hexdigest(),
+            "pageledger_version": "0.3.0a1",
+        }
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
 
     report = compare_runs(out_a, out_b)
 
