@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import shutil
 from pathlib import Path
 
 import pytest
@@ -18,6 +19,32 @@ taxonomy:
       default_action: transcribe_text
 run:
   adapter: text
+"""
+
+NONDETERMINISTIC_ADAPTER = """\
+from pageledger.adapters import ExtractionResult
+
+class Adapter:
+    name = "cloudish"
+    version = "1.0"
+    deterministic = False
+    input_types = ("text",)
+    output_types = ("text",)
+    capabilities = ("cloud",)
+
+    def supports(self, action):
+        return action == "transcribe_text"
+
+    def extract(self, source, *, page_id, page_number, action, prompt=None):
+        content = source.read_text(encoding="utf-8").split("\\f")[page_number - 1]
+        return ExtractionResult(
+            content=content,
+            format="text",
+            confidence=None,
+            model="cloudish-fixed-fixture",
+            warnings=[],
+            usage={"pages": 1, "tokens": None, "compute_seconds": None, "cost_usd": None},
+        )
 """
 
 
@@ -244,6 +271,105 @@ def test_bundle_text_run_has_portable_layout(tmp_path: Path) -> None:
     assert yaml.safe_load((bundle_dir / "replay-route-map.yml").read_text())["documents"][0]["source"] == "sources/source-0001.txt"
     assert all(entry["path"] != "bundle.json" for entry in bundle["files"])
     assert validate_bundle(bundle_dir)["baseline"]["run_id"] == manifest["run_id"]
+
+
+def test_relocated_text_replay_is_exact_without_original_source(tmp_path: Path) -> None:
+    from pageledger.replay import bundle_run, replay_bundle
+    from pageledger.verify import verify_run
+
+    run_dir, source, _ = _run_text(tmp_path)
+    bundle_run(run_dir, tmp_path / "bundle")
+    source.unlink()
+    moved = tmp_path / "other-root" / "bundle"
+    moved.parent.mkdir()
+    shutil.copytree(tmp_path / "bundle", moved)
+    result = replay_bundle(moved, tmp_path / "replayed")
+    assert result["outcome"] == "exact"
+    assert result["raw"]["different"] == 0
+    assert result["bundle_manifest_sha256"] == hashlib.sha256(
+        (moved / "bundle.json").read_bytes()
+    ).hexdigest()
+    assert verify_run(tmp_path / "replayed")["status"] == "pass"
+
+
+def test_profile_mismatch_fails_before_output_creation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import pageledger.replay as replay_module
+    from pageledger.replay import ReplayError, bundle_run, profile_sha256, replay_bundle
+
+    run_dir, _, _ = _run_text(tmp_path)
+    bundle_dir = tmp_path / "bundle"
+    bundle_run(run_dir, bundle_dir)
+    original = replay_module.build_reproducibility_profile
+
+    def mismatched_profile(adapter: object) -> dict[str, object] | None:
+        profile = original(adapter)
+        assert profile is not None
+        profile["runtime"] = {**profile["runtime"], "release": "different-release"}
+        profile["profile_sha256"] = profile_sha256(profile)
+        return profile
+
+    monkeypatch.setattr(replay_module, "build_reproducibility_profile", mismatched_profile)
+    with pytest.raises(ReplayError) as error:
+        replay_bundle(bundle_dir, tmp_path / "never-created")
+    assert error.value.code == "incompatible_environment"
+    assert not (tmp_path / "never-created").exists()
+
+
+def test_extractor_identity_mismatch_precedes_profile_preflight(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from pageledger.adapters import TextAdapter
+    from pageledger.replay import ReplayError, bundle_run, replay_bundle
+
+    run_dir, _, _ = _run_text(tmp_path)
+    bundle_dir = tmp_path / "bundle"
+    bundle_run(run_dir, bundle_dir)
+    monkeypatch.setattr(TextAdapter, "version", "different-version")
+    with pytest.raises(ReplayError) as error:
+        replay_bundle(bundle_dir, tmp_path / "never-created")
+    assert error.value.code == "extractor_identity_mismatch"
+    assert not (tmp_path / "never-created").exists()
+
+
+def test_nondeterministic_adapter_is_evidence_compared(tmp_path: Path) -> None:
+    from pageledger.replay import bundle_run, replay_bundle
+
+    adapter_dir = tmp_path / "trusted-adapters"
+    adapter_dir.mkdir()
+    (adapter_dir / "cloudish.py").write_text(NONDETERMINISTIC_ADAPTER, encoding="utf-8")
+    config = MINIMAL_CONFIG.replace("adapter: text", "adapter: cloudish:Adapter")
+    run_dir, _, _ = _run_text(tmp_path, config_text=config, adapter_path=adapter_dir)
+    bundle_dir = tmp_path / "bundle"
+    bundle_run(run_dir, bundle_dir)
+    result = replay_bundle(bundle_dir, tmp_path / "replayed", adapter_path=adapter_dir)
+    assert result["outcome"] == "evidence_compared"
+
+
+def test_replay_rejects_tampered_bundle_before_output_creation(tmp_path: Path) -> None:
+    from pageledger.replay import ReplayError, bundle_run, replay_bundle
+
+    run_dir, _, _ = _run_text(tmp_path)
+    bundle_dir = tmp_path / "bundle"
+    bundle_run(run_dir, bundle_dir)
+    (bundle_dir / "sources" / "source-0001.txt").write_text("tampered", encoding="utf-8")
+    with pytest.raises(ReplayError) as error:
+        replay_bundle(bundle_dir, tmp_path / "never-created")
+    assert error.value.code in {"bundle_hash_mismatch", "source_hash_mismatch"}
+    assert not (tmp_path / "never-created").exists()
+
+
+def test_replay_rejects_adapter_path_inside_bundle(tmp_path: Path) -> None:
+    from pageledger.replay import ReplayError, bundle_run, replay_bundle
+
+    run_dir, _, _ = _run_text(tmp_path)
+    bundle_dir = tmp_path / "bundle"
+    bundle_run(run_dir, bundle_dir)
+    with pytest.raises(ReplayError) as error:
+        replay_bundle(bundle_dir, tmp_path / "never-created", adapter_path=bundle_dir)
+    assert error.value.code == "adapter_path_inside_bundle"
+    assert not (tmp_path / "never-created").exists()
 
 
 def _refresh_bundle_inventory(bundle_dir: Path) -> dict:

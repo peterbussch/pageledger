@@ -12,6 +12,7 @@ import re
 import shutil
 import stat
 import sys
+import tempfile
 import uuid
 from collections.abc import Mapping
 from importlib import metadata
@@ -436,6 +437,223 @@ def validate_bundle(bundle_dir: Path) -> dict[str, Any]:
     source_paths = [entry["path"] for entry in sources]
     _check_portable_route(route_map, manifest, source_paths, sources)
     return bundle
+
+
+def replay_bundle(
+    bundle_dir: Path,
+    out_dir: Path,
+    *,
+    adapter_path: Path | None = None,
+) -> dict[str, Any]:
+    """Replay a verified bundle through the ordinary PageLedger run path."""
+    from .adapters import load_adapter
+    from .aligner import align_run
+    from .compare import compare_runs
+    from .config import load_config
+    from .runner import _apply_adapter_path, _effective_adapter, run
+    from .verify import verify_run
+
+    bundle = validate_bundle(bundle_dir)
+    root = Path(bundle_dir).expanduser().resolve()
+    bundle_sha256 = _sha256_file(root / "bundle.json")
+    requested_out = Path(out_dir).expanduser()
+    if requested_out.exists() or requested_out.is_symlink():
+        raise ReplayError("replay_output_exists", f"Replay output already exists: {requested_out}")
+    if adapter_path is not None:
+        trusted_path = Path(adapter_path).expanduser().resolve()
+        if trusted_path == root or root in trusted_path.parents:
+            raise ReplayError(
+                "adapter_path_inside_bundle",
+                "Trusted adapter path must not be inside the bundle",
+            )
+    else:
+        trusted_path = None
+
+    baseline_manifest = _read_json_object(root / "baseline" / "manifest.json", "baseline manifest")
+    baseline_extractor = cast(dict[str, Any], bundle["baseline"]["extractor"])
+    config_path = root / "baseline" / "config-snapshot.yml"
+    config = load_config(config_path, validate_adapter=False)
+    adapter_name, adapter_options = _effective_adapter(config, 0)
+    if adapter_name is None:
+        raise ReplayError("extractor_identity_mismatch", "Bundle config has no effective adapter")
+    try:
+        _apply_adapter_path(trusted_path)
+        adapter = load_adapter(adapter_name, adapter_options)
+    except Exception as exc:
+        raise ReplayError(
+            "extractor_identity_mismatch",
+            "Local adapter could not be loaded",
+        ) from exc
+
+    local_profile: dict[str, Any] | None = None
+    local_extractor = _runtime_extractor_identity(adapter, adapter_options, None)
+    if _identity_without_profile(local_extractor) != _identity_without_profile(baseline_extractor):
+        raise ReplayError(
+            "extractor_identity_mismatch",
+            "Local adapter identity does not match the baseline",
+        )
+    cloud = "cloud" in {str(value).casefold() for value in baseline_extractor["capabilities"]}
+    if bool(getattr(adapter, "deterministic", False)) and not cloud:
+        try:
+            local_profile = build_reproducibility_profile(adapter)
+        except Exception as exc:
+            raise ReplayError(
+                "incompatible_environment",
+                "Local reproducibility profile could not be established",
+            ) from exc
+        recorded_profile = baseline_extractor.get("reproducibility_profile")
+        if not isinstance(recorded_profile, dict) or local_profile is None:
+            raise ReplayError(
+                "incompatible_environment",
+                "Local reproducibility profile does not match the baseline",
+            )
+        if profile_sha256(local_profile) != profile_sha256(recorded_profile):
+            raise ReplayError(
+                "incompatible_environment",
+                "Local reproducibility profile does not match the baseline",
+            )
+
+    local_extractor["reproducibility_profile"] = local_profile
+
+    source_records = cast(list[dict[str, Any]], bundle["sources"])
+    source_paths = [root / record["path"] for record in source_records]
+    route_path: Path | None = None
+    replay_route = root / "replay-route-map.yml"
+    run_kwargs: dict[str, Any] = {
+        "inputs": source_paths,
+        "config_path": config_path,
+        "out_dir": requested_out,
+        "dry_run": False,
+        "adapter_path": trusted_path,
+    }
+    if "routing" in baseline_manifest:
+        route = _read_yaml_mapping(replay_route, "portable route map")
+        documents = route.get("documents")
+        if not isinstance(documents, list) or len(documents) != len(source_paths):
+            raise ReplayError("route_map_invalid", "Portable route map does not match bundle sources")
+        for document, source in zip(documents, source_paths, strict=True):
+            if not isinstance(document, dict):
+                raise ReplayError("route_map_invalid", "Portable route map document is invalid")
+            document["source"] = str(source.resolve())
+        with tempfile.TemporaryDirectory(prefix="pageledger-replay-route-") as temp:
+            route_path = Path(temp) / "route-map.yml"
+            route_path.write_text(yaml.safe_dump(route, sort_keys=False), encoding="utf-8")
+            run_kwargs["routes_path"] = route_path
+            run_result = run(**run_kwargs)
+    else:
+        if len(source_paths) == 1 and source_records[0].get("pages"):
+            run_kwargs["pages"] = source_records[0]["pages"]
+        run_result = run(**run_kwargs)
+
+    alignment = baseline_manifest.get("alignment")
+    if isinstance(alignment, dict) and alignment.get("schema_source") != "config_snapshot":
+        align_run(requested_out, schema_path=root / "baseline" / "align-schema-snapshot.yml")
+
+    verification = verify_run(requested_out)
+    if verification.get("status") != "pass":
+        raise ReplayError("replay_verification_failed", "Replay run did not pass verification")
+    comparison = compare_runs(root / "baseline", requested_out)
+    pages = comparison.get("pages", [])
+    different_page_ids = [
+        page["page_id"] for page in pages
+        if page.get("raw_equal") is False
+    ]
+    missing_page_ids = [
+        page["page_id"] for page in pages
+        if page.get("raw_equal") is None
+    ]
+    missing_page_ids.extend(comparison.get("pages_only_in_a", []))
+    missing_page_ids.extend(comparison.get("pages_only_in_b", []))
+    raw = {
+        "equal": comparison.get("raw_equal_total", 0),
+        "different": comparison.get("raw_different_total", 0),
+        "missing": comparison.get("raw_missing_total", 0)
+        + len(comparison.get("pages_only_in_a", []))
+        + len(comparison.get("pages_only_in_b", [])),
+        "different_page_ids": sorted(set(different_page_ids)),
+        "missing_page_ids": sorted(set(missing_page_ids)),
+    }
+    deterministic = bool(baseline_extractor["deterministic"]) and not cloud
+    outcome = (
+        "exact"
+        if deterministic and raw["different"] == 0 and raw["missing"] == 0
+        else "deterministic_mismatch"
+        if deterministic
+        else "evidence_compared"
+    )
+    replay_evidence = {
+        "replay_schema_version": _BUNDLE_VERSION,
+        "bundle_manifest_sha256": bundle_sha256,
+        "baseline_run_id": baseline_manifest["run_id"],
+        "replay_run_id": run_result["run_id"],
+        "baseline_extractor": _replay_extractor_identity(baseline_extractor),
+        "local_extractor": _replay_extractor_identity(local_extractor),
+        "profile_match": True if deterministic else None,
+        "outcome": outcome,
+        "raw": raw,
+        "comparison": comparison,
+    }
+    _atomic_write_json(requested_out / "replay.json", replay_evidence)
+    updated_manifest = _read_json_object(requested_out / "manifest.json", "replay manifest")
+    artifacts = dict(cast(dict[str, Any], updated_manifest.get("artifacts", {})))
+    artifacts["replay"] = "replay.json"
+    updated_manifest["artifacts"] = artifacts
+    updated_manifest.update(
+        {
+            "replay_schema_version": _BUNDLE_VERSION,
+            "baseline_run_id": baseline_manifest["run_id"],
+            "bundle_manifest_sha256": bundle_sha256,
+            "outcome": outcome,
+        }
+    )
+    _atomic_write_json(requested_out / "manifest.json", updated_manifest)
+    if verify_run(requested_out).get("status") != "pass":
+        raise ReplayError("replay_verification_failed", "Final replay evidence does not verify")
+    return {
+        "outcome": outcome,
+        "run_id": run_result["run_id"],
+        "out_dir": str(requested_out.resolve()),
+        "baseline_run_id": baseline_manifest["run_id"],
+        "bundle_manifest_sha256": bundle_sha256,
+        "profile_match": True if deterministic else None,
+        "raw": raw,
+    }
+
+
+def _runtime_extractor_identity(
+    adapter: Any, options: dict[str, Any], profile: dict[str, Any] | None
+) -> dict[str, Any]:
+    return {
+        "adapter": adapter.name,
+        "version": adapter.version,
+        "deterministic": bool(adapter.deterministic),
+        "input_types": sorted(str(item) for item in adapter.input_types),
+        "output_types": sorted(str(item) for item in adapter.output_types),
+        "capabilities": sorted(str(item) for item in adapter.capabilities),
+        "options": dict(options),
+        "reproducibility_profile": profile,
+    }
+
+
+def _identity_without_profile(identity: dict[str, Any]) -> dict[str, Any]:
+    return {key: value for key, value in identity.items() if key != "reproducibility_profile"}
+
+
+def _replay_extractor_identity(identity: dict[str, Any]) -> dict[str, Any]:
+    profile = identity.get("reproducibility_profile")
+    return {
+        key: identity[key]
+        for key in ("adapter", "version", "deterministic", "input_types", "output_types", "capabilities", "options")
+    } | {"reproducibility_profile_sha256": profile.get("profile_sha256") if isinstance(profile, dict) else None}
+
+
+def _atomic_write_json(path: Path, value: dict[str, Any]) -> None:
+    temporary = path.with_name(f".{path.name}.tmp-{uuid.uuid4().hex}")
+    temporary.write_text(
+        json.dumps(value, ensure_ascii=False, indent=2, sort_keys=True, allow_nan=False) + "\n",
+        encoding="utf-8",
+    )
+    os.replace(temporary, path)
 
 
 def _check_bundle_eligibility(manifest: dict[str, Any]) -> None:

@@ -39,6 +39,10 @@
       "minimum": 0,
       "description": "Zero-based rerun generation. Optional for compatibility with older schema-0.1 artifacts; current writers always emit it."
     },
+    "replay_schema_version": { "type": "string", "const": "0.1" },
+    "baseline_run_id": { "type": "string", "minLength": 1 },
+    "bundle_manifest_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "outcome": { "type": "string", "enum": ["exact", "evidence_compared", "deterministic_mismatch"] },
     "execution_mode": {
       "type": "string",
       "description": "Execution mode.",
@@ -195,7 +199,8 @@
         "quality": { "type": "string" },
         "cost": { "type": "string" },
         "run_log": { "type": "string" },
-        "rerun_manifest": { "type": "string" }
+        "rerun_manifest": { "type": "string" },
+        "replay": { "type": "string" }
       },
       "additionalProperties": false
     },

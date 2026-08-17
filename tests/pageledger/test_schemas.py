@@ -35,6 +35,7 @@ _classify_evidence_schema = json.loads(
     (SCHEMAS / "classify-evidence-line.schema.json").read_text(encoding="utf-8")
 )
 _bundle_schema = json.loads((SCHEMAS / "bundle.schema.json").read_text(encoding="utf-8"))
+_replay_schema = json.loads((SCHEMAS / "replay.schema.json").read_text(encoding="utf-8"))
 
 
 # --- Helpers --------------------------------------------------------------
@@ -143,6 +144,19 @@ def test_bundle_schema_accepts_generated_bundle(tmp_path: Path) -> None:
     bundle_run(out_dir, bundle_dir)
     bundle = json.loads((bundle_dir / "bundle.json").read_text(encoding="utf-8"))
     _validate(_bundle_schema, bundle, "bundle.json")
+
+
+def test_replay_schema_accepts_generated_replay(tmp_path: Path) -> None:
+    from pageledger.replay import bundle_run, replay_bundle
+
+    source = tmp_path / "sample.txt"
+    source.write_text("first page\fsecond page\n", encoding="utf-8")
+    out_dir = _run_pageledger(tmp_path, config_yaml=MINIMAL_CONFIG, inputs=[str(source)])
+    bundle_dir = tmp_path / "bundle"
+    bundle_run(out_dir, bundle_dir)
+    replay_bundle(bundle_dir, tmp_path / "replayed")
+    replay = json.loads((tmp_path / "replayed" / "replay.json").read_text(encoding="utf-8"))
+    _validate(_replay_schema, replay, "replay.json")
 
 
 # --- Test fixtures --------------------------------------------------------
