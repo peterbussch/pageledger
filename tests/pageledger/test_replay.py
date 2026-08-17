@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 
@@ -116,9 +117,88 @@ def test_profile_rejects_path_material_values() -> None:
         build_reproducibility_profile(AdapterReturning())
 
 
+@pytest.mark.parametrize("alias", ["LATEST", "main", "master", "stable", "current", "rolling", "nightly", "HEAD", "unknown"])
+def test_profile_rejects_mutable_material_version_aliases(alias: str) -> None:
+    from pageledger.replay import build_reproducibility_profile
+
+    class AdapterReturning:
+        name = "custom"
+        version = "1.0"
+
+        def reproducibility_profile(self) -> dict[str, object]:
+            return {
+                "materials": [
+                    {
+                        "kind": "asset",
+                        "name": "fixture",
+                        "version": alias,
+                        "sha256": "0" * 64,
+                    }
+                ]
+            }
+
+    with pytest.raises(ValueError, match="exact revision"):
+        build_reproducibility_profile(AdapterReturning())
+
+
+def test_model_material_uses_content_revision_when_version_is_unknown(tmp_path: Path) -> None:
+    from pageledger.replay import binary_material, model_material
+
+    model = tmp_path / "eng.traineddata"
+    model.write_bytes(b"trained model bytes")
+    digest = hashlib.sha256(model.read_bytes()).hexdigest()
+    material = model_material("tesseract:eng.traineddata", model)
+    assert material["version"] == f"sha256:{digest}"
+    assert material["version"] != "unknown"
+
+    executable = tmp_path / "tool"
+    executable.write_bytes(b"tool bytes")
+    executable_material = binary_material("tool", str(executable), "unknown")
+    assert executable_material["version"].startswith("sha256:")
+    assert executable_material["version"] != "unknown"
+
+
 def test_execute_manifest_records_profile_but_provenance_does_not(tmp_path: Path) -> None:
     out, _, _ = _run_text(tmp_path)
     manifest = json.loads((out / "manifest.json").read_text())
     provenance = json.loads((out / "provenance.jsonl").read_text().splitlines()[0])
     assert manifest["extractors"][0]["reproducibility_profile"]["profile_sha256"]
     assert "reproducibility_profile" not in provenance["extractor"]
+
+
+def test_review_only_custom_adapter_without_hook_gets_planned_entry(tmp_path: Path) -> None:
+    adapter_dir = tmp_path / "adapters"
+    adapter_dir.mkdir()
+    (adapter_dir / "review_adapter.py").write_text(
+        "from pageledger.adapters import ExtractionResult\n"
+        "class ReviewAdapter:\n"
+        "    name = 'review-custom'\n"
+        "    version = '1.0'\n"
+        "    deterministic = True\n"
+        "    input_types = ('text',)\n"
+        "    output_types = ('text',)\n"
+        "    capabilities = ('local',)\n"
+        "    def supports(self, action): return action == 'transcribe_text'\n"
+        "    def extract(self, source, *, page_id, page_number, action, prompt=None):\n"
+        "        return ExtractionResult(content='', format='text', confidence=None, model=None, warnings=[], usage={'pages': 1})\n",
+        encoding="utf-8",
+    )
+    config = MINIMAL_CONFIG.replace(
+        "default_action: transcribe_text", "default_action: review"
+    ).replace("adapter: text", "adapter: review_adapter:ReviewAdapter")
+    out, _, _ = _run_text(tmp_path, config_text=config, adapter_path=adapter_dir)
+    manifest = json.loads((out / "manifest.json").read_text())
+    assert manifest["extractors"] == [
+        {
+            "name": "review-custom",
+            "adapter": "review-custom",
+            "model": None,
+            "version": "1.0",
+            "prompt_hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "deterministic": True,
+            "input_types": ["text"],
+            "output_types": ["text"],
+            "capabilities": ["local"],
+        }
+    ]
+    assert "reproducibility_profile" not in manifest["extractors"][0]

@@ -19,6 +19,18 @@ from ._version import __version__
 PROFILE_VERSION = "0.1"
 _MATERIAL_KINDS = {"binary", "package", "model", "asset"}
 _SHA256 = re.compile(r"[0-9a-f]{64}\Z")
+_MUTABLE_VERSION_ALIASES = {
+    "current",
+    "head",
+    "latest",
+    "main",
+    "master",
+    "nightly",
+    "rolling",
+    "stable",
+    "unknown",
+    "unversioned",
+}
 
 
 def profile_sha256(profile: Mapping[str, object]) -> str:
@@ -119,6 +131,10 @@ def _validate_materials(supplied: object) -> list[dict[str, str]]:
         if _looks_like_path(name) or _looks_like_path(version):
             raise ValueError(
                 "adapter reproducibility_profile material names and versions must not contain paths"
+            )
+        if version.casefold() in _MUTABLE_VERSION_ALIASES:
+            raise ValueError(
+                "adapter reproducibility_profile material version must be an exact revision, not a mutable alias"
             )
         if _SHA256.fullmatch(digest) is None:
             raise ValueError(
@@ -222,6 +238,8 @@ def binary_material(name: str, path: str, version: str) -> dict[str, str]:
         digest = hashlib.sha256(executable.read_bytes()).hexdigest()
     except OSError as exc:
         raise ValueError(f"Cannot hash executable for '{name}': {exc}") from exc
+    if version.casefold() in _MUTABLE_VERSION_ALIASES or version in {name}:
+        version = f"sha256:{digest}"
     return {"kind": "binary", "name": name, "version": version, "sha256": digest}
 
 
@@ -233,4 +251,6 @@ def model_material(name: str, path: Path, version: str = "unknown") -> dict[str,
         digest = hashlib.sha256(path.read_bytes()).hexdigest()
     except OSError as exc:
         raise ValueError(f"Cannot hash trained-data model '{name}': {exc}") from exc
+    if version.casefold() in _MUTABLE_VERSION_ALIASES:
+        version = f"sha256:{digest}"
     return {"kind": "model", "name": name, "version": version, "sha256": digest}

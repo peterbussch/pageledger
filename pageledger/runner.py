@@ -719,11 +719,10 @@ def run(
     quality_warning_pages = sum(1 for entry in quality_entries if entry.get("warnings"))
 
     # A route-only execute run can have no extracted page while still having
-    # a deterministic adapter and profile suitable for a later bundle.
+    # adapter evidence suitable for a later bundle.
     if (
         not dry_run
         and adapter is not None
-        and adapter_profile is not None
         and not extractor_entries
         and planned_pages
         and all(
@@ -741,8 +740,9 @@ def run(
             "input_types": adapter_input_types,
             "output_types": adapter_output_types,
             "capabilities": adapter_capabilities,
-            "reproducibility_profile": adapter_profile,
         }
+        if adapter_profile is not None:
+            planned_extractor_entry["reproducibility_profile"] = adapter_profile
         if effective_adapter_options:
             planned_extractor_entry["options"] = dict(effective_adapter_options)
         extractor_entries.append(planned_extractor_entry)
