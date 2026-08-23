@@ -8,7 +8,7 @@ import math
 import re
 import sys
 import time
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from datetime import datetime, timezone
 from pathlib import Path
 from shutil import copyfile
@@ -48,6 +48,32 @@ from .routing import load_route_map
 
 LOG_LEVELS = {"DEBUG": 10, "INFO": 20, "WARNING": 30, "ERROR": 40}
 ERROR_TYPE_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_.]*")
+PhaseObserver = Callable[[str, int], None]
+
+
+class _PhaseClock:
+    """Observe exclusive runner phases without affecting normal runs."""
+
+    def __init__(self, observer: PhaseObserver | None, initial: str) -> None:
+        self._observer = observer
+        self._phase = initial
+        self._started_at = time.perf_counter_ns() if observer is not None else None
+
+    def switch(self, next_phase: str) -> None:
+        if self._observer is None:
+            return
+        assert self._started_at is not None
+        finished_at = time.perf_counter_ns()
+        self._observer(self._phase, finished_at - self._started_at)
+        self._phase = next_phase
+        self._started_at = time.perf_counter_ns()
+
+    def finish(self) -> None:
+        if self._observer is None:
+            return
+        assert self._started_at is not None
+        self._observer(self._phase, time.perf_counter_ns() - self._started_at)
+        self._started_at = None
 
 
 # Compatibility aliases: these helpers lived in runner.py before the
@@ -148,6 +174,7 @@ def _extract_adapter_page(
     config: Any,
     run_id: str,
     log_entries: list[dict[str, Any]],
+    phase_clock: _PhaseClock,
 ) -> tuple[Any | None, float | None, str, int, AdapterExecutionError | None]:
     """Extract and validate one page, preserving retry evidence."""
     page_id = page["page_id"]
@@ -197,6 +224,7 @@ def _extract_adapter_page(
             if delay > 0:
                 time.sleep(delay)
 
+    phase_clock.switch("result_validation")
     try:
         _validate_extraction_result(adapter.name, result)
     except Exception as exc:
@@ -243,6 +271,7 @@ def run(
     routes_path: Path | None = None,
     _loaded_adapter: Any | None = None,
     _reproducibility_profile: dict[str, Any] | None = None,
+    _phase_observer: PhaseObserver | None = None,
 ) -> dict[str, Any]:
     """Run the alpha PageLedger loop.
 
@@ -259,6 +288,7 @@ def run(
     so custom adapters can be loaded without setting PYTHONPATH.
     """
 
+    phase_clock = _PhaseClock(_phase_observer, "plan_setup")
     log_level = _normalize_log_level(log_level)
     execution_mode = "dry_run" if dry_run else "execute"
     _apply_adapter_path(adapter_path)
@@ -508,6 +538,7 @@ def run(
         adapter_capabilities = list(getattr(adapter, "capabilities", ()))
 
     for source, page in planned_pages:
+        phase_clock.switch("page_control")
         action = cast(str, page["action"])
         if action in {"review", "skip"}:
             continue
@@ -519,17 +550,22 @@ def run(
         prompt_hash = _sha256_text(page_prompt or "")
 
         if adapter is not None:
-            result, extraction_seconds, extraction_started_at, attempt, adapter_error = (
-                _extract_adapter_page(
-                    adapter=adapter,
-                    source=source,
-                    page=page,
-                    prompt=page_prompt,
-                    config=config,
-                    run_id=run_id,
-                    log_entries=log_entries,
+            phase_clock.switch("adapter_call")
+            try:
+                result, extraction_seconds, extraction_started_at, attempt, adapter_error = (
+                    _extract_adapter_page(
+                        adapter=adapter,
+                        source=source,
+                        page=page,
+                        prompt=page_prompt,
+                        config=config,
+                        run_id=run_id,
+                        log_entries=log_entries,
+                        phase_clock=phase_clock,
+                    )
                 )
-            )
+            finally:
+                phase_clock.switch("page_control")
             if adapter_error is not None:
                 pages_failed += 1
                 consecutive_failures += 1
@@ -551,7 +587,7 @@ def run(
                 continue
             assert result is not None
             consecutive_failures = 0
-            usage = _canonical_usage(result.usage)
+            phase_clock.switch("raw_artifact")
             raw_artifact = Path("raw") / f"{page_id}.{_artifact_extension(result.format)}"
             raw_text = (
                 result.content
@@ -560,6 +596,8 @@ def run(
             )
             (out_dir / raw_artifact).write_text(raw_text, encoding="utf-8")
             raw_sha256 = _sha256_path(out_dir / raw_artifact)
+            phase_clock.switch("usage_budget_provenance")
+            usage = _canonical_usage(result.usage)
             page_tokens = usage.get("tokens")
             page_cost, page_cost_basis = _derive_cost(
                 usage,
@@ -646,6 +684,7 @@ def run(
                     page_cost_basis=page_cost_basis,
                 )
             )
+            phase_clock.switch("quality")
             quality_entries.append(
                 _build_quality_entry(
                     schema_version=config.schema_version,
@@ -656,6 +695,7 @@ def run(
                     parent_quality=(parent_quality_by_page or {}).get(page_id),
                 )
             )
+            phase_clock.switch("alignment")
             if schema_spec is not None and result.format in ALIGNABLE_FORMATS:
                 alignment = align_page(
                     result.content,
@@ -669,6 +709,7 @@ def run(
                 if alignment is not None:
                     write_json(out_dir / "normalized" / f"{page_id}.json", alignment)
                     alignments[page_id] = alignment
+            phase_clock.switch("page_log_control")
             log_entries.append(
                 {
                     "schema_version": config.schema_version,
@@ -688,6 +729,7 @@ def run(
                 halt_reason = "budget"
                 break
 
+    phase_clock.switch("halt_accounting_route")
     if halt_reason is not None:
         reason = (
             "not_attempted_after_budget"
@@ -711,6 +753,7 @@ def run(
     )
     write_yaml(out_dir / "route-map.yml", route_map)
 
+    phase_clock.switch("grading")
     for entry in quality_entries:
         entry.update(
             grade_page(
@@ -752,6 +795,7 @@ def run(
             planned_extractor_entry["options"] = dict(effective_adapter_options)
         extractor_entries.append(planned_extractor_entry)
 
+    phase_clock.switch("policy_queues")
     routes = {
         page["page_id"]: page
         for document in documents
@@ -766,6 +810,7 @@ def run(
         quarantine_queue=quarantine_queue,
     )
 
+    phase_clock.switch("models")
     if failure_error:
         status = "failed"
     elif dry_run or pages_failed or pages_routed_review:
@@ -818,14 +863,17 @@ def run(
         review_queue=review_queue,
         quarantine_queue=quarantine_queue,
     )
+    phase_clock.switch("audit_write")
     write_json(out_dir / "audit.json", audit)
 
     (out_dir / "audit.md").write_text(
         render_audit_markdown(audit),
         encoding="utf-8",
     )
+    phase_clock.switch("ledger_jsonl_write")
     write_jsonl(out_dir / "provenance.jsonl", provenance_entries)
     write_jsonl(out_dir / "quality.jsonl", quality_entries)
+    phase_clock.switch("cost_build_write")
     write_json(
         out_dir / "cost.json",
         _build_cost_report(
@@ -845,6 +893,7 @@ def run(
         ),
     )
 
+    phase_clock.switch("rerun_build_write")
     rerun_escalation: dict[str, Any] | None = None
     if escalation is not None:
         assert adapter_order_names is not None
@@ -872,6 +921,7 @@ def run(
     )
     write_yaml(out_dir / "rerun-manifest.yml", rerun_manifest)
 
+    phase_clock.switch("runlog_build_write")
     log_event = (
         log_entries
         if log_entries
@@ -898,8 +948,11 @@ def run(
     write_jsonl(out_dir / "run.log", log_event)
     # The manifest is the commit indicator for a fully written run directory.
     # Write it only after every artifact it points to exists.
+    phase_clock.switch("manifest_commit")
     write_json(out_dir / "manifest.json", manifest)
+    phase_clock.switch("result_return")
     if failure_error is not None:
+        phase_clock.finish()
         raise failure_error
 
     config_warnings = getattr(config, "warnings", [])
@@ -921,6 +974,7 @@ def run(
     if parent_run_id is not None:
         result["parent_run_id"] = parent_run_id
         result["rerun_depth"] = run_depth
+    phase_clock.finish()
     return result
 
 
