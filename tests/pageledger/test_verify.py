@@ -117,6 +117,7 @@ def test_verify_run_rejects_manifest_provenance_extractor_forgery(
     identity["reproducibility_profile"]["profile_sha256"] = profile_sha256(
         identity["reproducibility_profile"]
     )
+    forged_profile_hash = identity["reproducibility_profile"]["profile_sha256"]
     manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
 
     replay_path = replay_dir / "replay.json"
@@ -124,6 +125,7 @@ def test_verify_run_rejects_manifest_provenance_extractor_forgery(
     for key in ("baseline_extractor", "local_extractor"):
         replay[key]["adapter"] = "forged-adapter"
         replay[key]["version"] = "9.9"
+        replay[key]["reproducibility_profile_sha256"] = forged_profile_hash
     replay_path.write_text(json.dumps(replay), encoding="utf-8")
 
     report = verify_run(replay_dir)
@@ -131,7 +133,25 @@ def test_verify_run_rejects_manifest_provenance_extractor_forgery(
     assert report["status"] == "fail"
     codes = {item["code"] for item in report["errors"]}
     assert "extractor_identity_mismatch" in codes
+    assert "replay_linkage_mismatch" not in codes
     assert not ({"profile_invalid", "profile_hash_mismatch"} & codes)
+
+
+def test_verify_run_returns_structured_failure_for_malformed_manifest_extractor(
+    tmp_path: Path,
+) -> None:
+    from pageledger.verify import verify_run
+
+    run_dir, _ = _run(tmp_path)
+    manifest_path = run_dir / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    del manifest["extractors"][0]["adapter"]
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    report = verify_run(run_dir)
+
+    assert report["status"] == "fail"
+    assert "extractor_identity_mismatch" in _codes(report, "errors")
 
 
 def test_verify_run_accepts_manifest_extractor_membership_variants(

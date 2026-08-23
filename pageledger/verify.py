@@ -1440,6 +1440,19 @@ def _manifest_extractor_identities(
         if not isinstance(entry, dict):
             _add(errors, "extractor_identity_mismatch", "Run manifest extractor is malformed")
             continue
+        if (
+            not isinstance(entry.get("adapter"), str)
+            or not entry["adapter"]
+            or not isinstance(entry.get("version"), str)
+            or not entry["version"]
+        ):
+            _add(
+                errors,
+                "extractor_identity_mismatch",
+                "Run manifest extractor adapter and version are invalid",
+                artifact="manifest.json",
+            )
+            continue
         profile = entry.get("reproducibility_profile")
         profile_hash: str | None = None
         if profile is not None:
