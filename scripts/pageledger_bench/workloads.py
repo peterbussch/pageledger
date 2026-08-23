@@ -27,6 +27,10 @@ _CATEGORY_COUNTS = {
         "clean-control": 200,
     },
 }
+_NORMALIZED_CANONICAL_SHA256 = {
+    "primary": "27456a42ffdca57c30b3a13b7daf183fc315911d7a3d5444fc2d9b98a9f34a66",
+    "generalization": "fab1dfd53e08ffc03f4500a2aa0ec65c0b8af15bff2acc71a2bb83fe7d9fc400",
+}
 
 
 @dataclass(frozen=True)
@@ -56,6 +60,57 @@ class WorkloadSpec:
     expected: dict[str, Any]
 
 
+@dataclass(frozen=True)
+class _FrozenResult:
+    """Immutable adapter template; public result containers are recreated per call."""
+
+    content_encoding: Literal["text", "json"]
+    content_payload: str
+    format: Literal["text", "markdown", "json", "csv", "markdown_table"]
+    confidence: float | None
+    warnings: tuple[str, ...]
+    tokens: int | None
+    cost_usd: float | None
+
+    @classmethod
+    def from_page_spec(cls, page: PageSpec) -> _FrozenResult:
+        if isinstance(page.content, str):
+            encoding: Literal["text", "json"] = "text"
+            payload = page.content
+        else:
+            encoding = "json"
+            payload = json.dumps(page.content, ensure_ascii=False, sort_keys=True, allow_nan=False)
+        return cls(
+            content_encoding=encoding,
+            content_payload=payload,
+            format=page.format,
+            confidence=page.confidence,
+            warnings=page.warnings,
+            tokens=page.tokens,
+            cost_usd=page.cost_usd,
+        )
+
+    def to_extraction_result(self) -> ExtractionResult:
+        content: str | dict[str, Any] | list[dict[str, Any]]
+        if self.content_encoding == "text":
+            content = self.content_payload
+        else:
+            content = json.loads(self.content_payload)
+        return ExtractionResult(
+            content=content,
+            format=self.format,
+            confidence=self.confidence,
+            model="pageledger-zero-work-v1",
+            warnings=list(self.warnings),
+            usage={
+                "pages": 1,
+                "tokens": self.tokens,
+                "compute_seconds": 0.0,
+                "cost_usd": self.cost_usd,
+            },
+        )
+
+
 class ZeroWorkAdapter:
     """A deterministic adapter that only indexes preloaded result templates."""
 
@@ -67,22 +122,7 @@ class ZeroWorkAdapter:
     capabilities = ("benchmark", "local", "preloaded-results")
 
     def __init__(self, page_specs: tuple[PageSpec, ...]) -> None:
-        self._results = tuple(
-            ExtractionResult(
-                content=page.content,
-                format=page.format,
-                confidence=page.confidence,
-                model="pageledger-zero-work-v1",
-                warnings=list(page.warnings),
-                usage={
-                    "pages": 1,
-                    "tokens": page.tokens,
-                    "compute_seconds": 0.0,
-                    "cost_usd": page.cost_usd,
-                },
-            )
-            for page in page_specs
-        )
+        self._results = tuple(_FrozenResult.from_page_spec(page) for page in page_specs)
 
     def supports(self, action: str) -> bool:
         return action == "transcribe_text"
@@ -108,7 +148,7 @@ class ZeroWorkAdapter:
             raise ValueError(f"ZeroWorkAdapter does not support action: {action}")
         if page_number < 1 or page_number > len(self._results):
             raise ValueError(f"page_number {page_number} is outside the frozen workload")
-        return self._results[page_number - 1]
+        return self._results[page_number - 1].to_extraction_result()
 
 
 def sha256_path(path: Path) -> str:
@@ -190,16 +230,20 @@ def _page_spec(category: str, ordinal: int, page_number: int) -> PageSpec:
         if variant == 1:
             content: str | dict[str, Any] | list[dict[str, Any]] = {
                 "amount": page_number,
+                "expected_amount": page_number,
                 "record": f"structured-{ordinal:05d}",
             }
             result_format: Literal["json", "csv", "markdown_table"] = "json"
         elif variant == 2:
-            content = f"record,amount\nstructured-{ordinal:05d},{page_number}\n"
+            content = (
+                "record,amount,expected_amount\n"
+                f"structured-{ordinal:05d},not-an-integer,{page_number}\n"
+            )
             result_format = "csv"
         else:
             content = (
-                "| record | amount |\n|---|---:|\n"
-                f"| structured-{ordinal:05d} | {page_number} |\n"
+                "| record | amount | expected_amount |\n|---|---:|---:|\n"
+                f"| structured-{ordinal:05d} | {page_number + 1} | {page_number} |\n"
             )
             result_format = "markdown_table"
         return PageSpec(
@@ -276,10 +320,22 @@ taxonomy:
   page_types:
     prose:
       default_action: transcribe_text
+schema:
+  name: ledger_benchmark_record
+  columns:
+    - {name: record, type: string, required: true}
+    - {name: amount, type: integer, required: true}
+    - {name: expected_amount, type: integer, required: true}
+  checks:
+    - {name: amount_matches_expected, expression: amount == expected_amount}
+  quality:
+    minimum_required_column_coverage: 1.0
 run:
   adapter: zero-work
   grading:
     review_below_grade: C
+  rerun_if:
+    - arithmetic_failure_rate_above: 0
 """
 
 
@@ -302,6 +358,23 @@ def _expected_aggregates(name: str) -> dict[str, Any]:
         12,
     )
     warning_pages = noisy + historical
+    structured_json = (structured + 2) // 3
+    structured_csv = (structured + 1) // 3
+    structured_markdown = structured // 3
+    schema_aware = {
+        "A": structured_json,
+        "B": structured_csv,
+        "C": 0,
+        "D": structured_markdown,
+        "F": 0,
+    }
+    signals_only = {
+        "A": clean,
+        "B": historical,
+        "C": 0,
+        "D": 0,
+        "F": noisy,
+    }
     return {
         "output": {
             "format_counts": format_counts,
@@ -316,21 +389,17 @@ def _expected_aggregates(name: str) -> dict[str, Any]:
         },
         "quality": {"warning_pages": warning_pages},
         "grades": {
-            "signals_only": {
-                "A": structured + clean,
-                "B": historical,
-                "C": 0,
-                "D": 0,
-                "F": noisy,
-            }
+            "schema_aware": schema_aware,
+            "signals_only": signals_only,
         },
         "audit": {
             "review_queue_by_reason": {
-                "grade_below_threshold": noisy,
+                "grade_below_threshold": noisy + structured_markdown,
                 "quality_warning": warning_pages,
+                "rerun_if:arithmetic_failure_rate_above": structured_markdown,
             },
-            "review_queue_items": warning_pages + noisy,
-            "rerun_items": warning_pages,
+            "review_queue_items": warning_pages + noisy + 2 * structured_markdown,
+            "rerun_items": warning_pages + structured_markdown,
         },
         "cost": {
             "basis": "adapter_reported",
@@ -338,7 +407,30 @@ def _expected_aggregates(name: str) -> dict[str, Any]:
             "cost_usd": cost,
             "tokens_total": tokens,
         },
-        "normalized": {"files": 0, "records_normalized": 0},
+        "normalized": {
+            "canonical_sha256": _NORMALIZED_CANONICAL_SHA256[name],
+            "checks": {
+                "amount_matches_expected": {
+                    "rows_checked": structured_json + structured_markdown,
+                    "rows_passed": structured_json,
+                    "rows_failed": structured_markdown,
+                    "rows_unchecked": structured_csv,
+                }
+            },
+            "coercion_errors": structured_csv,
+            "files": structured,
+            "grade_basis_counts": {
+                "schema_aware": structured,
+                "signals_only": noisy + historical + clean,
+            },
+            "records_normalized": structured,
+            "schema_name": "ledger_benchmark_record",
+            "source_format_counts": {
+                "csv": structured_csv,
+                "json": structured_json,
+                "markdown_table": structured_markdown,
+            },
+        },
     }
 
 

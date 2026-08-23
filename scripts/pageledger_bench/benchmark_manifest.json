@@ -1,9 +1,14 @@
 {
   "allowed_nondeterminism": {
     "audit.json": ["/run_id"],
-    "audit.md": ["/run_id"],
-    "cost.json": ["/run_id"],
+    "audit.md": {
+      "canonical_source": "audit.json",
+      "canonicalize_source_paths": ["/run_id"],
+      "comparison": "derive_with_pageledger.artifacts.render_audit_markdown"
+    },
+    "cost.json": ["/run_id", "/usage/extraction_seconds"],
     "manifest.json": ["/completed_at", "/config/source_paths/0", "/inputs/0/path", "/run_id", "/started_at"],
+    "normalized/*.json": ["/run_id"],
     "provenance.jsonl": ["/*/extraction_seconds", "/*/run_id", "/*/source/path", "/*/timestamp"],
     "quality.jsonl": [],
     "rerun-manifest.yml": ["/created_at", "/items/*/source", "/parent_run_id", "/run_id"],
@@ -30,10 +35,11 @@
     "scripts/pageledger_bench/__init__.py",
     "scripts/pageledger_bench/benchmark_manifest.json",
     "scripts/pageledger_bench/workloads.py",
+    "tests/pageledger/test_benchmark_timing.py",
     "tests/pageledger/test_benchmark_workloads.py"
   ],
   "recipe_sha256": {
-    "scripts/pageledger_bench/workloads.py": "66f02c7a46c9172a163a593671c859eea3ff5d6c5eee1cc3883d2f4e58c6d0d8"
+    "scripts/pageledger_bench/workloads.py": "74dfc035ef87be6e3101e98b5bc2b7dc6eace0f938393ca5af1509ac3890a118"
   },
   "schema_sha256": {
     "audit.schema.json": "4f18182140c5aee9eb4d40e0fd7d49df25e5dfdd5c3c426041c1fed520521848",
@@ -50,13 +56,25 @@
       "category_counts": {"clean-control": 200, "historical-multiscript": 250, "noisy": 250, "structured": 300},
       "expected": {
         "audit": {
-          "rerun_items": 500,
-          "review_queue_by_reason": {"grade_below_threshold": 250, "quality_warning": 500},
-          "review_queue_items": 750
+          "rerun_items": 600,
+          "review_queue_by_reason": {"grade_below_threshold": 350, "quality_warning": 500, "rerun_if:arithmetic_failure_rate_above": 100},
+          "review_queue_items": 950
         },
         "cost": {"basis": "adapter_reported", "cost_known": true, "cost_usd": 0.265, "tokens_total": 24100},
-        "grades": {"signals_only": {"A": 500, "B": 250, "C": 0, "D": 0, "F": 250}},
-        "normalized": {"files": 0, "records_normalized": 0},
+        "grades": {
+          "schema_aware": {"A": 100, "B": 100, "C": 0, "D": 100, "F": 0},
+          "signals_only": {"A": 200, "B": 250, "C": 0, "D": 0, "F": 250}
+        },
+        "normalized": {
+          "canonical_sha256": "fab1dfd53e08ffc03f4500a2aa0ec65c0b8af15bff2acc71a2bb83fe7d9fc400",
+          "checks": {"amount_matches_expected": {"rows_checked": 200, "rows_failed": 100, "rows_passed": 100, "rows_unchecked": 100}},
+          "coercion_errors": 100,
+          "files": 300,
+          "grade_basis_counts": {"schema_aware": 300, "signals_only": 700},
+          "records_normalized": 300,
+          "schema_name": "ledger_benchmark_record",
+          "source_format_counts": {"csv": 100, "json": 100, "markdown_table": 100}
+        },
         "output": {
           "format_counts": {"csv": 100, "json": 100, "markdown": 250, "markdown_table": 100, "text": 450},
           "pages_extracted": 1000,
@@ -65,8 +83,8 @@
         "quality": {"warning_pages": 500}
       },
       "hashes": {
-        "membership.json": "9dc751fc57c47ed9ec048d804c91d774296f41cc538ccb8d764589bc368f28cd",
-        "pageledger.yml": "65206e381e2d01b67c95c2c4f65aba6bcb83b0d7bb5b9426d75ef090bb06607a",
+        "membership.json": "841823aa0ca8ab6daeb4c785482a6fc44a61aaea6c4c91583f6905b48913b705",
+        "pageledger.yml": "cd12595cbab348fdc841230de4897a1a0cf96b200af5a3c62138b2f44dfdbca6",
         "source.txt": "716713c45e8952e8102fdc6755b54f3caaeca1706475acc598414ea348a0bcc1"
       },
       "page_count": 1000
@@ -75,13 +93,25 @@
       "category_counts": {"clean-control": 1000, "historical-multiscript": 1200, "noisy": 1200, "structured": 1600},
       "expected": {
         "audit": {
-          "rerun_items": 2400,
-          "review_queue_by_reason": {"grade_below_threshold": 1200, "quality_warning": 2400},
-          "review_queue_items": 3600
+          "rerun_items": 2933,
+          "review_queue_by_reason": {"grade_below_threshold": 1733, "quality_warning": 2400, "rerun_if:arithmetic_failure_rate_above": 533},
+          "review_queue_items": 4666
         },
         "cost": {"basis": "adapter_reported", "cost_known": true, "cost_usd": 1.34, "tokens_total": 121600},
-        "grades": {"signals_only": {"A": 2600, "B": 1200, "C": 0, "D": 0, "F": 1200}},
-        "normalized": {"files": 0, "records_normalized": 0},
+        "grades": {
+          "schema_aware": {"A": 534, "B": 533, "C": 0, "D": 533, "F": 0},
+          "signals_only": {"A": 1000, "B": 1200, "C": 0, "D": 0, "F": 1200}
+        },
+        "normalized": {
+          "canonical_sha256": "27456a42ffdca57c30b3a13b7daf183fc315911d7a3d5444fc2d9b98a9f34a66",
+          "checks": {"amount_matches_expected": {"rows_checked": 1067, "rows_failed": 533, "rows_passed": 534, "rows_unchecked": 533}},
+          "coercion_errors": 533,
+          "files": 1600,
+          "grade_basis_counts": {"schema_aware": 1600, "signals_only": 3400},
+          "records_normalized": 1600,
+          "schema_name": "ledger_benchmark_record",
+          "source_format_counts": {"csv": 533, "json": 534, "markdown_table": 533}
+        },
         "output": {
           "format_counts": {"csv": 533, "json": 534, "markdown": 1200, "markdown_table": 533, "text": 2200},
           "pages_extracted": 5000,
@@ -90,8 +120,8 @@
         "quality": {"warning_pages": 2400}
       },
       "hashes": {
-        "membership.json": "b3733eb6fc55b09ddd5dfbb9d4eb8d3c257e318106059b785b63d92c24b676b6",
-        "pageledger.yml": "65206e381e2d01b67c95c2c4f65aba6bcb83b0d7bb5b9426d75ef090bb06607a",
+        "membership.json": "11f266a813d9743017a28ecbfd0d43e3ed33a321ed5e4a16f57672f00a45dcd3",
+        "pageledger.yml": "cd12595cbab348fdc841230de4897a1a0cf96b200af5a3c62138b2f44dfdbca6",
         "source.txt": "4fb36e6c30d59045f627c44cebd4cc9af6f04c72909f91d93f66f985cbc00e7d"
       },
       "page_count": 5000
