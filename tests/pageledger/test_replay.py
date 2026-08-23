@@ -92,6 +92,21 @@ def test_text_profile_is_stable_and_self_hashing() -> None:
     assert profile["profile_sha256"] == profile_sha256(profile)
 
 
+def test_validate_reproducibility_profile_returns_validated_envelope() -> None:
+    from pageledger.adapters import TextAdapter
+    from pageledger.replay import build_reproducibility_profile, validate_reproducibility_profile
+
+    adapter = TextAdapter()
+    profile = build_reproducibility_profile(adapter)
+    assert profile is not None
+    identity = {
+        "adapter": adapter.name,
+        "version": adapter.version,
+    }
+
+    assert validate_reproducibility_profile(profile, identity) == profile
+
+
 def test_custom_deterministic_adapter_without_hook_has_no_profile() -> None:
     from pageledger.replay import build_reproducibility_profile
 

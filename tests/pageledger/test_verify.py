@@ -50,6 +50,148 @@ def test_verify_run_accepts_coherent_ledger(tmp_path):
 
 
 @pytest.mark.parametrize(
+    "mutation",
+    [
+        "forged_self_hash",
+        "path_material",
+        "mutable_alias",
+        "hash_only_profile",
+        "adapter_identity_mismatch",
+    ],
+)
+def test_verify_run_rejects_invalid_manifest_reproducibility_profile(
+    tmp_path: Path, mutation: str
+) -> None:
+    from pageledger.replay import profile_sha256
+    from pageledger.verify import verify_run
+
+    run_dir, _ = _run(tmp_path)
+    manifest_path = run_dir / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    profile = manifest["extractors"][0]["reproducibility_profile"]
+    if mutation == "forged_self_hash":
+        profile["runtime"]["release"] = "forged-release"
+    elif mutation == "path_material":
+        profile["materials"] = [
+            {"kind": "asset", "name": "/tmp/model", "version": "1.0", "sha256": "0" * 64}
+        ]
+    elif mutation == "mutable_alias":
+        profile["materials"] = [
+            {"kind": "model", "name": "model", "version": "latest", "sha256": "0" * 64}
+        ]
+    elif mutation == "hash_only_profile":
+        manifest["extractors"][0]["reproducibility_profile"] = {"profile_sha256": "0" * 64}
+    else:
+        profile["adapter"]["name"] = "forged-adapter"
+    if mutation in {"path_material", "mutable_alias", "adapter_identity_mismatch"}:
+        profile["profile_sha256"] = profile_sha256(profile)
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    report = verify_run(run_dir)
+
+    assert report["status"] == "fail"
+    assert {item["code"] for item in report["errors"]} & {
+        "profile_invalid", "profile_hash_mismatch"
+    }
+
+
+def test_verify_run_rejects_manifest_provenance_extractor_forgery(
+    tmp_path: Path,
+) -> None:
+    from pageledger.replay import bundle_run, profile_sha256, replay_bundle
+    from pageledger.verify import verify_run
+
+    run_dir, _ = _run(tmp_path)
+    bundle_dir = tmp_path / "bundle"
+    bundle_run(run_dir, bundle_dir)
+    replay_dir = tmp_path / "replayed"
+    replay_bundle(bundle_dir, replay_dir)
+
+    manifest_path = replay_dir / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    identity = manifest["extractors"][0]
+    identity["adapter"] = "forged-adapter"
+    identity["version"] = "9.9"
+    identity["reproducibility_profile"]["adapter"]["name"] = "forged-adapter"
+    identity["reproducibility_profile"]["adapter"]["version"] = "9.9"
+    identity["reproducibility_profile"]["profile_sha256"] = profile_sha256(
+        identity["reproducibility_profile"]
+    )
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    replay_path = replay_dir / "replay.json"
+    replay = json.loads(replay_path.read_text(encoding="utf-8"))
+    for key in ("baseline_extractor", "local_extractor"):
+        replay[key]["adapter"] = "forged-adapter"
+        replay[key]["version"] = "9.9"
+    replay_path.write_text(json.dumps(replay), encoding="utf-8")
+
+    report = verify_run(replay_dir)
+
+    assert report["status"] == "fail"
+    codes = {item["code"] for item in report["errors"]}
+    assert "extractor_identity_mismatch" in codes
+    assert not ({"profile_invalid", "profile_hash_mismatch"} & codes)
+
+
+def test_verify_run_accepts_manifest_extractor_membership_variants(
+    tmp_path: Path,
+) -> None:
+    from pageledger.replay import profile_sha256
+    from pageledger.verify import verify_run
+
+    run_dir, _ = _run(tmp_path)
+    manifest_path = run_dir / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    alternate = json.loads(json.dumps(manifest["extractors"][0]))
+    alternate["version"] = "2.0"
+    alternate["reproducibility_profile"]["adapter"]["version"] = "2.0"
+    alternate["reproducibility_profile"]["profile_sha256"] = profile_sha256(
+        alternate["reproducibility_profile"]
+    )
+    manifest["extractors"].append(alternate)
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    provenance_path = run_dir / "provenance.jsonl"
+    lines = provenance_path.read_text(encoding="utf-8").splitlines()
+    first = json.loads(lines[0])
+    first["extractor"]["adapter_version"] = "2.0"
+    lines[0] = json.dumps(first)
+    provenance_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+    report = verify_run(run_dir)
+
+    assert report["status"] == "pass"
+
+
+def test_verify_run_accepts_routed_review_only_empty_provenance(tmp_path: Path) -> None:
+    from pageledger.runner import run
+    from pageledger.verify import verify_run
+
+    base, source = _run(tmp_path)
+    config = tmp_path / "config.yml"
+    config.write_text(MINIMAL, encoding="utf-8")
+    route = yaml.safe_load((base / "route-map.yml").read_text(encoding="utf-8"))
+    for document in route["documents"]:
+        for page in document["pages"]:
+            page["action"] = "review"
+            page["reason"] = "explicit review"
+    route_path = tmp_path / "review-route.yml"
+    route_path.write_text(yaml.safe_dump(route, sort_keys=False), encoding="utf-8")
+    out_dir = tmp_path / "review-only"
+    run(
+        inputs=[source],
+        config_path=config,
+        out_dir=out_dir,
+        routes_path=route_path,
+        dry_run=False,
+    )
+
+    report = verify_run(out_dir)
+
+    assert report["status"] == "pass"
+
+
+@pytest.mark.parametrize(
     "field",
     ["baseline_run_id", "replay_run_id", "bundle_manifest_sha256", "outcome", "replay_schema_version"],
 )

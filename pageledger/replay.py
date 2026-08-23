@@ -933,14 +933,26 @@ def _validate_extractor_identity(identity: dict[str, Any]) -> None:
         if identity["deterministic"] and not cloud:
             _fail("profile_missing", "Deterministic non-cloud extractor lacks a profile")
         return
-    _validate_profile(profile, identity)
+    validate_reproducibility_profile(profile, identity)
 
 
-def _validate_profile(profile: Any, identity: dict[str, Any]) -> None:
+def validate_reproducibility_profile(
+    profile: object,
+    identity: Mapping[str, object],
+) -> dict[str, Any]:
+    """Validate and return a strict, self-hashing profile envelope."""
     if not isinstance(profile, dict):
         _fail("profile_invalid", "Reproducibility profile must be a mapping or null")
     profile = cast(dict[str, Any], profile)
-    _exact_keys(profile, {"profile_version", "pageledger", "adapter", "runtime", "materials", "profile_sha256"}, "profile")
+    if set(profile) != {
+        "profile_version",
+        "pageledger",
+        "adapter",
+        "runtime",
+        "materials",
+        "profile_sha256",
+    }:
+        _fail("profile_invalid", "profile has unexpected or missing fields")
     if profile.get("profile_version") != PROFILE_VERSION:
         _fail("profile_invalid", "Unsupported reproducibility profile version")
     for section, keys in {
@@ -952,7 +964,8 @@ def _validate_profile(profile: Any, identity: dict[str, Any]) -> None:
         if not isinstance(value, dict):
             _fail("profile_invalid", f"Profile {section} must be a mapping")
         value = cast(dict[str, Any], value)
-        _exact_keys(value, keys, f"profile {section}")
+        if set(value) != keys:
+            _fail("profile_invalid", f"profile {section} has unexpected or missing fields")
         if any(not isinstance(value[item], str) or not value[item] for item in keys if item != "code_sha256"):
             _fail("profile_invalid", f"Profile {section} contains invalid strings")
         if "code_sha256" in value and not _is_sha256(value["code_sha256"]):
@@ -968,7 +981,8 @@ def _validate_profile(profile: Any, identity: dict[str, Any]) -> None:
     for material in materials:
         if not isinstance(material, dict):
             _fail("profile_invalid", "Profile material must be a mapping")
-        _exact_keys(material, {"kind", "name", "version", "sha256"}, "profile material")
+        if set(material) != {"kind", "name", "version", "sha256"}:
+            _fail("profile_invalid", "profile material has unexpected or missing fields")
         if any(not isinstance(material[key], str) or not material[key] for key in ("kind", "name", "version")):
             _fail("profile_invalid", "Profile material has invalid fields")
         if material["kind"] not in _MATERIAL_KINDS or not _is_sha256(material["sha256"]):
@@ -983,6 +997,7 @@ def _validate_profile(profile: Any, identity: dict[str, Any]) -> None:
         previous = pair
     if not _is_sha256(profile.get("profile_sha256")) or profile_sha256(profile) != profile["profile_sha256"]:
         _fail("profile_hash_mismatch", "Reproducibility profile self-hash does not match")
+    return profile
 
 
 def _bundle_sources(run_root: Path, manifest: dict[str, Any]) -> tuple[list[dict[str, Any]], list[Path]]:

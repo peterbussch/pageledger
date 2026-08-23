@@ -15,6 +15,7 @@ import yaml
 
 from .artifacts import build_rerun_manifest, render_audit_markdown
 from .config import PageLedgerConfig
+from .replay import ReplayError, validate_reproducibility_profile
 
 REQUIRED_ARTIFACTS = {
     "config_snapshot",
@@ -116,6 +117,12 @@ def verify_run(
             "Manifest predates PageLedger generator-version recording",
             artifact="manifest.json",
         )
+
+    manifest_identities = (
+        _manifest_extractor_identities(manifest, errors)
+        if manifest.get("execution_mode") != "dry_run"
+        else []
+    )
 
     declarations = manifest.get("artifacts")
     if not isinstance(declarations, dict):
@@ -464,6 +471,7 @@ def verify_run(
     quality_entries = loaded.get("quality")
     provenance = _index_pages(provenance_entries, "provenance.jsonl", errors)
     quality = _index_pages(quality_entries, "quality.jsonl", errors)
+    _check_provenance_extractor_membership(provenance, manifest_identities, errors)
     counts["extracted_pages"] = len(provenance)
     counts["quality_pages"] = len(quality)
     if set(provenance) != set(quality):
@@ -848,7 +856,9 @@ def verify_run(
                 line_number=line_number,
             )
 
-    _check_replay_linkage(manifest, declarations, loaded, provenance, errors)
+    _check_replay_linkage(
+        manifest, declarations, loaded, provenance, manifest_identities, errors
+    )
 
     return _report(root, errors, warnings, counts)
 
@@ -1046,6 +1056,7 @@ def _check_replay_linkage(
     declarations: dict[str, Any],
     loaded: dict[str, Any],
     provenance: dict[str, dict[str, Any]],
+    manifest_identities: list[dict[str, Any]],
     errors: list[dict[str, Any]],
 ) -> None:
     """Check optional replay evidence and its additive manifest linkage."""
@@ -1167,7 +1178,7 @@ def _check_replay_linkage(
     local_identity = _validate_replay_extractor_identity(
         local_extractor, "local_extractor", errors
     )
-    expected_local = _manifest_replay_extractor_identity(manifest, errors)
+    expected_local = _manifest_replay_extractor_identity(manifest_identities, errors)
     extractor_evidence_valid = baseline_identity is not None and local_identity is not None
     if baseline_identity is not None and local_identity is not None:
         base_keys = (
@@ -1417,25 +1428,27 @@ def _validate_replay_extractor_identity(
     return identity
 
 
-def _manifest_replay_extractor_identity(
+def _manifest_extractor_identities(
     manifest: dict[str, Any], errors: list[dict[str, Any]]
-) -> dict[str, Any] | None:
+) -> list[dict[str, Any]]:
     entries = manifest.get("extractors")
     if not isinstance(entries, list) or not entries:
-        _add(errors, "replay_artifact_malformed", "Run manifest has no extractor entries", artifact="manifest.json")
-        return None
+        _add(errors, "extractor_identity_mismatch", "Run manifest has no extractor entries")
+        return []
     identities: list[dict[str, Any]] = []
     for entry in entries:
         if not isinstance(entry, dict):
-            _add(errors, "replay_artifact_malformed", "Run manifest extractor entry is malformed", artifact="manifest.json")
+            _add(errors, "extractor_identity_mismatch", "Run manifest extractor is malformed")
             continue
         profile = entry.get("reproducibility_profile")
         profile_hash: str | None = None
         if profile is not None:
-            if not isinstance(profile, dict) or not _is_sha256(profile.get("profile_sha256")):
-                _add(errors, "replay_artifact_malformed", "Run manifest reproducibility profile is malformed", artifact="manifest.json")
-            else:
-                profile_hash = profile["profile_sha256"]
+            try:
+                validated_profile = validate_reproducibility_profile(profile, entry)
+            except ReplayError as exc:
+                _add(errors, exc.code, str(exc), artifact="manifest.json")
+                continue
+            profile_hash = validated_profile["profile_sha256"]
         candidate = {
             "adapter": entry.get("adapter"),
             "version": entry.get("version"),
@@ -1449,12 +1462,73 @@ def _manifest_replay_extractor_identity(
         validated = _validate_replay_extractor_identity(candidate, "manifest extractor", errors)
         if validated is not None:
             identities.append(validated)
+    return identities
+
+
+def _manifest_replay_extractor_identity(
+    identities: list[dict[str, Any]], errors: list[dict[str, Any]]
+) -> dict[str, Any] | None:
     if not identities:
         return None
     first = identities[0]
     if any(identity != first for identity in identities[1:]):
-        _add(errors, "replay_linkage_mismatch", "Run manifest extractor entries disagree", artifact="manifest.json")
+        _add(
+            errors,
+            "replay_linkage_mismatch",
+            "Run manifest extractor entries disagree",
+            artifact="manifest.json",
+        )
     return first
+
+
+def _canonical_extractor_core(
+    extractor: object, *, provenance: bool
+) -> tuple | None:
+    if not isinstance(extractor, dict):
+        return None
+    version_key = "adapter_version" if provenance else "version"
+    adapter = extractor.get("adapter")
+    version = extractor.get(version_key)
+    deterministic = extractor.get("deterministic")
+    if (
+        not isinstance(adapter, str)
+        or not adapter
+        or not isinstance(version, str)
+        or not version
+        or not isinstance(deterministic, bool)
+    ):
+        return None
+    lists: list[tuple] = []
+    for field in ("input_types", "output_types", "capabilities"):
+        values = extractor.get(field)
+        if not isinstance(values, list) or any(
+            not isinstance(value, str) for value in values
+        ):
+            return None
+        lists.append(tuple(sorted(values)))
+    return (adapter, version, deterministic, *lists)
+
+
+def _check_provenance_extractor_membership(
+    provenance: dict[str, dict[str, Any]],
+    manifest_identities: list[dict[str, Any]],
+    errors: list[dict[str, Any]],
+) -> None:
+    manifest_cores = {
+        _canonical_extractor_core(identity, provenance=False)
+        for identity in manifest_identities
+    }
+    for page_id, entry in provenance.items():
+        extractor = entry.get("extractor")
+        core = _canonical_extractor_core(extractor, provenance=True)
+        if core is None or core not in manifest_cores:
+            _add(
+                errors,
+                "extractor_identity_mismatch",
+                f"Provenance extractor is not declared by the manifest for {page_id}",
+                artifact="provenance.jsonl",
+                page_id=page_id,
+            )
 
 
 def _index_pages(
