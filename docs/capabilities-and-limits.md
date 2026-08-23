@@ -1,6 +1,6 @@
-# Capabilities and limits
+# Capabilities and limits (PageLedger 0.4.1)
 
-What PageLedger 0.4.0 does, what it leaves to you, and what is documented
+What PageLedger 0.4.1 does, what it leaves to you, and what is documented
 design rather than working code. This is the honest-scope page; the README
 stays short because this exists.
 
@@ -157,15 +157,27 @@ stays short because this exists.
 
 ## Verified replay boundary
 
-Verified replay is shipped, but it is a transport and evidence contract, not
-environment installation or hermetic reproduction. PageLedger does not bundle
-adapter code, OCR engines, model weights, provider registries, cloud identity,
-licenses, or credentials; it cannot make an external service deterministic.
-Replay requires the locally available adapter identity and rejects baseline,
-source, route, config, profile, and inventory tampering. A successful
-`evidence_compared` result is useful linkage evidence, not an accuracy claim.
-PageLedger makes no source authenticity or authorship claim and performs no
-licensing, privacy, or legal review.
+Verified replay is a transport and evidence contract, not environment
+installation or hermetic reproduction. Its trust boundaries are:
+
+- Bundle hashes prove internal consistency, not authenticity/authorship.
+- A reproducibility profile attests to PageLedger's recorded evidence and the
+  adapter-declared materials; it does not cover every imported dependency or
+  prove that those materials are authentic.
+- The replay worker is not a credential/network/cloud-side-effect sandbox. It
+  does not bundle credentials, establish cloud identity, or make external
+  services deterministic.
+- Integrity checks are at-rest observations, not a lock or snapshot against
+  concurrent mutation while files are being read.
+- `exact` with `raw.equal == 0` proves no extraction bytes were produced for
+  comparison; it does not prove that the source contains no bytes.
+- Isolated startup does not process editable-install `.pth` hooks. Adapter code
+  must be normally installed or supplied through `--adapter-path`.
+
+Replay still validates the locally available adapter identity and rejects
+baseline, source, route, config, profile, and inventory tampering. A successful
+`evidence_compared` result is linkage evidence, not an accuracy claim. PageLedger
+does not perform licensing, privacy, or legal review.
 
 Details and examples live in [`design.md`](design.md).
 

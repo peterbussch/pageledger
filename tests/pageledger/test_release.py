@@ -37,7 +37,7 @@ def _write_release_fixture(root: Path, *, citation_version: str = "1.2.3") -> No
 
 
 def test_release_metadata_agrees_for_current_version() -> None:
-    assert check_release(REPO, "v0.4.0") == []
+    assert check_release(REPO, "v0.4.1") == []
 
 
 def test_release_check_rejects_tag_and_metadata_mismatches(tmp_path: Path) -> None:

@@ -199,9 +199,12 @@ manifest and bundle; it does not copy or install the named material.
 
 The hook is optional. Its absence never blocks an ordinary `run`, but a
 deterministic local adapter without a profile cannot establish the strict
-material identity required for an `exact` verified replay. Cloud adapters are
-evidence-compared because cloud identity and service state are outside this
-contract. This feature is intentionally non-hermetic.
+material identity required for an `exact` verified replay. A profile covers
+only the materials the adapter declares, not every imported dependency or
+their authenticity. Cloud adapters are evidence-compared because cloud
+identity and service state are outside this contract. See the [honest replay
+boundary](capabilities-and-limits.md#verified-replay-boundary); this feature is
+intentionally non-hermetic.
 
 ### Finding the adapter module
 

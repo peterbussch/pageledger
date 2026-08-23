@@ -234,12 +234,15 @@ bytes match),
 `deterministic_mismatch`. A source may be moved or removed after bundling;
 replay uses only the copied source bytes. The bundle is not an archive and does
 not install an environment, code, model, provider identity, or credentials.
+Profiles attest only adapter-declared materials, and the checks observe files
+at rest rather than locking them against concurrent mutation. See the
+[honest replay boundary](capabilities-and-limits.md#verified-replay-boundary).
 
 ## Compatibility
 
 Artifact fields follow the compatibility policy in
 [`run-manifest-spec.md`](run-manifest-spec.md): additions are backward
-compatible within a schema version. PageLedger 0.4.0 therefore retains
+compatible within a schema version. PageLedger 0.4.1 therefore retains
 `schema_version: "0.1"` for its optional classifier, escalation, alert, and
 rollup, and replay-linkage fields. The schemas in
 [`schemas/`](../schemas/) are the machine-readable authority, enforced by

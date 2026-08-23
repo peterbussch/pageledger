@@ -221,6 +221,9 @@ not point inside the bundle. `--out DIR` is required and must not already
 exist. `--json` emits the result and `replay.json` records baseline/local
 extractor linkage, profile match, raw equal/different/missing counts, and the
 comparison object.
+Human output also prints `Raw comparison: N equal / N different / N missing`;
+these counts are evidence, not an authenticity claim. See the [honest replay
+boundary](capabilities-and-limits.md#verified-replay-boundary).
 
 Exit codes are consistent across these commands: 0 means bundle creation or a
 successful replay (`exact` or `evidence_compared`); 1 means a verified-run,

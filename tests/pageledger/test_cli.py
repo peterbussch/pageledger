@@ -75,7 +75,53 @@ def test_replay_human_exact_output(tmp_path: Path) -> None:
 
     code, stdout, _ = _run_cli(["replay", str(bundle_dir), "--out", str(tmp_path / "replayed")])
     assert code == 0
-    assert stdout == "Verified replay outcome: exact\n"
+    assert stdout == (
+        "Verified replay outcome: exact\n"
+        "Raw comparison: 1 equal / 0 different / 0 missing\n"
+    )
+
+
+def test_replay_human_review_only_raw_output(tmp_path: Path) -> None:
+    source = tmp_path / "source.txt"
+    source.write_text("first page\n", encoding="utf-8")
+    config = tmp_path / "config.yml"
+    config.write_text(MINIMAL_CONFIG, encoding="utf-8")
+    run_dir = tmp_path / "run"
+    assert _run_cli(
+        ["run", str(source), "--config", str(config), "--out", str(run_dir)]
+    )[0] == 0
+
+    route_map = yaml.safe_load((run_dir / "route-map.yml").read_text(encoding="utf-8"))
+    page = route_map["documents"][0]["pages"][0]
+    page["action"] = "review"
+    page["reason"] = "manual review"
+    routes = tmp_path / "routes.yml"
+    routes.write_text(yaml.safe_dump(route_map, sort_keys=False), encoding="utf-8")
+
+    routed_dir = tmp_path / "routed"
+    assert _run_cli(
+        [
+            "run",
+            str(source),
+            "--config",
+            str(config),
+            "--routes",
+            str(routes),
+            "--out",
+            str(routed_dir),
+        ]
+    )[0] == 0
+    bundle_dir = tmp_path / "bundle"
+    assert _run_cli(["bundle", str(routed_dir), "--out", str(bundle_dir)])[0] == 0
+
+    code, stdout, _ = _run_cli(
+        ["replay", str(bundle_dir), "--out", str(tmp_path / "replayed")]
+    )
+    assert code == 0
+    assert stdout == (
+        "Verified replay outcome: exact\n"
+        "Raw comparison: 0 equal / 0 different / 0 missing\n"
+    )
 
 
 def test_replay_cli_returns_one_with_deterministic_mismatch_json(

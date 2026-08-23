@@ -439,6 +439,12 @@ def _cmd_replay(args: argparse.Namespace) -> int:
         print(json.dumps(result, ensure_ascii=False, sort_keys=True))
     else:
         print(f"Verified replay outcome: {result['outcome']}")
+        raw = result["raw"]
+        print(
+            "Raw comparison: "
+            f"{raw['equal']} equal / {raw['different']} different / "
+            f"{raw['missing']} missing"
+        )
     return 0 if result.get("outcome") in {"exact", "evidence_compared"} else 1
 
 

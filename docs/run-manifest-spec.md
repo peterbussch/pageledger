@@ -8,7 +8,7 @@ is the durable pointer to every other artifact in the run directory.
 ```json
 {
   "schema_version": "0.1",
-  "pageledger_version": "0.4.0",
+  "pageledger_version": "0.4.1",
   "run_id": "run-20260619T193000000000Z",
   "parent_run_id": null,
   "run_depth": 0,
@@ -206,7 +206,7 @@ The current generation's effective adapter is also the extractor recorded in
 PageLedger artifacts carry `schema_version: "0.1"` as their release contract.
 
 The package release and artifact schema are versioned independently.
-PageLedger 0.4.0 keeps artifact `schema_version: "0.1"`: its newer classifier,
+PageLedger 0.4.1 keeps artifact `schema_version: "0.1"`: its newer classifier,
 escalation, and cost fields are additive and optional, so existing 0.1
 artifacts remain readable. A package minor release does not by itself require
 an artifact schema bump.

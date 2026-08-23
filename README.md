@@ -60,7 +60,8 @@ portable directory bundle. The bundle includes the unchanged baseline and
 source bytes, so the original source can be relocated before replay. Replay
 writes `replay.json`; its outcome distinguishes exact bytes, evidence-only
 comparison, and deterministic mismatch. This is a locally verified transport
-workflow, not a hermetic environment reproduction.
+workflow, not a hermetic environment reproduction; see the [honest replay
+boundary](docs/capabilities-and-limits.md#verified-replay-boundary).
 
 Flagged pages are already listed in an executable rerun plan, so escalating just
 those pages to a stronger engine is one command, and comparing the two runs is

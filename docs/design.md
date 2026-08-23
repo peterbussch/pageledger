@@ -3,7 +3,7 @@
 This document explains the shipped architecture and the remaining targets.
 The release contract is what `capabilities-and-limits.md` lists as built in
 and what the JSON Schemas in [`../schemas/`](../schemas/) validate. PageLedger
-0.4.0 has the run controller, adapter protocol, structural classifier, route
+0.4.1 has the run controller, adapter protocol, structural classifier, route
 executor, generation-indexed adapter chains, schema aligner, per-page grading,
 audit queues, rerun execution, comparison, and ledger verification.
 
@@ -243,7 +243,10 @@ that directory, uses the locally available adapter through the ordinary `run`
 path, and writes `replay.json` with extractor/profile linkage and raw
 comparison. `exact`, `evidence_compared`, and `deterministic_mismatch` are
 evidence outcomes; none claims environment installation, cloud identity, code
-or model transport, signatures, or hermetic reproduction.
+or model transport, signatures, or hermetic reproduction. The [honest replay
+boundary](capabilities-and-limits.md#verified-replay-boundary) covers the
+authenticity, declared-material, side-effect, mutation, zero-byte, and
+editable-install limits.
 
 ## What it should not do first
 

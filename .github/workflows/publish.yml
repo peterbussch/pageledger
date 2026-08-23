@@ -12,7 +12,7 @@ on:
           - verify
           - pypi
       production_confirmation:
-        description: For PyPI, type the exact release tag (for example v0.4.0)
+        description: For PyPI, type the exact release tag (for example v0.4.1)
         required: false
         type: string
 

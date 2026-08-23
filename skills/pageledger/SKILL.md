@@ -52,7 +52,11 @@ classifier after validating complete coverage and adapter action support.
 replay output must be new directories. `replay --adapter-path` is a locally
 trusted import directory and must not be inside the bundle. Replay preserves
 source bytes and records profile, extractor, and raw-comparison evidence; it
-does not install environments or adapter/model materials.
+does not install environments or adapter/model materials. Human replay output
+also prints raw equal/different/missing counts. Read the [honest replay
+boundary](../../docs/capabilities-and-limits.md#verified-replay-boundary) for
+the limits on authenticity, declared materials, side effects, mutation,
+zero-byte evidence, and editable-install hooks.
 
 ## Operating loop
 
@@ -126,7 +130,7 @@ domain types belong in a hook.
   level routing, same-run adapter fallback, environment installation, adapter
   or model bundling, signatures, and cloud identity. Explicit `classify`,
   generation-indexed rerun chains, and the verified `bundle`/`replay` lifecycle
-  ship in 0.4.0.
+  ship in 0.4.1.
 
 ## Where to read more
 

@@ -6,6 +6,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to the artifact compatibility policy documented in
 `docs/run-manifest-spec.md` → Compatibility Policy.
 
+## 0.4.1 - 2026-08-22
+
+### Changed
+
+- Hardened replay around a fresh-interpreter worker, one adapter instance per
+  execution, canonical verification, and provenance binding.
+- Human replay output now discloses raw equal/different/missing counts.
+
+### Compatibility
+
+- Replay's honest trust boundaries are documented, including adapter-declared
+  material evidence and the non-hermetic credential/network boundary.
+- The public CLI, JSON/result mappings, and artifact schemas are unchanged.
+
 ## 0.4.0 - 2026-08-17
 
 ### Added
