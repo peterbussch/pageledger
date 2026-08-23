@@ -216,8 +216,8 @@ pageledger replay BUNDLE_DIR --out RUN_DIR --adapter-path TRUSTED_DIR --json
 Validates the untrusted directory bundle, checks its baseline and inventory,
 loads the locally available adapter named by the bundle, and runs the ordinary
 PageLedger extraction path against the bundled sources. `--adapter-path DIR`
-is the only optional override and is a locally trusted import path; it must
-not point inside the bundle. `--out DIR` is required and must not already
+is the only optional override and is a locally trusted import path; a trusted
+path must not be equal to, inside, or above the bundle. `--out DIR` is required and must not already
 exist. `--json` emits the result and `replay.json` records baseline/local
 extractor linkage, profile match, raw equal/different/missing counts, and the
 comparison object.

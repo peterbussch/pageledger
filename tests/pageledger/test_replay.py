@@ -35,6 +35,9 @@ class Adapter:
     def supports(self, action):
         return action == "transcribe_text"
 
+    def reproducibility_profile(self):
+        return {'materials': []}
+
     def extract(self, source, *, page_id, page_number, action, prompt=None):
         content = source.read_text(encoding="utf-8").split("\\f")[page_number - 1]
         return ExtractionResult(
@@ -206,6 +209,7 @@ def test_worker_response_contradictions_fail_closed(tmp_path: Path) -> None:
         ("count", {**valid, "result": {**result, "raw": {**result["raw"], "equal": True}}}, 0),
         ("path", {**valid, "result": {**result, "out_dir": str(tmp_path / "other")}}, 0),
         ("page-ids", {**valid, "result": {**result, "raw": {**result["raw"], "different_page_ids": ["p2", "p1"]}}}, 0),
+        ("overlapping-page-ids", {**valid, "result": {**result, "raw": {**result["raw"], "different": 1, "missing": 1, "different_page_ids": ["p1"], "missing_page_ids": ["p1"]}}}, 0),
         ("exact-profile", {**valid, "result": {**result, "profile_match": False}}, 0),
         ("exact-difference", {**valid, "result": {**result, "raw": {**result["raw"], "different": 1}}}, 0),
         ("mismatch-without-difference", {**valid, "result": {**result, "outcome": "deterministic_mismatch"}}, 0),
@@ -331,9 +335,12 @@ def test_text_profile_is_stable_and_self_hashing() -> None:
     assert profile["profile_sha256"] == profile_sha256(profile)
 
 
-def test_validate_reproducibility_profile_returns_validated_envelope() -> None:
+def test_private_validate_reproducibility_profile_returns_validated_envelope() -> None:
     from pageledger.adapters import TextAdapter
-    from pageledger.replay import build_reproducibility_profile, validate_reproducibility_profile
+    from pageledger.replay import (
+        _validate_reproducibility_profile,
+        build_reproducibility_profile,
+    )
 
     adapter = TextAdapter()
     profile = build_reproducibility_profile(adapter)
@@ -343,7 +350,7 @@ def test_validate_reproducibility_profile_returns_validated_envelope() -> None:
         "version": adapter.version,
     }
 
-    assert validate_reproducibility_profile(profile, identity) == profile
+    assert _validate_reproducibility_profile(profile, identity) == profile
 
 
 def test_custom_deterministic_adapter_without_hook_has_no_profile() -> None:
@@ -614,6 +621,13 @@ def test_nondeterministic_adapter_is_evidence_compared(tmp_path: Path) -> None:
     bundle_run(run_dir, bundle_dir)
     result = replay_bundle(bundle_dir, tmp_path / "replayed", adapter_path=adapter_dir)
     assert result["outcome"] == "evidence_compared"
+    baseline = json.loads((run_dir / "manifest.json").read_text(encoding="utf-8"))
+    replay_manifest = json.loads((tmp_path / "replayed" / "manifest.json").read_text(encoding="utf-8"))
+    replay_evidence = json.loads((tmp_path / "replayed" / "replay.json").read_text(encoding="utf-8"))
+    expected_profile = baseline["extractors"][0]["reproducibility_profile"]
+    assert replay_manifest["extractors"][0]["reproducibility_profile"] == expected_profile
+    assert replay_evidence["local_extractor"]["reproducibility_profile_sha256"] == expected_profile["profile_sha256"]
+    assert replay_evidence["profile_match"] is None
 
 
 def test_matching_profile_raw_mismatch_is_inspectable_and_verifiable(tmp_path: Path) -> None:
@@ -916,7 +930,7 @@ def test_replay_trusted_adapter_path_succeeds_and_restores_import_state(
     assert sys.path == before
 
 
-def test_replay_trusted_adapter_replaces_cached_module_and_restores_modules(
+def test_replay_trusted_adapter_executes_in_fresh_child_without_parent_import_changes(
     tmp_path: Path,
 ) -> None:
     import sys
@@ -965,12 +979,6 @@ def test_replay_trusted_adapter_replaces_cached_module_and_restores_modules(
     assert sys.path == before_path
     assert sys.modules == before_modules
     assert dependency_name not in sys.modules
-
-    sys.modules.pop(module_name, None)
-    for path in (adapter_a, adapter_b):
-        entry = str(path.resolve())
-        while entry in sys.path:
-            sys.path.remove(entry)
 
 
 def test_replay_isolates_stale_transitive_dependency_and_executes_trusted_path(

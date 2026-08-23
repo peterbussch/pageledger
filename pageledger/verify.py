@@ -15,7 +15,7 @@ import yaml
 
 from .artifacts import build_rerun_manifest, render_audit_markdown
 from .config import PageLedgerConfig
-from .replay import ReplayError, validate_reproducibility_profile
+from .replay import ReplayError, _validate_reproducibility_profile
 
 REQUIRED_ARTIFACTS = {
     "config_snapshot",
@@ -1466,7 +1466,7 @@ def _manifest_extractor_identities(
         profile_hash: str | None = None
         if profile is not None:
             try:
-                validated_profile = validate_reproducibility_profile(profile, entry)
+                validated_profile = _validate_reproducibility_profile(profile, entry)
             except ReplayError as exc:
                 _add(errors, exc.code, str(exc), artifact="manifest.json")
                 continue

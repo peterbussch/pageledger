@@ -50,7 +50,8 @@ classifier after validating complete coverage and adapter action support.
 
 `bundle` and `replay` accept only their documented flags. Bundle output and
 replay output must be new directories. `replay --adapter-path` is a locally
-trusted import directory and must not be inside the bundle. Replay preserves
+trusted import directory; a trusted path must not be equal to, inside, or above
+the bundle. Replay preserves
 source bytes and records profile, extractor, and raw-comparison evidence; it
 does not install environments or adapter/model materials. Human replay output
 also prints raw equal/different/missing counts. Read the [honest replay

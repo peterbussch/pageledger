@@ -659,14 +659,14 @@ def _replay_bundle_in_process(
             "Local adapter identity does not match the baseline",
         )
     cloud = "cloud" in {str(value).casefold() for value in baseline_extractor["capabilities"]}
+    try:
+        local_profile = build_reproducibility_profile(adapter)
+    except Exception as exc:
+        raise ReplayError(
+            "incompatible_environment",
+            "Local reproducibility profile could not be established",
+        ) from exc
     if bool(getattr(adapter, "deterministic", False)) and not cloud:
-        try:
-            local_profile = build_reproducibility_profile(adapter)
-        except Exception as exc:
-            raise ReplayError(
-                "incompatible_environment",
-                "Local reproducibility profile could not be established",
-            ) from exc
         recorded_profile = baseline_extractor.get("reproducibility_profile")
         if not isinstance(recorded_profile, dict) or local_profile is None:
             raise ReplayError(
@@ -683,7 +683,6 @@ def _replay_bundle_in_process(
 
     source_records = cast(list[dict[str, Any]], bundle["sources"])
     source_paths = [root / record["path"] for record in source_records]
-    route_path: Path | None = None
     replay_route = root / "replay-route-map.yml"
     run_kwargs: dict[str, Any] = {
         "inputs": source_paths,
@@ -896,6 +895,8 @@ def _read_worker_response(
                 raise invalid()
             if values != sorted(set(values)):
                 raise invalid()
+        if set(raw["different_page_ids"]) & set(raw["missing_page_ids"]):
+            raise invalid()
         outcome = result["outcome"]
         profile_match = result["profile_match"]
         if outcome == "exact" and (profile_match is not True or raw["different"] or raw["missing"]):
@@ -1016,10 +1017,10 @@ def _validate_extractor_identity(identity: dict[str, Any]) -> None:
         if identity["deterministic"] and not cloud:
             _fail("profile_missing", "Deterministic non-cloud extractor lacks a profile")
         return
-    validate_reproducibility_profile(profile, identity)
+    _validate_reproducibility_profile(profile, identity)
 
 
-def validate_reproducibility_profile(
+def _validate_reproducibility_profile(
     profile: object,
     identity: Mapping[str, object],
 ) -> dict[str, Any]:
