@@ -66,7 +66,6 @@ _WORKER_SAFE_ERROR_CODES = {
     "artifact_missing",
     "artifact_path_invalid",
     "baseline_not_verified",
-    "bundle_code_import_forbidden",
     "bundle_extractor_mismatch",
     "bundle_file_missing",
     "bundle_file_unsafe",
@@ -839,8 +838,19 @@ def _read_worker_response(
             raise invalid()
         def reject_constant(value: str) -> object:
             raise ValueError(value)
-        payload = json.loads(path.read_text(encoding="utf-8"), parse_constant=reject_constant)
-    except (OSError, UnicodeError, ValueError, TypeError, ReplayError) as exc:
+        def reject_duplicate(pairs: list[tuple[str, object]]) -> dict[str, object]:
+            result: dict[str, object] = {}
+            for key, value in pairs:
+                if key in result:
+                    raise ValueError("duplicate JSON object key")
+                result[key] = value
+            return result
+        payload = json.loads(
+            path.read_text(encoding="utf-8"),
+            object_pairs_hook=reject_duplicate,
+            parse_constant=reject_constant,
+        )
+    except (OSError, UnicodeError, ValueError, TypeError, RecursionError, ReplayError) as exc:
         if isinstance(exc, ReplayError):
             raise exc
         raise invalid() from exc
@@ -886,6 +896,16 @@ def _read_worker_response(
                 raise invalid()
             if values != sorted(set(values)):
                 raise invalid()
+        outcome = result["outcome"]
+        profile_match = result["profile_match"]
+        if outcome == "exact" and (profile_match is not True or raw["different"] or raw["missing"]):
+            raise invalid()
+        if outcome == "deterministic_mismatch" and not (raw["different"] or raw["missing"]):
+            raise invalid()
+        if outcome == "evidence_compared" and profile_match is not None:
+            raise invalid()
+        if len(raw["different_page_ids"]) != raw["different"] or len(raw["missing_page_ids"]) != raw["missing"]:
+            raise invalid()
         return result
     error = payload.get("error")
     if (

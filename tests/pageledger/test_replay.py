@@ -206,6 +206,11 @@ def test_worker_response_contradictions_fail_closed(tmp_path: Path) -> None:
         ("count", {**valid, "result": {**result, "raw": {**result["raw"], "equal": True}}}, 0),
         ("path", {**valid, "result": {**result, "out_dir": str(tmp_path / "other")}}, 0),
         ("page-ids", {**valid, "result": {**result, "raw": {**result["raw"], "different_page_ids": ["p2", "p1"]}}}, 0),
+        ("exact-profile", {**valid, "result": {**result, "profile_match": False}}, 0),
+        ("exact-difference", {**valid, "result": {**result, "raw": {**result["raw"], "different": 1}}}, 0),
+        ("mismatch-without-difference", {**valid, "result": {**result, "outcome": "deterministic_mismatch"}}, 0),
+        ("evidence-profile", {**valid, "result": {**result, "outcome": "evidence_compared"}}, 0),
+        ("page-count", {**valid, "result": {**result, "raw": {**result["raw"], "different": 1, "different_page_ids": []}}}, 0),
     ]
     for name, payload, returncode in cases:
         path = tmp_path / f"{name}.json"
@@ -229,6 +234,38 @@ def test_worker_response_contradictions_fail_closed(tmp_path: Path) -> None:
     with pytest.raises(ReplayError) as error:
         _read_worker_response(
             oversized,
+            expected_root=tmp_path,
+            request_id="id",
+            returncode=0,
+            expected_out=output,
+        )
+    assert error.value.code == "replay_worker_failed"
+
+    duplicate = tmp_path / "duplicate.json"
+    encoded_result = json.dumps(result, separators=(",", ":"))
+    duplicate.write_text(
+        '{"protocol_version":"0.1","request_id":"id","ok":true,"result":'
+        + encoded_result
+        + ',"result":'
+        + encoded_result
+        + "}",
+        encoding="utf-8",
+    )
+    with pytest.raises(ReplayError) as error:
+        _read_worker_response(
+            duplicate,
+            expected_root=tmp_path,
+            request_id="id",
+            returncode=0,
+            expected_out=output,
+        )
+    assert error.value.code == "replay_worker_failed"
+
+    deeply_nested = tmp_path / "deeply-nested.json"
+    deeply_nested.write_text("[" * 2_000 + "0" + "]" * 2_000, encoding="utf-8")
+    with pytest.raises(ReplayError) as error:
+        _read_worker_response(
+            deeply_nested,
             expected_root=tmp_path,
             request_id="id",
             returncode=0,
@@ -837,7 +874,7 @@ def test_replay_blocks_implicit_bundle_adapter_import_before_execution(
     try:
         with pytest.raises(ReplayError) as error:
             replay_bundle(bundle_dir, tmp_path / "never-created")
-        assert error.value.code in {"extractor_identity_mismatch", "bundle_code_import_forbidden"}
+        assert error.value.code in {"extractor_identity_mismatch", "incompatible_environment"}
         assert not marker.exists()
         assert sys.path == active_path
     finally:
