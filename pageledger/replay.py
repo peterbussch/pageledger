@@ -551,6 +551,8 @@ def replay_bundle(
             "out_dir": requested_out,
             "dry_run": False,
             "adapter_path": trusted_path,
+            "_loaded_adapter": adapter,
+            "_reproducibility_profile": local_profile,
         }
         if "routing" in baseline_manifest:
             route = _read_yaml_mapping(replay_route, "portable route map")

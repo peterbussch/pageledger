@@ -423,6 +423,52 @@ def test_matching_profile_raw_mismatch_is_inspectable_and_verifiable(tmp_path: P
     assert verify_run(replayed)["status"] == "pass"
 
 
+def test_single_adapter_instance_is_reused_through_replay(tmp_path: Path) -> None:
+    from pageledger.replay import bundle_run, replay_bundle
+
+    adapter_dir = tmp_path / "trusted-adapters"
+    adapter_dir.mkdir()
+    counter = tmp_path / "adapter-constructions.txt"
+    counter.write_text("0", encoding="utf-8")
+    (adapter_dir / "constructor_stateful.py").write_text(
+        "from pageledger.adapters import ExtractionResult\n"
+        "from pathlib import Path\n"
+        f"COUNTER = Path({str(counter)!r})\n"
+        "class Adapter:\n"
+        "    name = 'constructor-stateful'\n"
+        "    version = '1.0'\n"
+        "    deterministic = True\n"
+        "    input_types = ('text',)\n"
+        "    output_types = ('text',)\n"
+        "    capabilities = ('local',)\n"
+        "    def __init__(self):\n"
+        "        value = int(COUNTER.read_text(encoding='utf-8')) + 1\n"
+        "        COUNTER.write_text(str(value), encoding='utf-8')\n"
+        "        self.variant = f'variant-{value}'\n"
+        "    def supports(self, action): return action == 'transcribe_text'\n"
+        "    def reproducibility_profile(self): return {'materials': []}\n"
+        "    def extract(self, source, *, page_id, page_number, action, prompt=None):\n"
+        "        return ExtractionResult(content=self.variant, format='text', confidence=None, model='stateful', warnings=[], usage={'pages': 1})\n",
+        encoding="utf-8",
+    )
+    config = MINIMAL_CONFIG.replace(
+        "adapter: text", "adapter: constructor_stateful:Adapter"
+    )
+    run_dir, _, _ = _run_text(tmp_path, config_text=config, adapter_path=adapter_dir)
+    bundle_dir = tmp_path / "bundle"
+    bundle_run(run_dir, bundle_dir)
+    counter.write_text("0", encoding="utf-8")
+
+    replayed = tmp_path / "replayed"
+    result = replay_bundle(bundle_dir, replayed, adapter_path=adapter_dir)
+
+    assert result["outcome"] == "exact"
+    assert counter.read_text(encoding="utf-8") == "1"
+    assert (replayed / "raw" / "doc_0001_page_0001.txt").read_text(
+        encoding="utf-8"
+    ) == "variant-1"
+
+
 def test_pdf_text_exact_replay(tmp_path: Path) -> None:
     pypdf = pytest.importorskip("pypdf")
     from pageledger.replay import bundle_run, replay_bundle

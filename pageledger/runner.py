@@ -241,6 +241,8 @@ def run(
     run_depth: int = 0,
     adapter_path: Path | None = None,
     routes_path: Path | None = None,
+    _loaded_adapter: Any | None = None,
+    _reproducibility_profile: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Run the alpha PageLedger loop.
 
@@ -282,9 +284,10 @@ def run(
     )
     if routes_path is not None and (pages is not None or page_selection is not None):
         raise ValueError("--routes cannot be combined with --pages or rerun page selection")
-    adapter = None
-    if (not dry_run or routes_path is not None) and effective_adapter_name is not None:
-        adapter = load_adapter(effective_adapter_name, effective_adapter_options)
+    adapter = _loaded_adapter
+    if adapter is None and (not dry_run or routes_path is not None):
+        if effective_adapter_name is not None:
+            adapter = load_adapter(effective_adapter_name, effective_adapter_options)
     if not dry_run and routes_path is None and _requires_adapter(config.default_action):
         if effective_adapter_name is None:
             raise ValueError(
@@ -296,7 +299,9 @@ def run(
             raise ValueError(f"Adapter '{adapter.name}' does not support action '{action}'")
 
     adapter_profile = (
-        build_reproducibility_profile(adapter)
+        _reproducibility_profile
+        if _loaded_adapter is not None
+        else build_reproducibility_profile(adapter)
         if adapter is not None and not dry_run
         else None
     )
