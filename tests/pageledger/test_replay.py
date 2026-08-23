@@ -209,6 +209,8 @@ def test_worker_response_contradictions_fail_closed(tmp_path: Path) -> None:
         ("exact-profile", {**valid, "result": {**result, "profile_match": False}}, 0),
         ("exact-difference", {**valid, "result": {**result, "raw": {**result["raw"], "different": 1}}}, 0),
         ("mismatch-without-difference", {**valid, "result": {**result, "outcome": "deterministic_mismatch"}}, 0),
+        ("mismatch-null-profile", {**valid, "result": {**result, "outcome": "deterministic_mismatch", "profile_match": None, "raw": {**result["raw"], "different": 1, "different_page_ids": ["p1"]}}}, 0),
+        ("mismatch-false-profile", {**valid, "result": {**result, "outcome": "deterministic_mismatch", "profile_match": False, "raw": {**result["raw"], "different": 1, "different_page_ids": ["p1"]}}}, 0),
         ("evidence-profile", {**valid, "result": {**result, "outcome": "evidence_compared"}}, 0),
         ("page-count", {**valid, "result": {**result, "raw": {**result["raw"], "different": 1, "different_page_ids": []}}}, 0),
     ]

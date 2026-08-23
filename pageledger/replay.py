@@ -900,7 +900,7 @@ def _read_worker_response(
         profile_match = result["profile_match"]
         if outcome == "exact" and (profile_match is not True or raw["different"] or raw["missing"]):
             raise invalid()
-        if outcome == "deterministic_mismatch" and not (raw["different"] or raw["missing"]):
+        if outcome == "deterministic_mismatch" and (profile_match is not True or not (raw["different"] or raw["missing"])):
             raise invalid()
         if outcome == "evidence_compared" and profile_match is not None:
             raise invalid()
