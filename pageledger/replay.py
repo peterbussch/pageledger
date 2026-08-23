@@ -46,6 +46,9 @@ _MUTABLE_VERSION_ALIASES = {
 }
 
 _BUNDLE_VERSION = "0.1"
+_WORKER_PROTOCOL_VERSION = "0.1"
+_WORKER_GENERIC_CODE = "replay_worker_failed"
+_WORKER_GENERIC_MESSAGE = "Replay worker failed without a valid result."
 _CANONICAL_ARTIFACTS = dict(ARTIFACT_PATHS)
 _FORBIDDEN_OPTION_KEYS = {
     "apikey",
@@ -460,6 +463,16 @@ def validate_bundle(bundle_dir: Path) -> dict[str, Any]:
 
 
 def replay_bundle(
+    bundle_dir: Path,
+    out_dir: Path,
+    *,
+    adapter_path: Path | None = None,
+) -> dict[str, Any]:
+    """Replay a verified bundle through the ordinary PageLedger run path."""
+    return _replay_bundle_in_process(bundle_dir, out_dir, adapter_path=adapter_path)
+
+
+def _replay_bundle_in_process(
     bundle_dir: Path,
     out_dir: Path,
     *,

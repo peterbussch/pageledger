@@ -78,6 +78,87 @@ def _run_text(
     return out, source, config
 
 
+def test_worker_envelope_success(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    import pageledger._replay_worker as worker
+
+    bundle = tmp_path / "bundle"
+    out_dir = tmp_path / "out"
+    result_path = tmp_path / "result.json"
+    request_id = "request-success"
+    success = {
+        "outcome": "exact",
+        "run_id": "run-child",
+        "out_dir": str(out_dir.resolve()),
+        "baseline_run_id": "run-base",
+        "bundle_manifest_sha256": "0" * 64,
+        "profile_match": True,
+        "raw": {
+            "equal": 1,
+            "different": 0,
+            "missing": 0,
+            "different_page_ids": [],
+            "missing_page_ids": [],
+        },
+    }
+    monkeypatch.setattr(worker, "_replay_bundle_in_process", lambda *args, **kwargs: success)
+
+    assert worker.main([request_id, str(result_path), str(bundle), str(out_dir), ""]) == 0
+    assert json.loads(result_path.read_text(encoding="utf-8")) == {
+        "protocol_version": "0.1",
+        "request_id": request_id,
+        "ok": True,
+        "result": success,
+    }
+
+
+def test_worker_envelope_replay_error(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    import pageledger._replay_worker as worker
+    from pageledger.replay import ReplayError
+
+    result_path = tmp_path / "result.json"
+    monkeypatch.setattr(
+        worker,
+        "_replay_bundle_in_process",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            ReplayError("incompatible_environment", "profile mismatch")
+        ),
+    )
+
+    assert worker.main(["request-error", str(result_path), str(tmp_path / "bundle"), str(tmp_path / "out"), ""]) == 1
+    assert json.loads(result_path.read_text(encoding="utf-8")) == {
+        "protocol_version": "0.1",
+        "request_id": "request-error",
+        "ok": False,
+        "error": {"code": "incompatible_environment", "message": "profile mismatch"},
+    }
+
+
+def test_worker_envelope_redacts_unexpected_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import pageledger._replay_worker as worker
+
+    result_path = tmp_path / "result.json"
+    monkeypatch.setattr(
+        worker,
+        "_replay_bundle_in_process",
+        lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("secret details")),
+    )
+
+    assert worker.main(["request-generic", str(result_path), str(tmp_path / "bundle"), str(tmp_path / "out"), ""]) == 1
+    payload = json.loads(result_path.read_text(encoding="utf-8"))
+    assert payload == {
+        "protocol_version": "0.1",
+        "request_id": "request-generic",
+        "ok": False,
+        "error": {
+            "code": "replay_worker_failed",
+            "message": "Replay worker failed without a valid result.",
+        },
+    }
+    assert "secret details" not in result_path.read_text(encoding="utf-8")
+
+
 def test_text_profile_is_stable_and_self_hashing() -> None:
     from pageledger.adapters import TextAdapter
     from pageledger.replay import build_reproducibility_profile, profile_sha256
