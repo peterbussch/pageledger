@@ -154,6 +154,45 @@ def test_verify_run_returns_structured_failure_for_malformed_manifest_extractor(
     assert "extractor_identity_mismatch" in _codes(report, "errors")
 
 
+def test_verify_run_accepts_reordered_manifest_extractor_lists(tmp_path: Path) -> None:
+    from pageledger.verify import verify_run
+
+    run_dir, _ = _run(tmp_path)
+    manifest_path = run_dir / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    extractor = manifest["extractors"][0]
+    extractor["input_types"] = list(reversed(extractor["input_types"]))
+    extractor["output_types"] = list(reversed(extractor["output_types"]))
+    extractor["capabilities"] = list(reversed(extractor["capabilities"]))
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    report = verify_run(run_dir)
+
+    assert report["status"] == "pass"
+
+
+def test_verify_run_rejects_replay_without_manifest_extractor_identity(
+    tmp_path: Path,
+) -> None:
+    from pageledger.replay import bundle_run, replay_bundle
+    from pageledger.verify import verify_run
+
+    run_dir, _ = _run(tmp_path)
+    bundle_dir = tmp_path / "bundle"
+    bundle_run(run_dir, bundle_dir)
+    replay_dir = tmp_path / "replayed"
+    replay_bundle(bundle_dir, replay_dir)
+    manifest_path = replay_dir / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["extractors"] = []
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    report = verify_run(replay_dir)
+
+    assert report["status"] == "fail"
+    assert "replay_linkage_mismatch" in _codes(report, "errors")
+
+
 def test_verify_run_accepts_manifest_extractor_membership_variants(
     tmp_path: Path,
 ) -> None:

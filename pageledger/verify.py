@@ -1178,6 +1178,13 @@ def _check_replay_linkage(
     local_identity = _validate_replay_extractor_identity(
         local_extractor, "local_extractor", errors
     )
+    if not manifest_identities:
+        _add(
+            errors,
+            "replay_linkage_mismatch",
+            "Replay evidence has no matching manifest extractor identity",
+            artifact="manifest.json",
+        )
     expected_local = _manifest_replay_extractor_identity(manifest_identities, errors)
     extractor_evidence_valid = baseline_identity is not None and local_identity is not None
     if baseline_identity is not None and local_identity is not None:
@@ -1432,8 +1439,10 @@ def _manifest_extractor_identities(
     manifest: dict[str, Any], errors: list[dict[str, Any]]
 ) -> list[dict[str, Any]]:
     entries = manifest.get("extractors")
-    if not isinstance(entries, list) or not entries:
+    if not isinstance(entries, list):
         _add(errors, "extractor_identity_mismatch", "Run manifest has no extractor entries")
+        return []
+    if not entries:
         return []
     identities: list[dict[str, Any]] = []
     for entry in entries:
@@ -1472,6 +1481,11 @@ def _manifest_extractor_identities(
             "options": entry.get("options", {}),
             "reproducibility_profile_sha256": profile_hash,
         }
+        for field in ("input_types", "output_types", "capabilities"):
+            values = candidate[field]
+            if isinstance(values, list) and all(isinstance(value, str) for value in values):
+                if len(values) == len(set(values)):
+                    candidate[field] = sorted(values)
         validated = _validate_replay_extractor_identity(candidate, "manifest extractor", errors)
         if validated is not None:
             identities.append(validated)
