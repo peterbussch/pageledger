@@ -12,17 +12,15 @@ import platform
 import re
 import shutil
 import stat
+import subprocess
 import sys
+import sysconfig
 import tempfile
 import uuid
-from _frozen_importlib_external import _NamespacePath  # type: ignore[attr-defined]
 from collections.abc import Mapping
-from contextlib import contextmanager
 from importlib import metadata
-from importlib.machinery import ModuleSpec
 from pathlib import Path
-from types import FunctionType, ModuleType
-from typing import Any, NoReturn, cast
+from typing import Any, cast
 
 import yaml
 
@@ -49,6 +47,70 @@ _BUNDLE_VERSION = "0.1"
 _WORKER_PROTOCOL_VERSION = "0.1"
 _WORKER_GENERIC_CODE = "replay_worker_failed"
 _WORKER_GENERIC_MESSAGE = "Replay worker failed without a valid result."
+_WORKER_MAX_RESULT_BYTES = 1_048_576
+_WORKER_BOOTSTRAP = """\
+import runpy
+import sys
+count = int(sys.argv[1])
+roots = sys.argv[2:2 + count]
+worker_args = sys.argv[2 + count:]
+sys.path[:0] = [root for root in roots if root not in sys.path]
+sys.argv = ["pageledger._replay_worker", *worker_args]
+runpy.run_module("pageledger._replay_worker", run_name="__main__")
+"""
+_WORKER_SAFE_ERROR_CODES = {
+    "adapter_path_inside_bundle",
+    "artifact_declaration_missing",
+    "artifact_declarations_invalid",
+    "artifact_file_unsafe",
+    "artifact_missing",
+    "artifact_path_invalid",
+    "baseline_not_verified",
+    "bundle_code_import_forbidden",
+    "bundle_extractor_mismatch",
+    "bundle_file_missing",
+    "bundle_file_unsafe",
+    "bundle_hash_invalid",
+    "bundle_hash_mismatch",
+    "bundle_ineligible",
+    "bundle_malformed",
+    "bundle_manifest_mismatch",
+    "bundle_path_invalid",
+    "bundle_path_unsafe",
+    "bundle_schema_version_invalid",
+    "bundle_structure_invalid",
+    "bundle_output_exists",
+    "credential_key_forbidden",
+    "extractor_conflict",
+    "extractor_identity_mismatch",
+    "extractor_invalid",
+    "extractor_missing",
+    "incompatible_environment",
+    "inventory_duplicate",
+    "inventory_invalid",
+    "inventory_mismatch",
+    "inventory_missing",
+    "inventory_order_invalid",
+    "profile_hash_mismatch",
+    "profile_invalid",
+    "profile_missing",
+    "replay_output_exists",
+    "replay_verification_failed",
+    _WORKER_GENERIC_CODE,
+    "route_map_invalid",
+    "route_map_mismatch",
+    "route_source_mismatch",
+    "run_ineligible",
+    "run_not_verified",
+    "source_changed",
+    "source_duplicate",
+    "source_hash_mismatch",
+    "source_invalid",
+    "source_manifest_mismatch",
+    "source_missing",
+    "source_order_invalid",
+    "source_path_invalid",
+}
 _CANONICAL_ARTIFACTS = dict(ARTIFACT_PATHS)
 _FORBIDDEN_OPTION_KEYS = {
     "apikey",
@@ -468,8 +530,73 @@ def replay_bundle(
     *,
     adapter_path: Path | None = None,
 ) -> dict[str, Any]:
-    """Replay a verified bundle through the ordinary PageLedger run path."""
-    return _replay_bundle_in_process(bundle_dir, out_dir, adapter_path=adapter_path)
+    """Replay a verified bundle in one fresh, isolated Python interpreter."""
+    root = _resolve_directory(bundle_dir, "bundle_path_invalid")
+    requested_out = Path(out_dir).expanduser()
+    if requested_out.exists() or requested_out.is_symlink():
+        raise ReplayError("replay_output_exists", f"Replay output already exists: {requested_out}")
+    trusted_path = None
+    if adapter_path is not None:
+        trusted_path = Path(adapter_path).expanduser().resolve()
+        if (
+            trusted_path == root
+            or trusted_path in root.parents
+            or root in trusted_path.parents
+        ):
+            raise ReplayError(
+                "adapter_path_inside_bundle",
+                "Trusted adapter path must not be equal to, inside, or above the bundle",
+            )
+
+    roots: list[str] = []
+    for candidate in (
+        Path(__file__).resolve().parent.parent,
+        *(Path(value).resolve() for key, value in sysconfig.get_paths().items() if key in {"purelib", "platlib"}),
+    ):
+        resolved = str(candidate)
+        if resolved not in roots:
+            roots.append(resolved)
+    request_id = uuid.uuid4().hex
+    try:
+        with tempfile.TemporaryDirectory(prefix="pageledger-replay-worker-") as temporary:
+            temporary_root = Path(temporary)
+            result_path = temporary_root / "result.json"
+            command = [
+                sys.executable,
+                "-I",
+                "-S",
+                "-c",
+                _WORKER_BOOTSTRAP,
+                str(len(roots)),
+                *roots,
+                request_id,
+                str(result_path),
+                str(root),
+                str(requested_out.resolve()),
+                str(trusted_path) if trusted_path is not None else "",
+            ]
+            try:
+                completed = subprocess.run(
+                    command,
+                    cwd=temporary_root,
+                    stdin=subprocess.DEVNULL,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    check=False,
+                )
+            except OSError as exc:
+                raise ReplayError(_WORKER_GENERIC_CODE, _WORKER_GENERIC_MESSAGE) from exc
+            return _read_worker_response(
+                result_path,
+                expected_root=temporary_root,
+                request_id=request_id,
+                returncode=completed.returncode,
+                expected_out=requested_out,
+            )
+    except ReplayError:
+        raise
+    except OSError as exc:
+        raise ReplayError(_WORKER_GENERIC_CODE, _WORKER_GENERIC_MESSAGE) from exc
 
 
 def _replay_bundle_in_process(
@@ -485,180 +612,181 @@ def _replay_bundle_in_process(
         raise ReplayError("replay_output_exists", f"Replay output already exists: {requested_out}")
     if adapter_path is not None:
         trusted_path = Path(adapter_path).expanduser().resolve()
-        if trusted_path == root or root in trusted_path.parents:
+        if (
+            trusted_path == root
+            or trusted_path in root.parents
+            or root in trusted_path.parents
+        ):
             raise ReplayError(
                 "adapter_path_inside_bundle",
-                "Trusted adapter path must not be inside the bundle",
+                "Trusted adapter path must not be equal to, inside, or above the bundle",
             )
     else:
         trusted_path = None
 
-    result: dict[str, Any]
-    with _bundle_import_boundary(root, trusted_path) as evict_module:
-        from .adapters import load_adapter
-        from .aligner import align_run
-        from .compare import compare_runs
-        from .config import load_config
-        from .runner import _effective_adapter, run
-        from .verify import verify_run
+    if trusted_path is not None:
+        sys.path.insert(0, str(trusted_path))
+    from .adapters import load_adapter
+    from .aligner import align_run
+    from .compare import compare_runs
+    from .config import load_config
+    from .runner import _effective_adapter, run
+    from .verify import verify_run
 
-        bundle = validate_bundle(bundle_dir)
-        bundle_sha256 = _sha256_file(root / "bundle.json")
-        baseline_manifest = _read_json_object(root / "baseline" / "manifest.json", "baseline manifest")
-        baseline_extractor = cast(dict[str, Any], bundle["baseline"]["extractor"])
-        config_path = root / "baseline" / "config-snapshot.yml"
-        config = load_config(config_path, validate_adapter=False)
-        adapter_name, adapter_options = _effective_adapter(config, 0)
-        if adapter_name is None:
-            raise ReplayError("extractor_identity_mismatch", "Bundle config has no effective adapter")
-        requested_module = _custom_adapter_module(adapter_name)
-        if requested_module is not None:
-            evict_module(requested_module)
+    bundle = validate_bundle(bundle_dir)
+    bundle_sha256 = _sha256_file(root / "bundle.json")
+    baseline_manifest = _read_json_object(root / "baseline" / "manifest.json", "baseline manifest")
+    baseline_extractor = cast(dict[str, Any], bundle["baseline"]["extractor"])
+    config_path = root / "baseline" / "config-snapshot.yml"
+    config = load_config(config_path, validate_adapter=False)
+    adapter_name, adapter_options = _effective_adapter(config, 0)
+    if adapter_name is None:
+        raise ReplayError("extractor_identity_mismatch", "Bundle config has no effective adapter")
+    try:
+        adapter = load_adapter(adapter_name, adapter_options)
+    except ReplayError:
+        raise
+    except Exception as exc:
+        raise ReplayError(
+            "extractor_identity_mismatch",
+            "Local adapter could not be loaded",
+        ) from exc
+
+    local_profile: dict[str, Any] | None = None
+    local_extractor = _runtime_extractor_identity(adapter, adapter_options, None)
+    if _identity_without_profile(local_extractor) != _identity_without_profile(baseline_extractor):
+        raise ReplayError(
+            "extractor_identity_mismatch",
+            "Local adapter identity does not match the baseline",
+        )
+    cloud = "cloud" in {str(value).casefold() for value in baseline_extractor["capabilities"]}
+    if bool(getattr(adapter, "deterministic", False)) and not cloud:
         try:
-            adapter = load_adapter(adapter_name, adapter_options)
-        except ReplayError:
-            raise
+            local_profile = build_reproducibility_profile(adapter)
         except Exception as exc:
             raise ReplayError(
-                "extractor_identity_mismatch",
-                "Local adapter could not be loaded",
+                "incompatible_environment",
+                "Local reproducibility profile could not be established",
             ) from exc
-
-        local_profile: dict[str, Any] | None = None
-        local_extractor = _runtime_extractor_identity(adapter, adapter_options, None)
-        if _identity_without_profile(local_extractor) != _identity_without_profile(baseline_extractor):
+        recorded_profile = baseline_extractor.get("reproducibility_profile")
+        if not isinstance(recorded_profile, dict) or local_profile is None:
             raise ReplayError(
-                "extractor_identity_mismatch",
-                "Local adapter identity does not match the baseline",
+                "incompatible_environment",
+                "Local reproducibility profile does not match the baseline",
             )
-        cloud = "cloud" in {str(value).casefold() for value in baseline_extractor["capabilities"]}
-        if bool(getattr(adapter, "deterministic", False)) and not cloud:
-            try:
-                local_profile = build_reproducibility_profile(adapter)
-            except Exception as exc:
-                raise ReplayError(
-                    "incompatible_environment",
-                    "Local reproducibility profile could not be established",
-                ) from exc
-            recorded_profile = baseline_extractor.get("reproducibility_profile")
-            if not isinstance(recorded_profile, dict) or local_profile is None:
-                raise ReplayError(
-                    "incompatible_environment",
-                    "Local reproducibility profile does not match the baseline",
-                )
-            if profile_sha256(local_profile) != profile_sha256(recorded_profile):
-                raise ReplayError(
-                    "incompatible_environment",
-                    "Local reproducibility profile does not match the baseline",
-                )
+        if profile_sha256(local_profile) != profile_sha256(recorded_profile):
+            raise ReplayError(
+                "incompatible_environment",
+                "Local reproducibility profile does not match the baseline",
+            )
 
-        local_extractor["reproducibility_profile"] = local_profile
+    local_extractor["reproducibility_profile"] = local_profile
 
-        source_records = cast(list[dict[str, Any]], bundle["sources"])
-        source_paths = [root / record["path"] for record in source_records]
-        route_path: Path | None = None
-        replay_route = root / "replay-route-map.yml"
-        run_kwargs: dict[str, Any] = {
-            "inputs": source_paths,
-            "config_path": config_path,
-            "out_dir": requested_out,
-            "dry_run": False,
-            "adapter_path": trusted_path,
-            "_loaded_adapter": adapter,
-            "_reproducibility_profile": local_profile,
-        }
-        if "routing" in baseline_manifest:
-            route = _read_yaml_mapping(replay_route, "portable route map")
-            documents = route.get("documents")
-            if not isinstance(documents, list) or len(documents) != len(source_paths):
-                raise ReplayError("route_map_invalid", "Portable route map does not match bundle sources")
-            for document, source in zip(documents, source_paths, strict=True):
-                if not isinstance(document, dict):
-                    raise ReplayError("route_map_invalid", "Portable route map document is invalid")
-                document["source"] = str(source.resolve())
-            with tempfile.TemporaryDirectory(prefix="pageledger-replay-route-") as temp:
-                route_path = Path(temp) / "route-map.yml"
-                route_path.write_text(yaml.safe_dump(route, sort_keys=False), encoding="utf-8")
-                run_kwargs["routes_path"] = route_path
-                run_result = run(**run_kwargs)
-        else:
-            if len(source_paths) == 1 and source_records[0].get("pages"):
-                run_kwargs["pages"] = source_records[0]["pages"]
+    source_records = cast(list[dict[str, Any]], bundle["sources"])
+    source_paths = [root / record["path"] for record in source_records]
+    route_path: Path | None = None
+    replay_route = root / "replay-route-map.yml"
+    run_kwargs: dict[str, Any] = {
+        "inputs": source_paths,
+        "config_path": config_path,
+        "out_dir": requested_out,
+        "dry_run": False,
+        "adapter_path": None,
+        "_loaded_adapter": adapter,
+        "_reproducibility_profile": local_profile,
+    }
+    if "routing" in baseline_manifest:
+        route = _read_yaml_mapping(replay_route, "portable route map")
+        documents = route.get("documents")
+        if not isinstance(documents, list) or len(documents) != len(source_paths):
+            raise ReplayError("route_map_invalid", "Portable route map does not match bundle sources")
+        for document, source in zip(documents, source_paths, strict=True):
+            if not isinstance(document, dict):
+                raise ReplayError("route_map_invalid", "Portable route map document is invalid")
+            document["source"] = str(source.resolve())
+        with tempfile.TemporaryDirectory(prefix="pageledger-replay-route-") as temp:
+            route_path = Path(temp) / "route-map.yml"
+            route_path.write_text(yaml.safe_dump(route, sort_keys=False), encoding="utf-8")
+            run_kwargs["routes_path"] = route_path
             run_result = run(**run_kwargs)
+    else:
+        if len(source_paths) == 1 and source_records[0].get("pages"):
+            run_kwargs["pages"] = source_records[0]["pages"]
+        run_result = run(**run_kwargs)
 
-        alignment = baseline_manifest.get("alignment")
-        if isinstance(alignment, dict) and alignment.get("schema_source") != "config_snapshot":
-            align_run(requested_out, schema_path=root / "baseline" / "align-schema-snapshot.yml")
+    alignment = baseline_manifest.get("alignment")
+    if isinstance(alignment, dict) and alignment.get("schema_source") != "config_snapshot":
+        align_run(requested_out, schema_path=root / "baseline" / "align-schema-snapshot.yml")
 
-        verification = verify_run(requested_out)
-        if verification.get("status") != "pass":
-            raise ReplayError("replay_verification_failed", "Replay run did not pass verification")
-        comparison = compare_runs(root / "baseline", requested_out)
-        pages = comparison.get("pages", [])
-        different_page_ids = [
-            page["page_id"] for page in pages
-            if page.get("raw_equal") is False
-        ]
-        missing_page_ids = [
-            page["page_id"] for page in pages
-            if page.get("raw_equal") is None
-        ]
-        missing_page_ids.extend(comparison.get("pages_only_in_a", []))
-        missing_page_ids.extend(comparison.get("pages_only_in_b", []))
-        raw = {
-            "equal": comparison.get("raw_equal_total", 0),
-            "different": comparison.get("raw_different_total", 0),
-            "missing": comparison.get("raw_missing_total", 0)
-            + len(comparison.get("pages_only_in_a", []))
-            + len(comparison.get("pages_only_in_b", [])),
-            "different_page_ids": sorted(set(different_page_ids)),
-            "missing_page_ids": sorted(set(missing_page_ids)),
-        }
-        deterministic = bool(baseline_extractor["deterministic"]) and not cloud
-        outcome = (
-            "exact"
-            if deterministic and raw["different"] == 0 and raw["missing"] == 0
-            else "deterministic_mismatch"
-            if deterministic
-            else "evidence_compared"
-        )
-        replay_evidence = {
+    verification = verify_run(requested_out)
+    if verification.get("status") != "pass":
+        raise ReplayError("replay_verification_failed", "Replay run did not pass verification")
+    comparison = compare_runs(root / "baseline", requested_out)
+    pages = comparison.get("pages", [])
+    different_page_ids = [
+        page["page_id"] for page in pages
+        if page.get("raw_equal") is False
+    ]
+    missing_page_ids = [
+        page["page_id"] for page in pages
+        if page.get("raw_equal") is None
+    ]
+    missing_page_ids.extend(comparison.get("pages_only_in_a", []))
+    missing_page_ids.extend(comparison.get("pages_only_in_b", []))
+    raw = {
+        "equal": comparison.get("raw_equal_total", 0),
+        "different": comparison.get("raw_different_total", 0),
+        "missing": comparison.get("raw_missing_total", 0)
+        + len(comparison.get("pages_only_in_a", []))
+        + len(comparison.get("pages_only_in_b", [])),
+        "different_page_ids": sorted(set(different_page_ids)),
+        "missing_page_ids": sorted(set(missing_page_ids)),
+    }
+    deterministic = bool(baseline_extractor["deterministic"]) and not cloud
+    outcome = (
+        "exact"
+        if deterministic and raw["different"] == 0 and raw["missing"] == 0
+        else "deterministic_mismatch"
+        if deterministic
+        else "evidence_compared"
+    )
+    replay_evidence = {
+        "replay_schema_version": _BUNDLE_VERSION,
+        "bundle_manifest_sha256": bundle_sha256,
+        "baseline_run_id": baseline_manifest["run_id"],
+        "replay_run_id": run_result["run_id"],
+        "baseline_extractor": _replay_extractor_identity(baseline_extractor),
+        "local_extractor": _replay_extractor_identity(local_extractor),
+        "profile_match": True if deterministic else None,
+        "outcome": outcome,
+        "raw": raw,
+        "comparison": comparison,
+    }
+    _atomic_write_json(requested_out / "replay.json", replay_evidence)
+    updated_manifest = _read_json_object(requested_out / "manifest.json", "replay manifest")
+    artifacts = dict(cast(dict[str, Any], updated_manifest.get("artifacts", {})))
+    artifacts["replay"] = "replay.json"
+    updated_manifest["artifacts"] = artifacts
+    updated_manifest.update(
+        {
             "replay_schema_version": _BUNDLE_VERSION,
-            "bundle_manifest_sha256": bundle_sha256,
-            "baseline_run_id": baseline_manifest["run_id"],
-            "replay_run_id": run_result["run_id"],
-            "baseline_extractor": _replay_extractor_identity(baseline_extractor),
-            "local_extractor": _replay_extractor_identity(local_extractor),
-            "profile_match": True if deterministic else None,
-            "outcome": outcome,
-            "raw": raw,
-            "comparison": comparison,
-        }
-        _atomic_write_json(requested_out / "replay.json", replay_evidence)
-        updated_manifest = _read_json_object(requested_out / "manifest.json", "replay manifest")
-        artifacts = dict(cast(dict[str, Any], updated_manifest.get("artifacts", {})))
-        artifacts["replay"] = "replay.json"
-        updated_manifest["artifacts"] = artifacts
-        updated_manifest.update(
-            {
-                "replay_schema_version": _BUNDLE_VERSION,
-                "baseline_run_id": baseline_manifest["run_id"],
-                "bundle_manifest_sha256": bundle_sha256,
-                "outcome": outcome,
-            }
-        )
-        _atomic_write_json(requested_out / "manifest.json", updated_manifest)
-        if verify_run(requested_out).get("status") != "pass":
-            raise ReplayError("replay_verification_failed", "Final replay evidence does not verify")
-        result = {
-            "outcome": outcome,
-            "run_id": run_result["run_id"],
-            "out_dir": str(requested_out.resolve()),
             "baseline_run_id": baseline_manifest["run_id"],
             "bundle_manifest_sha256": bundle_sha256,
-            "profile_match": True if deterministic else None,
-            "raw": raw,
+            "outcome": outcome,
         }
+    )
+    _atomic_write_json(requested_out / "manifest.json", updated_manifest)
+    if verify_run(requested_out).get("status") != "pass":
+        raise ReplayError("replay_verification_failed", "Final replay evidence does not verify")
+    result = {
+        "outcome": outcome,
+        "run_id": run_result["run_id"],
+        "out_dir": str(requested_out.resolve()),
+        "baseline_run_id": baseline_manifest["run_id"],
+        "bundle_manifest_sha256": bundle_sha256,
+        "profile_match": True if deterministic else None,
+        "raw": raw,
+    }
     return result
 
 
@@ -689,6 +817,89 @@ def _replay_extractor_identity(identity: dict[str, Any]) -> dict[str, Any]:
     } | {"reproducibility_profile_sha256": profile.get("profile_sha256") if isinstance(profile, dict) else None}
 
 
+def _read_worker_response(
+    path: Path,
+    *,
+    expected_root: Path,
+    request_id: str,
+    returncode: int,
+    expected_out: Path,
+) -> dict[str, Any]:
+    """Validate one untrusted worker response and return its public result."""
+    def invalid() -> ReplayError:
+        return ReplayError(_WORKER_GENERIC_CODE, _WORKER_GENERIC_MESSAGE)
+
+    try:
+        if path.parent.resolve() != expected_root.resolve():
+            raise invalid()
+        metadata = path.lstat()
+        if not stat.S_ISREG(metadata.st_mode) or path.is_symlink():
+            raise invalid()
+        if metadata.st_size > _WORKER_MAX_RESULT_BYTES:
+            raise invalid()
+        def reject_constant(value: str) -> object:
+            raise ValueError(value)
+        payload = json.loads(path.read_text(encoding="utf-8"), parse_constant=reject_constant)
+    except (OSError, UnicodeError, ValueError, TypeError, ReplayError) as exc:
+        if isinstance(exc, ReplayError):
+            raise exc
+        raise invalid() from exc
+    if not isinstance(payload, dict):
+        raise invalid()
+    if set(payload) not in ({"protocol_version", "request_id", "ok", "result"}, {"protocol_version", "request_id", "ok", "error"}):
+        raise invalid()
+    if payload.get("protocol_version") != _WORKER_PROTOCOL_VERSION or payload.get("request_id") != request_id:
+        raise invalid()
+    ok = payload.get("ok")
+    if type(ok) is not bool or (ok is not (returncode == 0)):
+        raise invalid()
+    if ok:
+        result = payload.get("result")
+        if not isinstance(result, dict) or set(result) != {
+            "outcome", "run_id", "out_dir", "baseline_run_id",
+            "bundle_manifest_sha256", "profile_match", "raw",
+        }:
+            raise invalid()
+        if result.get("outcome") not in {"exact", "deterministic_mismatch", "evidence_compared"}:
+            raise invalid()
+        for key in ("run_id", "baseline_run_id"):
+            if not isinstance(result.get(key), str) or not result[key]:
+                raise invalid()
+        if not _is_sha256(result.get("bundle_manifest_sha256")):
+            raise invalid()
+        if result.get("out_dir") != str(expected_out.resolve()):
+            raise invalid()
+        if result.get("profile_match") is not None and type(result["profile_match"]) is not bool:
+            raise invalid()
+        raw = result.get("raw")
+        if not isinstance(raw, dict) or set(raw) != {
+            "equal", "different", "missing", "different_page_ids", "missing_page_ids",
+        }:
+            raise invalid()
+        for key in ("equal", "different", "missing"):
+            value = raw.get(key)
+            if type(value) is not int or value < 0:
+                raise invalid()
+        for key in ("different_page_ids", "missing_page_ids"):
+            values = raw.get(key)
+            if not isinstance(values, list) or any(not isinstance(value, str) or not value for value in values):
+                raise invalid()
+            if values != sorted(set(values)):
+                raise invalid()
+        return result
+    error = payload.get("error")
+    if (
+        not isinstance(error, dict)
+        or set(error) != {"code", "message"}
+        or not isinstance(error.get("code"), str)
+        or error["code"] not in _WORKER_SAFE_ERROR_CODES
+        or not isinstance(error.get("message"), str)
+        or not error["message"]
+    ):
+        raise invalid()
+    raise ReplayError(error["code"], error["message"])
+
+
 def _atomic_write_json(path: Path, value: dict[str, Any]) -> None:
     temporary = path.with_name(f".{path.name}.tmp-{uuid.uuid4().hex}")
     temporary.write_text(
@@ -696,169 +907,6 @@ def _atomic_write_json(path: Path, value: dict[str, Any]) -> None:
         encoding="utf-8",
     )
     os.replace(temporary, path)
-
-
-@contextmanager
-def _bundle_import_boundary(
-    bundle_root: Path,
-    trusted_adapter_path: Path | None,
-):
-    """Temporarily prevent Python imports from resolving inside a bundle."""
-    original_path = list(sys.path)
-    original_modules = dict(sys.modules)
-    root = bundle_root.resolve()
-    trusted: Path | None = None
-    if trusted_adapter_path is not None:
-        trusted = trusted_adapter_path.expanduser().resolve()
-        if _paths_related(trusted, root):
-            raise ReplayError(
-                "adapter_path_inside_bundle",
-                "Trusted adapter path must not be equal to, inside, or above the bundle",
-            )
-    try:
-        filtered: list[str] = []
-        for entry in original_path:
-            if not isinstance(entry, str):
-                continue
-            candidate = Path.cwd() if entry == "" else Path(entry).expanduser()
-            try:
-                resolved = candidate.resolve()
-            except (OSError, RuntimeError, ValueError):
-                continue
-            if not _paths_related(resolved, root):
-                filtered.append(entry)
-        if trusted is not None:
-            filtered.insert(0, str(trusted))
-        sys.path[:] = filtered
-        _reject_cached_bundle_modules(root)
-        yield _evict_module_root
-    finally:
-        sys.path[:] = original_path
-        sys.modules.clear()
-        sys.modules.update(original_modules)
-
-
-def _custom_adapter_module(adapter_name: str) -> str | None:
-    if ":" not in adapter_name:
-        return None
-    module_name = adapter_name.split(":", 1)[0]
-    return module_name or None
-
-
-def _evict_module_root(module_name: str) -> None:
-    root = module_name.split(".", 1)[0]
-    for cached_name in tuple(sys.modules):
-        if cached_name == root or cached_name.startswith(f"{root}."):
-            del sys.modules[cached_name]
-
-
-def _paths_related(left: Path, right: Path) -> bool:
-    return left == right or left in right.parents or right in left.parents
-
-
-def _reject_cached_bundle_modules(bundle_root: Path) -> None:
-    """Reject any cached module whose import origin is inside the bundle."""
-    for cached_name, module in list(sys.modules.items()):
-        if module is None:
-            continue
-        module_type = type(module)
-        # A few installed modules use harmless ModuleType subclasses. They are
-        # safe only when the concrete class inherits the base metadata getter;
-        # custom/proxy getters are rejected before any metadata is read.
-        if not issubclass(module_type, ModuleType) or (
-            module_type.__getattribute__ is not ModuleType.__getattribute__
-        ):
-            _bundle_import_forbidden(
-                f"Cached sys.modules entry '{cached_name}' has unsafe module metadata"
-            )
-        module_dict = ModuleType.__getattribute__(module, "__dict__")
-        spec = module_dict.get("__spec__")
-        if spec is not None and type(spec) is not ModuleSpec:
-            _bundle_import_forbidden(
-                f"Cached module '{cached_name}' has unsafe import metadata"
-            )
-        spec_dict = {} if spec is None else ModuleSpec.__getattribute__(spec, "__dict__")
-        metadata_names = ("__path__", "__file__", "__spec__")
-        if "__getattr__" in module_dict and any(
-            key not in module_dict for key in metadata_names
-        ):
-            hook = module_dict["__getattr__"]
-            module_file = module_dict.get("__file__")
-            origin = spec_dict.get("origin")
-            if (
-                type(hook) is not FunctionType
-                or type(module_file) is not str
-                or origin not in {module_file, "frozen"}
-            ):
-                _bundle_import_forbidden(
-                    f"Cached module '{cached_name}' has dynamic import metadata"
-                )
-        if module_type is not ModuleType:
-            for cls in module_type.__mro__:
-                if cls is ModuleType:
-                    break
-                class_dict = cls.__dict__
-                if any(name in class_dict for name in ("__getattribute__", "__path__", "__file__", "__spec__")):
-                    _bundle_import_forbidden(
-                        f"Cached module '{cached_name}' has descriptor import metadata"
-                    )
-                if "__getattr__" in class_dict and any(
-                    key not in module_dict for key in metadata_names
-                ):
-                    _bundle_import_forbidden(
-                        f"Cached module '{cached_name}' has dynamic import metadata"
-                    )
-        origins: list[object] = [
-            module_dict.get("__file__"),
-            module_dict.get("__path__"),
-            spec_dict.get("origin"),
-            spec_dict.get("submodule_search_locations"),
-        ]
-        for origin in origins:
-            for value in _origin_values(origin):
-                if _origin_in_bundle(value, bundle_root):
-                    _bundle_import_forbidden(
-                        f"Cached module '{cached_name}' is loaded from the bundle"
-                    )
-
-
-def _origin_values(origin: object) -> list[str]:
-    if type(origin) is str:
-        return [origin]
-    if origin is None:
-        return []
-    if type(origin) is list:
-        values = list.__iter__(origin)
-    elif type(origin) is tuple:
-        values = tuple.__iter__(origin)
-    else:
-        if type(origin) is not _NamespacePath:
-            _bundle_import_forbidden("Cached module has unsafe import path metadata")
-        namespace_dict = vars(origin)
-        paths = namespace_dict.get("_path")
-        if type(paths) is not list:
-            _bundle_import_forbidden("Cached module has unsafe namespace path metadata")
-        values = list.__iter__(paths)
-    result = list(values)
-    if any(type(value) is not str for value in result):
-        _bundle_import_forbidden("Cached module has unsafe import path metadata")
-    return cast(list[str], result)
-
-
-def _origin_in_bundle(origin: str, bundle_root: Path) -> bool:
-    if origin in {"built-in", "frozen", "namespace"} or origin.startswith("<"):
-        return False
-    if not origin:
-        _bundle_import_forbidden("Cached module has an empty import origin")
-    try:
-        resolved = Path(origin).expanduser().resolve()
-    except (OSError, RuntimeError, ValueError):
-        _bundle_import_forbidden("Cached module has an unresolvable import origin")
-    return resolved == bundle_root or bundle_root in resolved.parents
-
-
-def _bundle_import_forbidden(message: str) -> NoReturn:
-    raise ReplayError("bundle_code_import_forbidden", message)
 
 
 def _check_bundle_eligibility(manifest: dict[str, Any]) -> None:

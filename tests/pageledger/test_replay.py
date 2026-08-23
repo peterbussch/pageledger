@@ -159,6 +159,125 @@ def test_worker_envelope_redacts_unexpected_error(
     assert "secret details" not in result_path.read_text(encoding="utf-8")
 
 
+def test_worker_response_missing_file_fails_closed(tmp_path: Path) -> None:
+    from pageledger.replay import ReplayError, _read_worker_response
+
+    with pytest.raises(ReplayError) as error:
+        _read_worker_response(
+            tmp_path / "missing.json",
+            expected_root=tmp_path,
+            request_id="request",
+            returncode=0,
+            expected_out=tmp_path / "out",
+        )
+    assert error.value.code == "replay_worker_failed"
+    assert str(error.value) == "Replay worker failed without a valid result."
+
+
+def test_worker_response_contradictions_fail_closed(tmp_path: Path) -> None:
+    from pageledger.replay import ReplayError, _read_worker_response
+
+    output = tmp_path / "out"
+    result = {
+        "outcome": "exact",
+        "run_id": "run",
+        "out_dir": str(output.resolve()),
+        "baseline_run_id": "base",
+        "bundle_manifest_sha256": "0" * 64,
+        "profile_match": True,
+        "raw": {
+            "equal": 1,
+            "different": 0,
+            "missing": 0,
+            "different_page_ids": [],
+            "missing_page_ids": [],
+        },
+    }
+    valid = {"protocol_version": "0.1", "request_id": "id", "ok": True, "result": result}
+    cases: list[tuple[str, object, int]] = [
+        ("malformed", "{", 0),
+        ("unknown-field", {**valid, "extra": True}, 0),
+        ("missing-field", {key: value for key, value in valid.items() if key != "ok"}, 0),
+        ("protocol", {**valid, "protocol_version": "9"}, 0),
+        ("request", {**valid, "request_id": "other"}, 0),
+        ("exit-error", {"protocol_version": "0.1", "request_id": "id", "ok": False, "error": {"code": "incompatible_environment", "message": "profile mismatch"}}, 0),
+        ("exit-success", valid, 1),
+        ("outcome", {**valid, "result": {**result, "outcome": "unknown"}}, 0),
+        ("count", {**valid, "result": {**result, "raw": {**result["raw"], "equal": True}}}, 0),
+        ("path", {**valid, "result": {**result, "out_dir": str(tmp_path / "other")}}, 0),
+        ("page-ids", {**valid, "result": {**result, "raw": {**result["raw"], "different_page_ids": ["p2", "p1"]}}}, 0),
+    ]
+    for name, payload, returncode in cases:
+        path = tmp_path / f"{name}.json"
+        if isinstance(payload, str):
+            path.write_text(payload, encoding="utf-8")
+        else:
+            path.write_text(json.dumps(payload), encoding="utf-8")
+        with pytest.raises(ReplayError) as error:
+            _read_worker_response(
+                path,
+                expected_root=tmp_path,
+                request_id="id",
+                returncode=returncode,
+                expected_out=output,
+            )
+        assert error.value.code == "replay_worker_failed", name
+        assert str(error.value) == "Replay worker failed without a valid result.", name
+
+    oversized = tmp_path / "oversized.json"
+    oversized.write_bytes(b"0" * (1_048_576 + 1))
+    with pytest.raises(ReplayError) as error:
+        _read_worker_response(
+            oversized,
+            expected_root=tmp_path,
+            request_id="id",
+            returncode=0,
+            expected_out=output,
+        )
+    assert error.value.code == "replay_worker_failed"
+
+
+def test_worker_response_preserves_known_error_and_success(tmp_path: Path) -> None:
+    from pageledger.replay import ReplayError, _read_worker_response
+
+    output = tmp_path / "out"
+    error_path = tmp_path / "error.json"
+    error_path.write_text(
+        json.dumps(
+            {
+                "protocol_version": "0.1",
+                "request_id": "error",
+                "ok": False,
+                "error": {"code": "incompatible_environment", "message": "profile mismatch"},
+            }
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(ReplayError) as error:
+        _read_worker_response(
+            error_path,
+            expected_root=tmp_path,
+            request_id="error",
+            returncode=1,
+            expected_out=output,
+        )
+    assert error.value.code == "incompatible_environment"
+    assert str(error.value) == "profile mismatch"
+
+    result = {
+        "outcome": "exact",
+        "run_id": "run",
+        "out_dir": str(output.resolve()),
+        "baseline_run_id": "base",
+        "bundle_manifest_sha256": "0" * 64,
+        "profile_match": True,
+        "raw": {"equal": 1, "different": 0, "missing": 0, "different_page_ids": [], "missing_page_ids": []},
+    }
+    success_path = tmp_path / "success.json"
+    success_path.write_text(json.dumps({"protocol_version": "0.1", "request_id": "success", "ok": True, "result": result}), encoding="utf-8")
+    assert _read_worker_response(success_path, expected_root=tmp_path, request_id="success", returncode=0, expected_out=output) == result
+
+
 def test_text_profile_is_stable_and_self_hashing() -> None:
     from pageledger.adapters import TextAdapter
     from pageledger.replay import build_reproducibility_profile, profile_sha256
@@ -410,44 +529,37 @@ def test_relocated_replay_never_hashes_original_source(
     assert result["outcome"] == "exact"
 
 
-def test_profile_mismatch_fails_before_output_creation(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+def test_custom_adapter_profile_mismatch_fails_before_output_creation(
+    tmp_path: Path,
 ) -> None:
-    import pageledger.replay as replay_module
-    from pageledger.replay import ReplayError, bundle_run, profile_sha256, replay_bundle
-
-    run_dir, _, _ = _run_text(tmp_path)
-    bundle_dir = tmp_path / "bundle"
-    bundle_run(run_dir, bundle_dir)
-    original = replay_module.build_reproducibility_profile
-
-    def mismatched_profile(adapter: object) -> dict[str, object] | None:
-        profile = original(adapter)
-        assert profile is not None
-        profile["runtime"] = {**profile["runtime"], "release": "different-release"}
-        profile["profile_sha256"] = profile_sha256(profile)
-        return profile
-
-    monkeypatch.setattr(replay_module, "build_reproducibility_profile", mismatched_profile)
-    with pytest.raises(ReplayError) as error:
-        replay_bundle(bundle_dir, tmp_path / "never-created")
-    assert error.value.code == "incompatible_environment"
-    assert not (tmp_path / "never-created").exists()
-
-
-def test_extractor_identity_mismatch_precedes_profile_preflight(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    from pageledger.adapters import TextAdapter
     from pageledger.replay import ReplayError, bundle_run, replay_bundle
 
-    run_dir, _, _ = _run_text(tmp_path)
+    adapter_dir = tmp_path / "trusted-adapters"
+    adapter_dir.mkdir()
+    adapter = (
+        "from pageledger.adapters import ExtractionResult\n"
+        "class Adapter:\n"
+        "    name = 'profile-fixture'\n"
+        "    version = '1.0'\n"
+        "    deterministic = True\n"
+        "    input_types = ('text',)\n"
+        "    output_types = ('text',)\n"
+        "    capabilities = ('local',)\n"
+        "    def supports(self, action): return action == 'transcribe_text'\n"
+        "    def reproducibility_profile(self):\n"
+        "        return {'materials': [{'kind': 'asset', 'name': 'fixture', 'version': VERSION, 'sha256': '" + "0" * 64 + "'}]}\n"
+        "    def extract(self, source, *, page_id, page_number, action, prompt=None):\n"
+        "        return ExtractionResult(content='stable', format='text', confidence=None, model=None, warnings=[], usage={'pages': 1})\n"
+    )
+    (adapter_dir / "profile_fixture.py").write_text("VERSION = 'A'\n" + adapter, encoding="utf-8")
+    config = MINIMAL_CONFIG.replace("adapter: text", "adapter: profile_fixture:Adapter")
+    run_dir, _, _ = _run_text(tmp_path, config_text=config, adapter_path=adapter_dir)
     bundle_dir = tmp_path / "bundle"
     bundle_run(run_dir, bundle_dir)
-    monkeypatch.setattr(TextAdapter, "version", "different-version")
+    (adapter_dir / "profile_fixture.py").write_text("VERSION = 'B'\n" + adapter, encoding="utf-8")
     with pytest.raises(ReplayError) as error:
-        replay_bundle(bundle_dir, tmp_path / "never-created")
-    assert error.value.code == "extractor_identity_mismatch"
+        replay_bundle(bundle_dir, tmp_path / "never-created", adapter_path=adapter_dir)
+    assert error.value.code == "incompatible_environment"
     assert not (tmp_path / "never-created").exists()
 
 
@@ -822,6 +934,55 @@ def test_replay_trusted_adapter_replaces_cached_module_and_restores_modules(
             sys.path.remove(entry)
 
 
+def test_replay_isolates_stale_transitive_dependency_and_executes_trusted_path(
+    tmp_path: Path,
+) -> None:
+    import sys
+
+    from pageledger.replay import bundle_run, replay_bundle
+
+    adapter_a = tmp_path / "adapter-a"
+    adapter_b = tmp_path / "adapter-b"
+    adapter_a.mkdir()
+    adapter_b.mkdir()
+    adapter_source = (
+        "from pageledger.adapters import ExtractionResult\n"
+        "from shared_dependency import VALUE\n"
+        "class Adapter:\n"
+        "    name = 'transitive-fixture'\n"
+        "    version = '1.0'\n"
+        "    deterministic = True\n"
+        "    input_types = ('text',)\n"
+        "    output_types = ('text',)\n"
+        "    capabilities = ('local',)\n"
+        "    def supports(self, action): return action == 'transcribe_text'\n"
+        "    def reproducibility_profile(self): return {'materials': []}\n"
+        "    def extract(self, source, *, page_id, page_number, action, prompt=None):\n"
+        "        return ExtractionResult(content=VALUE, format='text', confidence=None, model=None, warnings=[], usage={'pages': 1})\n"
+    )
+    for directory, value in ((adapter_a, "A"), (adapter_b, "B")):
+        (directory / "transitive_fixture.py").write_text(adapter_source, encoding="utf-8")
+        (directory / "shared_dependency.py").write_text(f"VALUE = '{value}'\n", encoding="utf-8")
+    config = MINIMAL_CONFIG.replace("adapter: text", "adapter: transitive_fixture:Adapter")
+    run_dir, _, _ = _run_text(
+        tmp_path,
+        config_text=config,
+        source_text="one page\n",
+        adapter_path=adapter_a,
+    )
+    cached_a_dependency = sys.modules["shared_dependency"]
+    bundle_dir = tmp_path / "bundle"
+    bundle_run(run_dir, bundle_dir)
+    original_path = list(sys.path)
+    replayed = tmp_path / "replayed"
+    result = replay_bundle(bundle_dir, replayed, adapter_path=adapter_b)
+    assert result["outcome"] == "deterministic_mismatch"
+    assert result["raw"]["different"] == 1
+    assert (replayed / "raw" / "doc_0001_page_0001.txt").read_text(encoding="utf-8") == "B"
+    assert sys.modules["shared_dependency"] is cached_a_dependency
+    assert sys.path == original_path
+
+
 def test_profile_hook_cannot_import_bundle_helper(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -882,272 +1043,6 @@ def test_profile_hook_cannot_import_bundle_helper(
     assert not (tmp_path / "never-created").exists()
 
 
-@pytest.mark.parametrize("metadata_kind", ["file", "path", "spec"])
-def test_cached_unrelated_bundle_module_is_rejected_before_import(
-    tmp_path: Path, metadata_kind: str
-) -> None:
-    import sys
-    import types
-    from importlib.machinery import ModuleSpec
-
-    from pageledger.replay import ReplayError, _bundle_import_boundary
-
-    bundle = tmp_path / "bundle"
-    (bundle / "sources" / "pkg").mkdir(parents=True)
-    module_name = f"cached_bundle_case_{metadata_kind}"
-    module = types.ModuleType(module_name)
-    if metadata_kind == "file":
-        module.__file__ = str(bundle / "sources" / "helper.py")
-    elif metadata_kind == "path":
-        module.__path__ = [str(bundle / "sources" / "pkg")]
-    else:
-        module.__spec__ = ModuleSpec(
-            module_name,
-            loader=None,
-            origin=str(bundle / "sources" / "helper.py"),
-            is_package=True,
-        )
-        module.__spec__.submodule_search_locations = [str(bundle / "sources" / "pkg")]
-    sys.modules[module_name] = module
-    try:
-        with pytest.raises(ReplayError) as error:
-            with _bundle_import_boundary(bundle, None):
-                pass
-        assert error.value.code == "bundle_code_import_forbidden"
-    finally:
-        sys.modules.pop(module_name, None)
-
-
-def test_cached_metadata_scan_does_not_execute_module_getattr(tmp_path: Path) -> None:
-    import sys
-    import types
-
-    from pageledger.replay import ReplayError, _bundle_import_boundary
-
-    bundle = tmp_path / "bundle"
-    bundle.mkdir()
-    marker = tmp_path / "metadata-getattr-marker"
-
-    class ProxyModule(types.ModuleType):
-        def __getattribute__(self, name: str) -> object:
-            if name in {"__file__", "__path__", "__spec__"}:
-                marker.write_text("executed", encoding="utf-8")
-            return super().__getattribute__(name)
-
-    module_name = "cached_metadata_proxy"
-    module = ProxyModule(module_name)
-    module.__file__ = str(bundle / "helper.py")
-    sys.modules[module_name] = module
-    try:
-        with pytest.raises(ReplayError) as error:
-            with _bundle_import_boundary(bundle, None):
-                pass
-        assert error.value.code == "bundle_code_import_forbidden"
-        assert not marker.exists()
-    finally:
-        sys.modules.pop(module_name, None)
-
-
-def test_cached_dynamic_package_proxy_is_rejected_before_child_import(
-    tmp_path: Path,
-) -> None:
-    import sys
-    import types
-
-    from pageledger.replay import ReplayError, _bundle_import_boundary
-
-    bundle = tmp_path / "bundle"
-    (bundle / "sources" / "pkg").mkdir(parents=True)
-    marker = tmp_path / "dynamic-path-marker"
-
-    class DynamicPackage(types.ModuleType):
-        def __getattribute__(self, name: str) -> object:
-            if name == "__path__":
-                marker.write_text("executed", encoding="utf-8")
-                return [str(bundle / "sources" / "pkg")]
-            return super().__getattribute__(name)
-
-    module_name = "cached_dynamic_package"
-    sys.modules[module_name] = DynamicPackage(module_name)
-    try:
-        with pytest.raises(ReplayError) as error:
-            with _bundle_import_boundary(bundle, None):
-                __import__(f"{module_name}.child")
-        assert error.value.code == "bundle_code_import_forbidden"
-        assert not marker.exists()
-    finally:
-        sys.modules.pop(module_name, None)
-
-
-def test_cached_dynamic_getattr_package_proxy_is_rejected_before_child_import(
-    tmp_path: Path,
-) -> None:
-    import sys
-    import types
-
-    from pageledger.replay import ReplayError, _bundle_import_boundary
-
-    bundle = tmp_path / "bundle"
-    (bundle / "sources" / "pkg").mkdir(parents=True)
-    marker = tmp_path / "dynamic-getattr-marker"
-
-    class DynamicPackage(types.ModuleType):
-        def __getattr__(self, name: str) -> object:
-            if name == "__path__":
-                marker.write_text("executed", encoding="utf-8")
-                return [str(bundle / "sources" / "pkg")]
-            raise AttributeError(name)
-
-    module_name = "cached_dynamic_getattr_package"
-    sys.modules[module_name] = DynamicPackage(module_name)
-    try:
-        with pytest.raises(ReplayError) as error:
-            with _bundle_import_boundary(bundle, None):
-                __import__(f"{module_name}.child")
-        assert error.value.code == "bundle_code_import_forbidden"
-        assert not marker.exists()
-    finally:
-        sys.modules.pop(module_name, None)
-
-
-def test_cached_module_class_descriptor_is_rejected_before_child_import(
-    tmp_path: Path,
-) -> None:
-    import sys
-    import types
-
-    from pageledger.replay import ReplayError, _bundle_import_boundary
-
-    bundle = tmp_path / "bundle"
-    (bundle / "sources" / "pkg").mkdir(parents=True)
-    marker = tmp_path / "descriptor-path-marker"
-
-    class DescriptorPackage(types.ModuleType):
-        @property
-        def __path__(self) -> list[str]:
-            marker.write_text("executed", encoding="utf-8")
-            return [str(bundle / "sources" / "pkg")]
-
-    module_name = "cached_descriptor_package"
-    module = DescriptorPackage(module_name)
-    module_dict = types.ModuleType.__getattribute__(module, "__dict__")
-    module_dict["__file__"] = str(tmp_path / "trusted.py")
-    module_dict["__path__"] = [str(tmp_path)]
-    sys.modules[module_name] = module
-    try:
-        with pytest.raises(ReplayError) as error:
-            with _bundle_import_boundary(bundle, None):
-                __import__(f"{module_name}.child")
-        assert error.value.code == "bundle_code_import_forbidden"
-        assert not marker.exists()
-    finally:
-        sys.modules.pop(module_name, None)
-
-
-def test_cached_plain_module_getattr_is_rejected_before_child_import(
-    tmp_path: Path,
-) -> None:
-    import sys
-    import types
-
-    from pageledger.replay import ReplayError, _bundle_import_boundary
-
-    bundle = tmp_path / "bundle"
-    (bundle / "sources" / "pkg").mkdir(parents=True)
-    marker = tmp_path / "plain-getattr-marker"
-    module_name = "cached_plain_getattr_package"
-    module = types.ModuleType(module_name)
-
-    def get_metadata(name: str) -> object:
-        if name == "__path__":
-            marker.write_text("executed", encoding="utf-8")
-            return [str(bundle / "sources" / "pkg")]
-        raise AttributeError(name)
-
-    module_dict = types.ModuleType.__getattribute__(module, "__dict__")
-    module_dict["__getattr__"] = get_metadata
-    sys.modules[module_name] = module
-    try:
-        with pytest.raises(ReplayError) as error:
-            with _bundle_import_boundary(bundle, None):
-                __import__(f"{module_name}.child")
-        assert error.value.code == "bundle_code_import_forbidden"
-        assert not marker.exists()
-    finally:
-        sys.modules.pop(module_name, None)
-
-
-def test_cached_module_spec_proxy_is_rejected_before_metadata_access(tmp_path: Path) -> None:
-    import sys
-    import types
-    from importlib.machinery import ModuleSpec
-
-    from pageledger.replay import ReplayError, _bundle_import_boundary
-
-    bundle = tmp_path / "bundle"
-    bundle.mkdir()
-
-    class SpecProxy(ModuleSpec):
-        pass
-
-    module_name = "cached_spec_proxy"
-    module = types.ModuleType(module_name)
-    module.__spec__ = SpecProxy(module_name, loader=None, origin=str(bundle / "helper.py"))
-    sys.modules[module_name] = module
-    try:
-        with pytest.raises(ReplayError) as error:
-            with _bundle_import_boundary(bundle, None):
-                pass
-        assert error.value.code == "bundle_code_import_forbidden"
-    finally:
-        sys.modules.pop(module_name, None)
-
-
-@pytest.mark.parametrize("origin", [object(), "\x00unresolvable"])
-def test_cached_unknown_or_unresolvable_origin_is_rejected(
-    tmp_path: Path, origin: object
-) -> None:
-    import sys
-    import types
-
-    from pageledger.replay import ReplayError, _bundle_import_boundary
-
-    bundle = tmp_path / "bundle"
-    bundle.mkdir()
-    module_name = "cached_invalid_origin"
-    module = types.ModuleType(module_name)
-    module.__file__ = origin  # type: ignore[assignment]
-    sys.modules[module_name] = module
-    try:
-        with pytest.raises(ReplayError) as error:
-            with _bundle_import_boundary(bundle, None):
-                pass
-        assert error.value.code == "bundle_code_import_forbidden"
-    finally:
-        sys.modules.pop(module_name, None)
-
-
-def test_import_boundary_fails_closed_and_restores_sys_path(tmp_path: Path) -> None:
-    import sys
-
-    from pageledger.replay import _bundle_import_boundary
-
-    bundle = tmp_path / "bundle"
-    bundle.mkdir()
-    unresolved = "\x00unresolvable"
-    marker = object()
-    before = list(sys.path)
-    sys.path.extend([unresolved, marker])
-    active_before = list(sys.path)
-    try:
-        with _bundle_import_boundary(bundle, None):
-            assert unresolved not in sys.path
-            assert marker not in sys.path
-        assert sys.path == active_before
-    finally:
-        sys.path[:] = before
-
-
 def test_replay_rejects_tampered_bundle_before_output_creation(tmp_path: Path) -> None:
     from pageledger.replay import ReplayError, bundle_run, replay_bundle
 
@@ -1191,6 +1086,96 @@ def test_replay_rejects_adapter_path_inside_bundle(tmp_path: Path) -> None:
         replay_bundle(bundle_dir, tmp_path / "never-created", adapter_path=bundle_dir)
     assert error.value.code == "adapter_path_inside_bundle"
     assert not (tmp_path / "never-created").exists()
+
+
+def test_replay_worker_startup_is_fixed_and_private(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import subprocess
+    import sys
+
+    import pageledger.replay as replay_module
+    from pageledger.replay import replay_bundle
+
+    bundle = tmp_path / "bundle"
+    bundle.mkdir()
+    output = tmp_path / "output"
+    captured: dict[str, object] = {}
+
+    def fake_run(command: list[str], **kwargs: object) -> object:
+        captured["command"] = command
+        captured["kwargs"] = kwargs
+        count = int(command[5])
+        worker_args = command[6 + count :]
+        result_path = Path(worker_args[1])
+        expected_out = worker_args[3]
+        result = {
+            "outcome": "exact",
+            "run_id": "child",
+            "out_dir": expected_out,
+            "baseline_run_id": "base",
+            "bundle_manifest_sha256": "0" * 64,
+            "profile_match": True,
+            "raw": {
+                "equal": 0,
+                "different": 0,
+                "missing": 0,
+                "different_page_ids": [],
+                "missing_page_ids": [],
+            },
+        }
+        result_path.write_text(
+            json.dumps(
+                {
+                    "protocol_version": "0.1",
+                    "request_id": worker_args[0],
+                    "ok": True,
+                    "result": result,
+                }
+            ),
+            encoding="utf-8",
+        )
+        return subprocess.CompletedProcess(command, 0)
+
+    monkeypatch.setattr(replay_module.subprocess, "run", fake_run)
+    replay_bundle(bundle, output)
+    command = captured["command"]
+    assert isinstance(command, list)
+    assert command[:4] == [sys.executable, "-I", "-S", "-c"]
+    assert command[4] == replay_module._WORKER_BOOTSTRAP
+    kwargs = captured["kwargs"]
+    assert isinstance(kwargs, dict)
+    assert kwargs["stdin"] is subprocess.DEVNULL
+    assert kwargs["stdout"] is subprocess.DEVNULL
+    assert kwargs["stderr"] is subprocess.DEVNULL
+    assert kwargs["check"] is False
+    assert kwargs["cwd"] != Path.cwd()
+    assert kwargs["cwd"] != output
+    assert Path(command[-2]) == output.resolve()
+
+
+def test_replay_ignores_pythonpath_pageledger_and_sitecustomize(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from pageledger.replay import bundle_run, replay_bundle
+
+    run_dir, _, _ = _run_text(tmp_path)
+    bundle_dir = tmp_path / "bundle"
+    bundle_run(run_dir, bundle_dir)
+    poison = tmp_path / "poison"
+    (poison / "pageledger").mkdir(parents=True)
+    marker = tmp_path / "sitecustomize-marker"
+    (poison / "pageledger" / "__init__.py").write_text(
+        "raise RuntimeError('poison pageledger imported')\n", encoding="utf-8"
+    )
+    (poison / "sitecustomize.py").write_text(
+        f"from pathlib import Path\nPath({str(marker)!r}).write_text('executed')\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("PYTHONPATH", str(poison))
+    result = replay_bundle(bundle_dir, tmp_path / "replayed")
+    assert result["outcome"] == "exact"
+    assert not marker.exists()
 
 
 def _refresh_bundle_inventory(bundle_dir: Path) -> dict:
