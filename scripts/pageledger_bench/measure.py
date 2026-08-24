@@ -53,6 +53,44 @@ _DEPENDENCIES = ("pageledger", "PyYAML", "jsonschema")
 _SUBPROCESS_TIMEOUT_SECONDS = 5.0
 _SHA256 = re.compile(r"[0-9a-f]{64}")
 _GIT_SHA = re.compile(r"[0-9a-f]{40}")
+_TRACE_INTERPOSITION_POLICY_VERSION = "2.0"
+_TRACE_READ_ONLY_FILESYSTEM_EVENTS = frozenset(
+    {
+        "glob.glob",
+        "glob.glob/2",
+        "os.fwalk",
+        "os.getxattr",
+        "os.listdir",
+        "os.listxattr",
+        "os.scandir",
+        "os.walk",
+        "pathlib.Path.glob",
+        "pathlib.Path.rglob",
+    }
+)
+_TRACE_NON_FILESYSTEM_OS_EVENTS = frozenset({"os.kill", "os.putenv", "os.unsetenv"})
+_TRACE_MUTATION_PATH_SPECS: dict[str, tuple[tuple[int, int | None, bool], ...]] = {
+    "os.mkdir": ((0, 2, False),),
+    "os.remove": ((0, 1, False),),
+    "os.rmdir": ((0, 1, False),),
+    "os.rename": ((0, 2, False), (1, 3, False)),
+    "os.link": ((0, 2, False), (1, 3, False)),
+    "os.symlink": ((1, 2, False),),
+    "os.truncate": ((0, None, True),),
+    "os.chmod": ((0, 2, True),),
+    "os.chown": ((0, 3, True),),
+    "os.utime": ((0, 3, True),),
+    "os.setxattr": ((0, None, True),),
+    "os.removexattr": ((0, None, True),),
+    "os.chflags": ((0, None, False),),
+    "shutil.copyfile": ((0, None, False), (1, None, False)),
+    "shutil.copymode": ((0, None, False), (1, None, False)),
+    "shutil.copystat": ((0, None, False), (1, None, False)),
+    "shutil.copytree": ((0, None, False), (1, None, False)),
+    "shutil.move": ((0, None, False), (1, None, False)),
+    "shutil.rmtree": ((0, 1, False),),
+    "shutil.chown": ((0, None, False),),
+}
 REQUIRED_FREEZE_PATHS = frozenset(
     {
         "schemas/audit.schema.json",
@@ -371,7 +409,7 @@ def measure_run(
         )
         adapter = ZeroWorkAdapter(workload.page_specs)
         run_dir = requested_out / "run"
-        trace_run_dir = requested_out / "trace-run"
+        control_run_dir = requested_out / "control-run"
         profile_path = requested_out / "profile.pstats"
         profile_text_path = requested_out / "profile.txt"
         receipt_path = requested_out / "measurement.json"
@@ -405,27 +443,35 @@ def measure_run(
         _require_same_candidate_boundary(before_boundary, after_boundary)
 
         _write_profiles(profiler, profile_path, profile_text_path)
+        control_relocation = _relocate_control_run(run_dir, control_run_dir)
         trace_adapter = ZeroWorkAdapter(workload.page_specs)
-        with _CompletedMutationTrace(trace_run_dir) as mutation_trace:
+        trace_events: list[tuple[str, int]] = []
+        with _CompletedMutationTrace(run_dir) as mutation_trace:
             _runner(
                 inputs=[workload.source_path],
                 config_path=workload.config_path,
-                out_dir=trace_run_dir,
+                out_dir=run_dir,
                 dry_run=False,
                 _loaded_adapter=trace_adapter,
                 _reproducibility_profile=None,
+                _phase_observer=lambda name, duration: trace_events.append(
+                    (name, duration)
+                ),
             )
         _require_manifest_last(mutation_trace.events)
+        trace_phase_sequence = _require_phase_sequence(
+            trace_events, len(workload.page_specs)
+        )
         final_boundary = boundary_validator(approved_freeze)
         _require_clean_boundary(final_boundary)
         _require_same_candidate_boundary(
             before_boundary, final_boundary, context="trace validation replay"
         )
-        inventory = _regular_file_inventory(run_dir, cap_bytes=cap_bytes)
-        trace_inventory = _regular_file_inventory(trace_run_dir, cap_bytes=cap_bytes)
-        validation = _oracle_validator(run_dir, workload)
-        trace_validation = _oracle_validator(trace_run_dir, workload)
-        equivalence = _equivalence_validator(run_dir, trace_run_dir, workload)
+        inventory = _regular_file_inventory(control_run_dir, cap_bytes=cap_bytes)
+        trace_inventory = _regular_file_inventory(run_dir, cap_bytes=cap_bytes)
+        validation = _oracle_validator(control_run_dir, workload)
+        trace_validation = _oracle_validator(run_dir, workload)
+        equivalence = _equivalence_validator(control_run_dir, run_dir, workload)
         timing = _summarize_timing(events, total_wall_ns, len(workload.page_specs))
         _require_timing_contract(
             events,
@@ -484,7 +530,7 @@ def measure_run(
             "timing": timing,
             "run_mutations": {
                 "source": "untimed-trace-replay",
-                "run_dir": str(trace_run_dir),
+                "run_dir": str(run_dir),
                 "events": mutation_trace.events,
                 "trace_sha256": canonical_sha256(mutation_trace.events),
                 "manifest_last": True,
@@ -494,6 +540,10 @@ def measure_run(
                 "timed": False,
                 "profiled": False,
                 "runner_calls": 1,
+                "runner_out_dir": str(run_dir),
+                "same_runner_out_dir_as_measured_call": True,
+                "phase_sequence": trace_phase_sequence,
+                "interposition_policy_version": _TRACE_INTERPOSITION_POLICY_VERSION,
                 "inventory": {
                     "regular_file_count": trace_inventory["regular_file_count"],
                     "logical_bytes": trace_inventory["logical_bytes"],
@@ -506,10 +556,13 @@ def measure_run(
                 "ru_maxrss_source_unit": source_unit,
             },
             "output": {
-                "run_dir": str(run_dir),
+                "runner_out_dir": str(run_dir),
+                "measured_control_run_dir": str(control_run_dir),
+                "control_relocation": control_relocation,
+                "run_dir": str(control_run_dir),
                 "regular_file_count": inventory["regular_file_count"],
                 "logical_bytes": inventory["logical_bytes"],
-                "trace_run_dir": str(trace_run_dir),
+                "trace_run_dir": str(run_dir),
                 "trace_regular_file_count": trace_inventory["regular_file_count"],
                 "trace_logical_bytes": trace_inventory["logical_bytes"],
                 "cap_bytes": cap_bytes,
@@ -639,6 +692,22 @@ def _require_timing_contract(
     pages: int,
     max_unaccounted_ratio: float,
 ) -> None:
+    _require_phase_sequence(events, pages)
+    phases = set(timing["ledger"]["phases"])
+    if phases != _DIRECT_LEDGER_PHASES:
+        raise BenchmarkError("timing_phase_set_mismatch", "direct ledger phase set is incomplete")
+    if timing["unaccounted_ratio"] > max_unaccounted_ratio:
+        raise BenchmarkError(
+            "timing_unaccounted_exceeded",
+            f"unaccounted timing ratio {timing['unaccounted_ratio']:.9f} exceeds "
+            f"approved ceiling {max_unaccounted_ratio:.9f}",
+        )
+
+
+def _require_phase_sequence(
+    events: list[tuple[str, int]], pages: int
+) -> dict[str, Any]:
+    """Validate observer control flow without treating replay spans as performance data."""
     names = [name for name, _duration in events]
     expected = _expected_phase_names(pages)
     if names != expected:
@@ -655,19 +724,45 @@ def _require_timing_contract(
             "direct phase event sequence does not match frozen successful-run shape "
             f"at index {mismatch} (observed={len(names)}, expected={len(expected)})",
         )
-    phases = set(timing["ledger"]["phases"])
-    if phases != _DIRECT_LEDGER_PHASES:
-        raise BenchmarkError("timing_phase_set_mismatch", "direct ledger phase set is incomplete")
-    if timing["adapter"]["count"] != pages:
+    adapter_count = names.count("adapter_call")
+    if adapter_count != pages:
         raise BenchmarkError(
             "timing_adapter_count_mismatch", "direct adapter span count does not match page count"
         )
-    if timing["unaccounted_ratio"] > max_unaccounted_ratio:
+    return {
+        "valid": True,
+        "event_count": len(names),
+        "adapter_count": adapter_count,
+        "phase_counts": dict(sorted(Counter(names).items())),
+        "sequence_sha256": canonical_sha256(names),
+        "performance_evidence": False,
+    }
+
+
+def _relocate_control_run(run_dir: Path, control_run_dir: Path) -> dict[str, Any]:
+    """Atomically free the exact runner path while preserving measured output."""
+    if run_dir.is_symlink() or not run_dir.is_dir():
         raise BenchmarkError(
-            "timing_unaccounted_exceeded",
-            f"unaccounted timing ratio {timing['unaccounted_ratio']:.9f} exceeds "
-            f"approved ceiling {max_unaccounted_ratio:.9f}",
+            "control_relocation_failed", "Measured run directory is not a regular directory"
         )
+    if os.path.lexists(control_run_dir):
+        raise BenchmarkError(
+            "control_relocation_failed", "Measured control destination already exists"
+        )
+    try:
+        os.replace(run_dir, control_run_dir)
+        _fsync_directory(run_dir.parent)
+    except OSError as exc:
+        raise BenchmarkError(
+            "control_relocation_failed", "Could not atomically relocate measured control run"
+        ) from exc
+    return {
+        "from": str(run_dir),
+        "to": str(control_run_dir),
+        "atomic": True,
+        "timed": False,
+        "profiled": False,
+    }
 
 
 def _refuse_output_path(path: Path) -> None:
@@ -846,8 +941,11 @@ class _CompletedMutationTrace:
             return result
 
         def tracked_rename(path: Path, target: Any) -> Path:
+            source = path.absolute()
             destination = Path(target).absolute()
-            with trace._authorize(destination, {"os.rename"}) as authorization:
+            with trace._authorize(
+                destination, {"os.rename"}, related_paths={source, destination}
+            ) as authorization:
                 result = trace._original_path_rename(path, target)
             if trace._inside(path) or trace._inside(destination):
                 trace._require_observed(authorization, {"os.rename"})
@@ -855,8 +953,11 @@ class _CompletedMutationTrace:
             return result
 
         def tracked_replace(path: Path, target: Any) -> Path:
+            source = path.absolute()
             destination = Path(target).absolute()
-            with trace._authorize(destination, {"os.rename"}) as authorization:
+            with trace._authorize(
+                destination, {"os.rename"}, related_paths={source, destination}
+            ) as authorization:
                 result = trace._original_path_replace(path, target)
             if trace._inside(path) or trace._inside(destination):
                 trace._require_observed(authorization, {"os.rename"})
@@ -910,10 +1011,18 @@ class _CompletedMutationTrace:
 
     @contextmanager
     def _authorize(
-        self, path: Path, expected_events: set[str]
+        self,
+        path: Path,
+        expected_events: set[str],
+        *,
+        related_paths: set[Path] | None = None,
     ) -> Iterator[dict[str, Any]]:
         authorization = {
             "path": path.absolute(),
+            "paths": {
+                candidate.absolute()
+                for candidate in (related_paths if related_paths is not None else {path})
+            },
             "expected": expected_events,
             "observed": set(),
         }
@@ -927,46 +1036,126 @@ class _CompletedMutationTrace:
     def _audit(self, event: str, args: tuple[Any, ...]) -> None:
         if not self._active:
             return
-        mutation = self._audit_mutation(event, args)
+        if event == "open":
+            mutation = self._audit_open(args)
+        elif event in _TRACE_MUTATION_PATH_SPECS:
+            mutation = self._audit_known_mutation(event, args)
+        elif (
+            event in _TRACE_READ_ONLY_FILESYSTEM_EVENTS
+            or event in _TRACE_NON_FILESYSTEM_OS_EVENTS
+        ):
+            return
+        else:
+            if event.startswith(("os.", "shutil.", "pathlib.", "glob.")):
+                inside = [path for path in self._audit_argument_paths(args) if self._inside(path)]
+                if inside:
+                    self._unhandled.append(
+                        f"unknown filesystem audit event {event}:{self._relative(inside[0])}"
+                    )
+            return
         if mutation is None:
             return
-        operation, path = mutation
+        operation, paths = mutation
         for authorization in reversed(self._authorizations):
-            if operation in authorization["expected"] and path == authorization["path"]:
+            if operation in authorization["expected"] and any(
+                path in authorization["paths"] for path in paths
+            ):
                 authorization["observed"].add(operation)
                 return
-        self._unhandled.append(f"{operation}:{self._relative(path)}")
+        self._unhandled.append(f"{operation}:{self._relative(paths[0])}")
 
-    def _audit_mutation(
-        self, event: str, args: tuple[Any, ...]
-    ) -> tuple[str, Path] | None:
-        if event == "open" and len(args) >= 3:
-            mode = args[1] if isinstance(args[1], str) else ""
-            flags = args[2] if isinstance(args[2], int) else 0
-            write_flags = os.O_WRONLY | os.O_RDWR | os.O_CREAT | os.O_TRUNC | os.O_APPEND
-            if not any(character in mode for character in "wax+") and not flags & write_flags:
-                return None
-            path = self._audit_path(args[0])
-            return ("open", path) if path is not None and self._inside(path) else None
-        path_index = {
-            "os.mkdir": 0,
-            "os.remove": 0,
-            "os.rmdir": 0,
-            "os.rename": 1,
-            "os.utime": 0,
-            "shutil.copyfile": 1,
-        }.get(event)
-        if path_index is None or len(args) <= path_index:
+    def _audit_open(self, args: tuple[Any, ...]) -> tuple[str, list[Path]] | None:
+        if len(args) < 3:
             return None
-        path = self._audit_path(args[path_index])
-        return (event, path) if path is not None and self._inside(path) else None
+        mode = args[1] if isinstance(args[1], str) else ""
+        flags = args[2] if isinstance(args[2], int) else 0
+        write_flags = os.O_WRONLY | os.O_RDWR | os.O_CREAT | os.O_TRUNC | os.O_APPEND
+        if not any(character in mode for character in "wax+") and not flags & write_flags:
+            return None
+        path, unresolved = self._resolve_audit_path(
+            args[0], dir_fd=None, supports_fd=True, reject_relative=True
+        )
+        if unresolved:
+            self._unhandled.append("open:<unresolved-directory-relative-path>")
+            return None
+        return ("open", [path]) if path is not None and self._inside(path) else None
+
+    def _audit_known_mutation(
+        self, event: str, args: tuple[Any, ...]
+    ) -> tuple[str, list[Path]] | None:
+        paths: list[Path] = []
+        unresolved = False
+        for path_index, dir_fd_index, supports_fd in _TRACE_MUTATION_PATH_SPECS[event]:
+            if len(args) <= path_index:
+                unresolved = True
+                continue
+            dir_fd = (
+                args[dir_fd_index]
+                if dir_fd_index is not None and len(args) > dir_fd_index
+                else None
+            )
+            path, failed = self._resolve_audit_path(
+                args[path_index], dir_fd=dir_fd, supports_fd=supports_fd
+            )
+            unresolved = unresolved or failed
+            if path is not None:
+                paths.append(path)
+        inside = [path for path in paths if self._inside(path)]
+        if unresolved:
+            self._unhandled.append(f"{event}:<unresolved-directory-relative-path>")
+        return (event, inside) if inside else None
+
+    def _audit_argument_paths(self, args: tuple[Any, ...]) -> list[Path]:
+        paths: list[Path] = []
+        for value in args:
+            if isinstance(value, int) and not isinstance(value, bool):
+                path = self._path_from_fd(value)
+                if path is not None:
+                    paths.append(path)
+                continue
+            if not isinstance(value, (str, bytes, os.PathLike)):
+                continue
+            path, _unresolved = self._resolve_audit_path(
+                value, dir_fd=None, supports_fd=False
+            )
+            if path is not None:
+                paths.append(path)
+        return paths
+
+    def _resolve_audit_path(
+        self,
+        value: object,
+        *,
+        dir_fd: object,
+        supports_fd: bool,
+        reject_relative: bool = False,
+    ) -> tuple[Path | None, bool]:
+        if supports_fd and isinstance(value, int):
+            path = self._path_from_fd(value)
+            return path, path is None
+        if not isinstance(value, (str, bytes, os.PathLike)):
+            return None, True
+        try:
+            path = Path(os.fsdecode(value))
+        except (OSError, TypeError, ValueError):
+            return None, True
+        if path.is_absolute():
+            return path.absolute(), False
+        if isinstance(dir_fd, int) and dir_fd >= 0:
+            directory = self._path_from_fd(dir_fd)
+            if directory is None:
+                return None, True
+            return (directory / path).absolute(), False
+        if reject_relative:
+            return None, True
+        return path.absolute(), False
 
     @staticmethod
-    def _audit_path(value: object) -> Path | None:
-        if not isinstance(value, (str, bytes, os.PathLike)):
+    def _path_from_fd(descriptor: int) -> Path | None:
+        if descriptor < 0:
             return None
         try:
-            return Path(os.fsdecode(value)).absolute()
+            return Path(os.readlink(f"/dev/fd/{descriptor}")).absolute()
         except (OSError, TypeError, ValueError):
             return None
 

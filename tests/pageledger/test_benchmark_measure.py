@@ -162,6 +162,8 @@ def test_measure_small_smoke_records_complete_receipt_and_external_evidence(
     out = tmp_path / "measurement"
     command = ["python", "-m", "scripts.pageledger_bench", "run", "--workload", "smoke"]
     evidence_order: list[str] = []
+    runner_controls: list[tuple[Path, bool]] = []
+    real_runner = measure_module.DEFAULT_RUNNER
 
     def getrusage(_who: int):
         evidence_order.append("rss")
@@ -170,6 +172,12 @@ def test_measure_small_smoke_records_complete_receipt_and_external_evidence(
     def validate(run_dir: Path, prepared: WorkloadSpec):
         evidence_order.append("oracle")
         return _smoke_validator(run_dir, prepared)
+
+    def record_runner_controls(**kwargs: object):
+        runner_controls.append(
+            (Path(kwargs["out_dir"]), kwargs.get("_phase_observer") is not None)
+        )
+        return real_runner(**kwargs)
 
     monkeypatch.setattr(measure_module.resource, "getrusage", getrusage)
     approval = _approved_freeze(tmp_path)
@@ -185,6 +193,7 @@ def test_measure_small_smoke_records_complete_receipt_and_external_evidence(
         _equivalence_validator=_smoke_equivalence,
         _freeze_validator=lambda supplied: supplied,
         _boundary_validator=_stable_boundary,
+        _runner=record_runner_controls,
     )
 
     assert receipt["receipt_version"] == 1
@@ -261,11 +270,23 @@ def test_measure_small_smoke_records_complete_receipt_and_external_evidence(
 
     assert receipt["resources"]["peak_rss_bytes"] > 0
     assert evidence_order == ["rss", "oracle", "oracle"]
+    assert runner_controls == [(out / "run", True), (out / "run", True)]
+    assert receipt["output"]["runner_out_dir"] == str(out / "run")
+    assert receipt["output"]["measured_control_run_dir"] == str(out / "control-run")
+    assert receipt["output"]["control_relocation"] == {
+        "from": str(out / "run"),
+        "to": str(out / "control-run"),
+        "atomic": True,
+        "timed": False,
+        "profiled": False,
+    }
     assert receipt["output"]["regular_file_count"] == sum(
-        1 for path in (out / "run").rglob("*") if path.is_file()
+        1 for path in (out / "control-run").rglob("*") if path.is_file()
     )
     assert receipt["output"]["logical_bytes"] == sum(
-        path.stat().st_size for path in (out / "run").rglob("*") if path.is_file()
+        path.stat().st_size
+        for path in (out / "control-run").rglob("*")
+        if path.is_file()
     )
     assert receipt["output"]["logical_bytes"] <= receipt["output"]["cap_bytes"]
     assert receipt["output"]["free_space_floor_bytes"] == 0
@@ -286,10 +307,14 @@ def test_measure_small_smoke_records_complete_receipt_and_external_evidence(
     assert receipt["trace_validation"]["timed"] is False
     assert receipt["trace_validation"]["profiled"] is False
     assert receipt["trace_validation"]["runner_calls"] == 1
+    assert receipt["trace_validation"]["phase_sequence"]["valid"] is True
+    assert receipt["trace_validation"]["phase_sequence"]["event_count"] == 192
+    assert receipt["trace_validation"]["phase_sequence"]["adapter_count"] == 20
+    assert receipt["trace_validation"]["interposition_policy_version"] == "2.0"
     assert receipt["trace_validation"]["equivalence"]["equivalent"] is True
     assert receipt["trace_validation"]["validation"]["valid"] is True
     assert receipt["trace_validation"]["inventory"]["regular_file_count"] == sum(
-        1 for path in (out / "trace-run").rglob("*") if path.is_file()
+        1 for path in (out / "run").rglob("*") if path.is_file()
     )
 
     for key in ("pstats", "text"):
@@ -312,10 +337,15 @@ def test_measure_small_smoke_records_complete_receipt_and_external_evidence(
         or "MutationTrace" in function
         for _filename, _line, function in stats.stats
     )
-    assert not any(path.name.startswith("measurement") for path in (out / "run").rglob("*"))
-    assert not (out / "run" / "profile.pstats").exists()
-    assert (out / "run" / "manifest.json").stat().st_mtime_ns == max(
-        path.stat().st_mtime_ns for path in (out / "run").rglob("*") if path.is_file()
+    assert not any(
+        path.name.startswith("measurement")
+        for path in (out / "control-run").rglob("*")
+    )
+    assert not (out / "control-run" / "profile.pstats").exists()
+    assert (out / "control-run" / "manifest.json").stat().st_mtime_ns == max(
+        path.stat().st_mtime_ns
+        for path in (out / "control-run").rglob("*")
+        if path.is_file()
     )
 
     receipt_path = out / "measurement.json"
@@ -854,6 +884,45 @@ def test_completed_trace_fails_on_unhandled_or_unclosed_writes(tmp_path: Path) -
             dangling.write("not closed")
     assert dangling is not None
     dangling.close()
+
+
+@pytest.mark.parametrize("mutation", ["hardlink", "symlink", "truncate", "metadata"])
+def test_completed_trace_rejects_previously_unhandled_filesystem_mutations(
+    tmp_path: Path, mutation: str
+) -> None:
+    run_dir = tmp_path / mutation
+    external = tmp_path / f"{mutation}-source"
+    external.write_text("outside", encoding="utf-8")
+
+    with pytest.raises(BenchmarkError, match="unhandled mutation mechanism"):
+        with measure_module._CompletedMutationTrace(run_dir):
+            run_dir.mkdir()
+            manifest = run_dir / "manifest.json"
+            manifest.write_text("{}\n", encoding="utf-8")
+            if mutation == "hardlink":
+                directory_fd = os.open(run_dir, os.O_RDONLY)
+                try:
+                    os.link(external, "late-hardlink", dst_dir_fd=directory_fd)
+                finally:
+                    os.close(directory_fd)
+            elif mutation == "symlink":
+                os.symlink(external, run_dir / "late-symlink")
+            elif mutation == "truncate":
+                os.truncate(manifest, 1)
+            else:
+                os.chmod(manifest, 0o600)
+
+
+def test_completed_trace_unknown_in_root_filesystem_event_is_default_denied(
+    tmp_path: Path,
+) -> None:
+    run_dir = tmp_path / "unknown"
+    trace = measure_module._CompletedMutationTrace(run_dir)
+
+    with pytest.raises(BenchmarkError, match="unknown filesystem audit event"):
+        with trace:
+            run_dir.mkdir()
+            trace._audit("os.future_filesystem_mutation", (run_dir / "late",))
 
 
 def test_subprocess_timeouts_are_bounded_and_explicit(
