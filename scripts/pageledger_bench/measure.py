@@ -28,9 +28,15 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
+import pageledger.runner as runner_module
 from pageledger.runner import run as runner_run
 
-from .oracle import ValidationReceipt, validate_run
+from .oracle import (
+    EquivalenceReceipt,
+    ValidationReceipt,
+    compare_runs,
+    validate_run,
+)
 from .workloads import (
     GENERATOR_VERSION,
     WorkloadSpec,
@@ -93,6 +99,7 @@ _DIRECT_LEDGER_PHASES = frozenset(
 )
 DEFAULT_WORKLOAD_FACTORY = generate_workload
 DEFAULT_ORACLE_VALIDATOR = validate_run
+DEFAULT_EQUIVALENCE_VALIDATOR = compare_runs
 DEFAULT_RUNNER = runner_run
 
 
@@ -192,12 +199,20 @@ def load_approved_freeze(path: Path) -> ApprovedFreeze:
     )
 
 
-def _validate_approved_freeze(approval: ApprovedFreeze) -> ApprovedFreeze:
+def _validate_approved_freeze(
+    approval: ApprovedFreeze, *, candidate_head: str | None = None
+) -> ApprovedFreeze:
     """Bind current harness bytes to an existing externally approved commit."""
     if not _git_commit_exists(approval.harness_sha):
         raise BenchmarkError(
             "approved_harness_missing",
             f"Approved harness commit does not exist: {approval.harness_sha}",
+        )
+    head = candidate_head or _git_text("rev-parse", "HEAD")
+    if not _git_is_ancestor(approval.harness_sha, head):
+        raise BenchmarkError(
+            "approved_harness_not_ancestor",
+            f"Approved harness {approval.harness_sha} is not an ancestor of candidate {head}",
         )
     dirty = _git_status_porcelain()
     if dirty:
@@ -248,6 +263,46 @@ def _validate_approved_freeze(approval: ApprovedFreeze) -> ApprovedFreeze:
 DEFAULT_FREEZE_VALIDATOR = _validate_approved_freeze
 
 
+def _capture_candidate_boundary(approval: ApprovedFreeze) -> dict[str, Any]:
+    """Capture one clean approved candidate identity without a mutable gap."""
+    before = _git_fingerprint()
+    _require_clean_boundary(before)
+    if not _git_is_ancestor(approval.harness_sha, str(before["sha"])):
+        raise BenchmarkError(
+            "approved_harness_not_ancestor",
+            f"Approved harness {approval.harness_sha} is not an ancestor of "
+            f"candidate {before['sha']}",
+        )
+    _validate_approved_freeze(approval, candidate_head=str(before["sha"]))
+    after = _git_fingerprint()
+    _require_clean_boundary(after)
+    _require_same_candidate_boundary(before, after, context="freeze validation")
+    return before
+
+
+def _require_clean_boundary(state: dict[str, Any]) -> None:
+    if state.get("tracked_dirty") is not False:
+        raise BenchmarkError(
+            "tracked_dirty", "Refusing tracked-dirty candidate at measurement boundary"
+        )
+    sha = state.get("sha")
+    if not isinstance(sha, str) or not _GIT_SHA.fullmatch(sha):
+        raise BenchmarkError("candidate_identity_invalid", "Candidate HEAD is not a full Git SHA")
+
+
+def _require_same_candidate_boundary(
+    before: dict[str, Any], after: dict[str, Any], *, context: str = "measured run"
+) -> None:
+    if before.get("sha") != after.get("sha") or before.get("branch") != after.get("branch"):
+        raise BenchmarkError(
+            "candidate_identity_changed",
+            f"Candidate HEAD/state changed across {context}",
+        )
+
+
+DEFAULT_BOUNDARY_VALIDATOR = _capture_candidate_boundary
+
+
 def measure_run(
     workload_name: str,
     out_dir: Path,
@@ -257,72 +312,120 @@ def measure_run(
     command: list[str] | None = None,
     _prepared_workload: WorkloadSpec | None = None,
     _oracle_validator: Callable[[Path, WorkloadSpec], ValidationReceipt] = DEFAULT_ORACLE_VALIDATOR,
+    _equivalence_validator: Callable[
+        [Path, Path, WorkloadSpec], EquivalenceReceipt
+    ] = DEFAULT_EQUIVALENCE_VALIDATOR,
     _freeze_validator: Callable[[ApprovedFreeze], ApprovedFreeze] | None = None,
+    _boundary_validator: Callable[[ApprovedFreeze], dict[str, Any]] | None = None,
     _runner: Callable[..., dict[str, Any]] = DEFAULT_RUNNER,
 ) -> dict[str, Any]:
-    """Generate, preload, and measure exactly one ``runner.run`` call."""
+    """Measure one untraced run and validate it with one untimed trace replay."""
     if warmup_state not in {"none", "post-untimed-warmup"}:
         raise BenchmarkError("warmup_state_invalid", f"Unknown warmup state: {warmup_state}")
     requested_out = Path(out_dir).expanduser().absolute()
     _refuse_output_path(requested_out)
     _require_external_path(requested_out)
     validator = _freeze_validator or DEFAULT_FREEZE_VALIDATOR
-    approved_freeze = validator(approved_freeze)
+    boundary_validator = _boundary_validator or DEFAULT_BOUNDARY_VALIDATOR
 
-    frozen_manifest = load_frozen_manifest()
-    cap_bytes = int(frozen_manifest["temp_output_cap_bytes"])
-    page_count = (
+    preflight_manifest = load_frozen_manifest()
+    preflight_cap_bytes = int(preflight_manifest["temp_output_cap_bytes"])
+    preflight_page_count = (
         len(_prepared_workload.page_specs)
         if _prepared_workload is not None
-        else int(frozen_manifest["workloads"][workload_name]["page_count"])
+        else int(preflight_manifest["workloads"][workload_name]["page_count"])
     )
-    projected_bytes = page_count * _PROJECTED_BYTES_PER_PAGE
-    free_bytes = shutil.disk_usage(_nearest_existing_parent(requested_out)).free
+    preflight_projected_bytes = preflight_page_count * _PROJECTED_BYTES_PER_PAGE * 2
+    preflight_free_bytes = shutil.disk_usage(_nearest_existing_parent(requested_out)).free
     _check_capacity(
         requested_out,
-        projected_bytes=projected_bytes,
-        cap_bytes=cap_bytes,
-        free_bytes=free_bytes,
+        projected_bytes=preflight_projected_bytes,
+        cap_bytes=preflight_cap_bytes,
+        free_bytes=preflight_free_bytes,
         free_space_floor_bytes=approved_freeze.free_space_floor_bytes,
     )
     with _benchmark_lock(approved_freeze.lock_path) as lock_identity:
+        approved_freeze = validator(approved_freeze)
+        initial_boundary = boundary_validator(approved_freeze)
+        _require_clean_boundary(initial_boundary)
+        frozen_manifest = load_frozen_manifest()
+        cap_bytes = int(frozen_manifest["temp_output_cap_bytes"])
+        page_count = (
+            len(_prepared_workload.page_specs)
+            if _prepared_workload is not None
+            else int(frozen_manifest["workloads"][workload_name]["page_count"])
+        )
+        projected_bytes = page_count * _PROJECTED_BYTES_PER_PAGE * 2
+        free_bytes = shutil.disk_usage(_nearest_existing_parent(requested_out)).free
+        _check_capacity(
+            requested_out,
+            projected_bytes=projected_bytes,
+            cap_bytes=cap_bytes,
+            free_bytes=free_bytes,
+            free_space_floor_bytes=approved_freeze.free_space_floor_bytes,
+        )
         host = _host_fingerprint(requested_out, warmup_state, free_bytes)
-        git = _git_fingerprint()
         requested_out.mkdir(parents=True)
         workload = _prepared_workload or DEFAULT_WORKLOAD_FACTORY(
             workload_name, requested_out / "workload"
         )
         adapter = ZeroWorkAdapter(workload.page_specs)
         run_dir = requested_out / "run"
+        trace_run_dir = requested_out / "trace-run"
         profile_path = requested_out / "profile.pstats"
         profile_text_path = requested_out / "profile.txt"
         receipt_path = requested_out / "measurement.json"
         receipt_hash_path = requested_out / "measurement.json.sha256"
         events: list[tuple[str, int]] = []
 
+        before_boundary = boundary_validator(approved_freeze)
+        _require_clean_boundary(before_boundary)
+        _require_same_candidate_boundary(
+            initial_boundary, before_boundary, context="pre-measure preparation"
+        )
         profiler = cProfile.Profile()
-        with _RunMutationTrace(run_dir) as mutation_trace:
-            wall_started = time.perf_counter_ns()
-            profiler.runcall(
-                _runner,
-                inputs=[workload.source_path],
-                config_path=workload.config_path,
-                out_dir=run_dir,
-                dry_run=False,
-                _loaded_adapter=adapter,
-                _reproducibility_profile=None,
-                _phase_observer=lambda name, duration: events.append((name, duration)),
-            )
-            total_wall_ns = time.perf_counter_ns() - wall_started
+        wall_started = time.perf_counter_ns()
+        profiler.runcall(
+            _runner,
+            inputs=[workload.source_path],
+            config_path=workload.config_path,
+            out_dir=run_dir,
+            dry_run=False,
+            _loaded_adapter=adapter,
+            _reproducibility_profile=None,
+            _phase_observer=lambda name, duration: events.append((name, duration)),
+        )
+        total_wall_ns = time.perf_counter_ns() - wall_started
         peak_rss_bytes, source_unit = _normalize_peak_rss(
             resource.getrusage(resource.RUSAGE_SELF).ru_maxrss,
             platform.system(),
         )
+        after_boundary = boundary_validator(approved_freeze)
+        _require_clean_boundary(after_boundary)
+        _require_same_candidate_boundary(before_boundary, after_boundary)
 
-        _require_manifest_last(mutation_trace.events)
         _write_profiles(profiler, profile_path, profile_text_path)
+        trace_adapter = ZeroWorkAdapter(workload.page_specs)
+        with _CompletedMutationTrace(trace_run_dir) as mutation_trace:
+            _runner(
+                inputs=[workload.source_path],
+                config_path=workload.config_path,
+                out_dir=trace_run_dir,
+                dry_run=False,
+                _loaded_adapter=trace_adapter,
+                _reproducibility_profile=None,
+            )
+        _require_manifest_last(mutation_trace.events)
+        final_boundary = boundary_validator(approved_freeze)
+        _require_clean_boundary(final_boundary)
+        _require_same_candidate_boundary(
+            before_boundary, final_boundary, context="trace validation replay"
+        )
         inventory = _regular_file_inventory(run_dir, cap_bytes=cap_bytes)
+        trace_inventory = _regular_file_inventory(trace_run_dir, cap_bytes=cap_bytes)
         validation = _oracle_validator(run_dir, workload)
+        trace_validation = _oracle_validator(trace_run_dir, workload)
+        equivalence = _equivalence_validator(run_dir, trace_run_dir, workload)
         timing = _summarize_timing(events, total_wall_ns, len(workload.page_specs))
         _require_timing_contract(
             events,
@@ -351,6 +454,13 @@ def measure_run(
             "command": list(command or sys.argv),
             "approved_freeze": _freeze_evidence(approved_freeze),
             "benchmark_lock": lock_identity,
+            "candidate_boundary": {
+                "initial_under_lock": initial_boundary,
+                "immediately_before_measured_run": before_boundary,
+                "immediately_after_measured_run": after_boundary,
+                "after_trace_validation": final_boundary,
+                "unchanged": True,
+            },
             "workload": {
                 "name": workload.name,
                 "generator_version": (
@@ -369,13 +479,27 @@ def measure_run(
                 "frozen_contract": frozen_manifest["workloads"].get(workload.name),
             },
             "frozen_hashes": frozen_hashes,
-            "git": git,
+            "git": before_boundary,
             "host": host,
             "timing": timing,
             "run_mutations": {
+                "source": "untimed-trace-replay",
+                "run_dir": str(trace_run_dir),
                 "events": mutation_trace.events,
                 "trace_sha256": canonical_sha256(mutation_trace.events),
                 "manifest_last": True,
+            },
+            "trace_validation": {
+                "mode": "untimed-completed-mutation-replay",
+                "timed": False,
+                "profiled": False,
+                "runner_calls": 1,
+                "inventory": {
+                    "regular_file_count": trace_inventory["regular_file_count"],
+                    "logical_bytes": trace_inventory["logical_bytes"],
+                },
+                "validation": _validation_evidence(trace_validation),
+                "equivalence": _equivalence_evidence(equivalence),
             },
             "resources": {
                 "peak_rss_bytes": peak_rss_bytes,
@@ -385,6 +509,9 @@ def measure_run(
                 "run_dir": str(run_dir),
                 "regular_file_count": inventory["regular_file_count"],
                 "logical_bytes": inventory["logical_bytes"],
+                "trace_run_dir": str(trace_run_dir),
+                "trace_regular_file_count": trace_inventory["regular_file_count"],
+                "trace_logical_bytes": trace_inventory["logical_bytes"],
                 "cap_bytes": cap_bytes,
                 "projected_peak_bytes": projected_bytes,
                 "free_space_floor_bytes": approved_freeze.free_space_floor_bytes,
@@ -400,15 +527,7 @@ def measure_run(
             },
             "validation": {
                 "verify_report": validation.verifier_report,
-                "oracle": {
-                    "valid": validation.valid,
-                    "errors": [_oracle_error(error) for error in validation.errors],
-                    "canonical_sha256": (
-                        canonical_sha256(validation.canonical)
-                        if validation.canonical is not None
-                        else None
-                    ),
-                },
+                "oracle": _validation_evidence(validation),
                 "schema_state": {
                     "status": "matched" if schema_matched else "drifted",
                     "sha256": dict(frozen_manifest["schema_sha256"]),
@@ -416,6 +535,14 @@ def measure_run(
             },
             "receipt_sha256_sidecar": str(receipt_hash_path),
         }
+        receipt["status"] = (
+            "pass"
+            if validation.valid
+            and trace_validation.valid
+            and equivalence.equivalent
+            and schema_matched
+            else "fail"
+        )
         receipt["receipt_payload_sha256"] = canonical_sha256(receipt)
         receipt_bytes = _json_bytes(receipt)
         receipt_sha = hashlib.sha256(receipt_bytes).hexdigest()
@@ -628,51 +755,257 @@ def _regular_file_inventory(root: Path, *, cap_bytes: int) -> dict[str, Any]:
     return {"regular_file_count": count, "logical_bytes": logical_bytes, "paths": paths}
 
 
-class _RunMutationTrace:
-    """Process-local Python audit trace for mutations below one run directory."""
+class _TrackedWriteHandle:
+    """Delegate one write handle and emit its mutation only after close succeeds."""
+
+    def __init__(self, handle: Any, trace: _CompletedMutationTrace, path: Path) -> None:
+        self._handle = handle
+        self._trace = trace
+        self._path = path
+        self._completed = False
+
+    def __enter__(self) -> _TrackedWriteHandle:
+        self._handle.__enter__()
+        return self
+
+    def __exit__(self, *exc: object) -> None:
+        self.close()
+
+    def __iter__(self) -> Iterator[Any]:
+        return iter(self._handle)
+
+    def __next__(self) -> Any:
+        return next(self._handle)
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._handle, name)
+
+    def close(self) -> None:
+        if self._completed:
+            return
+        self._handle.close()
+        self._completed = True
+        self._trace._complete_handle(self, self._path)
+
+
+class _CompletedMutationTrace:
+    """Untimed completed-mutation trace for the current runner write mechanisms."""
 
     def __init__(self, root: Path) -> None:
         self.root = root.absolute()
         self.events: list[dict[str, Any]] = []
         self._active = False
+        self._authorizations: list[dict[str, Any]] = []
+        self._unhandled: list[str] = []
+        self._open_handles: dict[int, str] = {}
+        self._original_path_open = Path.open
+        self._original_path_mkdir = Path.mkdir
+        self._original_path_unlink = Path.unlink
+        self._original_path_rmdir = Path.rmdir
+        self._original_path_rename = Path.rename
+        self._original_path_replace = Path.replace
+        self._original_copyfile = runner_module.copyfile
 
-    def __enter__(self) -> _RunMutationTrace:
+    def __enter__(self) -> _CompletedMutationTrace:
+        trace = self
+
+        def tracked_open(path: Path, *args: Any, **kwargs: Any) -> Any:
+            mode = str(args[0] if args else kwargs.get("mode", "r"))
+            if not trace._inside(path) or not any(character in mode for character in "wax+"):
+                return trace._original_path_open(path, *args, **kwargs)
+            with trace._authorize(path, {"open"}) as authorization:
+                handle = trace._original_path_open(path, *args, **kwargs)
+            trace._require_observed(authorization, {"open"})
+            wrapped = _TrackedWriteHandle(handle, trace, path.absolute())
+            trace._open_handles[id(wrapped)] = trace._relative(path)
+            return wrapped
+
+        def tracked_mkdir(path: Path, *args: Any, **kwargs: Any) -> None:
+            existed = path.exists()
+            with trace._authorize(path, {"os.mkdir"}) as authorization:
+                result = trace._original_path_mkdir(path, *args, **kwargs)
+            if not existed and path.exists() and trace._inside(path):
+                trace._require_observed(authorization, {"os.mkdir"})
+                trace._completed("mkdir_complete", path)
+            return result
+
+        def tracked_unlink(path: Path, *args: Any, **kwargs: Any) -> None:
+            with trace._authorize(path, {"os.remove"}) as authorization:
+                result = trace._original_path_unlink(path, *args, **kwargs)
+            if trace._inside(path):
+                trace._require_observed(authorization, {"os.remove"})
+                trace._completed("remove_complete", path)
+            return result
+
+        def tracked_rmdir(path: Path) -> None:
+            with trace._authorize(path, {"os.rmdir"}) as authorization:
+                result = trace._original_path_rmdir(path)
+            if trace._inside(path):
+                trace._require_observed(authorization, {"os.rmdir"})
+                trace._completed("rmdir_complete", path)
+            return result
+
+        def tracked_rename(path: Path, target: Any) -> Path:
+            destination = Path(target).absolute()
+            with trace._authorize(destination, {"os.rename"}) as authorization:
+                result = trace._original_path_rename(path, target)
+            if trace._inside(path) or trace._inside(destination):
+                trace._require_observed(authorization, {"os.rename"})
+                trace._completed("rename_complete", destination)
+            return result
+
+        def tracked_replace(path: Path, target: Any) -> Path:
+            destination = Path(target).absolute()
+            with trace._authorize(destination, {"os.rename"}) as authorization:
+                result = trace._original_path_replace(path, target)
+            if trace._inside(path) or trace._inside(destination):
+                trace._require_observed(authorization, {"os.rename"})
+                trace._completed("replace_complete", destination)
+            return result
+
+        def tracked_copyfile(source: Any, destination: Any, *args: Any, **kwargs: Any) -> Any:
+            target = Path(destination).absolute()
+            with trace._authorize(
+                target, {"shutil.copyfile", "open"}
+            ) as authorization:
+                result = trace._original_copyfile(source, destination, *args, **kwargs)
+            if trace._inside(target):
+                trace._require_observed(authorization, {"shutil.copyfile", "open"})
+                trace._completed("copyfile_complete", target)
+            return result
+
+        Path.open = tracked_open
+        Path.mkdir = tracked_mkdir
+        Path.unlink = tracked_unlink
+        Path.rmdir = tracked_rmdir
+        Path.rename = tracked_rename
+        Path.replace = tracked_replace
+        runner_module.copyfile = tracked_copyfile
         self._active = True
         sys.addaudithook(self._audit)
         return self
 
-    def __exit__(self, *exc: object) -> None:
+    def __exit__(self, exc_type: object, _exc: object, _tb: object) -> None:
         self._active = False
+        Path.open = self._original_path_open
+        Path.mkdir = self._original_path_mkdir
+        Path.unlink = self._original_path_unlink
+        Path.rmdir = self._original_path_rmdir
+        Path.rename = self._original_path_rename
+        Path.replace = self._original_path_replace
+        runner_module.copyfile = self._original_copyfile
+        if exc_type is not None:
+            return
+        if self._unhandled:
+            raise BenchmarkError(
+                "trace_unhandled_mutation",
+                f"Trace observed unhandled mutation mechanism: {self._unhandled[0]}",
+            )
+        if self._open_handles:
+            raise BenchmarkError(
+                "trace_unmatched_open",
+                "Trace ended with unmatched write opens: "
+                + ", ".join(sorted(self._open_handles.values())),
+            )
+
+    @contextmanager
+    def _authorize(
+        self, path: Path, expected_events: set[str]
+    ) -> Iterator[dict[str, Any]]:
+        authorization = {
+            "path": path.absolute(),
+            "expected": expected_events,
+            "observed": set(),
+        }
+        self._authorizations.append(authorization)
+        try:
+            yield authorization
+        finally:
+            popped = self._authorizations.pop()
+            assert popped is authorization
 
     def _audit(self, event: str, args: tuple[Any, ...]) -> None:
         if not self._active:
             return
+        mutation = self._audit_mutation(event, args)
+        if mutation is None:
+            return
+        operation, path = mutation
+        for authorization in reversed(self._authorizations):
+            if operation in authorization["expected"] and path == authorization["path"]:
+                authorization["observed"].add(operation)
+                return
+        self._unhandled.append(f"{operation}:{self._relative(path)}")
+
+    def _audit_mutation(
+        self, event: str, args: tuple[Any, ...]
+    ) -> tuple[str, Path] | None:
         if event == "open" and len(args) >= 3:
             mode = args[1] if isinstance(args[1], str) else ""
             flags = args[2] if isinstance(args[2], int) else 0
             write_flags = os.O_WRONLY | os.O_RDWR | os.O_CREAT | os.O_TRUNC | os.O_APPEND
             if not any(character in mode for character in "wax+") and not flags & write_flags:
-                return
-            self._record("write_open", args[0])
-        elif event == "os.mkdir" and args:
-            self._record("mkdir", args[0])
-        elif event in {"os.remove", "os.rmdir"} and args:
-            self._record("remove", args[0])
-        elif event == "os.rename" and len(args) >= 2:
-            self._record("rename", args[1])
-        elif event == "shutil.copyfile" and len(args) >= 2:
-            self._record("copyfile", args[1])
+                return None
+            path = self._audit_path(args[0])
+            return ("open", path) if path is not None and self._inside(path) else None
+        path_index = {
+            "os.mkdir": 0,
+            "os.remove": 0,
+            "os.rmdir": 0,
+            "os.rename": 1,
+            "os.utime": 0,
+            "shutil.copyfile": 1,
+        }.get(event)
+        if path_index is None or len(args) <= path_index:
+            return None
+        path = self._audit_path(args[path_index])
+        return (event, path) if path is not None and self._inside(path) else None
 
-    def _record(self, operation: str, raw_path: object) -> None:
-        if not isinstance(raw_path, (str, bytes, os.PathLike)):
-            return
+    @staticmethod
+    def _audit_path(value: object) -> Path | None:
+        if not isinstance(value, (str, bytes, os.PathLike)):
+            return None
         try:
-            path = Path(os.fsdecode(raw_path)).absolute()
-            relative = path.relative_to(self.root).as_posix()
+            return Path(os.fsdecode(value)).absolute()
         except (OSError, TypeError, ValueError):
-            return
+            return None
+
+    def _inside(self, path: Path) -> bool:
+        try:
+            path.absolute().relative_to(self.root)
+        except ValueError:
+            return False
+        return True
+
+    def _relative(self, path: Path) -> str:
+        try:
+            return path.absolute().relative_to(self.root).as_posix()
+        except ValueError:
+            return str(path.absolute())
+
+    @staticmethod
+    def _require_observed(
+        authorization: dict[str, Any], expected: set[str]
+    ) -> None:
+        missing = expected - authorization["observed"]
+        if missing:
+            raise BenchmarkError(
+                "trace_interposition_incomplete",
+                "Trace interposition missed expected events: " + ", ".join(sorted(missing)),
+            )
+
+    def _complete_handle(self, handle: _TrackedWriteHandle, path: Path) -> None:
+        self._open_handles.pop(id(handle), None)
+        if self._active:
+            self._completed("write_close", path)
+
+    def _completed(self, operation: str, path: Path) -> None:
         self.events.append(
-            {"sequence": len(self.events) + 1, "operation": operation, "path": relative}
+            {
+                "sequence": len(self.events) + 1,
+                "operation": operation,
+                "path": self._relative(path),
+            }
         )
 
 
@@ -687,7 +1020,7 @@ def _require_manifest_last(events: list[dict[str, Any]]) -> None:
         final = events[-1]["path"] if events else "<none>"
         raise BenchmarkError(
             "manifest_not_last",
-            f"manifest.json is not the final run mutation (final={final})",
+            f"manifest.json is not the final trace mutation (final={final})",
         )
 
 
@@ -779,6 +1112,19 @@ def _git_status_porcelain() -> str:
 def _git_commit_exists(sha: str) -> bool:
     completed = _git_command(["git", "cat-file", "-e", f"{sha}^{{commit}}"], text=False)
     return completed.returncode == 0
+
+
+def _git_is_ancestor(ancestor: str, head: str) -> bool:
+    completed = _git_command(
+        ["git", "merge-base", "--is-ancestor", ancestor, head], text=False
+    )
+    if completed.returncode == 0:
+        return True
+    if completed.returncode == 1:
+        return False
+    raise BenchmarkError(
+        "git_unavailable", "git merge-base --is-ancestor failed"
+    )
 
 
 def _git_blob_bytes_at(sha: str, relative: str) -> bytes:
@@ -1106,6 +1452,38 @@ def _oracle_error(error: Any) -> dict[str, Any]:
         }
 
 
+def _validation_evidence(validation: ValidationReceipt) -> dict[str, Any]:
+    return {
+        "valid": validation.valid,
+        "errors": [_oracle_error(error) for error in validation.errors],
+        "verifier_report": validation.verifier_report,
+        "canonical_sha256": (
+            canonical_sha256(validation.canonical)
+            if validation.canonical is not None
+            else None
+        ),
+    }
+
+
+def _equivalence_evidence(equivalence: EquivalenceReceipt) -> dict[str, Any]:
+    return {
+        "equivalent": equivalence.equivalent,
+        "errors": [_oracle_error(error) for error in equivalence.errors],
+        "control_valid": equivalence.control.valid,
+        "trace_valid": equivalence.candidate.valid,
+        "control_canonical_sha256": (
+            canonical_sha256(equivalence.control.canonical)
+            if equivalence.control.canonical is not None
+            else None
+        ),
+        "trace_canonical_sha256": (
+            canonical_sha256(equivalence.candidate.canonical)
+            if equivalence.candidate.canonical is not None
+            else None
+        ),
+    }
+
+
 def _json_bytes(value: dict[str, Any]) -> bytes:
     return (
         json.dumps(value, ensure_ascii=False, indent=2, sort_keys=True, allow_nan=False) + "\n"
@@ -1128,7 +1506,26 @@ def _publish_receipt(
             f"Benchmark final evidence {final_bytes} exceeds cap {cap_bytes}",
         )
     _atomic_write_bytes(sidecar_path, sidecar_bytes)
-    _atomic_write_bytes(receipt_path, receipt_bytes)
+    try:
+        _atomic_write_bytes(receipt_path, receipt_bytes)
+    except BaseException as publication_error:
+        cleanup_errors: list[BaseException] = []
+        try:
+            if os.path.lexists(receipt_path):
+                receipt_path.unlink()
+        except BaseException as cleanup_error:
+            cleanup_errors.append(cleanup_error)
+        try:
+            _fsync_directory(receipt_path.parent)
+        except BaseException as cleanup_error:
+            cleanup_errors.append(cleanup_error)
+        if cleanup_errors:
+            raise BenchmarkError(
+                "receipt_cleanup_failed",
+                "Receipt publication failed and cleanup could not be made durable; "
+                "measurement is invalid",
+            ) from publication_error
+        raise
 
 
 def _atomic_write_json(path: Path, value: dict[str, Any]) -> None:

@@ -15,7 +15,7 @@ import pytest
 from pageledger.verify import verify_run
 from scripts.pageledger_bench import measure as measure_module
 from scripts.pageledger_bench.measure import BenchmarkError, measure_run
-from scripts.pageledger_bench.oracle import validate_run
+from scripts.pageledger_bench.oracle import compare_runs, validate_run
 from scripts.pageledger_bench.workloads import (
     PageSpec,
     WorkloadSpec,
@@ -140,6 +140,21 @@ def _smoke_validator(run_dir: Path, workload: WorkloadSpec):
     )
 
 
+def _smoke_equivalence(control: Path, trace: Path, workload: WorkloadSpec):
+    left = _smoke_validator(control, workload)
+    right = _smoke_validator(trace, workload)
+    return SimpleNamespace(
+        equivalent=left.valid and right.valid and left.canonical == right.canonical,
+        errors=(),
+        control=left,
+        candidate=right,
+    )
+
+
+def _stable_boundary(_approval: object) -> dict[str, object]:
+    return {"sha": "f" * 40, "branch": "test", "tracked_dirty": False}
+
+
 def test_measure_small_smoke_records_complete_receipt_and_external_evidence(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -157,11 +172,6 @@ def test_measure_small_smoke_records_complete_receipt_and_external_evidence(
         return _smoke_validator(run_dir, prepared)
 
     monkeypatch.setattr(measure_module.resource, "getrusage", getrusage)
-    monkeypatch.setattr(
-        measure_module,
-        "_git_fingerprint",
-        lambda: {"sha": "f" * 40, "branch": "test", "tracked_dirty": False},
-    )
     approval = _approved_freeze(tmp_path)
 
     receipt = measure_run(
@@ -172,7 +182,9 @@ def test_measure_small_smoke_records_complete_receipt_and_external_evidence(
         command=command,
         _prepared_workload=workload,
         _oracle_validator=validate,
+        _equivalence_validator=_smoke_equivalence,
         _freeze_validator=lambda supplied: supplied,
+        _boundary_validator=_stable_boundary,
     )
 
     assert receipt["receipt_version"] == 1
@@ -248,7 +260,7 @@ def test_measure_small_smoke_records_complete_receipt_and_external_evidence(
     )
 
     assert receipt["resources"]["peak_rss_bytes"] > 0
-    assert evidence_order == ["rss", "oracle"]
+    assert evidence_order == ["rss", "oracle", "oracle"]
     assert receipt["output"]["regular_file_count"] == sum(
         1 for path in (out / "run").rglob("*") if path.is_file()
     )
@@ -269,7 +281,16 @@ def test_measure_small_smoke_records_complete_receipt_and_external_evidence(
     assert receipt["approved_freeze"]["harness_sha"] == approval.harness_sha
     assert receipt["benchmark_lock"]["path"] == str(approval.lock_path)
     assert receipt["benchmark_lock"]["acquired"] is True
+    assert receipt["run_mutations"]["source"] == "untimed-trace-replay"
     assert receipt["run_mutations"]["events"][-1]["path"] == "manifest.json"
+    assert receipt["trace_validation"]["timed"] is False
+    assert receipt["trace_validation"]["profiled"] is False
+    assert receipt["trace_validation"]["runner_calls"] == 1
+    assert receipt["trace_validation"]["equivalence"]["equivalent"] is True
+    assert receipt["trace_validation"]["validation"]["valid"] is True
+    assert receipt["trace_validation"]["inventory"]["regular_file_count"] == sum(
+        1 for path in (out / "trace-run").rglob("*") if path.is_file()
+    )
 
     for key in ("pstats", "text"):
         evidence = receipt["profile"][key]
@@ -286,6 +307,11 @@ def test_measure_small_smoke_records_complete_receipt_and_external_evidence(
     assert len(runner_entries) == 1
     assert runner_entries[0][:2] == (1, 1)
     assert not any(function == "measure_run" for _filename, _line, function in stats.stats)
+    assert not any(
+        function in {"_audit", "_record", "_completed"}
+        or "MutationTrace" in function
+        for _filename, _line, function in stats.stats
+    )
     assert not any(path.name.startswith("measurement") for path in (out / "run").rglob("*"))
     assert not (out / "run" / "profile.pstats").exists()
     assert (out / "run" / "manifest.json").stat().st_mtime_ns == max(
@@ -305,6 +331,7 @@ def test_measure_small_smoke_records_complete_receipt_and_external_evidence(
 def test_production_defaults_are_frozen_generator_and_strict_oracle() -> None:
     assert measure_module.DEFAULT_WORKLOAD_FACTORY is generate_workload
     assert measure_module.DEFAULT_ORACLE_VALIDATOR is validate_run
+    assert measure_module.DEFAULT_EQUIVALENCE_VALIDATOR is compare_runs
     assert measure_module.DEFAULT_FREEZE_VALIDATOR is measure_module._validate_approved_freeze
 
 
@@ -504,17 +531,21 @@ def test_approved_freeze_refuses_manifest_harness_and_dirty_drift(
     monkeypatch.setattr(measure_module, "_MANIFEST_PATH", manifest)
     monkeypatch.setattr(measure_module, "REQUIRED_FREEZE_PATHS", frozenset({"frozen.py"}))
     monkeypatch.setattr(measure_module, "_git_commit_exists", lambda sha: True)
+    monkeypatch.setattr(measure_module, "_git_is_ancestor", lambda ancestor, head: True)
     monkeypatch.setattr(
         measure_module,
         "_git_blob_bytes_at",
         lambda sha, path: b"manifest\n" if path == "manifest.json" else b"frozen\n",
     )
     monkeypatch.setattr(measure_module, "_git_status_porcelain", lambda: "")
-    assert measure_module._validate_approved_freeze(approval) is approval
+    assert (
+        measure_module._validate_approved_freeze(approval, candidate_head="2" * 40)
+        is approval
+    )
 
     manifest.write_bytes(b"drift\n")
     with pytest.raises(BenchmarkError, match="approved benchmark manifest"):
-        measure_module._validate_approved_freeze(approval)
+        measure_module._validate_approved_freeze(approval, candidate_head="2" * 40)
     manifest.write_bytes(b"manifest\n")
 
     monkeypatch.setattr(
@@ -523,7 +554,7 @@ def test_approved_freeze_refuses_manifest_harness_and_dirty_drift(
         lambda sha, path: b"manifest\n" if path == "manifest.json" else b"changed\n",
     )
     with pytest.raises(BenchmarkError, match="approved harness commit bytes"):
-        measure_module._validate_approved_freeze(approval)
+        measure_module._validate_approved_freeze(approval, candidate_head="2" * 40)
     monkeypatch.setattr(
         measure_module,
         "_git_blob_bytes_at",
@@ -531,7 +562,64 @@ def test_approved_freeze_refuses_manifest_harness_and_dirty_drift(
     )
     monkeypatch.setattr(measure_module, "_git_status_porcelain", lambda: " M pageledger/runner.py")
     with pytest.raises(BenchmarkError, match="tracked-dirty"):
-        measure_module._validate_approved_freeze(approval)
+        measure_module._validate_approved_freeze(approval, candidate_head="2" * 40)
+
+
+def test_candidate_boundary_requires_approved_ancestry(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    approval = _approved_freeze(tmp_path)
+    monkeypatch.setattr(
+        measure_module,
+        "_git_fingerprint",
+        lambda: {"sha": "e" * 40, "branch": "candidate", "tracked_dirty": False},
+    )
+    monkeypatch.setattr(
+        measure_module, "_validate_approved_freeze", lambda value, **_kwargs: value
+    )
+    monkeypatch.setattr(measure_module, "_git_is_ancestor", lambda ancestor, head: False)
+
+    with pytest.raises(BenchmarkError, match="not an ancestor"):
+        measure_module._capture_candidate_boundary(approval)
+
+
+@pytest.mark.parametrize(
+    ("final_boundary", "message"),
+    [
+        (
+            {"sha": "f" * 40, "branch": "test", "tracked_dirty": True},
+            "tracked-dirty",
+        ),
+        (
+            {"sha": "e" * 40, "branch": "test", "tracked_dirty": False},
+            "changed across measured run",
+        ),
+    ],
+)
+def test_measurement_boundary_refuses_dirty_race_or_head_change(
+    tmp_path: Path,
+    final_boundary: dict[str, object],
+    message: str,
+) -> None:
+    workload = _small_workload(tmp_path, pages=1)
+    approval = _approved_freeze(tmp_path)
+    clean = {"sha": "f" * 40, "branch": "test", "tracked_dirty": False}
+    states = iter([clean, clean, final_boundary])
+
+    with pytest.raises(BenchmarkError, match=message):
+        measure_run(
+            "smoke",
+            tmp_path / "measurement",
+            approved_freeze=approval,
+            warmup_state="none",
+            _prepared_workload=workload,
+            _oracle_validator=_smoke_validator,
+            _equivalence_validator=_smoke_equivalence,
+            _freeze_validator=lambda supplied: supplied,
+            _boundary_validator=lambda _supplied: next(states),
+        )
+
+    assert not (tmp_path / "measurement" / "measurement.json").exists()
 
 
 def test_freeze_receipt_requires_exact_external_contract(tmp_path: Path) -> None:
@@ -636,6 +724,49 @@ def test_receipt_last_publication_preflights_cap_and_never_leaves_pass_receipt(
     assert not receipt.exists()
 
 
+@pytest.mark.parametrize("failure_point", ["file_fsync", "directory_fsync"])
+def test_receipt_post_replace_failure_removes_visible_pass_marker(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    failure_point: str,
+) -> None:
+    receipt = tmp_path / "measurement.json"
+    sidecar = tmp_path / "measurement.json.sha256"
+    receipt_bytes = b'{"status":"pass"}\n'
+    sidecar_bytes = b"a" * 65
+    real_fsync_file = measure_module._fsync_file
+    real_fsync_directory = measure_module._fsync_directory
+    directory_calls = 0
+
+    def fsync_file(path: Path) -> None:
+        if failure_point == "file_fsync" and path == receipt:
+            raise OSError("receipt file fsync failed after replace")
+        real_fsync_file(path)
+
+    def fsync_directory(path: Path) -> None:
+        nonlocal directory_calls
+        directory_calls += 1
+        if failure_point == "directory_fsync" and directory_calls == 2:
+            raise OSError("receipt directory fsync failed after replace")
+        real_fsync_directory(path)
+
+    monkeypatch.setattr(measure_module, "_fsync_file", fsync_file)
+    monkeypatch.setattr(measure_module, "_fsync_directory", fsync_directory)
+
+    with pytest.raises(OSError, match="failed after replace"):
+        measure_module._publish_receipt(
+            receipt,
+            receipt_bytes,
+            sidecar,
+            sidecar_bytes,
+            existing_workspace_bytes=0,
+            cap_bytes=1000,
+        )
+
+    assert sidecar.exists()
+    assert not receipt.exists()
+
+
 def test_benchmark_lock_is_nonblocking_and_records_identity(tmp_path: Path) -> None:
     lock_path = tmp_path / "benchmark.lock"
     with measure_module._benchmark_lock(lock_path) as identity:
@@ -653,12 +784,6 @@ def test_manifest_last_uses_mutation_trace_not_mtime(
     out = tmp_path / "measurement"
     approval = _approved_freeze(tmp_path)
     real_runner = measure_module.DEFAULT_RUNNER
-    monkeypatch.setattr(
-        measure_module,
-        "_git_fingerprint",
-        lambda: {"sha": "f" * 40, "branch": "test", "tracked_dirty": False},
-    )
-
     def adversary(**kwargs: object):
         result = real_runner(**kwargs)
         run_dir = Path(kwargs["out_dir"])
@@ -669,7 +794,7 @@ def test_manifest_last_uses_mutation_trace_not_mtime(
         os.utime(raw, ns=(stamp, stamp))
         return result
 
-    with pytest.raises(BenchmarkError, match="final run mutation"):
+    with pytest.raises(BenchmarkError, match="final trace mutation|unhandled mutation"):
         measure_run(
             "smoke",
             out,
@@ -677,9 +802,58 @@ def test_manifest_last_uses_mutation_trace_not_mtime(
             warmup_state="none",
             _prepared_workload=workload,
             _oracle_validator=_smoke_validator,
+            _equivalence_validator=_smoke_equivalence,
             _freeze_validator=lambda supplied: supplied,
+            _boundary_validator=_stable_boundary,
             _runner=adversary,
         )
+
+
+def test_completed_trace_rejects_preopened_descriptor_closed_after_manifest(
+    tmp_path: Path,
+) -> None:
+    run_dir = tmp_path / "trace-run"
+    trace = measure_module._CompletedMutationTrace(run_dir)
+
+    with trace:
+        run_dir.mkdir()
+        raw = run_dir / "raw.txt"
+        handle = raw.open("w", encoding="utf-8")
+        handle.write("before manifest")
+        assert not any(event["path"] == "raw.txt" for event in trace.events)
+        (run_dir / "manifest.json").write_text("{}\n", encoding="utf-8")
+        handle.seek(0)
+        handle.write("after manifest")
+        handle.close()
+
+    manifest_stamp = (run_dir / "manifest.json").stat().st_mtime_ns
+    os.utime(raw, ns=(manifest_stamp, manifest_stamp))
+    assert trace.events[-1] == {
+        "sequence": 3,
+        "operation": "write_close",
+        "path": "raw.txt",
+    }
+    with pytest.raises(BenchmarkError, match="final trace mutation"):
+        measure_module._require_manifest_last(trace.events)
+
+
+def test_completed_trace_fails_on_unhandled_or_unclosed_writes(tmp_path: Path) -> None:
+    unhandled_root = tmp_path / "unhandled"
+    with pytest.raises(BenchmarkError, match="unhandled mutation mechanism"):
+        with measure_module._CompletedMutationTrace(unhandled_root):
+            unhandled_root.mkdir()
+            with open(unhandled_root / "built-in.txt", "w", encoding="utf-8") as handle:
+                handle.write("not interposed")
+
+    unclosed_root = tmp_path / "unclosed"
+    dangling = None
+    with pytest.raises(BenchmarkError, match="unmatched write opens"):
+        with measure_module._CompletedMutationTrace(unclosed_root):
+            unclosed_root.mkdir()
+            dangling = (unclosed_root / "open.txt").open("w", encoding="utf-8")
+            dangling.write("not closed")
+    assert dangling is not None
+    dangling.close()
 
 
 def test_subprocess_timeouts_are_bounded_and_explicit(
