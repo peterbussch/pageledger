@@ -23,10 +23,16 @@ def build_parser() -> argparse.ArgumentParser:
         "--out", required=True, type=Path, help="New benchmark evidence directory"
     )
     run_parser.add_argument(
-        "--process-state",
-        choices=("fresh-process", "cold", "warm"),
-        default="fresh-process",
-        help="Caller-declared process/system warmup state; OS page cache remains uncontrolled",
+        "--freeze-receipt",
+        required=True,
+        type=Path,
+        help="External approved freeze receipt with harness hashes and resource policy",
+    )
+    run_parser.add_argument(
+        "--warmup-state",
+        choices=("none", "post-untimed-warmup"),
+        required=True,
+        help="Whether an untimed warmup preceded this fresh process; OS cache remains uncontrolled",
     )
     return parser
 
@@ -36,10 +42,12 @@ def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(parsed_argv)
     command = [sys.executable, "-m", "scripts.pageledger_bench", *parsed_argv]
     try:
+        approval = measure.load_approved_freeze(args.freeze_receipt)
         receipt = measure.measure_run(
             args.workload,
             args.out,
-            process_state=args.process_state,
+            approved_freeze=approval,
+            warmup_state=args.warmup_state,
             command=command,
         )
     except measure.BenchmarkError as exc:
