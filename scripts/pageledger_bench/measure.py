@@ -20,6 +20,7 @@ import stat
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import uuid
 from collections import Counter, defaultdict
@@ -54,7 +55,7 @@ _DEPENDENCIES = ("pageledger", "PyYAML", "jsonschema")
 _SUBPROCESS_TIMEOUT_SECONDS = 5.0
 _SHA256 = re.compile(r"[0-9a-f]{64}")
 _GIT_SHA = re.compile(r"[0-9a-f]{40}")
-_TRACE_INTERPOSITION_POLICY_VERSION = "2.2"
+_TRACE_INTERPOSITION_POLICY_VERSION = "2.3"
 _TRACE_READ_ONLY_FILESYSTEM_EVENTS = frozenset(
     {
         "glob.glob",
@@ -70,6 +71,17 @@ _TRACE_READ_ONLY_FILESYSTEM_EVENTS = frozenset(
     }
 )
 _TRACE_NON_FILESYSTEM_OS_EVENTS = frozenset({"os.kill", "os.putenv", "os.unsetenv"})
+_TRACE_PROCESS_CREATION_EVENTS = frozenset(
+    {
+        "os.exec",
+        "os.fork",
+        "os.forkpty",
+        "os.posix_spawn",
+        "os.posix_spawnp",
+        "os.system",
+        "subprocess.Popen",
+    }
+)
 _TRACE_MUTATION_PATH_SPECS: dict[str, tuple[tuple[int, int | None, bool], ...]] = {
     "os.mkdir": ((0, 2, False),),
     "os.remove": ((0, 1, False),),
@@ -859,7 +871,11 @@ class _TrackedWriteHandle:
         self._trace = trace
         self._path = path
         self._completed = False
-        self._descriptor = trace._register_handle_descriptor(handle, path)
+        try:
+            trace._register_handle_identity(handle, path)
+        except BaseException:
+            handle.close()
+            raise
 
     def __enter__(self) -> _TrackedWriteHandle:
         self._handle.__enter__()
@@ -882,7 +898,7 @@ class _TrackedWriteHandle:
             return
         self._handle.close()
         self._completed = True
-        self._trace._complete_handle(self, self._path, self._descriptor)
+        self._trace._complete_handle(self, self._path)
 
 
 class _CompletedMutationTrace:
@@ -895,7 +911,8 @@ class _CompletedMutationTrace:
         self._authorizations: list[dict[str, Any]] = []
         self._unhandled: list[str] = []
         self._open_handles: dict[int, str] = {}
-        self._descriptor_paths: dict[int, Path] = {}
+        self._tracked_identities: dict[tuple[int, int], Path] = {}
+        self._trace_pid: int | None = None
         self._original_path_open = Path.open
         self._original_path_mkdir = Path.mkdir
         self._original_path_unlink = Path.unlink
@@ -903,11 +920,10 @@ class _CompletedMutationTrace:
         self._original_path_rename = Path.rename
         self._original_path_replace = Path.replace
         self._original_copyfile = runner_module.copyfile
-        self._original_os_dup = os.dup
-        self._original_os_dup2 = os.dup2
-        self._original_os_dup3 = getattr(os, "dup3", None)
 
     def __enter__(self) -> _CompletedMutationTrace:
+        self._trace_pid = os.getpid()
+        self._require_sequential_process()
         trace = self
 
         def tracked_open(path: Path, *args: Any, **kwargs: Any) -> Any:
@@ -981,25 +997,6 @@ class _CompletedMutationTrace:
                 trace._completed("copyfile_complete", target)
             return result
 
-        def tracked_dup(descriptor: int, /) -> int:
-            trace._refuse_descriptor_alias("os.dup", source=descriptor)
-            return trace._original_os_dup(descriptor)
-
-        def tracked_dup2(
-            descriptor: int, destination: int, inheritable: bool = True
-        ) -> int:
-            trace._refuse_descriptor_alias(
-                "os.dup2", source=descriptor, destination=destination
-            )
-            return trace._original_os_dup2(descriptor, destination, inheritable)
-
-        def tracked_dup3(descriptor: int, destination: int, flags: int, /) -> int:
-            trace._refuse_descriptor_alias(
-                "os.dup3", source=descriptor, destination=destination
-            )
-            assert trace._original_os_dup3 is not None
-            return trace._original_os_dup3(descriptor, destination, flags)
-
         Path.open = tracked_open
         Path.mkdir = tracked_mkdir
         Path.unlink = tracked_unlink
@@ -1007,10 +1004,6 @@ class _CompletedMutationTrace:
         Path.rename = tracked_rename
         Path.replace = tracked_replace
         runner_module.copyfile = tracked_copyfile
-        os.dup = tracked_dup
-        os.dup2 = tracked_dup2
-        if self._original_os_dup3 is not None:
-            os.dup3 = tracked_dup3
         self._active = True
         sys.addaudithook(self._audit)
         return self
@@ -1024,12 +1017,9 @@ class _CompletedMutationTrace:
         Path.rename = self._original_path_rename
         Path.replace = self._original_path_replace
         runner_module.copyfile = self._original_copyfile
-        os.dup = self._original_os_dup
-        os.dup2 = self._original_os_dup2
-        if self._original_os_dup3 is not None:
-            os.dup3 = self._original_os_dup3
         if exc_type is not None:
             return
+        self._require_sequential_process()
         if self._unhandled:
             raise BenchmarkError(
                 "trace_unhandled_mutation",
@@ -1069,6 +1059,11 @@ class _CompletedMutationTrace:
     def _audit(self, event: str, args: tuple[Any, ...]) -> None:
         if not self._active:
             return
+        if event in _TRACE_PROCESS_CREATION_EVENTS:
+            raise BenchmarkError(
+                "trace_process_creation",
+                f"Trace refuses process creation during sequential replay: {event}",
+            )
         if event == "open":
             mutation = self._audit_open(args)
         elif event in _TRACE_MUTATION_PATH_SPECS:
@@ -1183,9 +1178,19 @@ class _CompletedMutationTrace:
         return path.absolute(), False
 
     def _path_from_fd(self, descriptor: int) -> Path | None:
-        if isinstance(descriptor, bool) or descriptor < 0:
+        if isinstance(descriptor, bool):
             return None
-        tracked = self._descriptor_paths.get(descriptor)
+        try:
+            descriptor = operator.index(descriptor)
+        except TypeError:
+            return None
+        if descriptor < 0:
+            return None
+        try:
+            metadata = os.fstat(descriptor)
+        except (OSError, OverflowError, TypeError, ValueError):
+            return None
+        tracked = self._tracked_identities.get((metadata.st_dev, metadata.st_ino))
         if tracked is not None:
             return tracked
         try:
@@ -1217,65 +1222,105 @@ class _CompletedMutationTrace:
                 "Trace interposition missed expected events: " + ", ".join(sorted(missing)),
             )
 
-    def _register_handle_descriptor(self, handle: Any, path: Path) -> int | None:
+    def _register_handle_identity(self, handle: Any, path: Path) -> None:
         try:
-            descriptor = handle.fileno()
-        except (AttributeError, OSError, TypeError, ValueError):
-            descriptor = None
-        if type(descriptor) is not int or descriptor < 0:
-            self._unhandled.append(
-                f"tracked write handle has no usable descriptor:{self._relative(path)}"
+            descriptor = operator.index(handle.fileno())
+            if isinstance(descriptor, bool) or descriptor < 0:
+                raise ValueError("invalid descriptor")
+            metadata = os.fstat(descriptor)
+        except (AttributeError, OSError, OverflowError, TypeError, ValueError) as exc:
+            raise BenchmarkError(
+                "trace_file_identity_unavailable",
+                "Trace could not establish stable file identity for tracked write "
+                f"handle: {self._relative(path)}",
+            ) from exc
+        identity = (metadata.st_dev, metadata.st_ino)
+        absolute = path.absolute()
+        existing = self._tracked_identities.get(identity)
+        if existing is not None and existing != absolute:
+            raise BenchmarkError(
+                "trace_file_identity_collision",
+                "Trace observed one tracked file identity under multiple paths: "
+                f"{self._relative(existing)} and {self._relative(absolute)}",
             )
-            return None
-        existing = self._descriptor_paths.get(descriptor)
-        if existing is not None and existing != path.absolute():
-            self._unhandled.append(
-                f"tracked descriptor collision:{descriptor}:{self._relative(path)}"
-            )
-            return None
-        self._descriptor_paths[descriptor] = path.absolute()
-        return descriptor
+        self._tracked_identities[identity] = absolute
 
-    def _refuse_descriptor_alias(
-        self,
-        operation: str,
-        *,
-        source: object,
-        destination: object | None = None,
-    ) -> None:
-        descriptors = [("source", source)]
-        if destination is not None:
-            descriptors.append(("destination", destination))
-        for role, value in descriptors:
-            try:
-                descriptor = operator.index(value)
-            except TypeError:
-                continue
-            path = self._descriptor_paths.get(descriptor)
-            if path is not None:
-                raise BenchmarkError(
-                    "trace_descriptor_alias",
-                    f"Refusing {operation} {role} descriptor alias for tracked benchmark "
-                    f"write handle {descriptor}:{self._relative(path)}",
-                )
-
-    def _complete_handle(
-        self, handle: _TrackedWriteHandle, path: Path, descriptor: int | None
-    ) -> None:
+    def _complete_handle(self, handle: _TrackedWriteHandle, path: Path) -> None:
         self._open_handles.pop(id(handle), None)
-        if descriptor is not None:
-            self._descriptor_paths.pop(descriptor, None)
         if self._active:
             self._completed("write_close", path)
 
     def _completed(self, operation: str, path: Path) -> None:
+        relative = self._relative(path)
         self.events.append(
             {
                 "sequence": len(self.events) + 1,
                 "operation": operation,
-                "path": self._relative(path),
+                "path": relative,
             }
         )
+        if relative == "manifest.json":
+            self._require_no_live_tracked_descriptors()
+
+    def _require_no_live_tracked_descriptors(self) -> None:
+        self._require_sequential_process()
+        aliases: list[tuple[int, Path]] = []
+        try:
+            with open(os.devnull, "rb") as sentinel:
+                sentinel_descriptor = sentinel.fileno()
+                observed: set[int] = set()
+                with os.scandir("/dev/fd") as entries:
+                    for entry in entries:
+                        if not entry.name.isdecimal():
+                            raise BenchmarkError(
+                                "trace_descriptor_scan_failed",
+                                "Trace descriptor enumeration returned a non-descriptor entry",
+                            )
+                        descriptor = int(entry.name)
+                        observed.add(descriptor)
+                        try:
+                            metadata = os.fstat(descriptor)
+                        except (OSError, OverflowError, TypeError, ValueError) as exc:
+                            raise BenchmarkError(
+                                "trace_descriptor_scan_failed",
+                                "Trace descriptor enumeration changed during its live snapshot",
+                            ) from exc
+                        path = self._tracked_identities.get(
+                            (metadata.st_dev, metadata.st_ino)
+                        )
+                        if path is not None:
+                            aliases.append((descriptor, path))
+                if sentinel_descriptor not in observed:
+                    raise BenchmarkError(
+                        "trace_descriptor_scan_failed",
+                        "Trace descriptor enumeration did not report its sentinel descriptor",
+                    )
+        except BenchmarkError:
+            raise
+        except (OSError, TypeError, ValueError) as exc:
+            raise BenchmarkError(
+                "trace_descriptor_scan_failed",
+                "Trace could not enumerate live descriptors at manifest completion",
+            ) from exc
+        if aliases:
+            descriptor, path = min(aliases, key=lambda item: item[0])
+            raise BenchmarkError(
+                "trace_descriptor_alias",
+                "Refusing manifest completion with live descriptor alias "
+                f"{descriptor} for tracked artifact {self._relative(path)}",
+            )
+
+    def _require_sequential_process(self) -> None:
+        if self._trace_pid != os.getpid():
+            raise BenchmarkError(
+                "trace_process_changed",
+                "Trace replay cannot continue in a different process",
+            )
+        if threading.active_count() != 1:
+            raise BenchmarkError(
+                "trace_concurrency_unsupported",
+                "Trace replay must remain single-threaded for descriptor completeness",
+            )
 
 
 def _require_manifest_last(events: list[dict[str, Any]]) -> None:

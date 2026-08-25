@@ -5,10 +5,13 @@ from __future__ import annotations
 import json
 import mmap
 import os
+import posix
 import pstats
 import subprocess
 import sys
+import threading
 from collections import Counter
+from collections.abc import Callable
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -46,6 +49,11 @@ EXPECTED_LEDGER_PHASES = {
     "manifest_commit",
     "result_return",
 }
+
+_CACHED_OS_DUP = os.dup
+_CACHED_OS_WRITE = os.write
+_NATIVE_POSIX_DUP = posix.dup
+_NATIVE_POSIX_WRITE = posix.write
 
 
 def _approved_freeze(tmp_path: Path):
@@ -312,7 +320,7 @@ def test_measure_small_smoke_records_complete_receipt_and_external_evidence(
     assert receipt["trace_validation"]["phase_sequence"]["valid"] is True
     assert receipt["trace_validation"]["phase_sequence"]["event_count"] == 192
     assert receipt["trace_validation"]["phase_sequence"]["adapter_count"] == 20
-    assert receipt["trace_validation"]["interposition_policy_version"] == "2.2"
+    assert receipt["trace_validation"]["interposition_policy_version"] == "2.3"
     assert receipt["trace_validation"]["equivalence"]["equivalent"] is True
     assert receipt["trace_validation"]["validation"]["valid"] is True
     assert receipt["trace_validation"]["inventory"]["regular_file_count"] == sum(
@@ -841,32 +849,33 @@ def test_manifest_last_uses_mutation_trace_not_mtime(
         )
 
 
-def test_completed_trace_rejects_preopened_descriptor_closed_after_manifest(
+def test_completed_trace_rejects_preopened_descriptor_at_manifest_boundary(
     tmp_path: Path,
 ) -> None:
     run_dir = tmp_path / "trace-run"
+    raw = run_dir / "raw.txt"
     trace = measure_module._CompletedMutationTrace(run_dir)
+    handle = None
 
-    with trace:
-        run_dir.mkdir()
-        raw = run_dir / "raw.txt"
-        handle = raw.open("w", encoding="utf-8")
-        handle.write("before manifest")
-        assert not any(event["path"] == "raw.txt" for event in trace.events)
-        (run_dir / "manifest.json").write_text("{}\n", encoding="utf-8")
-        handle.seek(0)
-        handle.write("after manifest")
-        handle.close()
+    with pytest.raises(
+        BenchmarkError, match=r"live descriptor alias.*raw\.txt"
+    ) as exc_info:
+        try:
+            with trace:
+                run_dir.mkdir()
+                handle = raw.open("w", encoding="utf-8")
+                handle.write("before manifest")
+                handle.flush()
+                assert not any(event["path"] == "raw.txt" for event in trace.events)
+                (run_dir / "manifest.json").write_text("{}\n", encoding="utf-8")
+                handle.seek(0)
+                handle.write("after manifest")
+        finally:
+            if handle is not None and not handle.closed:
+                handle.close()
 
-    manifest_stamp = (run_dir / "manifest.json").stat().st_mtime_ns
-    os.utime(raw, ns=(manifest_stamp, manifest_stamp))
-    assert trace.events[-1] == {
-        "sequence": 3,
-        "operation": "write_close",
-        "path": "raw.txt",
-    }
-    with pytest.raises(BenchmarkError, match="final trace mutation"):
-        measure_module._require_manifest_last(trace.events)
+    assert exc_info.value.code == "trace_descriptor_alias"
+    assert raw.read_text(encoding="utf-8") == "before manifest"
 
 
 def test_completed_trace_rejects_writable_mmap_created_before_manifest(
@@ -875,28 +884,37 @@ def test_completed_trace_rejects_writable_mmap_created_before_manifest(
     run_dir = tmp_path / "mmap"
     artifact = run_dir / "artifact.bin"
     trace = measure_module._CompletedMutationTrace(run_dir)
+    handle = None
+    mapping = None
 
     with pytest.raises(
-        BenchmarkError, match=r"mmap\.__new__:artifact\.bin"
+        BenchmarkError, match=r"live descriptor alias.*artifact\.bin"
     ) as exc_info:
-        with trace:
-            run_dir.mkdir()
-            handle = artifact.open("w+b")
-            handle.write(b"before")
-            handle.flush()
-            mapping = mmap.mmap(handle.fileno(), 6, access=mmap.ACCESS_WRITE)
-            handle.close()
-            (run_dir / "manifest.json").write_text("{}\n", encoding="utf-8")
-            mapping[:] = b"after!"
-            mapping.flush()
-            mapping.close()
-        measure_module._require_manifest_last(trace.events)
+        try:
+            with trace:
+                run_dir.mkdir()
+                handle = artifact.open("w+b")
+                handle.write(b"before")
+                handle.flush()
+                mapping = mmap.mmap(handle.fileno(), 6, access=mmap.ACCESS_WRITE)
+                assert trace._unhandled == [
+                    "unknown filesystem audit event mmap.__new__:artifact.bin"
+                ]
+                handle.close()
+                handle = None
+                (run_dir / "manifest.json").write_text("{}\n", encoding="utf-8")
+                mapping[:] = b"after!"
+        finally:
+            if mapping is not None:
+                mapping.close()
+            if handle is not None and not handle.closed:
+                handle.close()
 
-    assert exc_info.value.code == "trace_unhandled_mutation"
-    assert artifact.read_bytes() == b"after!"
+    assert exc_info.value.code == "trace_descriptor_alias"
+    assert artifact.read_bytes() == b"before"
 
 
-def test_completed_trace_refuses_os_dup_alias_before_post_manifest_mmap(
+def test_completed_trace_rejects_direct_os_dup_alias_at_manifest_boundary(
     tmp_path: Path,
 ) -> None:
     run_dir = tmp_path / "dup-mmap"
@@ -905,13 +923,13 @@ def test_completed_trace_refuses_os_dup_alias_before_post_manifest_mmap(
     original_dup = os.dup
     handle = None
     duplicate = None
-    mapping = None
 
     with pytest.raises(
-        BenchmarkError, match=r"os\.dup source descriptor.*artifact\.bin"
+        BenchmarkError, match=r"live descriptor alias.*artifact\.bin"
     ) as exc_info:
         try:
             with trace:
+                assert os.dup is original_dup
                 run_dir.mkdir()
                 handle = artifact.open("w+b")
                 handle.write(b"before")
@@ -920,7 +938,56 @@ def test_completed_trace_refuses_os_dup_alias_before_post_manifest_mmap(
                 handle.close()
                 handle = None
                 (run_dir / "manifest.json").write_text("{}\n", encoding="utf-8")
-                mapping = mmap.mmap(duplicate, 6, access=mmap.ACCESS_WRITE)
+        finally:
+            if handle is not None and not handle.closed:
+                handle.close()
+            if duplicate is not None:
+                os.close(duplicate)
+
+    assert exc_info.value.code == "trace_descriptor_alias"
+    assert os.dup is original_dup
+    assert artifact.read_bytes() == b"before"
+
+
+@pytest.mark.parametrize(
+    "duplicate_descriptor",
+    [
+        pytest.param(_CACHED_OS_DUP, id="cached-os-dup"),
+        pytest.param(_NATIVE_POSIX_DUP, id="native-posix-dup"),
+    ],
+)
+@pytest.mark.skipif(
+    sys.version_info < (3, 13),
+    reason="mmap trackfd=False is required to close every alias before manifest",
+)
+def test_completed_trace_rejects_alias_backed_mmap_after_descriptor_cleanup(
+    tmp_path: Path, duplicate_descriptor: Callable[[int], int]
+) -> None:
+    run_dir = tmp_path / "alias-mmap"
+    artifact = run_dir / "artifact.bin"
+    trace = measure_module._CompletedMutationTrace(run_dir)
+    handle = None
+    duplicate = None
+    mapping = None
+
+    with pytest.raises(
+        BenchmarkError, match=r"mmap\.__new__:artifact\.bin"
+    ) as exc_info:
+        try:
+            with trace:
+                run_dir.mkdir()
+                handle = artifact.open("w+b")
+                handle.write(b"before")
+                handle.flush()
+                duplicate = duplicate_descriptor(handle.fileno())
+                mapping = mmap.mmap(
+                    duplicate, 6, access=mmap.ACCESS_WRITE, trackfd=False
+                )
+                os.close(duplicate)
+                duplicate = None
+                handle.close()
+                handle = None
+                (run_dir / "manifest.json").write_text("{}\n", encoding="utf-8")
                 mapping[:] = b"after!"
                 mapping.flush()
                 mapping.close()
@@ -934,58 +1001,107 @@ def test_completed_trace_refuses_os_dup_alias_before_post_manifest_mmap(
             if duplicate is not None:
                 os.close(duplicate)
 
+    assert exc_info.value.code == "trace_unhandled_mutation"
+    assert artifact.read_bytes() == b"after!"
+
+
+@pytest.mark.parametrize(
+    ("duplicate_descriptor", "raw_write"),
+    [
+        pytest.param(_CACHED_OS_DUP, _CACHED_OS_WRITE, id="cached-os"),
+        pytest.param(_NATIVE_POSIX_DUP, _NATIVE_POSIX_WRITE, id="native-posix"),
+    ],
+)
+def test_completed_trace_rejects_live_alias_before_post_manifest_raw_write(
+    tmp_path: Path,
+    duplicate_descriptor: Callable[[int], int],
+    raw_write: Callable[[int, bytes], int],
+) -> None:
+    run_dir = tmp_path / "alias-write"
+    artifact = run_dir / "artifact.bin"
+    trace = measure_module._CompletedMutationTrace(run_dir)
+    handle = None
+    duplicate = None
+
+    with pytest.raises(
+        BenchmarkError, match=r"live descriptor alias.*artifact\.bin"
+    ) as exc_info:
+        try:
+            with trace:
+                run_dir.mkdir()
+                handle = artifact.open("w+b")
+                handle.write(b"before")
+                handle.flush()
+                duplicate = duplicate_descriptor(handle.fileno())
+                handle.close()
+                handle = None
+                (run_dir / "manifest.json").write_text("{}\n", encoding="utf-8")
+                raw_write(duplicate, b"after!")
+            measure_module._require_manifest_last(trace.events)
+        finally:
+            if handle is not None and not handle.closed:
+                handle.close()
+            if duplicate is not None:
+                os.close(duplicate)
+
     assert exc_info.value.code == "trace_descriptor_alias"
-    assert os.dup is original_dup
     assert artifact.read_bytes() == b"before"
+
+
+def test_completed_trace_preserves_dup2_keyword_signature_for_unrelated_fds(
+    tmp_path: Path,
+) -> None:
+    run_dir = tmp_path / "dup2-keywords"
+    source = os.open(os.devnull, os.O_RDWR)
+    destination = os.dup(source)
+
+    try:
+        with measure_module._CompletedMutationTrace(run_dir):
+            run_dir.mkdir()
+            assert (
+                os.dup2(fd=source, fd2=destination, inheritable=False)
+                == destination
+            )
+            os.fstat(destination)
+            (run_dir / "manifest.json").write_text("{}\n", encoding="utf-8")
+    finally:
+        os.close(destination)
+        os.close(source)
 
 
 @pytest.mark.parametrize(
     "operation",
     ["dup2"] + (["dup3"] if hasattr(os, "dup3") else []),
 )
-@pytest.mark.parametrize("tracked_operand", ["source", "destination", "both"])
-def test_completed_trace_refuses_tracked_descriptor_replacement(
-    tmp_path: Path, operation: str, tracked_operand: str
+def test_completed_trace_resolves_descriptor_replacement_alias_by_identity(
+    tmp_path: Path, operation: str
 ) -> None:
-    run_dir = tmp_path / f"{operation}-{tracked_operand}"
+    run_dir = tmp_path / operation
     trace = measure_module._CompletedMutationTrace(run_dir)
-    unrelated_source = os.open(os.devnull, os.O_RDWR)
-    unrelated_destination = os.dup(unrelated_source)
+    destination = os.open(os.devnull, os.O_RDWR)
 
     try:
-        with pytest.raises(BenchmarkError) as exc_info:
+        with pytest.raises(
+            BenchmarkError, match=r"live descriptor alias.*source\.bin"
+        ) as exc_info:
             with trace:
                 run_dir.mkdir()
-                with (run_dir / "source.bin").open("w+b") as source_handle, (
-                    run_dir / "destination.bin"
-                ).open("w+b") as destination_handle:
-                    source = (
-                        source_handle.fileno()
-                        if tracked_operand in {"source", "both"}
-                        else unrelated_source
-                    )
-                    destination = (
-                        destination_handle.fileno()
-                        if tracked_operand in {"destination", "both"}
-                        else unrelated_destination
-                    )
+                with (run_dir / "source.bin").open("w+b") as source_handle:
+                    source_handle.write(b"before")
+                    source_handle.flush()
                     if operation == "dup2":
-                        os.dup2(source, destination)
+                        os.dup2(source_handle.fileno(), destination)
                     else:
-                        os.dup3(source, destination, 0)
+                        os.dup3(source_handle.fileno(), destination, 0)
+                (run_dir / "manifest.json").write_text("{}\n", encoding="utf-8")
     finally:
-        os.close(unrelated_destination)
-        os.close(unrelated_source)
+        os.close(destination)
 
     assert exc_info.value.code == "trace_descriptor_alias"
-    expected_operand = (
-        "source" if tracked_operand in {"source", "both"} else "destination"
-    )
-    assert f"os.{operation} {expected_operand} descriptor" in str(exc_info.value)
 
 
 @pytest.mark.parametrize("exceptional_exit", [False, True], ids=["normal", "exceptional"])
-def test_completed_trace_restores_descriptor_duplication_functions(
+def test_completed_trace_never_interposes_descriptor_duplication_functions(
     tmp_path: Path, exceptional_exit: bool
 ) -> None:
     originals = {
@@ -995,20 +1111,19 @@ def test_completed_trace_restores_descriptor_duplication_functions(
     }
     trace = measure_module._CompletedMutationTrace(tmp_path / "restore")
 
-    def assert_interposed() -> None:
-        assert os.dup is not originals["dup"]
-        assert os.dup2 is not originals["dup2"]
-        if originals["dup3"] is not None:
-            assert os.dup3 is not originals["dup3"]
+    def assert_unchanged() -> None:
+        assert os.dup is originals["dup"]
+        assert os.dup2 is originals["dup2"]
+        assert getattr(os, "dup3", None) is originals["dup3"]
 
     if exceptional_exit:
         with pytest.raises(RuntimeError, match="trace body failed"):
             with trace:
-                assert_interposed()
+                assert_unchanged()
                 raise RuntimeError("trace body failed")
     else:
         with trace:
-            assert_interposed()
+            assert_unchanged()
 
     assert os.dup is originals["dup"]
     assert os.dup2 is originals["dup2"]
@@ -1033,11 +1148,134 @@ def test_completed_trace_permits_unrelated_descriptor_duplication(tmp_path: Path
             if hasattr(os, "dup3"):
                 assert os.dup3(source, destination, 0) == destination
                 os.fstat(destination)
+            (run_dir / "manifest.json").write_text("{}\n", encoding="utf-8")
     finally:
         if duplicate is not None:
             os.close(duplicate)
         os.close(destination)
         os.close(source)
+
+
+def test_completed_trace_permits_provably_unrelated_writable_mmap(
+    tmp_path: Path,
+) -> None:
+    run_dir = tmp_path / "trace"
+    external = tmp_path / "external.bin"
+    external.write_bytes(b"before")
+    descriptor = os.open(external, os.O_RDWR)
+    duplicate = _NATIVE_POSIX_DUP(descriptor)
+    mapping = None
+
+    try:
+        with measure_module._CompletedMutationTrace(run_dir):
+            run_dir.mkdir()
+            mapping = mmap.mmap(duplicate, 6, access=mmap.ACCESS_WRITE)
+            (run_dir / "manifest.json").write_text("{}\n", encoding="utf-8")
+            mapping[:] = b"after!"
+            mapping.flush()
+            mapping.close()
+            mapping = None
+    finally:
+        if mapping is not None:
+            mapping.close()
+        os.close(duplicate)
+        os.close(descriptor)
+
+    assert external.read_bytes() == b"after!"
+
+
+def test_completed_trace_uses_identity_not_reused_descriptor_number(
+    tmp_path: Path,
+) -> None:
+    run_dir = tmp_path / "descriptor-reuse"
+    trace = measure_module._CompletedMutationTrace(run_dir)
+    replacement = None
+
+    try:
+        with trace:
+            run_dir.mkdir()
+            handle = (run_dir / "artifact.bin").open("w+b")
+            tracked_descriptor = handle.fileno()
+            handle.write(b"before")
+            handle.close()
+
+            replacement = os.open(os.devnull, os.O_RDWR)
+            if replacement != tracked_descriptor:
+                os.dup2(replacement, tracked_descriptor)
+                os.close(replacement)
+                replacement = tracked_descriptor
+            resolved = trace._path_from_fd(replacement)
+            assert resolved is None or not trace._inside(resolved)
+            sys.audit("pageledger_bench.test_noise", replacement)
+            os.close(replacement)
+            replacement = None
+            (run_dir / "manifest.json").write_text("{}\n", encoding="utf-8")
+    finally:
+        if replacement is not None:
+            os.close(replacement)
+
+
+def test_completed_trace_refuses_failed_descriptor_enumeration(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    run_dir = tmp_path / "scan-failure"
+
+    def fail_scan(_path: object):
+        raise OSError("descriptor namespace unavailable")
+
+    monkeypatch.setattr(os, "scandir", fail_scan)
+
+    with pytest.raises(BenchmarkError, match="could not enumerate live descriptors") as exc_info:
+        with measure_module._CompletedMutationTrace(run_dir):
+            run_dir.mkdir()
+            (run_dir / "manifest.json").write_text("{}\n", encoding="utf-8")
+
+    assert exc_info.value.code == "trace_descriptor_scan_failed"
+
+
+def test_completed_trace_refuses_incomplete_descriptor_enumeration(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    run_dir = tmp_path / "scan-incomplete"
+
+    class EmptyScan:
+        def __enter__(self):
+            return iter(())
+
+        def __exit__(self, *_exc: object) -> None:
+            return None
+
+    monkeypatch.setattr(os, "scandir", lambda _path: EmptyScan())
+
+    with pytest.raises(BenchmarkError, match="did not report its sentinel") as exc_info:
+        with measure_module._CompletedMutationTrace(run_dir):
+            run_dir.mkdir()
+            (run_dir / "manifest.json").write_text("{}\n", encoding="utf-8")
+
+    assert exc_info.value.code == "trace_descriptor_scan_failed"
+
+
+def test_completed_trace_refuses_process_creation(tmp_path: Path) -> None:
+    run_dir = tmp_path / "process-creation"
+
+    with pytest.raises(BenchmarkError, match="process creation") as exc_info:
+        with measure_module._CompletedMutationTrace(run_dir):
+            run_dir.mkdir()
+            subprocess.run([sys.executable, "-c", "pass"], check=True)
+
+    assert exc_info.value.code == "trace_process_creation"
+
+
+def test_completed_trace_requires_sequential_process(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(threading, "active_count", lambda: 2)
+
+    with pytest.raises(BenchmarkError, match="single-threaded") as exc_info:
+        with measure_module._CompletedMutationTrace(tmp_path / "concurrent"):
+            pass
+
+    assert exc_info.value.code == "trace_concurrency_unsupported"
 
 
 def test_completed_trace_preserves_fcntl_duplicate_refusal(tmp_path: Path) -> None:
