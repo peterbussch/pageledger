@@ -8,6 +8,7 @@ import hashlib
 import importlib.metadata
 import io
 import json
+import operator
 import os
 import platform
 import plistlib
@@ -53,7 +54,7 @@ _DEPENDENCIES = ("pageledger", "PyYAML", "jsonschema")
 _SUBPROCESS_TIMEOUT_SECONDS = 5.0
 _SHA256 = re.compile(r"[0-9a-f]{64}")
 _GIT_SHA = re.compile(r"[0-9a-f]{40}")
-_TRACE_INTERPOSITION_POLICY_VERSION = "2.1"
+_TRACE_INTERPOSITION_POLICY_VERSION = "2.2"
 _TRACE_READ_ONLY_FILESYSTEM_EVENTS = frozenset(
     {
         "glob.glob",
@@ -902,6 +903,9 @@ class _CompletedMutationTrace:
         self._original_path_rename = Path.rename
         self._original_path_replace = Path.replace
         self._original_copyfile = runner_module.copyfile
+        self._original_os_dup = os.dup
+        self._original_os_dup2 = os.dup2
+        self._original_os_dup3 = getattr(os, "dup3", None)
 
     def __enter__(self) -> _CompletedMutationTrace:
         trace = self
@@ -977,6 +981,25 @@ class _CompletedMutationTrace:
                 trace._completed("copyfile_complete", target)
             return result
 
+        def tracked_dup(descriptor: int, /) -> int:
+            trace._refuse_descriptor_alias("os.dup", source=descriptor)
+            return trace._original_os_dup(descriptor)
+
+        def tracked_dup2(
+            descriptor: int, destination: int, inheritable: bool = True
+        ) -> int:
+            trace._refuse_descriptor_alias(
+                "os.dup2", source=descriptor, destination=destination
+            )
+            return trace._original_os_dup2(descriptor, destination, inheritable)
+
+        def tracked_dup3(descriptor: int, destination: int, flags: int, /) -> int:
+            trace._refuse_descriptor_alias(
+                "os.dup3", source=descriptor, destination=destination
+            )
+            assert trace._original_os_dup3 is not None
+            return trace._original_os_dup3(descriptor, destination, flags)
+
         Path.open = tracked_open
         Path.mkdir = tracked_mkdir
         Path.unlink = tracked_unlink
@@ -984,6 +1007,10 @@ class _CompletedMutationTrace:
         Path.rename = tracked_rename
         Path.replace = tracked_replace
         runner_module.copyfile = tracked_copyfile
+        os.dup = tracked_dup
+        os.dup2 = tracked_dup2
+        if self._original_os_dup3 is not None:
+            os.dup3 = tracked_dup3
         self._active = True
         sys.addaudithook(self._audit)
         return self
@@ -997,6 +1024,10 @@ class _CompletedMutationTrace:
         Path.rename = self._original_path_rename
         Path.replace = self._original_path_replace
         runner_module.copyfile = self._original_copyfile
+        os.dup = self._original_os_dup
+        os.dup2 = self._original_os_dup2
+        if self._original_os_dup3 is not None:
+            os.dup3 = self._original_os_dup3
         if exc_type is not None:
             return
         if self._unhandled:
@@ -1204,6 +1235,29 @@ class _CompletedMutationTrace:
             return None
         self._descriptor_paths[descriptor] = path.absolute()
         return descriptor
+
+    def _refuse_descriptor_alias(
+        self,
+        operation: str,
+        *,
+        source: object,
+        destination: object | None = None,
+    ) -> None:
+        descriptors = [("source", source)]
+        if destination is not None:
+            descriptors.append(("destination", destination))
+        for role, value in descriptors:
+            try:
+                descriptor = operator.index(value)
+            except TypeError:
+                continue
+            path = self._descriptor_paths.get(descriptor)
+            if path is not None:
+                raise BenchmarkError(
+                    "trace_descriptor_alias",
+                    f"Refusing {operation} {role} descriptor alias for tracked benchmark "
+                    f"write handle {descriptor}:{self._relative(path)}",
+                )
 
     def _complete_handle(
         self, handle: _TrackedWriteHandle, path: Path, descriptor: int | None

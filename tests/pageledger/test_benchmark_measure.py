@@ -312,7 +312,7 @@ def test_measure_small_smoke_records_complete_receipt_and_external_evidence(
     assert receipt["trace_validation"]["phase_sequence"]["valid"] is True
     assert receipt["trace_validation"]["phase_sequence"]["event_count"] == 192
     assert receipt["trace_validation"]["phase_sequence"]["adapter_count"] == 20
-    assert receipt["trace_validation"]["interposition_policy_version"] == "2.1"
+    assert receipt["trace_validation"]["interposition_policy_version"] == "2.2"
     assert receipt["trace_validation"]["equivalence"]["equivalent"] is True
     assert receipt["trace_validation"]["validation"]["valid"] is True
     assert receipt["trace_validation"]["inventory"]["regular_file_count"] == sum(
@@ -894,6 +894,170 @@ def test_completed_trace_rejects_writable_mmap_created_before_manifest(
 
     assert exc_info.value.code == "trace_unhandled_mutation"
     assert artifact.read_bytes() == b"after!"
+
+
+def test_completed_trace_refuses_os_dup_alias_before_post_manifest_mmap(
+    tmp_path: Path,
+) -> None:
+    run_dir = tmp_path / "dup-mmap"
+    artifact = run_dir / "artifact.bin"
+    trace = measure_module._CompletedMutationTrace(run_dir)
+    original_dup = os.dup
+    handle = None
+    duplicate = None
+    mapping = None
+
+    with pytest.raises(
+        BenchmarkError, match=r"os\.dup source descriptor.*artifact\.bin"
+    ) as exc_info:
+        try:
+            with trace:
+                run_dir.mkdir()
+                handle = artifact.open("w+b")
+                handle.write(b"before")
+                handle.flush()
+                duplicate = os.dup(handle.fileno())
+                handle.close()
+                handle = None
+                (run_dir / "manifest.json").write_text("{}\n", encoding="utf-8")
+                mapping = mmap.mmap(duplicate, 6, access=mmap.ACCESS_WRITE)
+                mapping[:] = b"after!"
+                mapping.flush()
+                mapping.close()
+                mapping = None
+            measure_module._require_manifest_last(trace.events)
+        finally:
+            if mapping is not None:
+                mapping.close()
+            if handle is not None and not handle.closed:
+                handle.close()
+            if duplicate is not None:
+                os.close(duplicate)
+
+    assert exc_info.value.code == "trace_descriptor_alias"
+    assert os.dup is original_dup
+    assert artifact.read_bytes() == b"before"
+
+
+@pytest.mark.parametrize(
+    "operation",
+    ["dup2"] + (["dup3"] if hasattr(os, "dup3") else []),
+)
+@pytest.mark.parametrize("tracked_operand", ["source", "destination", "both"])
+def test_completed_trace_refuses_tracked_descriptor_replacement(
+    tmp_path: Path, operation: str, tracked_operand: str
+) -> None:
+    run_dir = tmp_path / f"{operation}-{tracked_operand}"
+    trace = measure_module._CompletedMutationTrace(run_dir)
+    unrelated_source = os.open(os.devnull, os.O_RDWR)
+    unrelated_destination = os.dup(unrelated_source)
+
+    try:
+        with pytest.raises(BenchmarkError) as exc_info:
+            with trace:
+                run_dir.mkdir()
+                with (run_dir / "source.bin").open("w+b") as source_handle, (
+                    run_dir / "destination.bin"
+                ).open("w+b") as destination_handle:
+                    source = (
+                        source_handle.fileno()
+                        if tracked_operand in {"source", "both"}
+                        else unrelated_source
+                    )
+                    destination = (
+                        destination_handle.fileno()
+                        if tracked_operand in {"destination", "both"}
+                        else unrelated_destination
+                    )
+                    if operation == "dup2":
+                        os.dup2(source, destination)
+                    else:
+                        os.dup3(source, destination, 0)
+    finally:
+        os.close(unrelated_destination)
+        os.close(unrelated_source)
+
+    assert exc_info.value.code == "trace_descriptor_alias"
+    expected_operand = (
+        "source" if tracked_operand in {"source", "both"} else "destination"
+    )
+    assert f"os.{operation} {expected_operand} descriptor" in str(exc_info.value)
+
+
+@pytest.mark.parametrize("exceptional_exit", [False, True], ids=["normal", "exceptional"])
+def test_completed_trace_restores_descriptor_duplication_functions(
+    tmp_path: Path, exceptional_exit: bool
+) -> None:
+    originals = {
+        "dup": os.dup,
+        "dup2": os.dup2,
+        "dup3": getattr(os, "dup3", None),
+    }
+    trace = measure_module._CompletedMutationTrace(tmp_path / "restore")
+
+    def assert_interposed() -> None:
+        assert os.dup is not originals["dup"]
+        assert os.dup2 is not originals["dup2"]
+        if originals["dup3"] is not None:
+            assert os.dup3 is not originals["dup3"]
+
+    if exceptional_exit:
+        with pytest.raises(RuntimeError, match="trace body failed"):
+            with trace:
+                assert_interposed()
+                raise RuntimeError("trace body failed")
+    else:
+        with trace:
+            assert_interposed()
+
+    assert os.dup is originals["dup"]
+    assert os.dup2 is originals["dup2"]
+    assert getattr(os, "dup3", None) is originals["dup3"]
+
+
+def test_completed_trace_permits_unrelated_descriptor_duplication(tmp_path: Path) -> None:
+    run_dir = tmp_path / "unrelated-duplication"
+    source = os.open(os.devnull, os.O_RDWR)
+    destination = os.dup(source)
+    duplicate = None
+
+    try:
+        with measure_module._CompletedMutationTrace(run_dir):
+            run_dir.mkdir()
+            duplicate = os.dup(source)
+            os.fstat(duplicate)
+            os.close(duplicate)
+            duplicate = None
+            assert os.dup2(source, destination) == destination
+            os.fstat(destination)
+            if hasattr(os, "dup3"):
+                assert os.dup3(source, destination, 0) == destination
+                os.fstat(destination)
+    finally:
+        if duplicate is not None:
+            os.close(duplicate)
+        os.close(destination)
+        os.close(source)
+
+
+def test_completed_trace_preserves_fcntl_duplicate_refusal(tmp_path: Path) -> None:
+    run_dir = tmp_path / "fcntl-duplication"
+    artifact = run_dir / "artifact.bin"
+    duplicate = None
+
+    with pytest.raises(BenchmarkError, match=r"fcntl\.fcntl:artifact\.bin") as exc_info:
+        try:
+            with measure_module._CompletedMutationTrace(run_dir):
+                run_dir.mkdir()
+                with artifact.open("w+b") as handle:
+                    duplicate = measure_module.fcntl.fcntl(
+                        handle.fileno(), measure_module.fcntl.F_DUPFD, 0
+                    )
+        finally:
+            if duplicate is not None:
+                os.close(duplicate)
+
+    assert exc_info.value.code == "trace_unhandled_mutation"
 
 
 def test_completed_trace_permits_unrelated_unknown_audit_noise(tmp_path: Path) -> None:
