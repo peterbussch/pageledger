@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import json
+import mmap
 import os
 import pstats
 import subprocess
+import sys
 from collections import Counter
 from pathlib import Path
 from types import SimpleNamespace
@@ -310,7 +312,7 @@ def test_measure_small_smoke_records_complete_receipt_and_external_evidence(
     assert receipt["trace_validation"]["phase_sequence"]["valid"] is True
     assert receipt["trace_validation"]["phase_sequence"]["event_count"] == 192
     assert receipt["trace_validation"]["phase_sequence"]["adapter_count"] == 20
-    assert receipt["trace_validation"]["interposition_policy_version"] == "2.0"
+    assert receipt["trace_validation"]["interposition_policy_version"] == "2.1"
     assert receipt["trace_validation"]["equivalence"]["equivalent"] is True
     assert receipt["trace_validation"]["validation"]["valid"] is True
     assert receipt["trace_validation"]["inventory"]["regular_file_count"] == sum(
@@ -865,6 +867,41 @@ def test_completed_trace_rejects_preopened_descriptor_closed_after_manifest(
     }
     with pytest.raises(BenchmarkError, match="final trace mutation"):
         measure_module._require_manifest_last(trace.events)
+
+
+def test_completed_trace_rejects_writable_mmap_created_before_manifest(
+    tmp_path: Path,
+) -> None:
+    run_dir = tmp_path / "mmap"
+    artifact = run_dir / "artifact.bin"
+    trace = measure_module._CompletedMutationTrace(run_dir)
+
+    with pytest.raises(
+        BenchmarkError, match=r"mmap\.__new__:artifact\.bin"
+    ) as exc_info:
+        with trace:
+            run_dir.mkdir()
+            handle = artifact.open("w+b")
+            handle.write(b"before")
+            handle.flush()
+            mapping = mmap.mmap(handle.fileno(), 6, access=mmap.ACCESS_WRITE)
+            handle.close()
+            (run_dir / "manifest.json").write_text("{}\n", encoding="utf-8")
+            mapping[:] = b"after!"
+            mapping.flush()
+            mapping.close()
+        measure_module._require_manifest_last(trace.events)
+
+    assert exc_info.value.code == "trace_unhandled_mutation"
+    assert artifact.read_bytes() == b"after!"
+
+
+def test_completed_trace_permits_unrelated_unknown_audit_noise(tmp_path: Path) -> None:
+    run_dir = tmp_path / "unknown-noise"
+
+    with measure_module._CompletedMutationTrace(run_dir):
+        run_dir.mkdir()
+        sys.audit("pageledger_bench.test_noise", object())
 
 
 def test_completed_trace_fails_on_unhandled_or_unclosed_writes(tmp_path: Path) -> None:

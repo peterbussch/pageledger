@@ -53,7 +53,7 @@ _DEPENDENCIES = ("pageledger", "PyYAML", "jsonschema")
 _SUBPROCESS_TIMEOUT_SECONDS = 5.0
 _SHA256 = re.compile(r"[0-9a-f]{64}")
 _GIT_SHA = re.compile(r"[0-9a-f]{40}")
-_TRACE_INTERPOSITION_POLICY_VERSION = "2.0"
+_TRACE_INTERPOSITION_POLICY_VERSION = "2.1"
 _TRACE_READ_ONLY_FILESYSTEM_EVENTS = frozenset(
     {
         "glob.glob",
@@ -858,6 +858,7 @@ class _TrackedWriteHandle:
         self._trace = trace
         self._path = path
         self._completed = False
+        self._descriptor = trace._register_handle_descriptor(handle, path)
 
     def __enter__(self) -> _TrackedWriteHandle:
         self._handle.__enter__()
@@ -880,7 +881,7 @@ class _TrackedWriteHandle:
             return
         self._handle.close()
         self._completed = True
-        self._trace._complete_handle(self, self._path)
+        self._trace._complete_handle(self, self._path, self._descriptor)
 
 
 class _CompletedMutationTrace:
@@ -893,6 +894,7 @@ class _CompletedMutationTrace:
         self._authorizations: list[dict[str, Any]] = []
         self._unhandled: list[str] = []
         self._open_handles: dict[int, str] = {}
+        self._descriptor_paths: dict[int, Path] = {}
         self._original_path_open = Path.open
         self._original_path_mkdir = Path.mkdir
         self._original_path_unlink = Path.unlink
@@ -1046,12 +1048,11 @@ class _CompletedMutationTrace:
         ):
             return
         else:
-            if event.startswith(("os.", "shutil.", "pathlib.", "glob.")):
-                inside = [path for path in self._audit_argument_paths(args) if self._inside(path)]
-                if inside:
-                    self._unhandled.append(
-                        f"unknown filesystem audit event {event}:{self._relative(inside[0])}"
-                    )
+            inside = [path for path in self._audit_argument_paths(args) if self._inside(path)]
+            if inside:
+                self._unhandled.append(
+                    f"unknown filesystem audit event {event}:{self._relative(inside[0])}"
+                )
             return
         if mutation is None:
             return
@@ -1150,10 +1151,12 @@ class _CompletedMutationTrace:
             return None, True
         return path.absolute(), False
 
-    @staticmethod
-    def _path_from_fd(descriptor: int) -> Path | None:
-        if descriptor < 0:
+    def _path_from_fd(self, descriptor: int) -> Path | None:
+        if isinstance(descriptor, bool) or descriptor < 0:
             return None
+        tracked = self._descriptor_paths.get(descriptor)
+        if tracked is not None:
+            return tracked
         try:
             return Path(os.readlink(f"/dev/fd/{descriptor}")).absolute()
         except (OSError, TypeError, ValueError):
@@ -1183,8 +1186,31 @@ class _CompletedMutationTrace:
                 "Trace interposition missed expected events: " + ", ".join(sorted(missing)),
             )
 
-    def _complete_handle(self, handle: _TrackedWriteHandle, path: Path) -> None:
+    def _register_handle_descriptor(self, handle: Any, path: Path) -> int | None:
+        try:
+            descriptor = handle.fileno()
+        except (AttributeError, OSError, TypeError, ValueError):
+            descriptor = None
+        if type(descriptor) is not int or descriptor < 0:
+            self._unhandled.append(
+                f"tracked write handle has no usable descriptor:{self._relative(path)}"
+            )
+            return None
+        existing = self._descriptor_paths.get(descriptor)
+        if existing is not None and existing != path.absolute():
+            self._unhandled.append(
+                f"tracked descriptor collision:{descriptor}:{self._relative(path)}"
+            )
+            return None
+        self._descriptor_paths[descriptor] = path.absolute()
+        return descriptor
+
+    def _complete_handle(
+        self, handle: _TrackedWriteHandle, path: Path, descriptor: int | None
+    ) -> None:
         self._open_handles.pop(id(handle), None)
+        if descriptor is not None:
+            self._descriptor_paths.pop(descriptor, None)
         if self._active:
             self._completed("write_close", path)
 
