@@ -61,7 +61,12 @@ def read_jsonl(path: Path) -> list[dict[str, Any]]:
 
 def write_yaml(path: Path, data: dict[str, Any]) -> None:
     path.write_text(
-        yaml.safe_dump(data, allow_unicode=True, sort_keys=False),
+        yaml.dump(
+            data,
+            Dumper=getattr(yaml, "CSafeDumper", yaml.SafeDumper),
+            allow_unicode=True,
+            sort_keys=False,
+        ),
         encoding="utf-8",
     )
 
