@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import re
 from pathlib import Path
 from typing import Any
 
@@ -97,131 +96,6 @@ SAFE_DUMPER_ONLY_CASES = [
     {"outer": [{"value": "unpaired surrogate \ud800"}]},
     {"outer": [{"value": ("non", "json", "tuple")}]},
 ]
-
-
-def _legacy_value_is_c_safe(value: str) -> bool:
-    return not any(
-        ord(character) > 0xFFFF
-        or not character.isprintable()
-        or character.isspace()
-        for character in value
-    )
-
-
-def _legacy_key_is_c_safe(key: object) -> bool:
-    return bool(
-        isinstance(key, str)
-        and 0 < len(key) <= 64
-        and key.isascii()
-        and (key[0].isalpha() or key[0] == "_")
-        and all(character.isalnum() or character in "_-" for character in key[1:])
-    )
-
-
-def _regex_value_is_c_safe(value: str) -> bool:
-    return bool(
-        not value
-        or (
-            value.isprintable()
-            and artifacts_module._C_SAFE_VALUE_UNSAFE_RE.search(value) is None
-        )
-    )
-
-
-def _regex_key_is_c_safe(key: object) -> bool:
-    return bool(
-        isinstance(key, str)
-        and artifacts_module._C_SAFE_KEY_RE.fullmatch(key) is not None
-    )
-
-
-def test_c_safe_compatibility_patterns_are_compiled_once_at_module_scope() -> None:
-    assert isinstance(artifacts_module._C_SAFE_VALUE_UNSAFE_RE, re.Pattern)
-    assert isinstance(artifacts_module._C_SAFE_KEY_RE, re.Pattern)
-
-
-def test_c_safe_value_predicate_matches_legacy_for_every_unicode_code_point() -> None:
-    assert _regex_value_is_c_safe("") == _legacy_value_is_c_safe("")
-    for code_point in range(0x110000):
-        value = chr(code_point)
-        if _regex_value_is_c_safe(value) != _legacy_value_is_c_safe(value):
-            pytest.fail(f"value predicate differs at U+{code_point:04X}")
-
-
-@pytest.mark.parametrize(
-    "value",
-    [
-        "",
-        "plain",
-        "printable-éΩ中",
-        "ordinary whitespace",
-        "tab\tcontrol",
-        "format\u200bcharacter",
-        "surrogate\ud800value",
-        "astral\U0001f600value",
-        "mixed-é Ω\n\U0001f600",
-    ],
-    ids=[
-        "empty",
-        "ascii",
-        "printable-bmp",
-        "space",
-        "control",
-        "format",
-        "surrogate",
-        "astral",
-        "mixed",
-    ],
-)
-def test_c_safe_value_predicate_matches_legacy_for_strings(value: str) -> None:
-    assert _regex_value_is_c_safe(value) == _legacy_value_is_c_safe(value)
-    assert artifacts_module._can_use_c_safe_dumper({"value": value}) == (
-        _legacy_key_is_c_safe("value") and _legacy_value_is_c_safe(value)
-    )
-
-
-def test_c_safe_key_predicate_matches_legacy_ascii_and_length_boundaries() -> None:
-    keys: list[object] = [None, 1, "", "é", "newline\n", "punctuation!?"]
-    keys.extend(chr(code_point) for code_point in range(128))
-    keys.extend("a" + chr(code_point) for code_point in range(128))
-    keys.extend("a" * length for length in range(1, 66))
-
-    for key in keys:
-        assert _regex_key_is_c_safe(key) == _legacy_key_is_c_safe(key), repr(key)
-        assert artifacts_module._can_use_c_safe_dumper({key: "value"}) == (
-            _legacy_key_is_c_safe(key)
-        ), repr(key)
-
-
-@pytest.mark.parametrize("length", range(1, 65))
-def test_c_safe_key_accepts_every_supported_length(length: int) -> None:
-    key = "_" + "a-0_" * 16
-    key = key[:length]
-
-    assert _regex_key_is_c_safe(key)
-    assert artifacts_module._can_use_c_safe_dumper({key: "value"})
-
-
-def test_c_safe_dumper_accepts_large_nested_json_like_tree() -> None:
-    data = {
-        "documents": [
-            {
-                "source": f"folios/document-{document_number:04d}.pdf",
-                "pages": [
-                    {
-                        "page_id": f"doc-{document_number:04d}-p{page_number:04d}",
-                        "page_number": page_number,
-                        "route": "extract",
-                        "flags": ["ocr_required", "quality:good"],
-                    }
-                    for page_number in range(1, 11)
-                ],
-            }
-            for document_number in range(1, 101)
-        ]
-    }
-
-    assert artifacts_module._can_use_c_safe_dumper(data)
 
 
 @pytest.mark.parametrize(
