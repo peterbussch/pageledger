@@ -70,6 +70,33 @@ SCALAR_AND_ORDER_CASE = {
     "nested": [{"z": 0, "a": ["first", "second"]}],
 }
 
+BYTE_INCOMPATIBLE_UNICODE_CASES = [
+    {
+        "outer": [
+            {
+                "supplementary \U0001f600 key": "value",
+                "value": "supplementary \U0001f600 value",
+            }
+        ]
+    },
+    {
+        "outer": [
+            {
+                "next-line \u0085 key": "value",
+                "value": "next-line \u0085 value",
+            }
+        ]
+    },
+]
+
+SAFE_DUMPER_ONLY_CASES = [
+    {"outer": [{"": "empty mapping key"}]},
+    {"outer": [{"carriage\rreturn": "mapping key"}]},
+    {"outer": [{"value": "contains ordinary whitespace"}]},
+    {"outer": [{"value": "unpaired surrogate \ud800"}]},
+    {"outer": [{"value": ("non", "json", "tuple")}]},
+]
+
 
 @pytest.mark.parametrize(
     "data",
@@ -85,11 +112,15 @@ def test_write_yaml_matches_safe_dump_bytes(tmp_path: Path, data: dict[str, Any]
     assert output.read_bytes() == expected
 
 
+@pytest.mark.parametrize(
+    "data",
+    [ROUTE_MAP, RERUN_MANIFEST],
+    ids=["route-map", "rerun-manifest"],
+)
 @pytest.mark.skipif(not hasattr(yaml, "CSafeDumper"), reason="libyaml is unavailable")
 def test_write_yaml_selects_c_safe_dumper_when_available(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, data: dict[str, Any]
 ) -> None:
-    data = ROUTE_MAP
     expected = yaml.safe_dump(data, allow_unicode=True, sort_keys=False)
     selected_dumpers: list[object] = []
     original_dump = artifacts_module.yaml.dump
@@ -120,6 +151,84 @@ def test_write_yaml_falls_back_to_safe_dumper(
         return original_dump(value, **kwargs)
 
     monkeypatch.delattr(artifacts_module.yaml, "CSafeDumper", raising=False)
+    monkeypatch.setattr(artifacts_module.yaml, "dump", recording_dump)
+    output = tmp_path / "artifact.yml"
+
+    artifacts_module.write_yaml(output, data)
+
+    assert selected_dumpers == [yaml.SafeDumper]
+    assert output.read_text(encoding="utf-8") == expected
+
+
+@pytest.mark.parametrize(
+    "data",
+    SAFE_DUMPER_ONLY_CASES,
+    ids=["empty-key", "carriage-return-key", "whitespace", "surrogate", "non-json-value"],
+)
+def test_write_yaml_uses_safe_dumper_outside_proven_fast_path(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, data: dict[str, Any]
+) -> None:
+    expected = yaml.safe_dump(data, allow_unicode=True, sort_keys=False)
+    selected_dumpers: list[object] = []
+    original_dump = artifacts_module.yaml.dump
+
+    def recording_dump(value: dict[str, Any], **kwargs: Any) -> str:
+        selected_dumpers.append(kwargs["Dumper"])
+        return original_dump(value, **kwargs)
+
+    monkeypatch.setattr(artifacts_module.yaml, "dump", recording_dump)
+    output = tmp_path / "artifact.yml"
+
+    artifacts_module.write_yaml(output, data)
+
+    assert selected_dumpers == [yaml.SafeDumper]
+    assert output.read_text(encoding="utf-8") == expected
+
+
+@pytest.mark.parametrize("cyclic", [False, True], ids=["shared-container", "cycle"])
+def test_write_yaml_uses_safe_dumper_for_container_aliases(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, cyclic: bool
+) -> None:
+    shared: list[object] = []
+    if cyclic:
+        shared.append(shared)
+        data = {"cycle": shared}
+    else:
+        shared.append("value")
+        data = {"first": shared, "second": shared}
+    expected = yaml.safe_dump(data, allow_unicode=True, sort_keys=False)
+    selected_dumpers: list[object] = []
+    original_dump = artifacts_module.yaml.dump
+
+    def recording_dump(value: dict[str, Any], **kwargs: Any) -> str:
+        selected_dumpers.append(kwargs["Dumper"])
+        return original_dump(value, **kwargs)
+
+    monkeypatch.setattr(artifacts_module.yaml, "dump", recording_dump)
+    output = tmp_path / "artifact.yml"
+
+    artifacts_module.write_yaml(output, data)
+
+    assert selected_dumpers == [yaml.SafeDumper]
+    assert output.read_text(encoding="utf-8") == expected
+
+
+@pytest.mark.parametrize(
+    "data",
+    BYTE_INCOMPATIBLE_UNICODE_CASES,
+    ids=["supplementary-unicode", "unicode-next-line"],
+)
+def test_write_yaml_uses_safe_dumper_for_byte_incompatible_unicode(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, data: dict[str, Any]
+) -> None:
+    expected = yaml.safe_dump(data, allow_unicode=True, sort_keys=False)
+    selected_dumpers: list[object] = []
+    original_dump = artifacts_module.yaml.dump
+
+    def recording_dump(value: dict[str, Any], **kwargs: Any) -> str:
+        selected_dumpers.append(kwargs["Dumper"])
+        return original_dump(value, **kwargs)
+
     monkeypatch.setattr(artifacts_module.yaml, "dump", recording_dump)
     output = tmp_path / "artifact.yml"
 

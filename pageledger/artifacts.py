@@ -59,11 +59,57 @@ def read_jsonl(path: Path) -> list[dict[str, Any]]:
     ]
 
 
+def _can_use_c_safe_dumper(data: dict[str, Any]) -> bool:
+    """Return whether libyaml preserves SafeDumper bytes for this JSON-like tree."""
+    seen_containers: set[int] = set()
+    pending: list[Any] = [data]
+    while pending:
+        value = pending.pop()
+        if isinstance(value, str):
+            if any(
+                ord(character) > 0xFFFF
+                or not character.isprintable()
+                or character.isspace()
+                for character in value
+            ):
+                return False
+        elif value is None or type(value) in {bool, int, float}:
+            continue
+        elif isinstance(value, dict):
+            identity = id(value)
+            if identity in seen_containers:
+                return False
+            seen_containers.add(identity)
+            for key, nested_value in value.items():
+                if not (
+                    isinstance(key, str)
+                    and 0 < len(key) <= 64
+                    and key.isascii()
+                    and (key[0].isalpha() or key[0] == "_")
+                    and all(character.isalnum() or character in "_-" for character in key[1:])
+                ):
+                    return False
+                pending.append(nested_value)
+        elif isinstance(value, list):
+            identity = id(value)
+            if identity in seen_containers:
+                return False
+            seen_containers.add(identity)
+            pending.extend(value)
+        else:
+            return False
+    return True
+
+
 def write_yaml(path: Path, data: dict[str, Any]) -> None:
+    dumper = yaml.SafeDumper
+    c_safe_dumper = getattr(yaml, "CSafeDumper", None)
+    if c_safe_dumper is not None and _can_use_c_safe_dumper(data):
+        dumper = c_safe_dumper
     path.write_text(
         yaml.dump(
             data,
-            Dumper=getattr(yaml, "CSafeDumper", yaml.SafeDumper),
+            Dumper=dumper,
             allow_unicode=True,
             sort_keys=False,
         ),
