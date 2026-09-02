@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from typing import Any
 
@@ -24,6 +25,9 @@ ARTIFACT_PATHS = {
     "run_log": "run.log",
     "rerun_manifest": "rerun-manifest.yml",
 }
+
+_C_SAFE_VALUE_UNSAFE_RE = re.compile(r"\s|[\U00010000-\U0010FFFF]")
+_C_SAFE_KEY_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_-]{0,63}")
 
 
 def write_json(path: Path, data: dict[str, Any]) -> None:
@@ -66,11 +70,9 @@ def _can_use_c_safe_dumper(data: dict[str, Any]) -> bool:
     while pending:
         value = pending.pop()
         if isinstance(value, str):
-            if any(
-                ord(character) > 0xFFFF
-                or not character.isprintable()
-                or character.isspace()
-                for character in value
+            if value and (
+                not value.isprintable()
+                or _C_SAFE_VALUE_UNSAFE_RE.search(value) is not None
             ):
                 return False
         elif value is None or type(value) in {bool, int, float}:
@@ -83,10 +85,7 @@ def _can_use_c_safe_dumper(data: dict[str, Any]) -> bool:
             for key, nested_value in value.items():
                 if not (
                     isinstance(key, str)
-                    and 0 < len(key) <= 64
-                    and key.isascii()
-                    and (key[0].isalpha() or key[0] == "_")
-                    and all(character.isalnum() or character in "_-" for character in key[1:])
+                    and _C_SAFE_KEY_RE.fullmatch(key) is not None
                 ):
                     return False
                 pending.append(nested_value)
