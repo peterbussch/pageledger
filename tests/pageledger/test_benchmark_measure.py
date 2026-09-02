@@ -320,7 +320,7 @@ def test_measure_small_smoke_records_complete_receipt_and_external_evidence(
     assert receipt["trace_validation"]["phase_sequence"]["valid"] is True
     assert receipt["trace_validation"]["phase_sequence"]["event_count"] == 192
     assert receipt["trace_validation"]["phase_sequence"]["adapter_count"] == 20
-    assert receipt["trace_validation"]["interposition_policy_version"] == "2.4"
+    assert receipt["trace_validation"]["interposition_policy_version"] == "2.5"
     assert receipt["trace_validation"]["equivalence"]["equivalent"] is True
     assert receipt["trace_validation"]["validation"]["valid"] is True
     assert receipt["trace_validation"]["inventory"]["regular_file_count"] == sum(
@@ -1095,6 +1095,295 @@ def test_completed_trace_rejects_inbound_preopened_file_alias_after_move(
 
 
 @pytest.mark.parametrize("move", ["rename", "replace"])
+@pytest.mark.parametrize(
+    ("duplicate_descriptor", "raw_write"),
+    [
+        pytest.param(_CACHED_OS_DUP, _CACHED_OS_WRITE, id="cached-os"),
+        pytest.param(_NATIVE_POSIX_DUP, _NATIVE_POSIX_WRITE, id="native-posix"),
+    ],
+)
+def test_completed_trace_rejects_inbound_preopened_descendant_alias_after_directory_move(
+    tmp_path: Path,
+    move: str,
+    duplicate_descriptor: Callable[[int], int],
+    raw_write: Callable[[int, bytes], int],
+) -> None:
+    run_dir = tmp_path / f"inbound-directory-{move}"
+    external = tmp_path / f"external-directory-{move}"
+    external.mkdir()
+    external_artifact = external / "artifact.bin"
+    external_artifact.write_bytes(b"before")
+    imported = run_dir / "imported"
+    imported_artifact = imported / "artifact.bin"
+    trace = measure_module._CompletedMutationTrace(run_dir)
+    handle = external_artifact.open("r+b")
+    duplicate = None
+
+    with pytest.raises(
+        BenchmarkError, match=r"live descriptor alias.*imported/artifact\.bin"
+    ) as exc_info:
+        try:
+            with trace:
+                run_dir.mkdir()
+                if move == "replace":
+                    imported.mkdir()
+                getattr(external, move)(imported)
+                duplicate = duplicate_descriptor(handle.fileno())
+                handle.close()
+                (run_dir / "manifest.json").write_text("{}\n", encoding="utf-8")
+                raw_write(duplicate, b"after!")
+            measure_module._require_manifest_last(trace.events)
+        finally:
+            if not handle.closed:
+                handle.close()
+            if duplicate is not None:
+                os.close(duplicate)
+
+    assert exc_info.value.code == "trace_descriptor_alias"
+    assert imported_artifact.read_bytes() == b"before"
+
+
+def test_completed_trace_recursively_tracks_deeply_nested_inbound_artifact(
+    tmp_path: Path,
+) -> None:
+    run_dir = tmp_path / "deep-inbound-directory"
+    external = tmp_path / "deep-external-directory"
+    external_artifact = external / "nested" / "deeper" / "artifact.bin"
+    external_artifact.parent.mkdir(parents=True)
+    external_artifact.write_bytes(b"before")
+    imported = run_dir / "imported"
+    imported_artifact = imported / "nested" / "deeper" / "artifact.bin"
+    trace = measure_module._CompletedMutationTrace(run_dir)
+    handle = external_artifact.open("r+b")
+    duplicate = None
+
+    with pytest.raises(
+        BenchmarkError,
+        match=r"live descriptor alias.*imported/nested/deeper/artifact\.bin",
+    ) as exc_info:
+        try:
+            with trace:
+                run_dir.mkdir()
+                external.rename(imported)
+                duplicate = _CACHED_OS_DUP(handle.fileno())
+                handle.close()
+                (run_dir / "manifest.json").write_text("{}\n", encoding="utf-8")
+        finally:
+            if not handle.closed:
+                handle.close()
+            if duplicate is not None:
+                os.close(duplicate)
+
+    assert exc_info.value.code == "trace_descriptor_alias"
+    assert imported_artifact.read_bytes() == b"before"
+
+
+@pytest.mark.parametrize("move", ["rename", "replace"])
+def test_completed_trace_updates_descendant_identity_for_internal_directory_move(
+    tmp_path: Path, move: str
+) -> None:
+    run_dir = tmp_path / f"internal-directory-{move}"
+    source = run_dir / "source"
+    source_artifact = source / "nested" / "artifact.bin"
+    destination = run_dir / "destination"
+    moved_artifact = destination / "nested" / "artifact.bin"
+    trace = measure_module._CompletedMutationTrace(run_dir)
+    duplicate = None
+
+    with pytest.raises(
+        BenchmarkError,
+        match=r"live descriptor alias.*destination/nested/artifact\.bin",
+    ) as exc_info:
+        try:
+            with trace:
+                run_dir.mkdir()
+                source.mkdir()
+                source_artifact.parent.mkdir()
+                with source_artifact.open("w+b") as handle:
+                    handle.write(b"before")
+                    handle.flush()
+                    duplicate = _CACHED_OS_DUP(handle.fileno())
+                if move == "replace":
+                    destination.mkdir()
+                getattr(source, move)(destination)
+                (run_dir / "manifest.json").write_text("{}\n", encoding="utf-8")
+        finally:
+            if duplicate is not None:
+                os.close(duplicate)
+
+    assert exc_info.value.code == "trace_descriptor_alias"
+    assert moved_artifact.read_bytes() == b"before"
+
+
+@pytest.mark.parametrize("move", ["rename", "replace"])
+def test_completed_trace_retains_descendant_identity_after_outbound_directory_move(
+    tmp_path: Path, move: str
+) -> None:
+    run_dir = tmp_path / f"outbound-directory-{move}"
+    source = run_dir / "source"
+    artifact = source / "artifact.bin"
+    departed = tmp_path / f"departed-directory-{move}"
+    trace = measure_module._CompletedMutationTrace(run_dir)
+    duplicate = None
+
+    with pytest.raises(
+        BenchmarkError, match=r"live descriptor alias.*source/artifact\.bin"
+    ) as exc_info:
+        try:
+            with trace:
+                run_dir.mkdir()
+                source.mkdir()
+                with artifact.open("w+b") as handle:
+                    handle.write(b"before")
+                    handle.flush()
+                    duplicate = _CACHED_OS_DUP(handle.fileno())
+                getattr(source, move)(departed)
+                (run_dir / "manifest.json").write_text("{}\n", encoding="utf-8")
+        finally:
+            if duplicate is not None:
+                os.close(duplicate)
+
+    assert exc_info.value.code == "trace_descriptor_alias"
+    assert (departed / "artifact.bin").read_bytes() == b"before"
+
+
+@pytest.mark.parametrize("entry_kind", ["symlink", "fifo"])
+def test_completed_trace_refuses_unsafe_inbound_directory_entry(
+    tmp_path: Path, entry_kind: str
+) -> None:
+    run_dir = tmp_path / f"unsafe-inbound-{entry_kind}"
+    external = tmp_path / f"unsafe-external-{entry_kind}"
+    external.mkdir()
+    entry = external / "unsafe-entry"
+    if entry_kind == "symlink":
+        target = tmp_path / "symlink-target"
+        target.write_bytes(b"target")
+        entry.symlink_to(target)
+    else:
+        os.mkfifo(entry)
+    trace = measure_module._CompletedMutationTrace(run_dir)
+
+    with pytest.raises(BenchmarkError, match="symlink or special entry") as exc_info:
+        with trace:
+            run_dir.mkdir()
+            external.rename(run_dir / "imported")
+
+    assert exc_info.value.code == "trace_artifact_tree_invalid"
+
+
+def test_completed_trace_refuses_inbound_directory_scan_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    run_dir = tmp_path / "directory-scan-failure"
+    external = tmp_path / "directory-scan-source"
+    external.mkdir()
+    (external / "artifact.bin").write_bytes(b"artifact")
+    imported = run_dir / "imported"
+    real_scandir = os.scandir
+
+    def fail_imported(path: object):
+        if isinstance(path, int) and imported.exists():
+            descriptor_metadata = os.fstat(path)
+            imported_metadata = imported.lstat()
+            if (
+                descriptor_metadata.st_dev,
+                descriptor_metadata.st_ino,
+            ) == (imported_metadata.st_dev, imported_metadata.st_ino):
+                raise OSError("inbound directory scan failed")
+        return real_scandir(path)
+
+    monkeypatch.setattr(os, "scandir", fail_imported)
+
+    with pytest.raises(BenchmarkError, match="scan accepted artifact tree") as exc_info:
+        with measure_module._CompletedMutationTrace(run_dir):
+            run_dir.mkdir()
+            external.rename(imported)
+
+    assert exc_info.value.code == "trace_artifact_tree_scan_failed"
+
+
+def test_completed_trace_refuses_inbound_directory_stat_race(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    run_dir = tmp_path / "directory-stat-race"
+    external = tmp_path / "directory-stat-source"
+    external.mkdir()
+    external_artifact = external / "artifact.bin"
+    external_artifact.write_bytes(b"artifact")
+    imported = run_dir / "imported"
+    imported_artifact = imported / "artifact.bin"
+    real_lstat = Path.lstat
+    artifact_stats = 0
+
+    def disappear_during_second_snapshot(path: Path):
+        nonlocal artifact_stats
+        if path.absolute() == imported_artifact.absolute():
+            artifact_stats += 1
+            if artifact_stats == 2:
+                raise FileNotFoundError("artifact disappeared during scan")
+        return real_lstat(path)
+
+    monkeypatch.setattr(Path, "lstat", disappear_during_second_snapshot)
+
+    with pytest.raises(BenchmarkError, match="scan accepted artifact tree") as exc_info:
+        with measure_module._CompletedMutationTrace(run_dir):
+            run_dir.mkdir()
+            external.rename(imported)
+
+    assert exc_info.value.code == "trace_artifact_tree_scan_failed"
+
+
+def test_completed_trace_scans_inbound_directory_in_deterministic_path_order(
+    tmp_path: Path,
+) -> None:
+    run_dir = tmp_path / "directory-hardlink-collision"
+    external = tmp_path / "directory-hardlink-source"
+    external.mkdir()
+    last = external / "z.bin"
+    first = external / "a.bin"
+    last.write_bytes(b"shared")
+    os.link(last, first)
+    trace = measure_module._CompletedMutationTrace(run_dir)
+
+    with pytest.raises(
+        BenchmarkError, match=r"imported/a\.bin and imported/z\.bin"
+    ) as exc_info:
+        with trace:
+            run_dir.mkdir()
+            external.rename(run_dir / "imported")
+
+    assert exc_info.value.code == "trace_file_identity_collision"
+
+
+def test_completed_trace_does_not_traverse_regular_file_completions(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    run_dir = tmp_path / "regular-file-no-tree-scan"
+    artifact = run_dir / "artifact.bin"
+    real_scandir = os.scandir
+    scanned_paths: list[Path] = []
+
+    def record_scandir(path: object):
+        if isinstance(path, int):
+            scanned_paths.append(Path(f"descriptor-{path}"))
+        elif isinstance(path, (str, bytes, os.PathLike)):
+            candidate = Path(os.fsdecode(path)).absolute()
+            if candidate != Path("/dev/fd"):
+                scanned_paths.append(candidate)
+        return real_scandir(path)
+
+    monkeypatch.setattr(os, "scandir", record_scandir)
+
+    with measure_module._CompletedMutationTrace(run_dir):
+        run_dir.mkdir()
+        scanned_paths.clear()
+        artifact.write_bytes(b"artifact")
+        (run_dir / "manifest.json").write_text("{}\n", encoding="utf-8")
+
+    assert scanned_paths == []
+
+
+@pytest.mark.parametrize("move", ["rename", "replace"])
 def test_completed_trace_updates_retained_identity_for_internal_move(
     tmp_path: Path, move: str
 ) -> None:
@@ -1355,9 +1644,12 @@ def test_completed_trace_refuses_failed_descriptor_enumeration(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     run_dir = tmp_path / "scan-failure"
+    real_scandir = os.scandir
 
-    def fail_scan(_path: object):
-        raise OSError("descriptor namespace unavailable")
+    def fail_scan(path: object):
+        if path == "/dev/fd":
+            raise OSError("descriptor namespace unavailable")
+        return real_scandir(path)
 
     monkeypatch.setattr(os, "scandir", fail_scan)
 

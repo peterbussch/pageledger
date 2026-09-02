@@ -55,7 +55,7 @@ _DEPENDENCIES = ("pageledger", "PyYAML", "jsonschema")
 _SUBPROCESS_TIMEOUT_SECONDS = 5.0
 _SHA256 = re.compile(r"[0-9a-f]{64}")
 _GIT_SHA = re.compile(r"[0-9a-f]{40}")
-_TRACE_INTERPOSITION_POLICY_VERSION = "2.4"
+_TRACE_INTERPOSITION_POLICY_VERSION = "2.5"
 _TRACE_READ_ONLY_FILESYSTEM_EVENTS = frozenset(
     {
         "glob.glob",
@@ -1259,14 +1259,83 @@ class _CompletedMutationTrace:
                     )
         self._tracked_identities[identity] = absolute
 
-    def _refresh_completed_artifact_identity(self, path: Path) -> None:
+    def _snapshot_completed_artifact_tree(
+        self, root: Path
+    ) -> tuple[tuple[Path, tuple[int, int], int], ...]:
+        if not hasattr(os, "O_DIRECTORY") or not hasattr(os, "O_NOFOLLOW"):
+            raise BenchmarkError(
+                "trace_artifact_tree_scan_failed",
+                "Trace cannot scan accepted artifact trees without no-follow "
+                "directory descriptors",
+            )
+        directory_flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+        if hasattr(os, "O_CLOEXEC"):
+            directory_flags |= os.O_CLOEXEC
+        snapshot: list[tuple[Path, tuple[int, int], int]] = []
+        pending = [root.absolute()]
+        try:
+            while pending:
+                path = pending.pop()
+                metadata = path.lstat()
+                identity = (metadata.st_dev, metadata.st_ino)
+                file_type = stat.S_IFMT(metadata.st_mode)
+                if stat.S_ISREG(metadata.st_mode):
+                    snapshot.append((path, identity, file_type))
+                    continue
+                if not stat.S_ISDIR(metadata.st_mode):
+                    raise BenchmarkError(
+                        "trace_artifact_tree_invalid",
+                        "Trace refuses symlink or special entry in accepted "
+                        f"artifact tree: {self._relative(path)}",
+                    )
+                snapshot.append((path, identity, file_type))
+                descriptor = os.open(path, directory_flags)
+                try:
+                    opened = os.fstat(descriptor)
+                    if (
+                        opened.st_dev,
+                        opened.st_ino,
+                        stat.S_IFMT(opened.st_mode),
+                    ) != (identity[0], identity[1], file_type):
+                        raise BenchmarkError(
+                            "trace_artifact_tree_scan_failed",
+                            "Trace artifact directory changed before enumeration: "
+                            f"{self._relative(path)}",
+                        )
+                    with os.scandir(descriptor) as entries:
+                        children = sorted(
+                            (path / entry.name for entry in entries),
+                            key=lambda child: os.fsencode(child.name),
+                        )
+                finally:
+                    os.close(descriptor)
+                pending.extend(reversed(children))
+        except BenchmarkError:
+            raise
+        except (OSError, OverflowError, TypeError, ValueError) as exc:
+            raise BenchmarkError(
+                "trace_artifact_tree_scan_failed",
+                "Trace could not scan accepted artifact tree: "
+                f"{self._relative(root)}",
+            ) from exc
+        return tuple(snapshot)
+
+    def _refresh_completed_artifact_identity(
+        self, operation: str, path: Path
+    ) -> None:
         absolute = path.absolute()
         if not self._inside(absolute):
             return
         try:
             metadata = absolute.lstat()
         except FileNotFoundError:
-            return
+            if operation in {"remove_complete", "rmdir_complete", "write_close"}:
+                return
+            raise BenchmarkError(
+                "trace_artifact_tree_scan_failed",
+                "Trace accepted artifact disappeared before identity refresh: "
+                f"{self._relative(absolute)}",
+            ) from None
         except (OSError, TypeError, ValueError) as exc:
             raise BenchmarkError(
                 "trace_file_identity_unavailable",
@@ -1277,6 +1346,29 @@ class _CompletedMutationTrace:
             self._retain_file_identity(
                 (metadata.st_dev, metadata.st_ino), absolute
             )
+            return
+        if not stat.S_ISDIR(metadata.st_mode):
+            raise BenchmarkError(
+                "trace_artifact_tree_invalid",
+                "Trace refuses symlink or special entry in accepted artifact tree: "
+                f"{self._relative(absolute)}",
+            )
+        expected_root = (
+            absolute,
+            (metadata.st_dev, metadata.st_ino),
+            stat.S_IFMT(metadata.st_mode),
+        )
+        first = self._snapshot_completed_artifact_tree(absolute)
+        second = self._snapshot_completed_artifact_tree(absolute)
+        if not first or first[0] != expected_root or second != first:
+            raise BenchmarkError(
+                "trace_artifact_tree_scan_failed",
+                "Trace accepted artifact tree changed during identity snapshot: "
+                f"{self._relative(absolute)}",
+            )
+        for descendant, identity, file_type in second:
+            if stat.S_ISREG(file_type):
+                self._retain_file_identity(identity, descendant)
 
     def _complete_handle(self, handle: _TrackedWriteHandle, path: Path) -> None:
         self._open_handles.pop(id(handle), None)
@@ -1284,7 +1376,7 @@ class _CompletedMutationTrace:
             self._completed("write_close", path)
 
     def _completed(self, operation: str, path: Path) -> None:
-        self._refresh_completed_artifact_identity(path)
+        self._refresh_completed_artifact_identity(operation, path)
         relative = self._relative(path)
         self.events.append(
             {
