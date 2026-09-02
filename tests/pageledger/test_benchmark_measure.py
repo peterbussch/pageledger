@@ -320,7 +320,7 @@ def test_measure_small_smoke_records_complete_receipt_and_external_evidence(
     assert receipt["trace_validation"]["phase_sequence"]["valid"] is True
     assert receipt["trace_validation"]["phase_sequence"]["event_count"] == 192
     assert receipt["trace_validation"]["phase_sequence"]["adapter_count"] == 20
-    assert receipt["trace_validation"]["interposition_policy_version"] == "2.3"
+    assert receipt["trace_validation"]["interposition_policy_version"] == "2.4"
     assert receipt["trace_validation"]["equivalence"]["equivalent"] is True
     assert receipt["trace_validation"]["validation"]["valid"] is True
     assert receipt["trace_validation"]["inventory"]["regular_file_count"] == sum(
@@ -1046,6 +1046,142 @@ def test_completed_trace_rejects_live_alias_before_post_manifest_raw_write(
 
     assert exc_info.value.code == "trace_descriptor_alias"
     assert artifact.read_bytes() == b"before"
+
+
+@pytest.mark.parametrize("move", ["rename", "replace"])
+@pytest.mark.parametrize(
+    ("duplicate_descriptor", "raw_write"),
+    [
+        pytest.param(_CACHED_OS_DUP, _CACHED_OS_WRITE, id="cached-os"),
+        pytest.param(_NATIVE_POSIX_DUP, _NATIVE_POSIX_WRITE, id="native-posix"),
+    ],
+)
+def test_completed_trace_rejects_inbound_preopened_file_alias_after_move(
+    tmp_path: Path,
+    move: str,
+    duplicate_descriptor: Callable[[int], int],
+    raw_write: Callable[[int, bytes], int],
+) -> None:
+    run_dir = tmp_path / f"inbound-{move}"
+    artifact = run_dir / "artifact.bin"
+    external = tmp_path / f"external-{move}.bin"
+    external.write_bytes(b"before")
+    trace = measure_module._CompletedMutationTrace(run_dir)
+    handle = external.open("r+b")
+    duplicate = None
+
+    with pytest.raises(
+        BenchmarkError, match=r"live descriptor alias.*artifact\.bin"
+    ) as exc_info:
+        try:
+            with trace:
+                run_dir.mkdir()
+                if move == "replace":
+                    artifact.write_bytes(b"replaced")
+                getattr(external, move)(artifact)
+                duplicate = duplicate_descriptor(handle.fileno())
+                handle.close()
+                (run_dir / "manifest.json").write_text("{}\n", encoding="utf-8")
+                raw_write(duplicate, b"after!")
+            measure_module._require_manifest_last(trace.events)
+        finally:
+            if not handle.closed:
+                handle.close()
+            if duplicate is not None:
+                os.close(duplicate)
+
+    assert exc_info.value.code == "trace_descriptor_alias"
+    assert artifact.read_bytes() == b"before"
+
+
+@pytest.mark.parametrize("move", ["rename", "replace"])
+def test_completed_trace_updates_retained_identity_for_internal_move(
+    tmp_path: Path, move: str
+) -> None:
+    run_dir = tmp_path / f"internal-{move}"
+    source = run_dir / "source.bin"
+    destination = run_dir / "destination.bin"
+    trace = measure_module._CompletedMutationTrace(run_dir)
+
+    with trace:
+        run_dir.mkdir()
+        source.write_bytes(b"source")
+        if move == "replace":
+            destination.write_bytes(b"destination")
+        getattr(source, move)(destination)
+        with destination.open("ab") as handle:
+            handle.write(b"!")
+        (run_dir / "manifest.json").write_text("{}\n", encoding="utf-8")
+
+    measure_module._require_manifest_last(trace.events)
+    assert destination.read_bytes() == b"source!"
+
+
+def test_completed_trace_refuses_ambiguous_inbound_hardlink_paths(
+    tmp_path: Path,
+) -> None:
+    run_dir = tmp_path / "inbound-hardlinks"
+    first_external = tmp_path / "first-external.bin"
+    second_external = tmp_path / "second-external.bin"
+    first_external.write_bytes(b"shared")
+    os.link(first_external, second_external)
+    trace = measure_module._CompletedMutationTrace(run_dir)
+
+    with pytest.raises(BenchmarkError, match="one tracked file identity") as exc_info:
+        with trace:
+            run_dir.mkdir()
+            first_external.rename(run_dir / "first.bin")
+            second_external.rename(run_dir / "second.bin")
+
+    assert exc_info.value.code == "trace_file_identity_collision"
+
+
+@pytest.mark.parametrize("departure", ["rename", "remove"])
+def test_completed_trace_retains_departed_identity_for_live_alias(
+    tmp_path: Path, departure: str
+) -> None:
+    run_dir = tmp_path / f"departed-{departure}"
+    artifact = run_dir / "artifact.bin"
+    trace = measure_module._CompletedMutationTrace(run_dir)
+    duplicate = None
+
+    with pytest.raises(
+        BenchmarkError, match=r"live descriptor alias.*artifact\.bin"
+    ) as exc_info:
+        try:
+            with trace:
+                run_dir.mkdir()
+                with artifact.open("w+b") as handle:
+                    handle.write(b"before")
+                    handle.flush()
+                    duplicate = _CACHED_OS_DUP(handle.fileno())
+                if departure == "rename":
+                    artifact.rename(tmp_path / "departed.bin")
+                else:
+                    artifact.unlink()
+                (run_dir / "manifest.json").write_text("{}\n", encoding="utf-8")
+        finally:
+            if duplicate is not None:
+                os.close(duplicate)
+
+    assert exc_info.value.code == "trace_descriptor_alias"
+
+
+def test_completed_trace_registers_copyfile_destination_identity(tmp_path: Path) -> None:
+    run_dir = tmp_path / "copyfile"
+    external = tmp_path / "copy-source.bin"
+    artifact = run_dir / "artifact.bin"
+    external.write_bytes(b"copied")
+    trace = measure_module._CompletedMutationTrace(run_dir)
+
+    with trace:
+        run_dir.mkdir()
+        measure_module.runner_module.copyfile(external, artifact)
+        metadata = artifact.stat()
+        assert trace._tracked_identities[(metadata.st_dev, metadata.st_ino)] == artifact
+        (run_dir / "manifest.json").write_text("{}\n", encoding="utf-8")
+
+    measure_module._require_manifest_last(trace.events)
 
 
 def test_completed_trace_preserves_dup2_keyword_signature_for_unrelated_fds(

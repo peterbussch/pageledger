@@ -55,7 +55,7 @@ _DEPENDENCIES = ("pageledger", "PyYAML", "jsonschema")
 _SUBPROCESS_TIMEOUT_SECONDS = 5.0
 _SHA256 = re.compile(r"[0-9a-f]{64}")
 _GIT_SHA = re.compile(r"[0-9a-f]{40}")
-_TRACE_INTERPOSITION_POLICY_VERSION = "2.3"
+_TRACE_INTERPOSITION_POLICY_VERSION = "2.4"
 _TRACE_READ_ONLY_FILESYSTEM_EVENTS = frozenset(
     {
         "glob.glob",
@@ -1234,16 +1234,49 @@ class _CompletedMutationTrace:
                 "Trace could not establish stable file identity for tracked write "
                 f"handle: {self._relative(path)}",
             ) from exc
-        identity = (metadata.st_dev, metadata.st_ino)
+        self._retain_file_identity((metadata.st_dev, metadata.st_ino), path)
+
+    def _retain_file_identity(self, identity: tuple[int, int], path: Path) -> None:
         absolute = path.absolute()
         existing = self._tracked_identities.get(identity)
         if existing is not None and existing != absolute:
-            raise BenchmarkError(
-                "trace_file_identity_collision",
-                "Trace observed one tracked file identity under multiple paths: "
-                f"{self._relative(existing)} and {self._relative(absolute)}",
-            )
+            try:
+                metadata = existing.lstat()
+            except FileNotFoundError:
+                pass
+            except (OSError, TypeError, ValueError) as exc:
+                raise BenchmarkError(
+                    "trace_file_identity_unavailable",
+                    "Trace could not verify the prior path for retained file identity: "
+                    f"{self._relative(existing)}",
+                ) from exc
+            else:
+                if (metadata.st_dev, metadata.st_ino) == identity:
+                    raise BenchmarkError(
+                        "trace_file_identity_collision",
+                        "Trace observed one tracked file identity under multiple paths: "
+                        f"{self._relative(existing)} and {self._relative(absolute)}",
+                    )
         self._tracked_identities[identity] = absolute
+
+    def _refresh_completed_artifact_identity(self, path: Path) -> None:
+        absolute = path.absolute()
+        if not self._inside(absolute):
+            return
+        try:
+            metadata = absolute.lstat()
+        except FileNotFoundError:
+            return
+        except (OSError, TypeError, ValueError) as exc:
+            raise BenchmarkError(
+                "trace_file_identity_unavailable",
+                "Trace could not refresh stable file identity after an accepted "
+                f"mutation: {self._relative(absolute)}",
+            ) from exc
+        if stat.S_ISREG(metadata.st_mode):
+            self._retain_file_identity(
+                (metadata.st_dev, metadata.st_ino), absolute
+            )
 
     def _complete_handle(self, handle: _TrackedWriteHandle, path: Path) -> None:
         self._open_handles.pop(id(handle), None)
@@ -1251,6 +1284,7 @@ class _CompletedMutationTrace:
             self._completed("write_close", path)
 
     def _completed(self, operation: str, path: Path) -> None:
+        self._refresh_completed_artifact_identity(path)
         relative = self._relative(path)
         self.events.append(
             {
