@@ -58,9 +58,8 @@ def test_release_check_requires_v_prefixed_tag(tmp_path: Path) -> None:
 
 
 def test_publish_is_manual_tag_only_and_verifies_before_upload() -> None:
-    workflow = (REPO / ".github" / "workflows" / "publish.yml").read_text(
-        encoding="utf-8"
-    )
+    workflow_path = REPO / ".github" / "workflows" / "publish.yml"
+    workflow = workflow_path.read_text(encoding="utf-8")
 
     assert "release:\n" not in workflow
     assert "workflow_dispatch:" in workflow
@@ -80,29 +79,6 @@ def test_publish_is_manual_tag_only_and_verifies_before_upload() -> None:
     assert "Publish to TestPyPI" not in workflow
     assert workflow.index("needs: verify") < workflow.index("Publish to PyPI")
 
-    for workflow_path in (
-        REPO / ".github" / "workflows" / "ci.yml",
-        REPO / ".github" / "workflows" / "publish.yml",
-    ):
-        smoke = workflow_path.read_text(encoding="utf-8")
-        for schema_name in (
-            "manifest.schema.json",
-            "bundle.schema.json",
-            "replay.schema.json",
-        ):
-            assert schema_name in smoke
-        assert smoke.index("pageledger verify-run") < smoke.index("pageledger bundle")
-        assert smoke.index("pageledger bundle") < smoke.index("mv \"$SOURCE\"")
-        assert smoke.index("mv \"$SOURCE\"") < smoke.index("pageledger replay")
-        assert smoke.index("pageledger replay") < smoke.rindex("pageledger verify-run")
-
-    ci_workflow = (REPO / ".github" / "workflows" / "ci.yml").read_text(
-        encoding="utf-8"
-    )
-    assert ci_workflow.count("from importlib.metadata import files") == 2
-    for schema_name in ("manifest.schema.json", "bundle.schema.json", "replay.schema.json"):
-        assert ci_workflow.count(schema_name) >= 2
-
     parsed = yaml.safe_load(workflow)
     jobs = parsed["jobs"]
     assert jobs["build"]["needs"] == "verify"
@@ -120,6 +96,63 @@ def test_publish_is_manual_tag_only_and_verifies_before_upload() -> None:
         if str(step.get("uses", "")).startswith("actions/download-artifact@")
     )
     assert uploaded_name == downloaded_name == "dist-${{ github.ref_name }}"
+
+
+def test_package_workflows_run_shared_reader_journey_outside_checkout() -> None:
+    ci = yaml.safe_load(
+        (REPO / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+    )
+    publish = yaml.safe_load(
+        (REPO / ".github" / "workflows" / "publish.yml").read_text(encoding="utf-8")
+    )
+
+    cases = [
+        (ci, "Smoke test wheel install", "/tmp/venv-wheel/bin/python"),
+        (ci, "Smoke test sdist install", "/tmp/venv-sdist/bin/python"),
+        (
+            publish,
+            "Smoke-test the exact wheel",
+            "/tmp/pageledger-release-wheel/bin/python",
+        ),
+    ]
+    for workflow, step_name, isolated_python in cases:
+        step = next(
+            step
+            for step in workflow["jobs"]["build"]["steps"]
+            if step.get("name") == step_name
+        )
+        command = step["run"]
+        assert step["env"]["PYTHONPATH"] == ""
+        assert f"{isolated_python} examples/run_first_run.py" in command
+        assert '--document "$GITHUB_WORKSPACE/docs/first-run.md"' in command
+        assert '--work-dir "$WORK_ROOT/first-run"' in command
+        assert f"--python {isolated_python}" in command
+        assert "--expected-version 0.4.1" in command
+        assert '--forbid-import-root "$GITHUB_WORKSPACE"' in command
+        assert "--source-root" not in command
+
+
+def test_package_workflows_validate_schema_and_document_inventories() -> None:
+    workflows = [
+        (REPO / ".github" / "workflows" / name).read_text(encoding="utf-8")
+        for name in ("ci.yml", "publish.yml")
+    ]
+
+    for workflow in workflows:
+        for schema_name in (
+            "manifest.schema.json",
+            "bundle.schema.json",
+            "replay.schema.json",
+        ):
+            assert schema_name in workflow
+        for packaged_path in (
+            "docs/first-run.md",
+            "docs/performance.md",
+            "docs/releasing.md",
+            "examples/run_first_run.py",
+        ):
+            assert packaged_path in workflow
+        assert "docs/superpowers/plans/" in workflow
 
 
 def test_all_github_actions_are_pinned_and_ci_has_a_frozen_lane() -> None:

@@ -133,24 +133,50 @@ jobs:
           uv run --frozen --extra dev python scripts/check_release.py "$RELEASE_TAG"
           uv run --frozen --extra dev python -m build
           uv run --frozen --extra dev twine check dist/*
-          uv run --frozen --extra dev python -c 'from pathlib import Path; from zipfile import ZipFile; wheel=next(Path("dist").glob("*.whl")); names=ZipFile(wheel).namelist(); assert all(any(name.endswith(".data/data/share/pageledger/schemas/" + schema) for name in names) for schema in ("manifest.schema.json", "bundle.schema.json", "replay.schema.json"))'
+          uv run --frozen --extra dev python - <<'PY'
+          from pathlib import Path
+          from tarfile import open as open_tar
+          from zipfile import ZipFile
+
+          dist = Path("dist")
+          wheel = next(dist.glob("pageledger-*.whl"))
+          with ZipFile(wheel) as archive:
+              wheel_names = set(archive.namelist())
+          schemas = ("manifest.schema.json", "bundle.schema.json", "replay.schema.json")
+          assert all(
+              any(name.endswith(".data/data/share/pageledger/schemas/" + schema) for name in wheel_names)
+              for schema in schemas
+          )
+
+          sdist = next(dist.glob("pageledger-*.tar.gz"))
+          with open_tar(sdist, "r:gz") as archive:
+              sdist_names = set(archive.getnames())
+          required = (
+              "docs/first-run.md",
+              "docs/performance.md",
+              "docs/releasing.md",
+              "examples/run_first_run.py",
+          )
+          assert all(any(name.endswith("/" + path) for name in sdist_names) for path in required)
+          assert not any("/docs/superpowers/plans/" in name for name in sdist_names)
+          assert not any("/.planning/" in name or "/.superpowers/" in name for name in sdist_names)
+          print("wheel schema and sdist documentation inventories verified")
+          PY
       - name: Smoke-test the exact wheel
+        env:
+          PYTHONPATH: ""
         run: |
           python -m venv /tmp/pageledger-release-wheel
           /tmp/pageledger-release-wheel/bin/pip install "$(ls dist/pageledger-*.whl)[pdf]"
           /tmp/pageledger-release-wheel/bin/pageledger --version
           /tmp/pageledger-release-wheel/bin/pageledger doctor --json
-          SOURCE=/tmp/pageledger-release-smoke.txt
-          RUN=/tmp/pageledger-release-run
-          BUNDLE=/tmp/pageledger-release-bundle
-          REPLAY=/tmp/pageledger-release-replay
-          printf 'first page\fsecond page\n' > "$SOURCE"
-          /tmp/pageledger-release-wheel/bin/pageledger run "$SOURCE" --adapter text --out "$RUN" --json
-          /tmp/pageledger-release-wheel/bin/pageledger verify-run "$RUN"
-          /tmp/pageledger-release-wheel/bin/pageledger bundle "$RUN" --out "$BUNDLE" --json
-          mv "$SOURCE" "$SOURCE.moved"
-          /tmp/pageledger-release-wheel/bin/pageledger replay "$BUNDLE" --out "$REPLAY" --json
-          /tmp/pageledger-release-wheel/bin/pageledger verify-run "$REPLAY"
+          WORK_ROOT="$(mktemp -d)"
+          /tmp/pageledger-release-wheel/bin/python examples/run_first_run.py \
+            --document "$GITHUB_WORKSPACE/docs/first-run.md" \
+            --work-dir "$WORK_ROOT/first-run" \
+            --python /tmp/pageledger-release-wheel/bin/python \
+            --expected-version 0.4.1 \
+            --forbid-import-root "$GITHUB_WORKSPACE"
       - name: Record distribution hashes
         run: sha256sum dist/pageledger-* > dist/SHA256SUMS
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
