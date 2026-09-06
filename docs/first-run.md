@@ -206,8 +206,9 @@ PY
 </details>
 
 Release verification can drive the same blocks through the standard-library
-helper. Its exact-wheel mode clears `PYTHONPATH`, asserts the intended version,
-and fails if the import comes from the checkout:
+helper. Its exact-wheel mode clears `PYTHONPATH`, asserts that both the imported
+module and installed distribution metadata have the intended version, and fails
+if the import comes from the checkout:
 
 ```bash
 PYTHONPATH= /path/to/wheel-venv/bin/python /path/to/checkout/examples/run_first_run.py \

@@ -40,8 +40,9 @@ def _tutorial_script(document: Path) -> str:
 
 def _import_receipt(python: Path, *, cwd: Path, env: dict[str, str]) -> dict[str, str]:
     command = (
-        "import json, pageledger; "
-        "print(json.dumps({'version': pageledger.__version__, "
+        "import json, pageledger; from importlib.metadata import version; "
+        "print(json.dumps({'module_version': pageledger.__version__, "
+        "'distribution_version': version('pageledger'), "
         "'path': str(pageledger.__file__)}))"
     )
     result = subprocess.run(
@@ -84,9 +85,22 @@ def main(argv: list[str] | None = None) -> int:
     env["PYTHON"] = str(python)
 
     receipt = _import_receipt(python, cwd=work_dir, env=env)
-    if args.expected_version is not None and receipt["version"] != args.expected_version:
+    if (
+        args.expected_version is not None
+        and receipt["module_version"] != args.expected_version
+    ):
         raise RuntimeError(
-            f"expected PageLedger {args.expected_version}, imported {receipt['version']}"
+            f"expected PageLedger {args.expected_version}; imported module version "
+            f"{receipt['module_version']}"
+        )
+    if (
+        args.expected_version is not None
+        and args.source_root is None
+        and receipt["distribution_version"] != args.expected_version
+    ):
+        raise RuntimeError(
+            f"expected PageLedger {args.expected_version}; distribution metadata version "
+            f"{receipt['distribution_version']}"
         )
     if args.forbid_import_root is not None:
         forbidden = args.forbid_import_root.resolve(strict=True)
@@ -104,7 +118,11 @@ def main(argv: list[str] | None = None) -> int:
     shim.chmod(0o755)
     env["PATH"] = str(shim_dir) + os.pathsep + env.get("PATH", "")
 
-    print(f"PageLedger {receipt['version']} imported from {receipt['path']}")
+    print(
+        f"PageLedger module {receipt['module_version']} "
+        f"(distribution {receipt['distribution_version']}) "
+        f"imported from {receipt['path']}"
+    )
     result = subprocess.run(
         ["/bin/sh"],
         input="set -eu\n" + _tutorial_script(document),
