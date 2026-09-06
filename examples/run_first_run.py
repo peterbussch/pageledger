@@ -38,13 +38,25 @@ def _tutorial_script(document: Path) -> str:
     return "\n\n".join(blocks) + "\n"
 
 
-def _import_receipt(python: Path, *, cwd: Path, env: dict[str, str]) -> dict[str, str]:
-    command = (
-        "import json, pageledger; from importlib.metadata import version; "
-        "print(json.dumps({'module_version': pageledger.__version__, "
-        "'distribution_version': version('pageledger'), "
-        "'path': str(pageledger.__file__)}))"
-    )
+def _import_receipt(
+    python: Path, *, cwd: Path, env: dict[str, str]
+) -> dict[str, str | None]:
+    command = """\
+import json
+import pageledger
+from importlib.metadata import PackageNotFoundError, version
+
+try:
+    distribution_version = version("pageledger")
+except PackageNotFoundError:
+    distribution_version = None
+
+print(json.dumps({
+    "module_version": pageledger.__version__,
+    "distribution_version": distribution_version,
+    "path": str(pageledger.__file__),
+}))
+"""
     result = subprocess.run(
         [str(python), "-c", command],
         cwd=cwd,
@@ -98,9 +110,10 @@ def main(argv: list[str] | None = None) -> int:
         and args.source_root is None
         and receipt["distribution_version"] != args.expected_version
     ):
+        distribution_version = receipt["distribution_version"] or "not installed"
         raise RuntimeError(
             f"expected PageLedger {args.expected_version}; distribution metadata version "
-            f"{receipt['distribution_version']}"
+            f"{distribution_version}"
         )
     if args.forbid_import_root is not None:
         forbidden = args.forbid_import_root.resolve(strict=True)
@@ -118,9 +131,10 @@ def main(argv: list[str] | None = None) -> int:
     shim.chmod(0o755)
     env["PATH"] = str(shim_dir) + os.pathsep + env.get("PATH", "")
 
+    distribution_version = receipt["distribution_version"] or "not installed"
     print(
         f"PageLedger module {receipt['module_version']} "
-        f"(distribution {receipt['distribution_version']}) "
+        f"(distribution {distribution_version}) "
         f"imported from {receipt['path']}"
     )
     result = subprocess.run(
