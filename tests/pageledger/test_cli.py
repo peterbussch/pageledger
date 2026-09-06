@@ -7,6 +7,7 @@ import sys
 import textwrap
 from pathlib import Path
 
+import pytest
 import yaml
 
 # Reuse helper from test_schemas
@@ -32,6 +33,152 @@ def _run_cli(args: list[str], *, cwd: Path | None = None) -> tuple[int, str, str
         capture_output=True, text=True, cwd=str(cwd) if cwd else None,
     )
     return result.returncode, result.stdout, result.stderr
+
+
+def test_bundle_and_replay_cli_surface(tmp_path: Path) -> None:
+    source = tmp_path / "source.txt"
+    source.write_text("first page\fsecond page\n", encoding="utf-8")
+    config = tmp_path / "config.yml"
+    config.write_text(MINIMAL_CONFIG, encoding="utf-8")
+    run_dir = tmp_path / "run"
+    assert _run_cli(
+        ["run", str(source), "--config", str(config), "--out", str(run_dir), "--json"]
+    )[0] == 0
+
+    bundle_dir = tmp_path / "bundle"
+    code, stdout, _ = _run_cli(["bundle", str(run_dir), "--out", str(bundle_dir), "--json"])
+    assert code == 0
+    assert json.loads(stdout)["bundle_dir"] == str(bundle_dir.resolve())
+
+    replay_dir = tmp_path / "replayed"
+    code, stdout, _ = _run_cli(["replay", str(bundle_dir), "--out", str(replay_dir), "--json"])
+    assert code == 0
+    assert json.loads(stdout)["outcome"] == "exact"
+
+    code, _, _ = _run_cli(
+        ["replay", str(bundle_dir), "--out", str(tmp_path / "unused"), "--config", "x.yml"]
+    )
+    assert code == 2
+
+
+def test_replay_human_exact_output(tmp_path: Path) -> None:
+    source = tmp_path / "source.txt"
+    source.write_text("first page\n", encoding="utf-8")
+    config = tmp_path / "config.yml"
+    config.write_text(MINIMAL_CONFIG, encoding="utf-8")
+    run_dir = tmp_path / "run"
+    assert _run_cli(
+        ["run", str(source), "--config", str(config), "--out", str(run_dir)]
+    )[0] == 0
+    bundle_dir = tmp_path / "bundle"
+    assert _run_cli(["bundle", str(run_dir), "--out", str(bundle_dir)])[0] == 0
+
+    code, stdout, _ = _run_cli(["replay", str(bundle_dir), "--out", str(tmp_path / "replayed")])
+    assert code == 0
+    assert stdout == (
+        "Verified replay outcome: exact\n"
+        "Raw comparison: 1 equal / 0 different / 0 missing\n"
+    )
+
+
+def test_replay_human_review_only_raw_output(tmp_path: Path) -> None:
+    source = tmp_path / "source.txt"
+    source.write_text("first page\n", encoding="utf-8")
+    config = tmp_path / "config.yml"
+    config.write_text(MINIMAL_CONFIG, encoding="utf-8")
+    run_dir = tmp_path / "run"
+    assert _run_cli(
+        ["run", str(source), "--config", str(config), "--out", str(run_dir)]
+    )[0] == 0
+
+    route_map = yaml.safe_load((run_dir / "route-map.yml").read_text(encoding="utf-8"))
+    page = route_map["documents"][0]["pages"][0]
+    page["action"] = "review"
+    page["reason"] = "manual review"
+    routes = tmp_path / "routes.yml"
+    routes.write_text(yaml.safe_dump(route_map, sort_keys=False), encoding="utf-8")
+
+    routed_dir = tmp_path / "routed"
+    assert _run_cli(
+        [
+            "run",
+            str(source),
+            "--config",
+            str(config),
+            "--routes",
+            str(routes),
+            "--out",
+            str(routed_dir),
+        ]
+    )[0] == 0
+    bundle_dir = tmp_path / "bundle"
+    assert _run_cli(["bundle", str(routed_dir), "--out", str(bundle_dir)])[0] == 0
+
+    code, stdout, _ = _run_cli(
+        ["replay", str(bundle_dir), "--out", str(tmp_path / "replayed")]
+    )
+    assert code == 0
+    assert stdout == (
+        "Verified replay outcome: exact\n"
+        "Raw comparison: 0 equal / 0 different / 0 missing\n"
+    )
+
+
+def test_replay_cli_returns_one_with_deterministic_mismatch_json(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    import pageledger.cli as cli
+
+    monkeypatch.setattr(
+        cli,
+        "replay_bundle",
+        lambda *args, **kwargs: {"outcome": "deterministic_mismatch"},
+    )
+
+    assert cli.main(["replay", "bundle", "--out", "out", "--json"]) == 1
+    assert json.loads(capsys.readouterr().out)["outcome"] == "deterministic_mismatch"
+
+
+def test_replay_cli_returns_structured_incompatible_error(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    import pageledger.cli as cli
+    from pageledger.replay import ReplayError
+
+    def fail(*args, **kwargs):
+        raise ReplayError("incompatible_environment", "profile mismatch")
+
+    monkeypatch.setattr(cli, "replay_bundle", fail)
+
+    assert cli.main(["replay", "bundle", "--out", "out", "--json"]) == 1
+    result = json.loads(capsys.readouterr().out)
+    assert result["status"] == "error"
+    assert result["code"] == "incompatible_environment"
+
+
+@pytest.mark.parametrize("flag", ["--config", "--routes", "--pages", "--adapter"])
+def test_replay_cli_rejects_unapproved_overrides(flag: str) -> None:
+    from pageledger.cli import main
+
+    with pytest.raises(SystemExit) as error:
+        main(["replay", "bundle", "--out", "out", flag, "value"])
+    assert error.value.code == 2
+
+
+@pytest.mark.parametrize("flag", ["--o", "--ou"])
+def test_bundle_cli_rejects_out_abbreviations(flag: str) -> None:
+    from pageledger.cli import build_parser
+
+    with pytest.raises(SystemExit) as error:
+        build_parser().parse_args(["bundle", "run", flag, "out"])
+    assert error.value.code == 2
+
+
+def test_bundle_cli_accepts_exact_out_flag() -> None:
+    from pageledger.cli import build_parser
+
+    args = build_parser().parse_args(["bundle", "run", "--out", "out"])
+    assert args.out == Path("out")
 
 
 # =========================================================================
@@ -156,6 +303,317 @@ ADAPTER_MODULE = textwrap.dedent("""\
                 usage={"pages": 1, "tokens": None, "compute_seconds": None, "cost_usd": None},
             )
     """)
+
+MIXED_COST_ADAPTER_MODULE = textwrap.dedent("""\
+    from pageledger.adapters import ExtractionResult
+
+    class MixedCostAdapter:
+        name = "mixed-cost"
+        version = "1.0"
+        deterministic = True
+        input_types = ("text",)
+        output_types = ("text",)
+        capabilities = ("local",)
+
+        def supports(self, action):
+            return action == "transcribe_text"
+
+        def extract(self, source, *, page_id, page_number, action, prompt=None):
+            pages = source.read_text(encoding="utf-8").split("\\f")
+            return ExtractionResult(
+                content=pages[page_number - 1],
+                format="text",
+                confidence=None,
+                model=None,
+                warnings=["review_example"],
+                usage={
+                    "pages": 1,
+                    "tokens": None,
+                    "compute_seconds": None,
+                    "cost_usd": 0.25 if page_number == 1 else None,
+                },
+            )
+    """)
+
+PARTIAL_BASIS_ADAPTER_MODULE = textwrap.dedent("""\
+    from pageledger.adapters import ExtractionResult
+
+    class PartialBasisAdapter:
+        name = "partial-basis"
+        version = "1.0"
+        deterministic = True
+        input_types = ("text",)
+        output_types = ("text",)
+        capabilities = ("local",)
+
+        def supports(self, action):
+            return action == "transcribe_text"
+
+        def extract(self, source, *, page_id, page_number, action, prompt=None):
+            pages = source.read_text(encoding="utf-8").split("\\f")
+            mixed = len(pages) == 3
+            return ExtractionResult(
+                content=pages[page_number - 1],
+                format="text",
+                confidence=None,
+                model=None,
+                warnings=["review_example"],
+                usage={
+                    "pages": 1,
+                    "tokens": 1000 if page_number == (2 if mixed else 1) else None,
+                    "compute_seconds": None,
+                    "cost_usd": 0.25 if mixed and page_number == 1 else None,
+                },
+            )
+    """)
+
+
+def _write_cost_fixture(
+    tmp_path: Path,
+    *,
+    pricing: float | None = None,
+    mixed_adapter: bool = False,
+    partial_basis: str | None = None,
+) -> tuple[Path, Path, list[str]]:
+    source = tmp_path / "cost-pages.txt"
+    pages = "first � page\fsecond � page"
+    if partial_basis == "mixed":
+        pages += "\fthird � page"
+    source.write_text(pages, encoding="utf-8")
+    adapter = "text"
+    extra_args: list[str] = []
+    if partial_basis is not None:
+        adapter_dir = tmp_path / "adapters"
+        adapter_dir.mkdir()
+        (adapter_dir / "partial_basis_adapter.py").write_text(
+            PARTIAL_BASIS_ADAPTER_MODULE, encoding="utf-8"
+        )
+        adapter = "partial_basis_adapter:PartialBasisAdapter"
+        extra_args = ["--adapter-path", str(adapter_dir)]
+    elif mixed_adapter:
+        adapter_dir = tmp_path / "adapters"
+        adapter_dir.mkdir()
+        (adapter_dir / "mixed_cost_adapter.py").write_text(
+            MIXED_COST_ADAPTER_MODULE, encoding="utf-8"
+        )
+        adapter = "mixed_cost_adapter:MixedCostAdapter"
+        extra_args = ["--adapter-path", str(adapter_dir)]
+    run_config: dict[str, object] = {
+        "adapter": adapter,
+        "max_rerun_depth": 2,
+    }
+    if pricing is not None:
+        run_config["pricing"] = {"cost_per_page": pricing}
+    elif partial_basis is not None:
+        run_config["pricing"] = {
+            "cost_per_1k_tokens": 0.1 if partial_basis == "mixed" else 0.25
+        }
+    config = tmp_path / "cost-config.yml"
+    config.write_text(
+        yaml.safe_dump(
+            {
+                "schema_version": "0.1",
+                "taxonomy": {
+                    "page_types": {"prose": {"default_action": "transcribe_text"}}
+                },
+                "run": run_config,
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+    return source, config, extra_args
+
+
+def _run_cost_command(
+    tmp_path: Path,
+    *,
+    command: str,
+    pricing: float | None = None,
+    mixed_adapter: bool = False,
+    partial_basis: str | None = None,
+    dry_run: bool = False,
+) -> tuple[int, str, str, Path]:
+    source, config, adapter_args = _write_cost_fixture(
+        tmp_path,
+        pricing=pricing,
+        mixed_adapter=mixed_adapter,
+        partial_basis=partial_basis,
+    )
+    if command == "run":
+        out_dir = tmp_path / "run"
+        args = [
+            "run", str(source), "--config", str(config), "--out", str(out_dir),
+            *adapter_args,
+        ]
+    else:
+        parent_dir = tmp_path / "parent"
+        parent_args = [
+            "run", str(source), "--config", str(config), "--out", str(parent_dir),
+            *adapter_args,
+        ]
+        code, stdout, stderr = _run_cli(parent_args)
+        assert code == 0, f"stdout={stdout}\nstderr={stderr}"
+        out_dir = tmp_path / "rerun"
+        args = [
+            "rerun", str(parent_dir), "--config", str(config), "--out", str(out_dir),
+            *adapter_args,
+        ]
+    if dry_run:
+        args.append("--dry-run")
+    code, stdout, stderr = _run_cli(args)
+    return code, stdout, stderr, out_dir
+
+
+@pytest.mark.parametrize("command", ["run", "rerun"])
+def test_human_cost_summary_distinguishes_unknown_from_zero(
+    tmp_path: Path, command: str
+) -> None:
+    code, stdout, stderr, out_dir = _run_cost_command(tmp_path, command=command)
+    assert code == 0, stderr
+    assert "Cost USD: unknown" in stdout
+    assert "Estimated cost USD: 0.0" not in stdout
+    cost = json.loads((out_dir / "cost.json").read_text(encoding="utf-8"))
+    assert cost["cost_usd"] is None
+    assert cost["cost_known"] is False
+
+
+@pytest.mark.parametrize("command", ["run", "rerun"])
+def test_human_cost_summary_preserves_explicit_known_zero(
+    tmp_path: Path, command: str
+) -> None:
+    code, stdout, stderr, out_dir = _run_cost_command(
+        tmp_path, command=command, pricing=0.0
+    )
+    assert code == 0, stderr
+    assert "Estimated cost USD: 0.0 (configured rate; not a provider charge)" in stdout
+    assert "unknown" not in stdout
+    cost = json.loads((out_dir / "cost.json").read_text(encoding="utf-8"))
+    assert cost["cost_usd"] == 0.0
+    assert cost["cost_known"] is True
+
+
+@pytest.mark.parametrize("command", ["run", "rerun"])
+def test_human_cost_summary_reports_known_nonzero_total(
+    tmp_path: Path, command: str
+) -> None:
+    code, stdout, stderr, out_dir = _run_cost_command(
+        tmp_path, command=command, pricing=0.25
+    )
+    assert code == 0, stderr
+    expected = "Estimated cost USD: 0.5 (configured rate; not a provider charge)"
+    assert expected in stdout
+    inspect_code, inspect_stdout, inspect_stderr = _run_cli(["inspect-run", str(out_dir)])
+    assert inspect_code == 0, inspect_stderr
+    assert expected in inspect_stdout
+    cost = json.loads((out_dir / "cost.json").read_text(encoding="utf-8"))
+    assert cost["cost_usd"] == 0.5
+    assert cost["cost_known"] is True
+
+
+@pytest.mark.parametrize("command", ["run", "rerun"])
+def test_human_cost_summary_qualifies_known_subtotal_with_unknown_pages(
+    tmp_path: Path, command: str
+) -> None:
+    code, stdout, stderr, out_dir = _run_cost_command(
+        tmp_path, command=command, mixed_adapter=True
+    )
+    assert code == 0, stderr
+    expected = (
+        "Adapter-reported cost USD: at least 0.25 "
+        "(partial; some page costs unknown)"
+    )
+    assert expected in stdout
+    assert "Estimated cost" not in stdout
+    inspect_code, inspect_stdout, inspect_stderr = _run_cli(["inspect-run", str(out_dir)])
+    assert inspect_code == 0, inspect_stderr
+    assert expected in inspect_stdout
+    cost = json.loads((out_dir / "cost.json").read_text(encoding="utf-8"))
+    assert cost["cost_usd"] == 0.25
+    assert cost["cost_known"] is False
+    assert cost["cost_basis"] == "adapter_reported"
+
+
+@pytest.mark.parametrize("command", ["run", "rerun"])
+@pytest.mark.parametrize(
+    ("basis", "expected"),
+    [
+        (
+            "configured_rate",
+            "Estimated cost USD: at least 0.25 "
+            "(partial; some page costs unknown; configured rate; "
+            "not a provider charge)",
+        ),
+        (
+            "mixed",
+            "Cost evidence USD: at least 0.35 "
+            "(partial; some page costs unknown; mixed adapter-reported and "
+            "configured-rate evidence)",
+        ),
+    ],
+)
+def test_human_cost_summary_preserves_basis_for_partial_subtotal(
+    tmp_path: Path, command: str, basis: str, expected: str
+) -> None:
+    code, stdout, stderr, out_dir = _run_cost_command(
+        tmp_path, command=command, partial_basis=basis
+    )
+    assert code == 0, stderr
+    assert expected in stdout
+    inspect_code, inspect_stdout, inspect_stderr = _run_cli(["inspect-run", str(out_dir)])
+    assert inspect_code == 0, inspect_stderr
+    assert expected in inspect_stdout
+    cost = json.loads((out_dir / "cost.json").read_text(encoding="utf-8"))
+    assert cost["cost_usd"] == (0.35 if basis == "mixed" else 0.25)
+    assert cost["cost_known"] is False
+    assert cost["cost_basis"] == basis
+
+
+def test_human_cost_summary_reports_known_mixed_basis_total(tmp_path: Path) -> None:
+    code, stdout, stderr, out_dir = _run_cost_command(
+        tmp_path, command="run", pricing=0.1, mixed_adapter=True
+    )
+    assert code == 0, stderr
+    assert (
+        "Cost evidence USD: 0.35 "
+        "(mixed adapter-reported and configured-rate evidence)"
+    ) in stdout
+    assert "partial" not in stdout
+    cost = json.loads((out_dir / "cost.json").read_text(encoding="utf-8"))
+    assert cost["cost_usd"] == 0.35
+    assert cost["cost_known"] is True
+    assert cost["cost_basis"] == "mixed"
+
+
+@pytest.mark.parametrize("command", ["run", "rerun"])
+def test_human_dry_run_cost_does_not_imply_an_incurred_estimate(
+    tmp_path: Path, command: str
+) -> None:
+    code, stdout, stderr, out_dir = _run_cost_command(
+        tmp_path, command=command, dry_run=True
+    )
+    assert code == 0, stderr
+    assert "Cost USD: 0.0 (dry run; no extraction performed)" in stdout
+    assert "Estimated cost" not in stdout
+    cost = json.loads((out_dir / "cost.json").read_text(encoding="utf-8"))
+    assert cost["cost_usd"] == 0.0
+    assert cost["cost_known"] is True
+
+
+def test_run_json_mapping_keeps_unknown_cost_contract(tmp_path: Path) -> None:
+    source, config, adapter_args = _write_cost_fixture(tmp_path)
+    out_dir = tmp_path / "json-run"
+    code, stdout, stderr = _run_cli([
+        "run", str(source), "--config", str(config), "--out", str(out_dir),
+        *adapter_args, "--json",
+    ])
+    assert code == 0, stderr
+    result = json.loads(stdout)
+    assert result["summary"]["estimated_cost_usd"] == 0.0
+    assert "cost_known" not in result["summary"]
+    assert json.loads((out_dir / "cost.json").read_text(encoding="utf-8"))[
+        "cost_usd"
+    ] is None
 
 
 def test_adapter_path_loads_custom_adapter_without_pythonpath(tmp_path: Path) -> None:

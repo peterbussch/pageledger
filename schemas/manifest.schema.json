@@ -39,6 +39,10 @@
       "minimum": 0,
       "description": "Zero-based rerun generation. Optional for compatibility with older schema-0.1 artifacts; current writers always emit it."
     },
+    "replay_schema_version": { "type": "string", "const": "0.1" },
+    "baseline_run_id": { "type": "string", "minLength": 1 },
+    "bundle_manifest_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "outcome": { "type": "string", "enum": ["exact", "evidence_compared", "deterministic_mismatch"] },
     "execution_mode": {
       "type": "string",
       "description": "Execution mode.",
@@ -104,6 +108,64 @@
           "options": {
             "type": "object",
             "description": "run.adapter_options the adapter was constructed with. Stored verbatim as durable evidence; must not contain credentials."
+          },
+          "reproducibility_profile": {
+            "type": "object",
+            "required": ["profile_version", "pageledger", "adapter", "runtime", "materials", "profile_sha256"],
+            "properties": {
+              "profile_version": { "type": "string", "const": "0.1" },
+              "pageledger": {
+                "type": "object",
+                "required": ["version", "code_sha256"],
+                "properties": {
+                  "version": { "type": "string" },
+                  "code_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+                },
+                "additionalProperties": false
+              },
+              "adapter": {
+                "type": "object",
+                "required": ["module", "name", "version", "code_sha256"],
+                "properties": {
+                  "module": { "type": "string" },
+                  "name": { "type": "string" },
+                  "version": { "type": "string" },
+                  "code_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+                },
+                "additionalProperties": false
+              },
+              "runtime": {
+                "type": "object",
+                "required": ["python_implementation", "python_version", "system", "release", "machine", "preferred_encoding", "filesystem_encoding"],
+                "properties": {
+                  "python_implementation": { "type": "string" },
+                  "python_version": { "type": "string" },
+                  "system": { "type": "string" },
+                  "release": { "type": "string" },
+                  "machine": { "type": "string" },
+                  "preferred_encoding": { "type": "string" },
+                  "filesystem_encoding": { "type": "string" }
+                },
+                "additionalProperties": false
+              },
+              "materials": {
+                "type": "array",
+                "uniqueItems": true,
+                "items": {
+                  "type": "object",
+                  "required": ["kind", "name", "version", "sha256"],
+                  "properties": {
+                    "kind": { "type": "string", "enum": ["binary", "package", "model", "asset"] },
+                    "name": { "type": "string" },
+                    "version": { "type": "string" },
+                    "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+                  },
+                  "additionalProperties": false
+                }
+              },
+              "profile_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+            },
+            "additionalProperties": false
           }
         },
         "additionalProperties": false
@@ -137,7 +199,8 @@
         "quality": { "type": "string" },
         "cost": { "type": "string" },
         "run_log": { "type": "string" },
-        "rerun_manifest": { "type": "string" }
+        "rerun_manifest": { "type": "string" },
+        "replay": { "type": "string" }
       },
       "additionalProperties": false
     },

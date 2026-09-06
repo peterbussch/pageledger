@@ -230,7 +230,7 @@ def test_dry_run_writes_auditable_artifacts(tmp_path):
 
 
 def test_package_exports_release_version():
-    assert pageledger.__version__ == "0.3.0a1"
+    assert pageledger.__version__ == "0.4.1"
 
 
 def test_dry_run_expands_directory_inputs_in_stable_order(tmp_path):
@@ -579,6 +579,9 @@ def test_text_adapter_writes_raw_output_and_provenance(tmp_path):
             "input_types": ["text"],
             "output_types": ["text"],
             "capabilities": ["embedded_text", "local"],
+            "reproducibility_profile": manifest["extractors"][0][
+                "reproducibility_profile"
+            ],
         }
     ]
     assert provenance["result"]["raw_artifact"] == "raw/doc_0001_page_0001.txt"

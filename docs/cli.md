@@ -1,10 +1,13 @@
 # CLI reference
 
-Nine commands ship. `run` and `rerun` extract; `classify` produces an
+Eleven commands ship. `run` and `rerun` extract; `classify` produces an
 inspectable route map; `align` re-derives normalized records and grades from
 an existing run; the rest inspect, compare, diagnose, or scaffold.
 
 `pageledger --version` prints the installed release.
+
+For a complete run/inspect/raw/audit/verify/rerun journey using only the built-in
+text adapter, follow [First run](first-run.md).
 
 ## run
 
@@ -45,6 +48,17 @@ Hashes and page counts are checked when supplied; older maps without them are
 accepted with warnings and the current values are recorded.
 `--dry-run --routes` preserves the proposed decisions without calling
 `extract()`.
+
+Human run summaries read the persisted `cost.json` evidence. `Cost USD:
+unknown` means no complete dollar total was established; known zero remains
+`0.0`, and a known subtotal with unknown pages is explicitly labeled partial.
+Adapter-reported totals are labeled as such; configured-rate totals are called
+estimates and explicitly distinguished from provider charges; mixed-basis
+totals name both evidence sources.
+Dry-run output says that no extraction was performed, so its zero is not
+presented as a provider charge or projected bill. `--json` result mappings are
+unchanged; use `cost.json` for the authoritative `cost_known`, `cost_usd`, and
+`cost_basis` fields.
 
 ## classify
 
@@ -110,6 +124,8 @@ changes fail closed before the child directory is created. The parent ledger
 must pass `verify-run`, and its executable queue must still match the audit,
 routes, config, grades, quarantine, and lineage evidence. `rerun` takes the
 same `--dry-run`, `--json`, `--log-level`, and `--adapter-path` flags as `run`.
+It writes a separate selected-page run and does not choose or assemble a final
+corrected corpus for you.
 
 ## align
 
@@ -181,6 +197,57 @@ inconsistent ledger artifacts are errors and produce exit code 1. Verification
 checks coherence, not extraction accuracy, and is not a replacement for the
 JSON Schema test suite.
 
+## bundle
+
+```bash
+pageledger bundle RUN_DIR --out BUNDLE_DIR
+pageledger bundle RUN_DIR --out BUNDLE_DIR --json
+```
+
+Creates a new directory bundle only after `RUN_DIR` passes `verify-run` and is
+an ordinary, generation-zero execute run. The bundle contains an unchanged
+`baseline/` run (manifest, config, and all declared artifacts), copied source
+files under `sources/`, an inventory with SHA-256 hashes, and
+`replay-route-map.yml`. `bundle.json` is the index and records the baseline
+manifest hash, extractor identity/profile, source identities, and portable
+paths; replay evidence records the exact `bundle.json` index hash. The output
+directory must not already exist; no archive is created.
+
+The only accepted flags are `--out DIR` (required) and `--json`. There are no
+config, adapter, or source override flags. Credential protection is limited to
+the normalized exact denylist keys in mappings under `adapter_options` or
+`hook_options` in the config snapshot and in persisted manifest extractor
+options. Values, arbitrary fields or text, sources, raw artifacts, and logs are
+not scanned, so this cannot prove that sensitive data is absent. A missing
+optional reproducibility profile does not block ordinary runs, but it means
+deterministic replay cannot claim exactness.
+
+## replay
+
+```bash
+pageledger replay BUNDLE_DIR --out RUN_DIR
+pageledger replay BUNDLE_DIR --out RUN_DIR --adapter-path TRUSTED_DIR --json
+```
+
+Validates the untrusted directory bundle, checks its baseline and inventory,
+loads the locally available adapter named by the bundle, and runs the ordinary
+PageLedger extraction path against the bundled sources. `--adapter-path DIR`
+is the only optional override and is a locally trusted import path; a trusted
+path must not be equal to, inside, or above the bundle. `--out DIR` is required and must not already
+exist. `--json` emits the result and `replay.json` records baseline/local
+extractor linkage, profile match, raw equal/different/missing counts, and the
+comparison object.
+Human output also prints `Raw comparison: N equal / N different / N missing`;
+these counts are evidence, not an authenticity claim. See the [honest replay
+boundary](capabilities-and-limits.md#verified-replay-boundary).
+
+Exit codes are consistent across these commands: 0 means bundle creation or a
+successful replay (`exact` or `evidence_compared`); 1 means a verified-run,
+bundle, adapter, source, or replay-integrity failure (including
+`deterministic_mismatch`); 2 is argparse usage failure such as a missing
+required flag or an unapproved flag. Human replay output names the outcome;
+`--json` includes `outcome` and structured `error`/`code` fields on failure.
+
 ## inspect-run
 
 ```bash
@@ -197,6 +264,10 @@ aggregate `grade_distribution` for compatibility and adds
 `grade_distribution_by_basis`. `--csv` writes one row per page (page id,
 counts, confidence, warnings, grade, grade basis, cost, timing) for triage in a
 spreadsheet. `--json` emits the summary as JSON.
+
+Human cost wording uses the same evidence distinctions as `run` and `rerun`:
+unknown, known zero/nonzero, or a qualified partial subtotal. The JSON summary
+retains its existing field names for machine consumers.
 
 ## init-config
 

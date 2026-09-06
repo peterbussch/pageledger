@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/peterbussch/pageledger/schemas/replay.json",
+  "title": "PageLedger verified replay evidence",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "replay_schema_version", "bundle_manifest_sha256", "baseline_run_id",
+    "replay_run_id", "baseline_extractor", "local_extractor", "profile_match",
+    "outcome", "raw", "comparison"
+  ],
+  "properties": {
+    "replay_schema_version": { "const": "0.1" },
+    "bundle_manifest_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "baseline_run_id": { "type": "string", "minLength": 1 },
+    "replay_run_id": { "type": "string", "minLength": 1 },
+    "baseline_extractor": { "$ref": "#/$defs/extractor" },
+    "local_extractor": { "$ref": "#/$defs/extractor" },
+    "profile_match": { "type": ["boolean", "null"] },
+    "outcome": { "enum": ["exact", "evidence_compared", "deterministic_mismatch"] },
+    "raw": {
+      "type": "object", "additionalProperties": false,
+      "required": ["equal", "different", "missing", "different_page_ids", "missing_page_ids"],
+      "properties": {
+        "equal": { "type": "integer", "minimum": 0 },
+        "different": { "type": "integer", "minimum": 0 },
+        "missing": { "type": "integer", "minimum": 0 },
+        "different_page_ids": { "type": "array", "items": { "type": "string" }, "uniqueItems": true },
+        "missing_page_ids": { "type": "array", "items": { "type": "string" }, "uniqueItems": true }
+      }
+    },
+    "comparison": { "type": "object" }
+  },
+  "$defs": {
+    "extractor": {
+      "type": "object", "additionalProperties": false,
+      "required": ["adapter", "version", "deterministic", "input_types", "output_types", "capabilities", "options", "reproducibility_profile_sha256"],
+      "properties": {
+        "adapter": { "type": "string" },
+        "version": { "type": "string" },
+        "deterministic": { "type": "boolean" },
+        "input_types": { "type": "array", "items": { "type": "string" }, "uniqueItems": true },
+        "output_types": { "type": "array", "items": { "type": "string" }, "uniqueItems": true },
+        "capabilities": { "type": "array", "items": { "type": "string" }, "uniqueItems": true },
+        "options": { "type": "object" },
+        "reproducibility_profile_sha256": { "type": ["string", "null"], "pattern": "^[0-9a-f]{64}$" }
+      }
+    }
+  }
+}

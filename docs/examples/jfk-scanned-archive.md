@@ -1,13 +1,19 @@
 # Worked example: OCR a scanned government archive
 
+> **Historical transcript (recorded 2026-07-07).** The exact PageLedger
+> package version was not captured, so the output below cannot be presented as
+> current-version output. It is retained as historical evidence. For a current,
+> automatically verified path through the supported commands, use the
+> [offline text first run](../first-run.md).
+
 This walkthrough runs a real declassified document through PageLedger:
 HSCA record 180-10147-10163 from the JFK Assassination Records Collection.
 107 pages of scanned typescript, no text layer at all: every page is one
 TIFF image. The workflow: a cheap first pass, quality signals that catch
 what it missed, and a page-scoped OCR rerun, all recorded as plain files.
 
-All command output below is from an actual run (macOS, Tesseract 5.5.2,
-poppler 26.05).
+All command output below is from that recorded run (macOS, Tesseract 5.5.2,
+poppler 26.05); it is not a regenerated 0.4.1 transcript.
 
 ## Get the document
 
@@ -48,7 +54,9 @@ Pages: 0 extracted / 107 total
 Estimated cost USD: 0.0
 ```
 
-107 pages planned, nothing extracted, nothing spent. `runs/jfk-dry/`
+This is the historical terminal wording. The current CLI explicitly labels a
+dry run as having performed no extraction. 107 pages were planned and nothing
+was extracted. `runs/jfk-dry/`
 already contains the route map and planning artifacts.
 
 ## The cheap pass, and why the ledger matters
@@ -89,6 +97,12 @@ ids are preserved and the parent run id is recorded, so provenance chains
 across both runs.
 
 ## Compare
+
+The following comparison output is historical. Current PageLedger treats a
+`pdf_text` to `pdf_ocr` transition as cross-adapter: it shows the warning and
+text differences but deliberately leaves improvement/resolution totals
+unranked. Do not read the retained `Warnings resolved in B` line as a current
+cross-adapter claim.
 
 ```bash
 pageledger compare-runs runs/jfk-text runs/jfk-ocr
@@ -186,7 +200,8 @@ review queue. The pages the VLM itself could not fully read are exactly
 the ones a human now looks at.
 
 The workflow is the same at every tier: run cheap, read the flags, rerun
-just the flagged pages with something stronger, compare.
+just the flagged pages with something stronger, then inspect the unranked
+cross-adapter comparison and choose downstream output explicitly.
 
 ## Honest limits
 

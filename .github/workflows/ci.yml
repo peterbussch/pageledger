@@ -51,25 +51,69 @@ jobs:
         run: python -m build
       - name: Check package metadata
         run: twine check dist/*
+      - name: Validate distribution inventories
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          from tarfile import open as open_tar
+          from zipfile import ZipFile
+
+          dist = Path("dist")
+          wheel = next(dist.glob("pageledger-*.whl"))
+          with ZipFile(wheel) as archive:
+              wheel_names = set(archive.namelist())
+          schemas = ("manifest.schema.json", "bundle.schema.json", "replay.schema.json")
+          assert all(
+              any(name.endswith(".data/data/share/pageledger/schemas/" + schema) for name in wheel_names)
+              for schema in schemas
+          )
+
+          sdist = next(dist.glob("pageledger-*.tar.gz"))
+          with open_tar(sdist, "r:gz") as archive:
+              sdist_names = set(archive.getnames())
+          required = (
+              "docs/first-run.md",
+              "docs/performance.md",
+              "docs/releasing.md",
+              "examples/run_first_run.py",
+          )
+          assert all(any(name.endswith("/" + path) for name in sdist_names) for path in required)
+          assert not any("/docs/superpowers/plans/" in name for name in sdist_names)
+          assert not any("/.planning/" in name or "/.superpowers/" in name for name in sdist_names)
+          print("wheel schema and sdist documentation inventories verified")
+          PY
       - name: Smoke test wheel install
+        env:
+          PYTHONPATH: ""
         run: |
           python -m venv /tmp/venv-wheel
           /tmp/venv-wheel/bin/pip install "$(ls dist/pageledger-*.whl)[pdf]"
           /tmp/venv-wheel/bin/pageledger init-config
           /tmp/venv-wheel/bin/pageledger doctor --json
-          (cd /tmp && /tmp/venv-wheel/bin/python -c 'from importlib.metadata import files; assert any(str(p).endswith("share/pageledger/schemas/manifest.schema.json") for p in (files("pageledger") or []))')
-          echo "first page" > /tmp/smoke.txt
-          /tmp/venv-wheel/bin/pageledger init-config --out /tmp/smoke-config.yml
-          /tmp/venv-wheel/bin/pageledger run /tmp/smoke.txt --config /tmp/smoke-config.yml --out /tmp/smoke-run --json
+          (cd /tmp && /tmp/venv-wheel/bin/python -c 'from importlib.metadata import files; names={str(p) for p in (files("pageledger") or [])}; assert all(any(name.endswith("share/pageledger/schemas/" + schema) for name in names) for schema in ("manifest.schema.json", "bundle.schema.json", "replay.schema.json"))')
+          WORK_ROOT="$(mktemp -d)"
+          /tmp/venv-wheel/bin/python examples/run_first_run.py \
+            --document "$GITHUB_WORKSPACE/docs/first-run.md" \
+            --work-dir "$WORK_ROOT/first-run" \
+            --python /tmp/venv-wheel/bin/python \
+            --expected-version 0.4.1 \
+            --forbid-import-root "$GITHUB_WORKSPACE"
       - name: Smoke test sdist install
+        env:
+          PYTHONPATH: ""
         run: |
           python -m venv /tmp/venv-sdist
           /tmp/venv-sdist/bin/pip install "$(ls dist/pageledger-*.tar.gz)[pdf]"
           /tmp/venv-sdist/bin/pageledger init-config
           /tmp/venv-sdist/bin/pageledger doctor --json
-          echo "page one\fpage two" > /tmp/smoke2.txt
-          /tmp/venv-sdist/bin/pageledger init-config --out /tmp/smoke2-config.yml
-          /tmp/venv-sdist/bin/pageledger run /tmp/smoke2.txt --config /tmp/smoke2-config.yml --out /tmp/smoke2-run --json
+          (cd /tmp && /tmp/venv-sdist/bin/python -c 'from importlib.metadata import files; names={str(p) for p in (files("pageledger") or [])}; assert all(any(name.endswith("share/pageledger/schemas/" + schema) for name in names) for schema in ("manifest.schema.json", "bundle.schema.json", "replay.schema.json"))')
+          WORK_ROOT="$(mktemp -d)"
+          /tmp/venv-sdist/bin/python examples/run_first_run.py \
+            --document "$GITHUB_WORKSPACE/docs/first-run.md" \
+            --work-dir "$WORK_ROOT/first-run" \
+            --python /tmp/venv-sdist/bin/python \
+            --expected-version 0.4.1 \
+            --forbid-import-root "$GITHUB_WORKSPACE"
 
   locked:
     runs-on: ubuntu-latest

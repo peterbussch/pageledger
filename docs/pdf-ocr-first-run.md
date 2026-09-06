@@ -12,18 +12,23 @@ adapters, and hybrid workflows, see `docs/ocr-options.md`.
 
 ## 1. Clean install
 
+For the current package-index release:
+
 ```bash
 python3 -m venv /tmp/pageledger-first-run
-/tmp/pageledger-first-run/bin/python -m pip install --upgrade pip
-/tmp/pageledger-first-run/bin/python -m pip install ".[pdf]"
+/tmp/pageledger-first-run/bin/python -m pip install "pageledger[pdf]"
 ```
 
-From a built wheel:
+If 0.4.1 is not yet on the package index, verify its exact candidate wheel by
+absolute path in a fresh environment rather than importing a checkout:
 
 ```bash
 /tmp/pageledger-first-run/bin/python -m pip install \
-  "$(find dist -maxdepth 1 -name 'pageledger-*.whl' -print -quit)[pdf]"
+  "/absolute/path/to/pageledger-0.4.1-py3-none-any.whl[pdf]"
 ```
+
+Contributors working from a source checkout use `python -m pip install -e
+".[dev,pdf]"`; that is development setup, not the package-install path above.
 
 ## 2. Doctor
 
@@ -174,7 +179,9 @@ those pages with a different adapter if you want, then compare:
 The rerun keeps the original page ids, records the parent run id, and
 enforces `run.max_rerun_depth`. `compare-runs` shows which warnings the
 stronger engine resolved or introduced. An empty LLM response on a rerun
-is caught as `empty_text` and re-queued for review).
+is caught as `empty_text` and re-queued for review. Cross-adapter changes are
+shown but deliberately unranked, and PageLedger does not automatically select
+or assemble a corrected corpus.
 
 ## 8. Interpreting failures
 

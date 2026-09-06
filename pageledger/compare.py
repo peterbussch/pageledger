@@ -36,12 +36,28 @@ def compare_runs(run_dir_a: Path, run_dir_b: Path) -> dict[str, Any]:
     pages_comparable = 0
     grade_pages_comparable = 0
     grade_pages_incomparable = 0
+    raw_equal_total = 0
+    raw_different_total = 0
+    raw_missing_total = 0
     identity_mismatches: list[str] = []
     for page_id in common:
         qa = a["quality"][page_id]
         qb = b["quality"][page_id]
         provenance_a = a["provenance"].get(page_id, {})
         provenance_b = b["provenance"].get(page_id, {})
+        raw_a = (provenance_a.get("result") or {}).get("raw_sha256")
+        raw_b = (provenance_b.get("result") or {}).get("raw_sha256")
+        raw_equal = (
+            raw_a == raw_b
+            if isinstance(raw_a, str) and isinstance(raw_b, str)
+            else None
+        )
+        if raw_equal is None:
+            raw_missing_total += 1
+        elif raw_equal:
+            raw_equal_total += 1
+        else:
+            raw_different_total += 1
         source_a = provenance_a.get("source")
         source_b = provenance_b.get("source")
         source_status = _source_status(source_a, source_b)
@@ -138,6 +154,9 @@ def compare_runs(run_dir_a: Path, run_dir_b: Path) -> dict[str, Any]:
                     provenance_a.get("extraction_seconds"),
                     provenance_b.get("extraction_seconds"),
                 ),
+                "raw_sha256_a": raw_a,
+                "raw_sha256_b": raw_b,
+                "raw_equal": raw_equal,
                 "warnings_a": sorted(set_a),
                 "warnings_b": sorted(set_b),
                 "warnings_resolved": resolved,
@@ -172,6 +191,9 @@ def compare_runs(run_dir_a: Path, run_dir_b: Path) -> dict[str, Any]:
         "pages_incomparable_total": len(common) - pages_comparable,
         "grade_pages_comparable_total": grade_pages_comparable,
         "grade_pages_incomparable_total": grade_pages_incomparable,
+        "raw_equal_total": raw_equal_total,
+        "raw_different_total": raw_different_total,
+        "raw_missing_total": raw_missing_total,
         "page_identity_mismatches": identity_mismatches,
         "pages_only_in_a": sorted(ids_a - ids_b),
         "pages_only_in_b": sorted(ids_b - ids_a),
@@ -205,6 +227,8 @@ def render_comparison(report: dict[str, Any]) -> str:
         f"Warning pages: A={report['warning_pages_a']} B={report['warning_pages_b']}",
         f"Comparable pages: {report.get('pages_comparable_total', report['pages_compared'])}"
         f" / incomparable {report.get('pages_incomparable_total', 0)}",
+        f"Raw output: equal {report['raw_equal_total']} / "
+        f"different {report['raw_different_total']} / missing {report['raw_missing_total']}",
         f"Grade-comparable pages: {report.get('grade_pages_comparable_total', 0)}"
         f" / incomparable {report.get('grade_pages_incomparable_total', 0)}",
         f"Warnings resolved in B: {report['warnings_resolved_total']}",

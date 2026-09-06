@@ -16,6 +16,7 @@ from .classifier import classify
 from .compare import compare_runs, render_comparison
 from .doctor import build_doctor_report
 from .grading import GRADES, grade_basis_label
+from .replay import ReplayError, bundle_run, replay_bundle
 from .reports import inspect_run, run_pages_csv
 from .runner import rerun, run
 from .verify import render_verification, verify_run
@@ -244,12 +245,31 @@ def build_parser() -> argparse.ArgumentParser:
     verify_parser.add_argument("run_dir", type=Path, help="Path to a run output directory")
     verify_parser.add_argument("--json", action="store_true", dest="json_output")
 
+    bundle_parser = subparsers.add_parser(
+        "bundle", help="Create an inspectable verified replay bundle", allow_abbrev=False
+    )
+    bundle_parser.add_argument("run_dir", type=Path)
+    bundle_parser.add_argument("--out", required=True, type=Path)
+    bundle_parser.add_argument("--json", action="store_true", dest="json_output")
+
+    replay_parser = subparsers.add_parser(
+        "replay", help="Replay a verified bundle on this machine", allow_abbrev=False
+    )
+    replay_parser.add_argument("bundle_dir", type=Path)
+    replay_parser.add_argument("--out", required=True, type=Path)
+    replay_parser.add_argument("--adapter-path", type=Path, default=None)
+    replay_parser.add_argument("--json", action="store_true", dest="json_output")
+
     return parser
 
 
 def _print_error_json(exc: Exception, args: argparse.Namespace) -> None:
     if getattr(args, "json_output", False):
-        print(json.dumps({"status": "error", "error": str(exc)}, ensure_ascii=False))
+        result = {"status": "error", "error": str(exc)}
+        code = getattr(exc, "code", None)
+        if isinstance(code, str) and code:
+            result["code"] = code
+        print(json.dumps(result, ensure_ascii=False))
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -266,6 +286,12 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "verify-run":
         return _cmd_verify_run(args)
+
+    if args.command == "bundle":
+        return _cmd_bundle(args)
+
+    if args.command == "replay":
+        return _cmd_replay(args)
 
     if args.command == "align":
         return _cmd_align(args)
@@ -312,11 +338,15 @@ def _cmd_inspect_run(args: argparse.Namespace) -> int:
     if args.json_output:
         print(json.dumps(report, ensure_ascii=False, sort_keys=True))
     else:
-        _print_inspect_report(report)
+        cost = _read_cost_report(args.run_dir)
+        _print_inspect_report(
+            report,
+            cost_basis=cost.get("cost_basis") if cost is not None else None,
+        )
     return 0
 
 
-def _print_inspect_report(report: dict) -> None:
+def _print_inspect_report(report: dict, *, cost_basis: str | None = None) -> None:
     print(f"Run: {report['run_id']}")
     print(f"Status: {report['status']}")
     print(f"Execution mode: {report['execution_mode']}")
@@ -335,9 +365,12 @@ def _print_inspect_report(report: dict) -> None:
             f"Grades ({grade_basis_label(basis)}): "
             + " ".join(f"{grade}={distribution[grade]}" for grade in GRADES)
         )
-    print(f"Cost known: {report['cost_known']}")
-    if report["estimated_cost_usd"] is not None:
-        print(f"Estimated cost USD: {report['estimated_cost_usd']}")
+    _print_human_cost(
+        cost_known=report["cost_known"],
+        cost_usd=report["estimated_cost_usd"],
+        dry_run=report["execution_mode"] == "dry_run",
+        cost_basis=cost_basis,
+    )
     artifacts = report["artifacts_present"]
     missing = report["artifacts_missing"]
     print(f"Artifacts present: {len(artifacts)}")
@@ -384,6 +417,44 @@ def _cmd_verify_run(args: argparse.Namespace) -> int:
     return 0 if report["status"] == "pass" else 1
 
 
+# -- bundle ------------------------------------------------------------------
+
+def _cmd_bundle(args: argparse.Namespace) -> int:
+    try:
+        result = bundle_run(args.run_dir, args.out)
+    except (ReplayError, RuntimeError, ValueError, OSError) as exc:
+        _print_error_json(exc, args)
+        print(f"pageledger: error: {exc}", file=sys.stderr)
+        return 1
+    if args.json_output:
+        print(json.dumps(result, ensure_ascii=False, sort_keys=True))
+    else:
+        print(f"Bundle created: {result['bundle_dir']}")
+    return 0
+
+
+# -- replay ------------------------------------------------------------------
+
+def _cmd_replay(args: argparse.Namespace) -> int:
+    try:
+        result = replay_bundle(args.bundle_dir, args.out, adapter_path=args.adapter_path)
+    except (ReplayError, RuntimeError, ValueError, OSError) as exc:
+        _print_error_json(exc, args)
+        print(f"pageledger: error: {exc}", file=sys.stderr)
+        return 1
+    if args.json_output:
+        print(json.dumps(result, ensure_ascii=False, sort_keys=True))
+    else:
+        print(f"Verified replay outcome: {result['outcome']}")
+        raw = result["raw"]
+        print(
+            "Raw comparison: "
+            f"{raw['equal']} equal / {raw['different']} different / "
+            f"{raw['missing']} missing"
+        )
+    return 0 if result.get("outcome") in {"exact", "evidence_compared"} else 1
+
+
 # -- compare-runs --------------------------------------------------------------
 
 def _cmd_compare_runs(args: argparse.Namespace) -> int:
@@ -401,6 +472,60 @@ def _cmd_compare_runs(args: argparse.Namespace) -> int:
 
 
 # -- run ---------------------------------------------------------------------
+
+def _read_cost_report(out_dir: Path) -> dict | None:
+    try:
+        report = json.loads((out_dir / "cost.json").read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    return report if isinstance(report, dict) else None
+
+
+def _print_run_cost(out_dir: Path, *, dry_run: bool) -> None:
+    cost = _read_cost_report(out_dir)
+    if cost is None:
+        print("Cost USD: unavailable (cost.json could not be read)")
+        return
+    _print_human_cost(
+        cost_known=cost.get("cost_known", False),
+        cost_usd=cost.get("cost_usd"),
+        dry_run=dry_run,
+        cost_basis=cost.get("cost_basis"),
+    )
+
+
+def _print_human_cost(
+    *,
+    cost_known: bool,
+    cost_usd: int | float | None,
+    dry_run: bool,
+    cost_basis: str | None,
+) -> None:
+    if dry_run and cost_known and cost_usd == 0.0:
+        print("Cost USD: 0.0 (dry run; no extraction performed)")
+        return
+    if cost_usd is None:
+        print("Cost USD: unknown")
+        return
+
+    label = "Cost USD"
+    amount = str(cost_usd)
+    qualifications = []
+    if not cost_known:
+        amount = f"at least {cost_usd}"
+        qualifications.append("partial; some page costs unknown")
+    if cost_basis == "configured_rate":
+        label = "Estimated cost USD"
+        qualifications.append("configured rate; not a provider charge")
+    elif cost_basis == "adapter_reported":
+        label = "Adapter-reported cost USD"
+    elif cost_basis == "mixed":
+        label = "Cost evidence USD"
+        qualifications.append(
+            "mixed adapter-reported and configured-rate evidence"
+        )
+    suffix = f" ({'; '.join(qualifications)})" if qualifications else ""
+    print(f"{label}: {amount}{suffix}")
 
 def _cmd_run(args: argparse.Namespace) -> int:
     if args.routes is not None and args.config is None:
@@ -449,7 +574,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
         )
         print(f"Raw artifacts: {result['raw_artifact_count']}")
         print(f"Quality warning pages: {result['quality_warning_pages']}")
-        print(f"Estimated cost USD: {summary['estimated_cost_usd']}")
+        _print_run_cost(args.out, dry_run=result["dry_run"])
         escalation = result.get("escalation")
         if escalation is not None:
             step = escalation["step"]
@@ -525,7 +650,7 @@ def _cmd_rerun(args: argparse.Namespace) -> int:
             f"{summary['pages_extracted']} extracted / {summary['pages_total']} total"
         )
         print(f"Quality warning pages: {result['quality_warning_pages']}")
-        print(f"Estimated cost USD: {summary['estimated_cost_usd']}")
+        _print_run_cost(args.out, dry_run=result["dry_run"])
         escalation = result.get("escalation")
         if escalation is not None:
             step = escalation["step"]

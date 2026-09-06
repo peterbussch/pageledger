@@ -94,6 +94,9 @@ class TextAdapter:
     def supports(self, action: str) -> bool:
         return action == "transcribe_text"
 
+    def reproducibility_profile(self) -> dict[str, object]:
+        return {"materials": []}
+
     def page_count(self, source: Path) -> int:
         return paginate(source, allow_pdf=False)
 
@@ -134,6 +137,15 @@ class PdfTextAdapter:
 
     def supports(self, action: str) -> bool:
         return action == "transcribe_text"
+
+    def reproducibility_profile(self) -> dict[str, object]:
+        from .replay import _ProfileUnavailable, package_material
+
+        try:
+            material = package_material("pypdf")
+        except (OSError, RuntimeError, ValueError) as exc:
+            raise _ProfileUnavailable("pdf_text material is unavailable") from exc
+        return {"materials": [material]}
 
     def page_count(self, source: Path) -> int:
         return paginate(source, allow_pdf=True)
@@ -201,6 +213,29 @@ class PdfOcrAdapter:
 
     def supports(self, action: str) -> bool:
         return action == "transcribe_text"
+
+    def reproducibility_profile(self) -> dict[str, object]:
+        from .replay import _ProfileUnavailable, binary_material, model_material
+
+        try:
+            tesseract = _require_binary("tesseract")
+            pdftoppm = _require_binary("pdftoppm")
+            data_dir = _tesseract_data_dir(tesseract)
+            materials: list[dict[str, str]] = [
+                binary_material("tesseract", tesseract, _tesseract_model_string()),
+                binary_material("pdftoppm", pdftoppm, _pdftoppm_model_string()),
+            ]
+            for language in self.lang.split("+"):
+                traineddata = data_dir / f"{language}.traineddata"
+                materials.append(
+                    model_material(
+                        f"tesseract:{language}.traineddata",
+                        traineddata,
+                    )
+                )
+        except (OSError, RuntimeError, ValueError) as exc:
+            raise _ProfileUnavailable("pdf_ocr material is unavailable") from exc
+        return {"materials": materials}
 
     def page_count(self, source: Path) -> int:
         return ocr_pdf_page_count(source)
@@ -300,6 +335,34 @@ def _tesseract_installed_langs(tesseract: str) -> frozenset[str] | None:
         if line.strip() and _LANG_PATTERN.match(line.strip())
     )
     return langs or None
+
+
+def _tesseract_data_dir(tesseract: str) -> Path:
+    """Resolve Tesseract's data directory from its language-list banner."""
+    try:
+        proc = subprocess.run(
+            [tesseract, "--list-langs"],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise ValueError("Cannot resolve Tesseract data directory") from exc
+    if proc.returncode != 0:
+        raise ValueError("Cannot resolve Tesseract data directory")
+    first_line = (proc.stdout or "").splitlines()[:1]
+    if not first_line:
+        raise ValueError("Cannot resolve Tesseract data directory")
+    banner = first_line[0]
+    match = re.search(r"[\"']([^\"']+)[\"']", banner)
+    if match is None:
+        match = re.search(r"\bin\s+(.+?)(?:\s+\(\d+\))?$", banner)
+    if match is None:
+        raise ValueError("Cannot resolve Tesseract data directory")
+    data_dir = Path(match.group(1).strip())
+    if not data_dir.is_dir():
+        raise ValueError(f"Cannot locate Tesseract data directory '{data_dir}'")
+    return data_dir
 
 
 def _check_tesseract_langs(tesseract: str, lang: str) -> None:
@@ -581,6 +644,9 @@ def _adapter_contract_issues(adapter: Any) -> list[str]:
     page_count = getattr(adapter, "page_count", None)
     if page_count is not None and not callable(page_count):
         issues.append("'page_count' must be callable or absent")
+    reproducibility_profile = getattr(adapter, "reproducibility_profile", None)
+    if reproducibility_profile is not None and not callable(reproducibility_profile):
+        issues.append("'reproducibility_profile' must be callable or absent")
     return issues
 
 
