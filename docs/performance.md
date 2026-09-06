@@ -17,7 +17,14 @@ after: about **0.45 seconds saved** across all 5,000 tiny pages.
 Those numbers are fixture-specific. They do not establish an end-to-end OCR
 speedup, saved review time, or behavior on full-page prose, tables, or large
 metadata. A separate 1,000-page synthetic fixture supplied historical
-generalization evidence. The 50,000-page RSS target was not measured.
+generalization evidence, but its formal gate used the wrong denominator: it
+compared candidate generalization ledger time per page with candidate primary
+ledger time per page instead of comparing candidate generalization total wall
+with its matching baseline. The retained profiled total-wall medians were about
+801.2 ms for the baseline and 518.0 ms for the candidate, a candidate/baseline
+ratio of about 0.6465 that supports historical non-regression. The final
+profiler-disabled study did not repeat generalization or verifier timing. The
+50,000-page RSS target was not measured.
 
 The retained change selects PyYAML's C safe dumper only when it can preserve the
 existing artifact bytes. Its conservative compatibility check falls back when
@@ -26,9 +33,10 @@ are embedded in route and rerun artifacts, a filename containing a space makes
 those complete artifacts use the legacy dumper. Identical small inputs named
 `sample.txt` and `Source collection.txt` confirmed selection behavior, not a
 new timing result. See the [serializer guard](../pageledger/artifacts.py), the
-[fixture definitions](../scripts/pageledger_bench/workloads.py), the
-[measurement boundary](../scripts/pageledger_bench/measure.py), and the
-[independent oracle](../scripts/pageledger_bench/oracle.py).
+[fixture definitions](https://github.com/peterbussch/pageledger/blob/186e5642ddd3caf9052ad6fe7acd9b9cb7bb0f25/scripts/pageledger_bench/workloads.py),
+the [measurement boundary](https://github.com/peterbussch/pageledger/blob/186e5642ddd3caf9052ad6fe7acd9b9cb7bb0f25/scripts/pageledger_bench/measure.py),
+and the [independent oracle](https://github.com/peterbussch/pageledger/blob/186e5642ddd3caf9052ad6fe7acd9b9cb7bb0f25/scripts/pageledger_bench/oracle.py)
+at the signed frozen harness commit.
 
 The original production gate required at least 2×, or at least a 50% reduction.
 The observed paired ratio was about 0.7001 and the 95% effect interval was
