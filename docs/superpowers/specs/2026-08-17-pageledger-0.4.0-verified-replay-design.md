@@ -1,6 +1,9 @@
 # PageLedger 0.4.0 verified replay design
 
-Status: approved for implementation
+Status: historical approved design; implemented for 0.4.0
+
+> This specification is retained as design history, not current operating
+> guidance. See [the current documentation index](../../README.md).
 
 Date: 2026-08-17
 

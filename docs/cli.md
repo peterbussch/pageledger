@@ -6,6 +6,9 @@ an existing run; the rest inspect, compare, diagnose, or scaffold.
 
 `pageledger --version` prints the installed release.
 
+For a complete run/inspect/raw/audit/verify/rerun journey using only the built-in
+text adapter, follow [First run](first-run.md).
+
 ## run
 
 ```bash
@@ -45,6 +48,17 @@ Hashes and page counts are checked when supplied; older maps without them are
 accepted with warnings and the current values are recorded.
 `--dry-run --routes` preserves the proposed decisions without calling
 `extract()`.
+
+Human run summaries read the persisted `cost.json` evidence. `Cost USD:
+unknown` means no complete dollar total was established; known zero remains
+`0.0`, and a known subtotal with unknown pages is explicitly labeled partial.
+Adapter-reported totals are labeled as such; configured-rate totals are called
+estimates and explicitly distinguished from provider charges; mixed-basis
+totals name both evidence sources.
+Dry-run output says that no extraction was performed, so its zero is not
+presented as a provider charge or projected bill. `--json` result mappings are
+unchanged; use `cost.json` for the authoritative `cost_known`, `cost_usd`, and
+`cost_basis` fields.
 
 ## classify
 
@@ -110,6 +124,8 @@ changes fail closed before the child directory is created. The parent ledger
 must pass `verify-run`, and its executable queue must still match the audit,
 routes, config, grades, quarantine, and lineage evidence. `rerun` takes the
 same `--dry-run`, `--json`, `--log-level`, and `--adapter-path` flags as `run`.
+It writes a separate selected-page run and does not choose or assemble a final
+corrected corpus for you.
 
 ## align
 
@@ -248,6 +264,10 @@ aggregate `grade_distribution` for compatibility and adds
 `grade_distribution_by_basis`. `--csv` writes one row per page (page id,
 counts, confidence, warnings, grade, grade basis, cost, timing) for triage in a
 spreadsheet. `--json` emits the summary as JSON.
+
+Human cost wording uses the same evidence distinctions as `run` and `rerun`:
+unknown, known zero/nonzero, or a qualified partial subtotal. The JSON summary
+retains its existing field names for machine consumers.
 
 ## init-config
 

@@ -6,19 +6,33 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to the artifact compatibility policy documented in
 `docs/run-manifest-spec.md` → Compatibility Policy.
 
-## 0.4.1 - 2026-08-22
+## 0.4.1 - 2026-09-06
+
+Prepared release notes; publication requires a separate verified release
+receipt.
 
 ### Changed
 
 - Hardened replay around a fresh-interpreter worker, one adapter instance per
   execution, canonical verification, and provenance binding.
-- Human replay output now discloses raw equal/different/missing counts.
+- Human replay output discloses raw equal/different/missing counts, making its
+  exact/evidence/mismatch guarantee inspectable without reading JSON.
+- Human run, rerun, and inspection summaries distinguish unknown cost, known
+  zero or nonzero cost, and partial known subtotals without changing machine
+  result or artifact contracts.
+- Added a maintained offline reader journey that runs, inspects raw/audit/CSV
+  evidence, verifies, reruns the selected page, records external review notes,
+  and exercises relocation/replay from a fresh scratch directory.
+- Reordered the beginner path around finding and reviewing extracted text;
+  bundle/replay is now a separate optional relocation step.
 
 ### Compatibility
 
 - Replay's honest trust boundaries are documented, including adapter-declared
   material evidence and the non-hermetic credential/network boundary.
 - The public CLI, JSON/result mappings, and artifact schemas are unchanged.
+- This entry describes the prepared candidate; publication requires its own
+  verified release receipt.
 
 ## 0.4.0 - 2026-08-17
 
@@ -483,7 +497,7 @@ and this project adheres to the artifact compatibility policy documented in
   schemas, failure paths, and edge-case inputs.
 - CI workflow with test matrix (with/without PDF extra, Python 3.10–3.13)
   and wheel/sdist smoke tests.
-- Release checklist under `.planning/release-checklist.md`.
+- A source-tree release checklist for maintainers.
 
 ### Changed
 

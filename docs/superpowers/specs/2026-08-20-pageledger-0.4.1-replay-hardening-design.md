@@ -1,6 +1,9 @@
 # PageLedger 0.4.1 replay hardening design
 
-Status: approved architecture; written-spec review pending
+Status: historical approved design; implemented for the 0.4.1 candidate
+
+> This specification is retained as design history, not current operating
+> guidance. See [the current documentation index](../../README.md).
 
 Date: 2026-08-20
 

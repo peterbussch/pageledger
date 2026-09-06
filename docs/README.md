@@ -1,12 +1,14 @@
 # PageLedger documentation
 
 PageLedger records OCR and document extraction runs one page at a time. Start
-with the [CLI reference](cli.md) if you already have an input file, or follow
-the [first OCR run guide](pdf-ocr-first-run.md) for a scanned PDF.
+with the maintained [offline text first run](first-run.md), which needs no OCR
+engine or provider. Use the [PDF/OCR first-run recipe](pdf-ocr-first-run.md)
+when you are ready to bring a scanned document.
 
 ## Guides
 
 - [Choose an OCR or VLM adapter](ocr-options.md)
+- [Read the CLI and configuration reference](cli.md)
 - [Classify pages and review route evidence](classifier.md)
 - [Run OCR on non-English and historical documents](multilingual-ocr.md)
 - [Work through a scanned government archive](examples/jfk-scanned-archive.md)
@@ -27,6 +29,7 @@ the [first OCR run guide](pdf-ocr-first-run.md) for a scanned PDF.
 ## Scope and design
 
 - [Capabilities and limits](capabilities-and-limits.md)
+- [Measured performance and limits](performance.md)
 - [Current design and future targets](design.md)
 
 The JSON Schemas in [`schemas/`](../schemas/) are the machine-readable

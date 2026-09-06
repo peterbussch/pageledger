@@ -145,6 +145,13 @@ ran.
 that digest fails integrity verification.
 Spec: [`audit-spec.md`](audit-spec.md).
 
+Record human decisions outside the run directory, keyed by `run_id` and
+`page_id`. A project spreadsheet can add the source/page, decision, reason,
+reviewer/date, and selected downstream output without inventing a new
+PageLedger artifact. Editing `audit.md`, `audit.json`, or `raw/` in place changes
+verified evidence and makes the run fail integrity checks. See the executable
+[first-run review-sheet example](first-run.md#record-review-decisions-outside-the-run).
+
 `rerun-manifest.yml` records what to do next. It is an executable list of flagged
 pages that `pageledger rerun` re-extracts with the config you give it,
 preserving page ids and lineage. Each item records `previous_grade`; a
@@ -156,6 +163,8 @@ For adapter chains, its optional `escalation` block adds the planned
 `chain_exhausted`, items are cleared, and the audit review queue remains the
 human worklist. The config supplied to `rerun` is authoritative; a mismatch
 with the recorded plan produces an escalation warning and the config wins.
+The rerun remains a separate ledger; PageLedger does not automatically merge it
+with the parent or decide which output belongs in a corrected corpus.
 Spec: [`rerun-manifest-spec.md`](rerun-manifest-spec.md).
 
 ## Re-alignment

@@ -304,6 +304,219 @@ ADAPTER_MODULE = textwrap.dedent("""\
             )
     """)
 
+MIXED_COST_ADAPTER_MODULE = textwrap.dedent("""\
+    from pageledger.adapters import ExtractionResult
+
+    class MixedCostAdapter:
+        name = "mixed-cost"
+        version = "1.0"
+        deterministic = True
+        input_types = ("text",)
+        output_types = ("text",)
+        capabilities = ("local",)
+
+        def supports(self, action):
+            return action == "transcribe_text"
+
+        def extract(self, source, *, page_id, page_number, action, prompt=None):
+            pages = source.read_text(encoding="utf-8").split("\\f")
+            return ExtractionResult(
+                content=pages[page_number - 1],
+                format="text",
+                confidence=None,
+                model=None,
+                warnings=["review_example"],
+                usage={
+                    "pages": 1,
+                    "tokens": None,
+                    "compute_seconds": None,
+                    "cost_usd": 0.25 if page_number == 1 else None,
+                },
+            )
+    """)
+
+
+def _write_cost_fixture(
+    tmp_path: Path, *, pricing: float | None = None, mixed_adapter: bool = False
+) -> tuple[Path, Path, list[str]]:
+    source = tmp_path / "cost-pages.txt"
+    source.write_text("first � page\fsecond � page", encoding="utf-8")
+    adapter = "text"
+    extra_args: list[str] = []
+    if mixed_adapter:
+        adapter_dir = tmp_path / "adapters"
+        adapter_dir.mkdir()
+        (adapter_dir / "mixed_cost_adapter.py").write_text(
+            MIXED_COST_ADAPTER_MODULE, encoding="utf-8"
+        )
+        adapter = "mixed_cost_adapter:MixedCostAdapter"
+        extra_args = ["--adapter-path", str(adapter_dir)]
+    run_config: dict[str, object] = {
+        "adapter": adapter,
+        "max_rerun_depth": 2,
+    }
+    if pricing is not None:
+        run_config["pricing"] = {"cost_per_page": pricing}
+    config = tmp_path / "cost-config.yml"
+    config.write_text(
+        yaml.safe_dump(
+            {
+                "schema_version": "0.1",
+                "taxonomy": {
+                    "page_types": {"prose": {"default_action": "transcribe_text"}}
+                },
+                "run": run_config,
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+    return source, config, extra_args
+
+
+def _run_cost_command(
+    tmp_path: Path,
+    *,
+    command: str,
+    pricing: float | None = None,
+    mixed_adapter: bool = False,
+    dry_run: bool = False,
+) -> tuple[int, str, str, Path]:
+    source, config, adapter_args = _write_cost_fixture(
+        tmp_path, pricing=pricing, mixed_adapter=mixed_adapter
+    )
+    if command == "run":
+        out_dir = tmp_path / "run"
+        args = [
+            "run", str(source), "--config", str(config), "--out", str(out_dir),
+            *adapter_args,
+        ]
+    else:
+        parent_dir = tmp_path / "parent"
+        parent_args = [
+            "run", str(source), "--config", str(config), "--out", str(parent_dir),
+            *adapter_args,
+        ]
+        code, stdout, stderr = _run_cli(parent_args)
+        assert code == 0, f"stdout={stdout}\nstderr={stderr}"
+        out_dir = tmp_path / "rerun"
+        args = [
+            "rerun", str(parent_dir), "--config", str(config), "--out", str(out_dir),
+            *adapter_args,
+        ]
+    if dry_run:
+        args.append("--dry-run")
+    code, stdout, stderr = _run_cli(args)
+    return code, stdout, stderr, out_dir
+
+
+@pytest.mark.parametrize("command", ["run", "rerun"])
+def test_human_cost_summary_distinguishes_unknown_from_zero(
+    tmp_path: Path, command: str
+) -> None:
+    code, stdout, stderr, out_dir = _run_cost_command(tmp_path, command=command)
+    assert code == 0, stderr
+    assert "Cost USD: unknown" in stdout
+    assert "Estimated cost USD: 0.0" not in stdout
+    cost = json.loads((out_dir / "cost.json").read_text(encoding="utf-8"))
+    assert cost["cost_usd"] is None
+    assert cost["cost_known"] is False
+
+
+@pytest.mark.parametrize("command", ["run", "rerun"])
+def test_human_cost_summary_preserves_explicit_known_zero(
+    tmp_path: Path, command: str
+) -> None:
+    code, stdout, stderr, out_dir = _run_cost_command(
+        tmp_path, command=command, pricing=0.0
+    )
+    assert code == 0, stderr
+    assert "Estimated cost USD: 0.0 (configured rate; not a provider charge)" in stdout
+    assert "unknown" not in stdout
+    cost = json.loads((out_dir / "cost.json").read_text(encoding="utf-8"))
+    assert cost["cost_usd"] == 0.0
+    assert cost["cost_known"] is True
+
+
+@pytest.mark.parametrize("command", ["run", "rerun"])
+def test_human_cost_summary_reports_known_nonzero_total(
+    tmp_path: Path, command: str
+) -> None:
+    code, stdout, stderr, out_dir = _run_cost_command(
+        tmp_path, command=command, pricing=0.25
+    )
+    assert code == 0, stderr
+    expected = "Estimated cost USD: 0.5 (configured rate; not a provider charge)"
+    assert expected in stdout
+    inspect_code, inspect_stdout, inspect_stderr = _run_cli(["inspect-run", str(out_dir)])
+    assert inspect_code == 0, inspect_stderr
+    assert expected in inspect_stdout
+    cost = json.loads((out_dir / "cost.json").read_text(encoding="utf-8"))
+    assert cost["cost_usd"] == 0.5
+    assert cost["cost_known"] is True
+
+
+@pytest.mark.parametrize("command", ["run", "rerun"])
+def test_human_cost_summary_qualifies_known_subtotal_with_unknown_pages(
+    tmp_path: Path, command: str
+) -> None:
+    code, stdout, stderr, out_dir = _run_cost_command(
+        tmp_path, command=command, mixed_adapter=True
+    )
+    assert code == 0, stderr
+    assert "Cost USD: at least 0.25 (partial; some page costs unknown)" in stdout
+    assert "Estimated cost" not in stdout
+    cost = json.loads((out_dir / "cost.json").read_text(encoding="utf-8"))
+    assert cost["cost_usd"] == 0.25
+    assert cost["cost_known"] is False
+
+
+def test_human_cost_summary_reports_known_mixed_basis_total(tmp_path: Path) -> None:
+    code, stdout, stderr, out_dir = _run_cost_command(
+        tmp_path, command="run", pricing=0.1, mixed_adapter=True
+    )
+    assert code == 0, stderr
+    assert (
+        "Cost evidence USD: 0.35 "
+        "(mixed adapter-reported and configured-rate evidence)"
+    ) in stdout
+    assert "partial" not in stdout
+    cost = json.loads((out_dir / "cost.json").read_text(encoding="utf-8"))
+    assert cost["cost_usd"] == 0.35
+    assert cost["cost_known"] is True
+    assert cost["cost_basis"] == "mixed"
+
+
+@pytest.mark.parametrize("command", ["run", "rerun"])
+def test_human_dry_run_cost_does_not_imply_an_incurred_estimate(
+    tmp_path: Path, command: str
+) -> None:
+    code, stdout, stderr, out_dir = _run_cost_command(
+        tmp_path, command=command, dry_run=True
+    )
+    assert code == 0, stderr
+    assert "Cost USD: 0.0 (dry run; no extraction performed)" in stdout
+    assert "Estimated cost" not in stdout
+    cost = json.loads((out_dir / "cost.json").read_text(encoding="utf-8"))
+    assert cost["cost_usd"] == 0.0
+    assert cost["cost_known"] is True
+
+
+def test_run_json_mapping_keeps_unknown_cost_contract(tmp_path: Path) -> None:
+    source, config, adapter_args = _write_cost_fixture(tmp_path)
+    out_dir = tmp_path / "json-run"
+    code, stdout, stderr = _run_cli([
+        "run", str(source), "--config", str(config), "--out", str(out_dir),
+        *adapter_args, "--json",
+    ])
+    assert code == 0, stderr
+    result = json.loads(stdout)
+    assert result["summary"]["estimated_cost_usd"] == 0.0
+    assert "cost_known" not in result["summary"]
+    assert json.loads((out_dir / "cost.json").read_text(encoding="utf-8"))[
+        "cost_usd"
+    ] is None
+
 
 def test_adapter_path_loads_custom_adapter_without_pythonpath(tmp_path: Path) -> None:
     adapter_dir = tmp_path / "adapters"

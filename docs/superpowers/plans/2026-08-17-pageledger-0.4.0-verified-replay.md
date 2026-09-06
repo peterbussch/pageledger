@@ -1,5 +1,9 @@
 # PageLedger 0.4.0 Verified Replay Implementation Plan
 
+> **Historical implementation record.** This completed 2026-08-17 execution
+> plan is retained for development history; it is not current user guidance or
+> an active checklist. See [the current documentation index](../../README.md).
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Ship PageLedger 0.4.0 with a fail-closed, cross-machine verified replay envelope that proves byte-identical output for admissible deterministic adapters and records comparison evidence for nondeterministic/cloud adapters.

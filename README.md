@@ -34,44 +34,66 @@ historians, and anyone who has to defend their methodology months later.
 
 ## Install
 
+Install the current stable package:
+
 ```bash
 pip install pageledger
 ```
 
+This documentation targets 0.4.1. If that version is not on the package index
+yet, install the exact candidate wheel in a fresh environment and confirm
+`pageledger --version` before following the quickstart. See the
+[maintained first-run guide](docs/first-run.md#maintainer-verification) for the
+isolated-wheel command and import-path check.
+
 ## Quickstart
 
-OCR a scanned PDF. No config file needed; `pdf_ocr` uses your locally
-installed Tesseract and poppler (`pageledger doctor` checks for both and
-lists your installed OCR languages):
+Start with the built-in text adapter; it needs no OCR engine or provider. The
+form feed makes two source pages, and the source stays in place for a later
+rerun:
 
 ```bash
-pageledger run scan.pdf --adapter pdf_ocr --out runs/first
+printf 'first page\fsecond page with a replacement character �\n' > sample.txt
+pageledger init-config --out pageledger.yml
+pageledger run sample.txt --config pageledger.yml --out runs/first
+pageledger inspect-run runs/first
+sed -n '1,20p' runs/first/raw/doc_0001_page_0002.txt
+sed -n '1,80p' runs/first/audit.md
 pageledger verify-run runs/first
-pageledger bundle runs/first --out bundles/first --json
-mv scan.pdf scan.pdf.moved                 # the bundle carries its source copy
-pageledger replay bundles/first --out runs/replayed --json
-pageledger verify-run runs/replayed
 ```
 
 `runs/first/` now holds the extracted text plus the ledger: a manifest,
-per-page provenance, quality warnings, aggregate word-level OCR confidence
-evidence, cost evidence, and a review queue. Verify the ledger before making a
-portable directory bundle. The bundle includes the unchanged baseline and
-source bytes, so the original source can be relocated before replay. Replay
-writes `replay.json`; its outcome distinguishes exact bytes, evidence-only
-comparison, and deterministic mismatch. This is a locally verified transport
-workflow, not a hermetic environment reproduction; see the [honest replay
-boundary](docs/capabilities-and-limits.md#verified-replay-boundary).
+per-page provenance, quality warnings, cost evidence, and a review queue. The
+terminal reports unknown cost as unknown rather than as a known zero. Follow
+the maintained [offline text tutorial](docs/first-run.md) to export CSV, trace
+the flagged page to its source, record an external review decision, and run the
+selected-page rerun. For a scanned document, use the separate
+[PDF/OCR first-run recipe](docs/pdf-ocr-first-run.md).
 
 Flagged pages are already listed in an executable rerun plan, so escalating just
-those pages to a stronger engine is one command, and comparing the two runs is
-another:
+those pages is one command. The config is always explicit; replace it with a
+stronger-adapter config when appropriate. A rerun is a new ledger, not an
+automatically assembled corrected corpus:
 
 ```bash
-pageledger rerun runs/first --config stronger.yml --out runs/second
+pageledger rerun runs/first --config pageledger.yml --out runs/second
 pageledger compare-runs runs/first runs/second
 pageledger verify-run runs/second
 ```
+
+Bundling and replay are optional relocation steps, separate from rerunning:
+
+```bash
+pageledger bundle runs/first --out bundles/first
+pageledger replay bundles/first --out runs/replayed
+pageledger verify-run runs/replayed
+```
+
+The bundle includes the unchanged baseline and source bytes. Replay writes
+`replay.json`; its outcome distinguishes exact bytes, evidence-only comparison,
+and deterministic mismatch. This is a locally verified transport workflow, not
+a hermetic environment reproduction; see the [honest replay
+boundary](docs/capabilities-and-limits.md#verified-replay-boundary).
 
 Other first moves:
 
@@ -189,7 +211,8 @@ the quality signals flagged page by page. Synthetic stress runs cover
 | | |
 |---|---|
 | [`docs/README.md`](docs/README.md) | Documentation index |
-| [`docs/cli.md`](docs/cli.md) | All nine commands, flags, and config keys |
+| [`docs/first-run.md`](docs/first-run.md) | Maintained offline reader journey |
+| [`docs/cli.md`](docs/cli.md) | Command, flag, and config reference |
 | [`docs/classifier.md`](docs/classifier.md) | Structural signals, thresholds, hooks, and route evidence |
 | [`docs/artifacts.md`](docs/artifacts.md) | What each file in a run directory answers |
 | [`docs/capabilities-and-limits.md`](docs/capabilities-and-limits.md) | What works, what you supply, what is design |

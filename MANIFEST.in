@@ -15,6 +15,7 @@ exclude _session_research.md
 recursive-exclude prompts *
 recursive-exclude assets *
 prune brand
+prune docs/superpowers/plans
 prune .planning
 prune .stress
 prune .hermes

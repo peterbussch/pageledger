@@ -338,11 +338,15 @@ def _cmd_inspect_run(args: argparse.Namespace) -> int:
     if args.json_output:
         print(json.dumps(report, ensure_ascii=False, sort_keys=True))
     else:
-        _print_inspect_report(report)
+        cost = _read_cost_report(args.run_dir)
+        _print_inspect_report(
+            report,
+            cost_basis=cost.get("cost_basis") if cost is not None else None,
+        )
     return 0
 
 
-def _print_inspect_report(report: dict) -> None:
+def _print_inspect_report(report: dict, *, cost_basis: str | None = None) -> None:
     print(f"Run: {report['run_id']}")
     print(f"Status: {report['status']}")
     print(f"Execution mode: {report['execution_mode']}")
@@ -361,9 +365,12 @@ def _print_inspect_report(report: dict) -> None:
             f"Grades ({grade_basis_label(basis)}): "
             + " ".join(f"{grade}={distribution[grade]}" for grade in GRADES)
         )
-    print(f"Cost known: {report['cost_known']}")
-    if report["estimated_cost_usd"] is not None:
-        print(f"Estimated cost USD: {report['estimated_cost_usd']}")
+    _print_human_cost(
+        cost_known=report["cost_known"],
+        cost_usd=report["estimated_cost_usd"],
+        dry_run=report["execution_mode"] == "dry_run",
+        cost_basis=cost_basis,
+    )
     artifacts = report["artifacts_present"]
     missing = report["artifacts_missing"]
     print(f"Artifacts present: {len(artifacts)}")
@@ -466,6 +473,52 @@ def _cmd_compare_runs(args: argparse.Namespace) -> int:
 
 # -- run ---------------------------------------------------------------------
 
+def _read_cost_report(out_dir: Path) -> dict | None:
+    try:
+        report = json.loads((out_dir / "cost.json").read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    return report if isinstance(report, dict) else None
+
+
+def _print_run_cost(out_dir: Path, *, dry_run: bool) -> None:
+    cost = _read_cost_report(out_dir)
+    if cost is None:
+        print("Cost USD: unavailable (cost.json could not be read)")
+        return
+    _print_human_cost(
+        cost_known=cost.get("cost_known", False),
+        cost_usd=cost.get("cost_usd"),
+        dry_run=dry_run,
+        cost_basis=cost.get("cost_basis"),
+    )
+
+
+def _print_human_cost(
+    *,
+    cost_known: bool,
+    cost_usd: int | float | None,
+    dry_run: bool,
+    cost_basis: str | None,
+) -> None:
+    if dry_run and cost_known and cost_usd == 0.0:
+        print("Cost USD: 0.0 (dry run; no extraction performed)")
+    elif cost_usd is None:
+        print("Cost USD: unknown")
+    elif not cost_known:
+        print(f"Cost USD: at least {cost_usd} (partial; some page costs unknown)")
+    elif cost_basis == "configured_rate":
+        print(f"Estimated cost USD: {cost_usd} (configured rate; not a provider charge)")
+    elif cost_basis == "adapter_reported":
+        print(f"Adapter-reported cost USD: {cost_usd}")
+    elif cost_basis == "mixed":
+        print(
+            f"Cost evidence USD: {cost_usd} "
+            "(mixed adapter-reported and configured-rate evidence)"
+        )
+    else:
+        print(f"Cost USD: {cost_usd}")
+
 def _cmd_run(args: argparse.Namespace) -> int:
     if args.routes is not None and args.config is None:
         exc = ValueError("--routes requires --config; it cannot be used with --adapter")
@@ -513,7 +566,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
         )
         print(f"Raw artifacts: {result['raw_artifact_count']}")
         print(f"Quality warning pages: {result['quality_warning_pages']}")
-        print(f"Estimated cost USD: {summary['estimated_cost_usd']}")
+        _print_run_cost(args.out, dry_run=result["dry_run"])
         escalation = result.get("escalation")
         if escalation is not None:
             step = escalation["step"]
@@ -589,7 +642,7 @@ def _cmd_rerun(args: argparse.Namespace) -> int:
             f"{summary['pages_extracted']} extracted / {summary['pages_total']} total"
         )
         print(f"Quality warning pages: {result['quality_warning_pages']}")
-        print(f"Estimated cost USD: {summary['estimated_cost_usd']}")
+        _print_run_cost(args.out, dry_run=result["dry_run"])
         escalation = result.get("escalation")
         if escalation is not None:
             step = escalation["step"]

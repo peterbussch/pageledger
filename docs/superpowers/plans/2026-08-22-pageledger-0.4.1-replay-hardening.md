@@ -1,5 +1,9 @@
 # PageLedger 0.4.1 Replay Hardening Implementation Plan
 
+> **Historical implementation record.** This completed 2026-08-22 execution
+> plan is retained for development history; it is not current user guidance or
+> an active checklist. See [the current documentation index](../../README.md).
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Make PageLedger 0.4.1 release-ready by isolating verified replay in a fresh interpreter, binding preflight to the executing adapter object, and making extractor/profile verification fail closed.
