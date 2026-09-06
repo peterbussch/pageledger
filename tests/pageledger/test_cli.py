@@ -335,15 +335,62 @@ MIXED_COST_ADAPTER_MODULE = textwrap.dedent("""\
             )
     """)
 
+PARTIAL_BASIS_ADAPTER_MODULE = textwrap.dedent("""\
+    from pageledger.adapters import ExtractionResult
+
+    class PartialBasisAdapter:
+        name = "partial-basis"
+        version = "1.0"
+        deterministic = True
+        input_types = ("text",)
+        output_types = ("text",)
+        capabilities = ("local",)
+
+        def supports(self, action):
+            return action == "transcribe_text"
+
+        def extract(self, source, *, page_id, page_number, action, prompt=None):
+            pages = source.read_text(encoding="utf-8").split("\\f")
+            mixed = len(pages) == 3
+            return ExtractionResult(
+                content=pages[page_number - 1],
+                format="text",
+                confidence=None,
+                model=None,
+                warnings=["review_example"],
+                usage={
+                    "pages": 1,
+                    "tokens": 1000 if page_number == (2 if mixed else 1) else None,
+                    "compute_seconds": None,
+                    "cost_usd": 0.25 if mixed and page_number == 1 else None,
+                },
+            )
+    """)
+
 
 def _write_cost_fixture(
-    tmp_path: Path, *, pricing: float | None = None, mixed_adapter: bool = False
+    tmp_path: Path,
+    *,
+    pricing: float | None = None,
+    mixed_adapter: bool = False,
+    partial_basis: str | None = None,
 ) -> tuple[Path, Path, list[str]]:
     source = tmp_path / "cost-pages.txt"
-    source.write_text("first � page\fsecond � page", encoding="utf-8")
+    pages = "first � page\fsecond � page"
+    if partial_basis == "mixed":
+        pages += "\fthird � page"
+    source.write_text(pages, encoding="utf-8")
     adapter = "text"
     extra_args: list[str] = []
-    if mixed_adapter:
+    if partial_basis is not None:
+        adapter_dir = tmp_path / "adapters"
+        adapter_dir.mkdir()
+        (adapter_dir / "partial_basis_adapter.py").write_text(
+            PARTIAL_BASIS_ADAPTER_MODULE, encoding="utf-8"
+        )
+        adapter = "partial_basis_adapter:PartialBasisAdapter"
+        extra_args = ["--adapter-path", str(adapter_dir)]
+    elif mixed_adapter:
         adapter_dir = tmp_path / "adapters"
         adapter_dir.mkdir()
         (adapter_dir / "mixed_cost_adapter.py").write_text(
@@ -357,6 +404,10 @@ def _write_cost_fixture(
     }
     if pricing is not None:
         run_config["pricing"] = {"cost_per_page": pricing}
+    elif partial_basis is not None:
+        run_config["pricing"] = {
+            "cost_per_1k_tokens": 0.1 if partial_basis == "mixed" else 0.25
+        }
     config = tmp_path / "cost-config.yml"
     config.write_text(
         yaml.safe_dump(
@@ -380,10 +431,14 @@ def _run_cost_command(
     command: str,
     pricing: float | None = None,
     mixed_adapter: bool = False,
+    partial_basis: str | None = None,
     dry_run: bool = False,
 ) -> tuple[int, str, str, Path]:
     source, config, adapter_args = _write_cost_fixture(
-        tmp_path, pricing=pricing, mixed_adapter=mixed_adapter
+        tmp_path,
+        pricing=pricing,
+        mixed_adapter=mixed_adapter,
+        partial_basis=partial_basis,
     )
     if command == "run":
         out_dir = tmp_path / "run"
@@ -464,11 +519,54 @@ def test_human_cost_summary_qualifies_known_subtotal_with_unknown_pages(
         tmp_path, command=command, mixed_adapter=True
     )
     assert code == 0, stderr
-    assert "Cost USD: at least 0.25 (partial; some page costs unknown)" in stdout
+    expected = (
+        "Adapter-reported cost USD: at least 0.25 "
+        "(partial; some page costs unknown)"
+    )
+    assert expected in stdout
     assert "Estimated cost" not in stdout
+    inspect_code, inspect_stdout, inspect_stderr = _run_cli(["inspect-run", str(out_dir)])
+    assert inspect_code == 0, inspect_stderr
+    assert expected in inspect_stdout
     cost = json.loads((out_dir / "cost.json").read_text(encoding="utf-8"))
     assert cost["cost_usd"] == 0.25
     assert cost["cost_known"] is False
+    assert cost["cost_basis"] == "adapter_reported"
+
+
+@pytest.mark.parametrize("command", ["run", "rerun"])
+@pytest.mark.parametrize(
+    ("basis", "expected"),
+    [
+        (
+            "configured_rate",
+            "Estimated cost USD: at least 0.25 "
+            "(partial; some page costs unknown; configured rate; "
+            "not a provider charge)",
+        ),
+        (
+            "mixed",
+            "Cost evidence USD: at least 0.35 "
+            "(partial; some page costs unknown; mixed adapter-reported and "
+            "configured-rate evidence)",
+        ),
+    ],
+)
+def test_human_cost_summary_preserves_basis_for_partial_subtotal(
+    tmp_path: Path, command: str, basis: str, expected: str
+) -> None:
+    code, stdout, stderr, out_dir = _run_cost_command(
+        tmp_path, command=command, partial_basis=basis
+    )
+    assert code == 0, stderr
+    assert expected in stdout
+    inspect_code, inspect_stdout, inspect_stderr = _run_cli(["inspect-run", str(out_dir)])
+    assert inspect_code == 0, inspect_stderr
+    assert expected in inspect_stdout
+    cost = json.loads((out_dir / "cost.json").read_text(encoding="utf-8"))
+    assert cost["cost_usd"] == (0.35 if basis == "mixed" else 0.25)
+    assert cost["cost_known"] is False
+    assert cost["cost_basis"] == basis
 
 
 def test_human_cost_summary_reports_known_mixed_basis_total(tmp_path: Path) -> None:

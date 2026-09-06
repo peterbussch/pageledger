@@ -503,21 +503,29 @@ def _print_human_cost(
 ) -> None:
     if dry_run and cost_known and cost_usd == 0.0:
         print("Cost USD: 0.0 (dry run; no extraction performed)")
-    elif cost_usd is None:
+        return
+    if cost_usd is None:
         print("Cost USD: unknown")
-    elif not cost_known:
-        print(f"Cost USD: at least {cost_usd} (partial; some page costs unknown)")
-    elif cost_basis == "configured_rate":
-        print(f"Estimated cost USD: {cost_usd} (configured rate; not a provider charge)")
+        return
+
+    label = "Cost USD"
+    amount = str(cost_usd)
+    qualifications = []
+    if not cost_known:
+        amount = f"at least {cost_usd}"
+        qualifications.append("partial; some page costs unknown")
+    if cost_basis == "configured_rate":
+        label = "Estimated cost USD"
+        qualifications.append("configured rate; not a provider charge")
     elif cost_basis == "adapter_reported":
-        print(f"Adapter-reported cost USD: {cost_usd}")
+        label = "Adapter-reported cost USD"
     elif cost_basis == "mixed":
-        print(
-            f"Cost evidence USD: {cost_usd} "
-            "(mixed adapter-reported and configured-rate evidence)"
+        label = "Cost evidence USD"
+        qualifications.append(
+            "mixed adapter-reported and configured-rate evidence"
         )
-    else:
-        print(f"Cost USD: {cost_usd}")
+    suffix = f" ({'; '.join(qualifications)})" if qualifications else ""
+    print(f"{label}: {amount}{suffix}")
 
 def _cmd_run(args: argparse.Namespace) -> int:
     if args.routes is not None and args.config is None:

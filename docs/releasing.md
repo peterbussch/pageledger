@@ -34,7 +34,7 @@ current repository does not assume that a PageLedger TestPyPI project exists.
    checkout with `PYTHONPATH` cleared, run the maintained reader journey:
 
    ```bash
-   PYTHONPATH= /path/to/wheel-venv/bin/python examples/run_first_run.py \
+   PYTHONPATH= /path/to/wheel-venv/bin/python /absolute/checkout/examples/run_first_run.py \
      --document /absolute/checkout/docs/first-run.md \
      --work-dir /fresh/scratch/first-run \
      --python /path/to/wheel-venv/bin/python \
