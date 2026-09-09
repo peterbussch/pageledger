@@ -211,6 +211,8 @@ def render_comparison(report: dict[str, Any]) -> str:
     """Render a comparison report as human-readable text."""
     a = report["run_a"]
     b = report["run_b"]
+    comparable_pages = report.get("pages_comparable_total", report["pages_compared"])
+    grade_comparable_pages = report.get("grade_pages_comparable_total", 0)
     lines = [
         f"Run A: {a['run_id']}  [{', '.join(a['adapters']) or 'no adapter'}]"
         f"  ({a['run_dir']})",
@@ -225,18 +227,30 @@ def render_comparison(report: dict[str, Any]) -> str:
             else ""
         ),
         f"Warning pages: A={report['warning_pages_a']} B={report['warning_pages_b']}",
-        f"Comparable pages: {report.get('pages_comparable_total', report['pages_compared'])}"
+        f"Comparable pages: {comparable_pages}"
         f" / incomparable {report.get('pages_incomparable_total', 0)}",
         f"Raw output: equal {report['raw_equal_total']} / "
         f"different {report['raw_different_total']} / missing {report['raw_missing_total']}",
-        f"Grade-comparable pages: {report.get('grade_pages_comparable_total', 0)}"
+        f"Grade-comparable pages: {grade_comparable_pages}"
         f" / incomparable {report.get('grade_pages_incomparable_total', 0)}",
-        f"Warnings resolved in B: {report['warnings_resolved_total']}",
-        f"Warnings introduced in B: {report['warnings_introduced_total']}",
-        f"Grades (matching basis/schema only): improved {report['grades_improved_total']}"
-        f" / regressed {report['grades_regressed_total']}",
-        f"Cost: A={_cost_line(a)} B={_cost_line(b)}",
     ]
+    if comparable_pages == 0:
+        lines.append("Warning changes: not assessed (0 comparable pages)")
+    else:
+        lines.extend(
+            [
+                f"Warnings resolved in B: {report['warnings_resolved_total']}",
+                f"Warnings introduced in B: {report['warnings_introduced_total']}",
+            ]
+        )
+    if grade_comparable_pages == 0:
+        lines.append("Grade changes: not assessed (0 grade-comparable pages)")
+    else:
+        lines.append(
+            f"Grades (matching basis/schema only): improved {report['grades_improved_total']}"
+            f" / regressed {report['grades_regressed_total']}"
+        )
+    lines.append(f"Cost: A={_cost_line(a)} B={_cost_line(b)}")
     changed = [
         page
         for page in report["pages"]

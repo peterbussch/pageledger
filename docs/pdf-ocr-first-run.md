@@ -178,10 +178,18 @@ those pages with a different adapter if you want, then compare:
 
 The rerun keeps the original page ids, records the parent run id, and
 enforces `run.max_rerun_depth`. `compare-runs` shows which warnings the
-stronger engine resolved or introduced. An empty LLM response on a rerun
-is caught as `empty_text` and re-queued for review. Cross-adapter changes are
-shown but deliberately unranked, and PageLedger does not automatically select
-or assemble a corrected corpus.
+stronger engine resolved or introduced. An empty adapter response on a rerun
+is caught as `empty_text` and re-queued for review. Large output growth is also
+flagged regardless of adapter. When OCR recovers text from an empty parent,
+`output_inflation` can be expected; it asks you to check the source and does not
+by itself establish hallucination. Cross-adapter changes are shown but
+deliberately unranked, and their human summary says `not assessed` when no pages
+are comparable. PageLedger does not automatically select or assemble a
+corrected corpus.
+
+If you want a replay bundle, create a separate generation-zero OCR run with
+the desired adapter and bundle that run. Rerun children preserve their parent
+lineage and cannot be used as bundle baselines.
 
 ## 8. Interpreting failures
 

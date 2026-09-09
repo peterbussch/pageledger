@@ -394,7 +394,7 @@ def test_compare_unrelated_sources_with_same_page_id_are_incomparable(tmp_path):
 
 
 def test_compare_cross_adapter_changes_are_unranked(tmp_path):
-    from pageledger.compare import compare_runs
+    from pageledger.compare import compare_runs, render_comparison
 
     source = tmp_path / "doc.txt"
     source.write_text("short\n", encoding="utf-8")
@@ -415,6 +415,10 @@ def test_compare_cross_adapter_changes_are_unranked(tmp_path):
     assert report["pages_comparable_total"] == 0
     assert report["warnings_resolved_total"] == 0
     assert report["grades_improved_total"] == 0
+
+    rendered = render_comparison(report)
+    assert "Warning changes: not assessed (0 comparable pages)" in rendered
+    assert "Grade changes: not assessed (0 grade-comparable pages)" in rendered
 
 
 def test_compare_same_adapter_different_model_is_unranked(tmp_path):

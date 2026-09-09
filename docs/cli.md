@@ -177,8 +177,10 @@ schema), have the same evidence basis, and (for schema-aware grades) have the
 same recorded schema identity.
 Changed-source, cross-adapter,
 same-adapter/different-extractor, and legacy-unknown transitions are shown but
-unranked. `--json` exposes extraction and grade comparability separately for
-every shared page id. Comparison reads its manifest, quality, provenance, and
+unranked. When no pages clear a comparability gate, the human report labels
+warning or grade changes `not assessed` instead of presenting zero as an
+improvement result. `--json` exposes extraction and grade comparability
+separately for every shared page id. Comparison reads its manifest, quality, provenance, and
 optional cost evidence only from contained regular files; symlinks are rejected
 instead of followed.
 

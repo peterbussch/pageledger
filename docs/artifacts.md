@@ -88,7 +88,7 @@ Spec: [`provenance-spec.md`](provenance-spec.md).
 
 `quality.jsonl` records how each page looks: character and word counts,
 engine-reported confidence with per-word statistics, lexical shape,
-script/orthography evidence, conservative LLM-output integrity evidence,
+script/orthography evidence, conservative output-integrity evidence,
 a warning list (`empty_text`, `low_confidence`, `instruction_echo`,
 `output_inflation`, and others), and a grade
 (`A`–`F` with `grade_basis` and per-axis detail). These are diagnostics

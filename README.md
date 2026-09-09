@@ -81,7 +81,9 @@ pageledger compare-runs runs/first runs/second
 pageledger verify-run runs/second
 ```
 
-Bundling and replay are optional relocation steps, separate from rerunning:
+Bundling and replay are optional relocation steps, separate from rerunning.
+Only a verified generation-zero execute run can be a bundle baseline; a rerun
+child keeps its parent linkage and cannot be bundled:
 
 ```bash
 pageledger bundle runs/first --out bundles/first
@@ -150,7 +152,9 @@ Every box on the right is a plain file in the run directory.
 - Quality signals per page: shape heuristics, Tesseract word confidence
   with a `low_confidence` warning, and pre-1918 Russian orthography
   detection that flags a likely historical-model mismatch, plus conservative
-  chat-template leakage and rerun-inflation warnings for model adapters.
+  chat-template leakage and adapter-agnostic rerun-inflation warnings. Large
+  growth from an empty parent can be legitimate OCR recovery; the warning asks
+  for source review and does not establish hallucination.
 - Budgets denominated in pages, the one unit every backend shares, with
   tokens and dollars on top when they exist. Absolute warn thresholds fire
   without a cap and record their first crossing without stopping the run.
