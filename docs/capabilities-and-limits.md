@@ -1,6 +1,6 @@
-# Capabilities and limits (PageLedger 0.4.1)
+# Capabilities and limits (PageLedger 0.4.2)
 
-What PageLedger 0.4.1 does, what it leaves to you, and what is documented
+What PageLedger 0.4.2 does, what it leaves to you, and what is documented
 design rather than working code. This is the honest-scope page; the README
 stays short because this exists.
 

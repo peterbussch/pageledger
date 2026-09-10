@@ -6,6 +6,34 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to the artifact compatibility policy documented in
 `docs/run-manifest-spec.md` → Compatibility Policy.
 
+## 0.4.2 - 2026-09-10
+
+Prepared release notes; publication requires a separate verified release
+receipt.
+
+### Fixed
+
+- When no shared pages are comparable, the human `compare-runs` summary now
+  says warning and grade changes were not assessed instead of rendering
+  directional zero totals. Per-page evidence and JSON counts are unchanged.
+
+### Documentation
+
+- Clarified that rerun `output_inflation` is adapter-agnostic review evidence,
+  so legitimate OCR recovery from an empty text-layer parent can trigger it.
+- Put the generation-zero bundle requirement beside the first-run rerun and
+  replay workflow.
+
+### Compatibility
+
+- The CLI command/option surface, JSON/result mappings, warning policy, provenance rules,
+  artifact schemas, and `schema_version: "0.1"` contract are unchanged.
+- Grades and `verify-run` describe recorded evidence, not OCR or transcription
+  accuracy. The accepted 5,000-page ledger result remains 1.428x / 29.993%,
+  not the original 2x target and not an OCR-speed claim.
+- This entry describes the prepared candidate; publication requires its own
+  verified release receipt.
+
 ## 0.4.1 - 2026-09-06
 
 Prepared release notes; publication requires a separate verified release

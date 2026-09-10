@@ -6,22 +6,22 @@ scratch directory after installing PageLedger. It shows the ordinary reader
 journey first: run, inspect, open the raw text and audit, export CSV, and verify.
 The selective rerun follows. Bundle relocation and replay are last and optional.
 
-This guide targets **0.4.1**. If that version is not yet on the package index,
+This guide targets **0.4.2**. If that version is not yet on the package index,
 install the exact candidate wheel by absolute path, then work outside the
 checkout:
 
 ```bash
-python -m venv /tmp/pageledger-0.4.1
-. /tmp/pageledger-0.4.1/bin/activate
-python -m pip install /absolute/path/to/pageledger-0.4.1-py3-none-any.whl
+python -m venv /tmp/pageledger-0.4.2
+. /tmp/pageledger-0.4.2/bin/activate
+python -m pip install /absolute/path/to/pageledger-0.4.2-py3-none-any.whl
 pageledger --version
 mkdir /tmp/pageledger-reader-tutorial
 cd /tmp/pageledger-reader-tutorial
 ```
 
-As of 2026-09-06, `pip install pageledger` installed the older 0.2.0 stable
+As of 2026-09-10, `pip install pageledger` installed the older 0.2.0 stable
 release. Use the documentation shipped with an older installed version rather
-than assuming it has the 0.4.1 replay and reader behavior described here.
+than assuming it has the 0.4.2 replay and reader behavior described here.
 
 ## Run and inspect
 
@@ -215,7 +215,7 @@ PYTHONPATH= /path/to/wheel-venv/bin/python /path/to/checkout/examples/run_first_
   --document /path/to/checkout/docs/first-run.md \
   --work-dir /tmp/pageledger-first-run \
   --python /path/to/wheel-venv/bin/python \
-  --expected-version 0.4.1 \
+  --expected-version 0.4.2 \
   --forbid-import-root /path/to/checkout
 ```
 

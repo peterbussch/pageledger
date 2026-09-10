@@ -19,12 +19,12 @@ python3 -m venv /tmp/pageledger-first-run
 /tmp/pageledger-first-run/bin/python -m pip install "pageledger[pdf]"
 ```
 
-If 0.4.1 is not yet on the package index, verify its exact candidate wheel by
+If 0.4.2 is not yet on the package index, verify its exact candidate wheel by
 absolute path in a fresh environment rather than importing a checkout:
 
 ```bash
 /tmp/pageledger-first-run/bin/python -m pip install \
-  "/absolute/path/to/pageledger-0.4.1-py3-none-any.whl[pdf]"
+  "/absolute/path/to/pageledger-0.4.2-py3-none-any.whl[pdf]"
 ```
 
 Contributors working from a source checkout use `python -m pip install -e

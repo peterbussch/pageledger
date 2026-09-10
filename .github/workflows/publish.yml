@@ -12,7 +12,7 @@ on:
           - verify
           - pypi
       production_confirmation:
-        description: For PyPI, type the exact release tag (for example v0.4.1)
+        description: For PyPI, type the exact release tag (for example v0.4.2)
         required: false
         type: string
 
@@ -175,7 +175,7 @@ jobs:
             --document "$GITHUB_WORKSPACE/docs/first-run.md" \
             --work-dir "$WORK_ROOT/first-run" \
             --python /tmp/pageledger-release-wheel/bin/python \
-            --expected-version 0.4.1 \
+            --expected-version 0.4.2 \
             --forbid-import-root "$GITHUB_WORKSPACE"
       - name: Record distribution hashes
         run: sha256sum dist/pageledger-* > dist/SHA256SUMS

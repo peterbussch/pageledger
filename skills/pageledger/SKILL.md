@@ -131,7 +131,7 @@ domain types belong in a hook.
   level routing, same-run adapter fallback, environment installation, adapter
   or model bundling, signatures, and cloud identity. Explicit `classify`,
   generation-indexed rerun chains, and the verified `bundle`/`replay` lifecycle
-  ship in 0.4.1.
+  first shipped in 0.4.1.
 
 ## Where to read more
 

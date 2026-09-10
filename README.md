@@ -40,7 +40,7 @@ Install the current stable package:
 pip install pageledger
 ```
 
-This documentation targets 0.4.1. If that version is not on the package index
+This documentation targets 0.4.2. If that version is not on the package index
 yet, install the exact candidate wheel in a fresh environment and confirm
 `pageledger --version` before following the quickstart. See the
 [maintained first-run guide](docs/first-run.md#maintainer-verification) for the
