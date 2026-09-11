@@ -16,9 +16,6 @@ from typing import Any, cast
 
 import yaml
 
-from . import budget as _budget
-from . import quality as _quality
-from . import reports as _reports
 from .adapters import (
     PDF_ADAPTER_NAMES,
     PDF_ONLY_ADAPTER_NAMES,
@@ -41,10 +38,24 @@ from .artifacts import (
     write_jsonl,
     write_yaml,
 )
+from .budget import (
+    BudgetExceededError,
+    _budget_caps,
+    _budget_error,
+    _budget_warning,
+    _build_cost_report,
+    _derive_cost,
+    _new_budget_alerts,
+    _preflight_budget_error,
+    _round_cost,
+)
 from .config import load_config
 from .grading import grade_page
 from .policy import rebuild_policy_queues
+from .quality import _build_quality_entry
 from .replay import build_reproducibility_profile
+from .reports import inspect_run as inspect_run
+from .reports import run_pages_csv as run_pages_csv
 from .routing import load_route_map
 
 LOG_LEVELS = {"DEBUG": 10, "INFO": 20, "WARNING": 30, "ERROR": 40}
@@ -75,33 +86,6 @@ class _PhaseClock:
         assert self._started_at is not None
         self._observer(self._phase, time.perf_counter_ns() - self._started_at)
         self._started_at = None
-
-
-# Compatibility aliases: these helpers lived in runner.py before the
-# behavior-preserving module split.
-BudgetExceededError = _budget.BudgetExceededError
-_budget_caps = _budget._budget_caps
-_budget_error = _budget._budget_error
-_budget_report = _budget._budget_report
-_budget_warning = _budget._budget_warning
-_new_budget_alerts = _budget._new_budget_alerts
-_build_cost_report = _budget._build_cost_report
-_cost_basis = _budget._cost_basis
-_derive_cost = _budget._derive_cost
-_preflight_budget_error = _budget._preflight_budget_error
-_round_cost = _budget._round_cost
-_sum_usage_field = _budget._sum_usage_field
-_usage_rollup = _budget._usage_rollup
-_build_quality_entry = _quality._build_quality_entry
-_embedded_text_quality = _quality._embedded_text_quality
-_has_low_confidence_tail = _quality._has_low_confidence_tail
-_is_suspicious_symbol = _quality._is_suspicious_symbol
-_output_integrity = _quality._output_integrity
-_quality_text = _quality._quality_text
-_text_quality_metrics = _quality._text_quality_metrics
-_text_quality_warnings = _quality._text_quality_warnings
-inspect_run = _reports.inspect_run
-run_pages_csv = _reports.run_pages_csv
 
 
 class AdapterExecutionError(RuntimeError):
@@ -481,8 +465,6 @@ def _run(
 
     documents: list[dict[str, Any]] = []
     input_entries: list[dict[str, Any]] = []
-    source_sha256_map: dict[Path, str] = {}
-    review_queue: list[dict[str, Any]] = []
     quarantine_queue: list[dict[str, Any]] = []
     provenance_entries: list[dict[str, Any]] = []
     extractor_entries: list[dict[str, Any]] = []
@@ -491,12 +473,9 @@ def _run(
     quality_entries: list[dict[str, Any]] = []
     schema_spec = load_schema_spec(config.data)
     alignments: dict[str, dict[str, Any]] = {}
-    pages_total = 0
     pages_extracted = 0
     pages_failed = 0
     pages_not_attempted = 0
-    pages_skipped = 0
-    pages_routed_review = 0
     tokens_total = 0
     estimated_cost_usd = 0.0
     cost_is_partial = False
@@ -510,7 +489,6 @@ def _run(
     consecutive_failures = 0
 
     prompt = config.default_prompt
-    planned_pages: list[tuple[Path, dict[str, Any]]] = []
     imported_by_source = {
         Path(document["source"]): document
         for document in (imported_routes or {}).get("documents", [])
@@ -520,17 +498,6 @@ def _run(
         input_entries = recovery_job["inputs"]
         imported_routes = recovery_job["imported_routes"]
         route_warnings = recovery_job["route_warnings"]
-        for document in documents:
-            source = Path(document["source"])
-            source_sha256_map[source] = document["source_sha256"]
-            for page in document["pages"]:
-                planned_pages.append((source, page))
-                pages_total += 1
-                if page["action"] == "review":
-                    review_queue.append(_review_queue_entry(page))
-                    pages_routed_review += 1
-                if page["action"] == "skip":
-                    pages_skipped += 1
     else:
         for document_index, source in enumerate(input_paths, start=1):
             resolved_source = source.resolve()
@@ -590,18 +557,8 @@ def _run(
                     if prompt is not None:
                         page["prompt"] = prompt
                     routed_pages.append(page)
-            for page in routed_pages:
-                action = cast(str, page["action"])
-                if action == "review":
-                    review_queue.append(_review_queue_entry(page))
-                    pages_routed_review += 1
-                if action == "skip":
-                    pages_skipped += 1
-                planned_pages.append((source, page))
-                pages_total += 1
             try:
                 source_sha256 = _sha256_path(source)
-                source_sha256_map[source] = source_sha256
             except OSError as exc:
                 raise RuntimeError(f"Cannot read input file '{source}': {exc}") from exc
             input_entry = {
@@ -629,6 +586,20 @@ def _run(
                 "page_count": page_count,
                 "pages": routed_pages,
             })
+
+    # Fresh and recovered plans share the same accounting. Input paths retain
+    # their original spelling for adapter calls and provenance.
+    planned_pages = [
+        (Path(input_entry["path"]), page)
+        for input_entry, document in zip(input_entries, documents, strict=True)
+        for page in document["pages"]
+    ]
+    source_sha256_map = {Path(item["path"]): item["sha256"] for item in input_entries}
+    review_queue = [_review_queue_entry(page) for _, page in planned_pages
+                    if page["action"] == "review"]
+    pages_total = len(planned_pages)
+    pages_routed_review = len(review_queue)
+    pages_skipped = sum(page["action"] == "skip" for _, page in planned_pages)
 
     if recovery_job is not None:
         for _source, page in planned_pages:
@@ -667,21 +638,35 @@ def _run(
             "log_level": log_level,
         })
 
-    # Cache static adapter metadata (unchanged per run)
+    # One metadata template serves extracted and route-only runs.
     adapter_input_types: list[str] = []
     adapter_output_types: list[str] = []
     adapter_capabilities: list[str] = []
+    extractor_template: dict[str, Any] = {}
     if adapter is not None:
         adapter_input_types = list(getattr(adapter, "input_types", ()))
         adapter_output_types = list(getattr(adapter, "output_types", ()))
         adapter_capabilities = list(getattr(adapter, "capabilities", ()))
+        extractor_template = {
+            "name": adapter.name,
+            "adapter": adapter.name,
+            "model": None,
+            "version": adapter.version,
+            "prompt_hash": _sha256_text(config.default_prompt or ""),
+            "deterministic": adapter.deterministic,
+            "input_types": adapter_input_types,
+            "output_types": adapter_output_types,
+            "capabilities": adapter_capabilities,
+        }
+        if adapter_profile is not None:
+            extractor_template["reproducibility_profile"] = adapter_profile
+        if effective_adapter_options:
+            extractor_template["options"] = dict(effective_adapter_options)
 
     for source, page in planned_pages:
         phase_clock.switch("page_control")
         action = cast(str, page["action"])
-        if action in {"review", "skip"}:
-            continue
-        if dry_run:
+        if dry_run or adapter is None or action in {"review", "skip"}:
             continue
         page_id = cast(str, page["page_id"])
         if _checkpoint is not None and _checkpoint.records[page_id]["state"] == "pending":
@@ -702,210 +687,195 @@ def _run(
         page_prompt = cast(str | None, page.get("prompt"))
         prompt_hash = _sha256_text(page_prompt or "")
 
-        if adapter is not None:
-            phase_clock.switch("adapter_call")
-            try:
-                extract = _extract_adapter_page
-                extract_kwargs: dict[str, Any] = {
-                    "config": config, "run_id": run_id, "log_entries": log_entries,
-                    "phase_clock": phase_clock,
-                }
-                if _checkpoint is not None:
-                    extract = _checkpoint.extract
-                    extract_kwargs = {}
-                result, extraction_seconds, extraction_started_at, attempt, adapter_error = (
-                    extract(
-                        adapter=adapter,
-                        source=source,
-                        page=page,
-                        prompt=page_prompt,
-                        **extract_kwargs,
-                    )
-                )
-            finally:
-                phase_clock.switch("page_control")
-            if adapter_error is not None:
-                pages_failed += 1
-                consecutive_failures += 1
-                review_queue.append(_review_queue_entry(page, "extraction_failed"))
-                if config.on_page_error == "stop":
-                    failure_error = adapter_error
-                    halt_reason = "failure"
-                    break
-                if (
-                    config.max_consecutive_failures > 0
-                    and consecutive_failures >= config.max_consecutive_failures
-                ):
-                    failure_error = RuntimeError(
-                        "Circuit breaker opened after "
-                        f"{consecutive_failures} consecutive page failures"
-                    )
-                    halt_reason = "failure"
-                    break
-                continue
-            assert result is not None
-            if getattr(result, "input_evidence", None) is not None:
-                from .image_evidence import validate_input_evidence
-                validate_input_evidence(result.input_evidence, root=out_dir,
-                                        source_sha256=_sha256_path(source),
-                                        page_number=page["page_number"], prompt_sha256=prompt_hash)
-            consecutive_failures = 0
-            phase_clock.switch("raw_artifact")
-            raw_artifact = Path("raw") / f"{page_id}.{_artifact_extension(result.format)}"
-            raw_text = (
-                result.content
-                if isinstance(result.content, str)
-                else json.dumps(result.content, ensure_ascii=False, allow_nan=False)
-            )
-            if _checkpoint is not None:
-                from .checkpoint import atomic_bytes
-                if _checkpoint.records[page_id]["state"] != "completed":
-                    atomic_bytes(out_dir / raw_artifact, raw_text.encode("utf-8"))
-            else:
-                (out_dir / raw_artifact).write_text(raw_text, encoding="utf-8")
-            raw_sha256 = _sha256_path(out_dir / raw_artifact)
-            phase_clock.switch("usage_budget_provenance")
-            usage = _canonical_usage(result.usage)
-            page_tokens = usage.get("tokens")
-            page_cost, page_cost_basis = _derive_cost(
-                usage,
-                cost_per_page=config.cost_per_page,
-                cost_per_1k_tokens=config.cost_per_1k_tokens,
-            )
-            pages_extracted += int(usage["pages"])
-            if isinstance(page_tokens, int):
-                tokens_total += page_tokens
-            if extraction_seconds is not None:
-                extraction_seconds_values.append(extraction_seconds)
-            if page_cost is None:
-                cost_is_partial = True
-            else:
-                assert page_cost_basis is not None
-                cost_bases.add(page_cost_basis)
-                estimated_cost_usd = _round_cost(estimated_cost_usd + page_cost)
-            usage_entries.append(usage)
-            budget_error = _budget_error(
-                config=config,
-                page_id=page_id,
-                pages_total=pages_extracted,
-                tokens_total=tokens_total,
-                estimated_cost_usd=estimated_cost_usd,
-            )
-            new_budget_alerts = _new_budget_alerts(
-                config=config,
-                page_id=page_id,
-                timestamp=extraction_started_at,
-                pages_total=pages_extracted,
-                tokens_total=tokens_total,
-                estimated_cost_usd=estimated_cost_usd,
-                alerted_units=alerted_budget_units,
-            )
-            budget_alerts.extend(new_budget_alerts)
-            alerted_budget_units.update(
-                str(alert["unit"]) for alert in new_budget_alerts
-            )
-            # Preserve the v0.1 per-page log contract: once a threshold is
-            # reached, later pages retain the scalar warning. The structured
-            # alert list above separately records one first crossing per unit.
-            budget_warning = _budget_warning(
-                config=config,
-                pages_total=pages_extracted,
-                tokens_total=tokens_total,
-                estimated_cost_usd=estimated_cost_usd,
-            )
-            extractor_entry = {
-                "name": adapter.name,
-                "adapter": adapter.name,
-                "model": result.model,
-                "version": adapter.version,
-                "prompt_hash": prompt_hash,
-                "deterministic": adapter.deterministic,
-                "input_types": adapter_input_types,
-                "output_types": adapter_output_types,
-                "capabilities": adapter_capabilities,
+        phase_clock.switch("adapter_call")
+        try:
+            extract = _extract_adapter_page
+            extract_kwargs: dict[str, Any] = {
+                "config": config, "run_id": run_id, "log_entries": log_entries,
+                "phase_clock": phase_clock,
             }
-            if adapter_profile is not None:
-                extractor_entry["reproducibility_profile"] = adapter_profile
-            if effective_adapter_options:
-                extractor_entry["options"] = dict(effective_adapter_options)
-            if extractor_entry not in extractor_entries:
-                extractor_entries.append(extractor_entry)
-            provenance_entries.append(
-                _build_provenance_entry(
-                    schema_version=config.schema_version,
-                    run_id=run_id,
-                    page=page,
-                    source=source,
-                    source_sha256=source_sha256_map[source],
-                    adapter=adapter,
-                    result=result,
-                    usage=usage,
-                    raw_artifact=raw_artifact,
-                    raw_sha256=raw_sha256,
-                    prompt_hash=prompt_hash,
-                    timestamp=extraction_started_at,
-                    extraction_seconds=extraction_seconds,
-                    adapter_input_types=adapter_input_types,
-                    adapter_output_types=adapter_output_types,
-                    adapter_capabilities=adapter_capabilities,
-                    page_cost=page_cost,
-                    page_cost_basis=page_cost_basis,
-                )
-            )
-            phase_clock.switch("quality")
-            quality_entries.append(
-                _build_quality_entry(
-                    schema_version=config.schema_version,
-                    page=page,
-                    source=source,
-                    result=result,
-                    adapter=adapter,
-                    parent_quality=(parent_quality_by_page or {}).get(page_id),
-                )
-            )
-            phase_clock.switch("alignment")
-            if schema_spec is not None and result.format in ALIGNABLE_FORMATS:
-                alignment = align_page(
-                    result.content,
-                    result.format,
-                    schema_spec,
-                    page=page,
-                    run_id=run_id,
-                    schema_version=config.schema_version,
-                    raw_artifact=raw_artifact.as_posix(),
-                )
-                if alignment is not None:
-                    normalized_path = out_dir / "normalized" / f"{page_id}.json"
-                    if _checkpoint is not None:
-                        from .checkpoint import atomic_bytes
-                        if _checkpoint.records[page_id]["state"] != "completed":
-                            atomic_bytes(normalized_path, (json.dumps(alignment, ensure_ascii=False,
-                                         sort_keys=True, indent=2, allow_nan=False) + "\n").encode())
-                    else:
-                        write_json(normalized_path, alignment)
-                    alignments[page_id] = alignment
             if _checkpoint is not None:
-                _checkpoint.complete(page_id, provenance=provenance_entries[-1],
-                                     quality=quality_entries[-1], alignment=alignments.get(page_id))
-            phase_clock.switch("page_log_control")
-            log_entries.append(
-                {
-                    "schema_version": config.schema_version,
-                    "timestamp": extraction_started_at,
-                    "level": "ERROR" if budget_error else "INFO",
-                    "run_id": run_id,
-                    "page_id": page_id,
-                    "adapter": adapter.name,
-                    "status": "budget_exceeded" if budget_error else "extracted",
-                    "error": budget_error,
-                    "budget_warning": None if budget_error else budget_warning,
-                    "attempt": attempt,
-                }
+                extract = _checkpoint.extract
+                extract_kwargs = {}
+            result, extraction_seconds, extraction_started_at, attempt, adapter_error = (
+                extract(
+                    adapter=adapter,
+                    source=source,
+                    page=page,
+                    prompt=page_prompt,
+                    **extract_kwargs,
+                )
             )
-            if budget_error is not None:
-                failure_error = BudgetExceededError(budget_error)
-                halt_reason = "budget"
+        finally:
+            phase_clock.switch("page_control")
+        if adapter_error is not None:
+            pages_failed += 1
+            consecutive_failures += 1
+            review_queue.append(_review_queue_entry(page, "extraction_failed"))
+            if config.on_page_error == "stop":
+                failure_error = adapter_error
+                halt_reason = "failure"
                 break
+            if (
+                config.max_consecutive_failures > 0
+                and consecutive_failures >= config.max_consecutive_failures
+            ):
+                failure_error = RuntimeError(
+                    "Circuit breaker opened after "
+                    f"{consecutive_failures} consecutive page failures"
+                )
+                halt_reason = "failure"
+                break
+            continue
+        assert result is not None
+        if getattr(result, "input_evidence", None) is not None:
+            from .image_evidence import validate_input_evidence
+            validate_input_evidence(result.input_evidence, root=out_dir,
+                                    source_sha256=_sha256_path(source),
+                                    page_number=page["page_number"], prompt_sha256=prompt_hash)
+        consecutive_failures = 0
+        phase_clock.switch("raw_artifact")
+        raw_artifact = Path("raw") / f"{page_id}.{_artifact_extension(result.format)}"
+        raw_text = (
+            result.content
+            if isinstance(result.content, str)
+            else json.dumps(result.content, ensure_ascii=False, allow_nan=False)
+        )
+        if _checkpoint is not None:
+            from .checkpoint import atomic_bytes
+            if _checkpoint.records[page_id]["state"] != "completed":
+                atomic_bytes(out_dir / raw_artifact, raw_text.encode("utf-8"))
+        else:
+            (out_dir / raw_artifact).write_text(raw_text, encoding="utf-8")
+        raw_sha256 = _sha256_path(out_dir / raw_artifact)
+        phase_clock.switch("usage_budget_provenance")
+        usage = _canonical_usage(result.usage)
+        page_tokens = usage.get("tokens")
+        page_cost, page_cost_basis = _derive_cost(
+            usage,
+            cost_per_page=config.cost_per_page,
+            cost_per_1k_tokens=config.cost_per_1k_tokens,
+        )
+        pages_extracted += int(usage["pages"])
+        if isinstance(page_tokens, int):
+            tokens_total += page_tokens
+        if extraction_seconds is not None:
+            extraction_seconds_values.append(extraction_seconds)
+        if page_cost is None:
+            cost_is_partial = True
+        else:
+            assert page_cost_basis is not None
+            cost_bases.add(page_cost_basis)
+            estimated_cost_usd = _round_cost(estimated_cost_usd + page_cost)
+        usage_entries.append(usage)
+        budget_error = _budget_error(
+            config=config,
+            page_id=page_id,
+            pages_total=pages_extracted,
+            tokens_total=tokens_total,
+            estimated_cost_usd=estimated_cost_usd,
+        )
+        new_budget_alerts = _new_budget_alerts(
+            config=config,
+            page_id=page_id,
+            timestamp=extraction_started_at,
+            pages_total=pages_extracted,
+            tokens_total=tokens_total,
+            estimated_cost_usd=estimated_cost_usd,
+            alerted_units=alerted_budget_units,
+        )
+        budget_alerts.extend(new_budget_alerts)
+        alerted_budget_units.update(
+            str(alert["unit"]) for alert in new_budget_alerts
+        )
+        # Preserve the v0.1 per-page log contract: once a threshold is
+        # reached, later pages retain the scalar warning. The structured
+        # alert list above separately records one first crossing per unit.
+        budget_warning = _budget_warning(
+            config=config,
+            pages_total=pages_extracted,
+            tokens_total=tokens_total,
+            estimated_cost_usd=estimated_cost_usd,
+        )
+        extractor_entry = {**extractor_template, "model": result.model, "prompt_hash": prompt_hash}
+        if extractor_entry not in extractor_entries:
+            extractor_entries.append(extractor_entry)
+        provenance_entries.append(
+            _build_provenance_entry(
+                schema_version=config.schema_version,
+                run_id=run_id,
+                page=page,
+                source=source,
+                source_sha256=source_sha256_map[source],
+                adapter=adapter,
+                result=result,
+                usage=usage,
+                raw_artifact=raw_artifact,
+                raw_sha256=raw_sha256,
+                prompt_hash=prompt_hash,
+                timestamp=extraction_started_at,
+                extraction_seconds=extraction_seconds,
+                adapter_input_types=adapter_input_types,
+                adapter_output_types=adapter_output_types,
+                adapter_capabilities=adapter_capabilities,
+                page_cost=page_cost,
+                page_cost_basis=page_cost_basis,
+            )
+        )
+        phase_clock.switch("quality")
+        quality_entries.append(
+            _build_quality_entry(
+                schema_version=config.schema_version,
+                page=page,
+                source=source,
+                result=result,
+                adapter=adapter,
+                parent_quality=(parent_quality_by_page or {}).get(page_id),
+            )
+        )
+        phase_clock.switch("alignment")
+        if schema_spec is not None and result.format in ALIGNABLE_FORMATS:
+            alignment = align_page(
+                result.content,
+                result.format,
+                schema_spec,
+                page=page,
+                run_id=run_id,
+                schema_version=config.schema_version,
+                raw_artifact=raw_artifact.as_posix(),
+            )
+            if alignment is not None:
+                normalized_path = out_dir / "normalized" / f"{page_id}.json"
+                if _checkpoint is not None:
+                    from .checkpoint import atomic_bytes
+                    if _checkpoint.records[page_id]["state"] != "completed":
+                        atomic_bytes(normalized_path, (json.dumps(alignment, ensure_ascii=False,
+                                     sort_keys=True, indent=2, allow_nan=False) + "\n").encode())
+                else:
+                    write_json(normalized_path, alignment)
+                alignments[page_id] = alignment
+        if _checkpoint is not None:
+            _checkpoint.complete(page_id, provenance=provenance_entries[-1],
+                                 quality=quality_entries[-1], alignment=alignments.get(page_id))
+        phase_clock.switch("page_log_control")
+        log_entries.append(
+            {
+                "schema_version": config.schema_version,
+                "timestamp": extraction_started_at,
+                "level": "ERROR" if budget_error else "INFO",
+                "run_id": run_id,
+                "page_id": page_id,
+                "adapter": adapter.name,
+                "status": "budget_exceeded" if budget_error else "extracted",
+                "error": budget_error,
+                "budget_warning": None if budget_error else budget_warning,
+                "attempt": attempt,
+            }
+        )
+        if budget_error is not None:
+            failure_error = BudgetExceededError(budget_error)
+            halt_reason = "budget"
+            break
 
     if _checkpoint is not None:
         _checkpoint.check_sources()
@@ -958,22 +928,7 @@ def _run(
             for _source, page in planned_pages
         )
     ):
-        planned_extractor_entry: dict[str, Any] = {
-            "name": adapter.name,
-            "adapter": adapter.name,
-            "model": None,
-            "version": adapter.version,
-            "prompt_hash": _sha256_text(config.default_prompt or ""),
-            "deterministic": adapter.deterministic,
-            "input_types": adapter_input_types,
-            "output_types": adapter_output_types,
-            "capabilities": adapter_capabilities,
-        }
-        if adapter_profile is not None:
-            planned_extractor_entry["reproducibility_profile"] = adapter_profile
-        if effective_adapter_options:
-            planned_extractor_entry["options"] = dict(effective_adapter_options)
-        extractor_entries.append(planned_extractor_entry)
+        extractor_entries.append(extractor_template)
 
     phase_clock.switch("policy_queues")
     routes = {

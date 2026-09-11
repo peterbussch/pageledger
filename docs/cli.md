@@ -7,6 +7,10 @@ an existing run; the rest inspect, compare, diagnose, or scaffold.
 
 `pageledger --version` prints the installed release.
 
+Execution errors return exit code 1 with a diagnostic on stderr. Commands with
+`--json` also emit the error as JSON on stdout. Invalid command-line syntax
+returns exit code 2.
+
 The development `process SOURCE --config FILE --out JOB` command runs a document
 through local text, OCR and explicitly bounded image stages. Use `resume JOB`,
 `inspect-job JOB`, `verify-job JOB`, and `review-job JOB --review FILE` for its
@@ -419,7 +423,8 @@ be a single-key mapping. The predicates are:
 - `grade_below` with one of `A, B, C, D, F`. The comparison is strict.
 - `missing_required_columns: true`. It only matches aligned pages.
 - `arithmetic_failure_rate_above` with a number from 0 to 1. It only
-  matches aligned pages with an arithmetic pass rate.
+  matches aligned pages with an arithmetic pass rate. The comparison is strict:
+  a recorded 70% failure rate does not exceed a threshold of `0.7`.
 
 The older `run.grading.review_below_grade` setting still works and can be
 used with `rerun_if`. Overlapping reasons are kept in `audit.json` and

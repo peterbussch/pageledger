@@ -14,6 +14,7 @@ Covers:
 
 from __future__ import annotations
 
+import csv
 import json
 from pathlib import Path
 
@@ -299,6 +300,122 @@ def test_csv_alignment_with_coercion_error():
     assert result["checks"][0]["pass_rate"] is None
 
 
+@pytest.mark.parametrize("fmt", ["csv", "json"])
+def test_integer_coercion_preserves_values_above_float_precision(fmt):
+    spec = _spec(columns=[{"name": "value", "type": "integer"}], checks=[])
+    if fmt == "csv":
+        content = "value\n9007199254740993\n-9007199254740993\n9007199254740993.0\n9007199254740993.1\n9.007199254740993e15\n"
+    else:
+        content = [
+            {"value": 9007199254740993},
+            {"value": -9007199254740993},
+            {"value": "9007199254740993.0"},
+            {"value": "9007199254740993.1"},
+            {"value": "9.007199254740993e15"},
+        ]
+
+    result = _align(content, fmt, spec)
+
+    assert [record["value"] for record in result["records"]] == [
+        9007199254740993, -9007199254740993, 9007199254740993, None, 9007199254740993
+    ]
+    assert result["coercion_errors"] == [
+        {"row": 4, "column": "value", "raw": "9007199254740993.1", "error": "not_integer"}
+    ]
+
+
+def test_integer_arithmetic_and_constants_remain_exact():
+    spec = _spec(
+        columns=[{"name": "value", "type": "integer"}],
+        checks=[
+            {"name": "exact", "expression": "value == 9007199254740993"},
+            {"name": "different", "expression": "value == 9007199254740992"},
+            {"name": "arithmetic", "expression": "value * 2 - 1 == 18014398509481985"},
+            {"name": "negative", "expression": "-value == -9007199254740993"},
+            {"name": "addition", "expression": "value + 1 == 9007199254740994"},
+        ],
+    )
+
+    result = _align([{"value": 9007199254740993}], "json", spec)
+
+    assert [check["rows_passed"] for check in result["checks"]] == [1, 0, 1, 1, 1]
+    assert result["checks"][1]["failures"] == [{"row": 1, "delta": 1}]
+
+
+def test_integers_beyond_float_range_remain_exact():
+    value = 10**400
+    spec = _spec(
+        columns=[{"name": "value", "type": "integer"}],
+        checks=[
+            {"name": "exact", "expression": f"value * value == {10**800}"},
+            {"name": "different", "expression": "value == 0"},
+        ],
+    )
+
+    result = _align([{"value": value}], "json", spec)
+
+    assert result["records"] == [{"value": value}]
+    assert result["checks"][0]["rows_passed"] == 1
+    assert result["checks"][1]["failures"] == [{"row": 1, "delta": value}]
+    assert result["coercion_errors"] == []
+    json.dumps(result, allow_nan=False)
+
+
+def test_arithmetic_failure_deltas_preserve_float_encoding_without_precision_loss():
+    spec = _spec(
+        columns=[{"name": "value", "type": "integer"}],
+        checks=[{"name": "different", "expression": "value == 0"}],
+    )
+    values = [10, -10, 9007199254740992, 9007199254740993, -9007199254740993, 10**400]
+
+    result = _align([{"value": value} for value in values], "json", spec)
+
+    deltas = [failure["delta"] for failure in result["checks"][0]["failures"]]
+    assert json.dumps(deltas) == json.dumps(
+        [10.0, -10.0, 9007199254740992.0, 9007199254740993, -9007199254740993, 10**400]
+    )
+
+
+def test_float_overflow_in_coercion_and_arithmetic_is_recorded():
+    spec = _spec(
+        columns=[
+            {"name": "integer", "type": "integer"},
+            {"name": "number", "type": "number"},
+            {"name": "overflow", "type": "number"},
+        ],
+        checks=[
+            {"name": "mixed_sum", "expression": "integer + number == integer"},
+            {"name": "mixed_delta", "expression": "integer == number"},
+            {"name": "float_product", "expression": "number * number == number"},
+        ],
+    )
+    result = _align([{"integer": 10**400, "number": 1e308, "overflow": 10**400}], "json", spec)
+
+    assert result["records"][0]["overflow"] is None
+    assert result["coercion_errors"][0]["error"] == "not_number"
+    assert [check["rows_unchecked"] for check in result["checks"]] == [1, 1, 1]
+    assert result["metrics"]["arithmetic_pass_rate"] is None
+    json.dumps(result, allow_nan=False)
+
+
+def test_declared_number_keeps_float_semantics():
+    spec = _spec(columns=[{"name": "value", "type": "number"}], checks=[])
+
+    result = _align("value\n9007199254740993\n161.168\n", "csv", spec)
+
+    assert result["records"] == [{"value": 9007199254740992.0}, {"value": 161.168}]
+    assert all(isinstance(record["value"], float) for record in result["records"])
+
+
+def test_integer_exponent_overflow_is_rejected_without_expansion():
+    spec = _spec(columns=[{"name": "value", "type": "integer"}], checks=[])
+
+    result = _align("value\n1e999999999\n-1e999999999\n", "csv", spec)
+
+    assert result["records"] == [{"value": None}, {"value": None}]
+    assert [error["error"] for error in result["coercion_errors"]] == ["not_integer", "not_integer"]
+
+
 def test_json_records_alignment():
     content = '[{"place": "Minsk", "total": 300, "male": 150, "female": 149}]'
     result = _align(content, "json")
@@ -568,6 +685,28 @@ def _tree_contents(root: Path) -> dict[str, bytes]:
         for path in sorted(root.rglob("*"))
         if path.is_file()
     }
+
+
+def test_align_run_retains_raw_when_csv_parser_fails(tmp_path):
+    out = _existing_run(tmp_path)
+    raw_path = out / "raw" / "page-1.md"
+    field_limit = csv.field_size_limit()
+    content = "place,total\n" + "x" * (field_limit + 1) + ",1\n"
+    raw_path.write_text(content, encoding="utf-8")
+    provenance_path = out / "provenance.jsonl"
+    provenance = json.loads(provenance_path.read_text(encoding="utf-8"))
+    provenance["result"]["format"] = "csv"
+    provenance_path.write_text(json.dumps(provenance) + "\n", encoding="utf-8")
+
+    align_run(out)
+
+    normalized = json.loads((out / "normalized" / "page-1.json").read_text(encoding="utf-8"))
+    assert normalized["records"] == []
+    assert normalized["metrics"]["parse_error"] == "invalid_csv"
+    assert raw_path.read_text(encoding="utf-8") == content
+    assert csv.field_size_limit() == field_limit
+    quality = json.loads((out / "quality.jsonl").read_text(encoding="utf-8"))
+    assert quality["grade_detail"]["schema_grade"] == "F"
 
 
 def test_align_run_dry_run_previews_without_writes(tmp_path):

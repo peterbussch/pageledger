@@ -26,6 +26,30 @@ ARTIFACT_PATHS = {
 }
 
 
+def _safe_resolve(path: Path) -> Path | None:
+    """Resolve safely across Python versions, retaining only missing tail parts."""
+    unresolved: list[str] = []
+    candidate = path
+    while True:
+        try:
+            resolved = candidate.resolve(strict=True)
+        except FileNotFoundError:
+            try:
+                if candidate.is_symlink():
+                    return None
+            except (OSError, ValueError):
+                return None
+            parent = candidate.parent
+            if parent == candidate:
+                return None
+            unresolved.append(candidate.name)
+            candidate = parent
+        except (OSError, RuntimeError, ValueError):
+            return None
+        else:
+            return resolved.joinpath(*reversed(unresolved))
+
+
 def write_json(path: Path, data: dict[str, Any]) -> None:
     path.write_text(
         json.dumps(

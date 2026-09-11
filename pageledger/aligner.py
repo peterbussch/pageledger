@@ -20,6 +20,7 @@ import re
 import tempfile
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any
 
@@ -685,7 +686,10 @@ def _split_md_row(line: str) -> list[str]:
 
 
 def _parse_csv(text: str) -> tuple[list[str], list[list[Any]], int]:
-    rows = [row for row in csv.reader(io.StringIO(text)) if any(cell.strip() for cell in row)]
+    try:
+        rows = [row for row in csv.reader(io.StringIO(text)) if any(cell.strip() for cell in row)]
+    except csv.Error:
+        raise _ParseError("invalid_csv") from None
     if not rows:
         raise _ParseError("empty_csv")
     headers = [cell.strip() for cell in rows[0]]
@@ -751,31 +755,42 @@ def _coerce(value: Any, column_type: str) -> tuple[Any, str | None]:
         if re.fullmatch(r"\d{1,3}(\.\d{3})+", grouped):
             value = grouped.replace(".", "")
 
-    number = _parse_number(value)
+    number = _parse_number(value, integer=column_type == "integer")
     if number is None:
         return None, "not_integer" if column_type == "integer" else "not_number"
-    if column_type == "integer":
-        if number != int(number):
-            return None, "not_integer"
-        return int(number), None
     return number, None
 
 
-def _parse_number(value: Any) -> float | None:
+def _parse_number(value: Any, *, integer: bool = False) -> int | float | None:
     """Parse a numeric cell, tolerating thousand separators (`,`, space, NBSP)."""
-    if isinstance(value, bool):
+    if isinstance(value, bool) or not isinstance(value, (int, float, str)):
         return None
-    if isinstance(value, (int, float)):
-        number = float(value)
-        return number if math.isfinite(number) else None
+    if integer and isinstance(value, int):
+        return value
     if isinstance(value, str):
-        cleaned = value.replace(",", "").replace(" ", "").replace("\xa0", "")
+        value = value.replace(",", "").replace(" ", "").replace("\xa0", "")
+        if integer:
+            try:
+                return int(value)
+            except ValueError:
+                pass
+    try:
+        number = float(value)
+    except (ValueError, OverflowError):
+        return None
+    if not math.isfinite(number):
+        return None
+    if not integer:
+        return number
+    if isinstance(value, str):
+        # Keep the finite-float gate for decimal/exponent spellings before
+        # expanding them, but check integrality without float rounding.
         try:
-            number = float(cleaned)
-        except ValueError:
+            exact = Decimal(value)
+        except InvalidOperation:
             return None
-        return number if math.isfinite(number) else None
-    return None
+        return int(exact) if exact == exact.to_integral_value() else None
+    return int(number) if number.is_integer() else None
 
 
 # ---------------------------------------------------------------------------
@@ -846,7 +861,7 @@ def _validate_operand(
         and isinstance(node.value, (int, float))
         and not isinstance(node.value, bool)
     ):
-        if not math.isfinite(node.value):
+        if isinstance(node.value, float) and not math.isfinite(node.value):
             raise ValueError(f"{key_path} numeric constants must be finite")
         return
     raise ValueError(f"{key_path} may only use declared columns, numbers, and + - * operators")
@@ -863,14 +878,14 @@ def _run_check(check: CheckSpec, records: list[dict[str, Any]]) -> dict[str, Any
     rows_unchecked = 0
     failures: list[dict[str, Any]] = []
     for row_number, record in enumerate(records, start=1):
-        lhs = _eval_operand(root.left, record)
-        rhs = _eval_operand(root.comparators[0], record)
-        if lhs is None or rhs is None:
-            # A null operand is missing evidence, not a pass.
-            rows_unchecked += 1
-            continue
-        delta = lhs - rhs
-        if not math.isfinite(delta):
+        try:
+            lhs = _eval_operand(root.left, record)
+            rhs = _eval_operand(root.comparators[0], record)
+            delta = None if lhs is None or rhs is None else lhs - rhs
+        except OverflowError:
+            delta = None
+        if delta is None or (isinstance(delta, float) and not math.isfinite(delta)):
+            # Missing or unrepresentable arithmetic evidence is not a pass.
             rows_unchecked += 1
             continue
         rows_checked += 1
@@ -878,6 +893,15 @@ def _run_check(check: CheckSpec, records: list[dict[str, Any]]) -> dict[str, Any
             rows_passed += 1
         else:
             rows_failed += 1
+            if isinstance(delta, int):
+                # Retain legacy float encoding only when it preserves every digit.
+                try:
+                    float_delta = float(delta)
+                except OverflowError:
+                    pass
+                else:
+                    if float_delta == delta:
+                        delta = float_delta
             failures.append({"row": row_number, "delta": round(delta, 4)})
 
     return {
@@ -891,7 +915,7 @@ def _run_check(check: CheckSpec, records: list[dict[str, Any]]) -> dict[str, Any
     }
 
 
-def _eval_operand(node: ast.AST, record: dict[str, Any]) -> float | None:
+def _eval_operand(node: ast.AST, record: dict[str, Any]) -> int | float | None:
     if isinstance(node, ast.BinOp):
         left = _eval_operand(node.left, record)
         right = _eval_operand(node.right, record)
@@ -903,22 +927,21 @@ def _eval_operand(node: ast.AST, record: dict[str, Any]) -> float | None:
             result = left - right
         else:
             result = left * right
-        return result if math.isfinite(result) else None
+        return result if isinstance(result, int) or math.isfinite(result) else None
     if isinstance(node, ast.UnaryOp):
         operand = _eval_operand(node.operand, record)
         if operand is None:
             return None
         result = -operand
-        return result if math.isfinite(result) else None
+        return result if isinstance(result, int) or math.isfinite(result) else None
     if isinstance(node, ast.Name):
         value = record.get(node.id)
         if not isinstance(value, (int, float)) or isinstance(value, bool):
             return None
-        number = float(value)
-        return number if math.isfinite(number) else None
+        return value if isinstance(value, int) or math.isfinite(value) else None
     assert isinstance(node, ast.Constant)
     assert isinstance(node.value, (int, float)) and not isinstance(node.value, bool)
-    return float(node.value)
+    return node.value
 
 
 def _unit_interval(value: Any, name: str) -> float | None:

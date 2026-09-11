@@ -24,6 +24,32 @@ MINIMAL_CONFIG = textwrap.dedent("""\
     """)
 
 
+@pytest.mark.parametrize('operation,argv', [
+    ('run', ['run', 'source.txt', '--adapter', 'text', '--out', 'out', '--json']),
+    ('classify', ['classify', 'source.txt', '--config', 'config.yml', '--out', 'routes.yml', '--json']),
+    ('build_doctor_report', ['doctor', '--json']),
+])
+def test_cli_reports_filesystem_errors_consistently(monkeypatch, capsys, operation, argv):
+    from pageledger import cli
+    def denied(*args, **kwargs):
+        raise PermissionError('Synthetic permission failure')
+    monkeypatch.setattr(cli, operation, denied)
+    assert cli.main(argv) == 1
+    output = capsys.readouterr()
+    assert json.loads(output.out) == {'status': 'error', 'error': 'Synthetic permission failure'}
+    assert output.err == 'pageledger: error: Synthetic permission failure\n'
+
+
+def test_init_config_missing_parent_returns_cli_error(tmp_path, capsys):
+    from pageledger.cli import main
+    target = tmp_path / 'missing' / 'config.yml'
+    assert main(['init-config', '--out', str(target)]) == 1
+    output = capsys.readouterr()
+    assert output.out == ''
+    assert 'pageledger: error:' in output.err
+    assert not target.exists()
+
+
 def _run_cli(args: list[str], *, cwd: Path | None = None) -> tuple[int, str, str]:
     """Run pageledger CLI and return (exit_code, stdout, stderr)."""
     import subprocess

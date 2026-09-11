@@ -16,7 +16,7 @@ from .classifier import classify
 from .compare import compare_runs, render_comparison
 from .doctor import build_doctor_report
 from .grading import GRADES, grade_basis_label
-from .replay import ReplayError, bundle_run, replay_bundle
+from .replay import bundle_run, replay_bundle
 from .reports import inspect_run, run_pages_csv
 from .runner import rerun, resume, run
 from .verify import render_verification, verify_run
@@ -290,58 +290,37 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _print_error_json(exc: Exception, args: argparse.Namespace) -> None:
-    if getattr(args, "json_output", False):
-        result = {"status": "error", "error": str(exc)}
-        code = getattr(exc, "code", None)
-        if isinstance(code, str) and code:
-            result["code"] = code
-        print(json.dumps(result, ensure_ascii=False))
-
-
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
-
-    if args.command in {"process", "inspect-job", "verify-job", "review-job"}:
-        return _cmd_job(args)
-
-    if args.command == "init-config":
-        return _cmd_init_config(args)
-
-    if args.command == "inspect-run":
-        return _cmd_inspect_run(args)
-
-    if args.command == "compare-runs":
-        return _cmd_compare_runs(args)
-
-    if args.command == "verify-run":
-        return _cmd_verify_run(args)
-
-    if args.command == "bundle":
-        return _cmd_bundle(args)
-
-    if args.command == "replay":
-        return _cmd_replay(args)
-
-    if args.command == "align":
-        return _cmd_align(args)
-
-    if args.command == "run":
-        return _cmd_run(args)
-
-    if args.command == "classify":
-        return _cmd_classify(args)
-
-    if args.command == "resume":
-        return _cmd_resume(args)
-
-    if args.command == "rerun":
-        return _cmd_rerun(args)
-
-    if args.command == "doctor":
-        return _cmd_doctor(args)
-
-    return 2
+    handlers = {
+        "process": _cmd_job,
+        "inspect-job": _cmd_job,
+        "verify-job": _cmd_job,
+        "review-job": _cmd_job,
+        "init-config": _cmd_init_config,
+        "inspect-run": _cmd_inspect_run,
+        "compare-runs": _cmd_compare_runs,
+        "verify-run": _cmd_verify_run,
+        "bundle": _cmd_bundle,
+        "replay": _cmd_replay,
+        "align": _cmd_align,
+        "run": _cmd_run,
+        "classify": _cmd_classify,
+        "resume": _cmd_resume,
+        "rerun": _cmd_rerun,
+        "doctor": _cmd_doctor,
+    }
+    try:
+        return handlers[args.command](args)
+    except (RuntimeError, ValueError, OSError) as exc:
+        if getattr(args, "json_output", False):
+            result = {"status": "error", "error": str(exc)}
+            code = getattr(exc, "code", None)
+            if isinstance(code, str) and code:
+                result["code"] = code
+            print(json.dumps(result, ensure_ascii=False))
+        print(f"pageledger: error: {exc}", file=sys.stderr)
+        return 1
 
 
 # -- init-config --------------------------------------------------------------
@@ -359,15 +338,10 @@ def _cmd_init_config(args: argparse.Namespace) -> int:
 # -- inspect-run --------------------------------------------------------------
 
 def _cmd_inspect_run(args: argparse.Namespace) -> int:
-    try:
-        if args.csv_output:
-            sys.stdout.write(run_pages_csv(args.run_dir))
-            return 0
-        report = inspect_run(args.run_dir)
-    except (ValueError, FileNotFoundError) as exc:
-        _print_error_json(exc, args)
-        print(f"pageledger: error: {exc}", file=sys.stderr)
-        return 1
+    if args.csv_output:
+        sys.stdout.write(run_pages_csv(args.run_dir))
+        return 0
+    report = inspect_run(args.run_dir)
     if args.json_output:
         print(json.dumps(report, ensure_ascii=False, sort_keys=True))
     else:
@@ -416,12 +390,7 @@ def _print_inspect_report(report: dict, *, cost_basis: str | None = None) -> Non
 # -- align ---------------------------------------------------------------------
 
 def _cmd_align(args: argparse.Namespace) -> int:
-    try:
-        report = align_run(args.run_dir, schema_path=args.schema, dry_run=args.dry_run)
-    except (RuntimeError, ValueError, FileNotFoundError) as exc:
-        _print_error_json(exc, args)
-        print(f"pageledger: error: {exc}", file=sys.stderr)
-        return 1
+    report = align_run(args.run_dir, schema_path=args.schema, dry_run=args.dry_run)
     if args.json_output:
         print(json.dumps(report, ensure_ascii=False, sort_keys=True))
     else:
@@ -453,12 +422,7 @@ def _cmd_verify_run(args: argparse.Namespace) -> int:
 # -- bundle ------------------------------------------------------------------
 
 def _cmd_bundle(args: argparse.Namespace) -> int:
-    try:
-        result = bundle_run(args.run_dir, args.out)
-    except (ReplayError, RuntimeError, ValueError, OSError) as exc:
-        _print_error_json(exc, args)
-        print(f"pageledger: error: {exc}", file=sys.stderr)
-        return 1
+    result = bundle_run(args.run_dir, args.out)
     if args.json_output:
         print(json.dumps(result, ensure_ascii=False, sort_keys=True))
     else:
@@ -469,12 +433,7 @@ def _cmd_bundle(args: argparse.Namespace) -> int:
 # -- replay ------------------------------------------------------------------
 
 def _cmd_replay(args: argparse.Namespace) -> int:
-    try:
-        result = replay_bundle(args.bundle_dir, args.out, adapter_path=args.adapter_path)
-    except (ReplayError, RuntimeError, ValueError, OSError) as exc:
-        _print_error_json(exc, args)
-        print(f"pageledger: error: {exc}", file=sys.stderr)
-        return 1
+    result = replay_bundle(args.bundle_dir, args.out, adapter_path=args.adapter_path)
     if args.json_output:
         print(json.dumps(result, ensure_ascii=False, sort_keys=True))
     else:
@@ -491,12 +450,7 @@ def _cmd_replay(args: argparse.Namespace) -> int:
 # -- compare-runs --------------------------------------------------------------
 
 def _cmd_compare_runs(args: argparse.Namespace) -> int:
-    try:
-        report = compare_runs(args.run_a, args.run_b)
-    except (ValueError, FileNotFoundError) as exc:
-        _print_error_json(exc, args)
-        print(f"pageledger: error: {exc}", file=sys.stderr)
-        return 1
+    report = compare_runs(args.run_a, args.run_b)
     if args.json_output:
         print(json.dumps(report, ensure_ascii=False, sort_keys=True))
     else:
@@ -562,10 +516,7 @@ def _print_human_cost(
 
 def _cmd_run(args: argparse.Namespace) -> int:
     if args.routes is not None and args.config is None:
-        exc = ValueError("--routes requires --config; it cannot be used with --adapter")
-        _print_error_json(exc, args)
-        print(f"pageledger: error: {exc}", file=sys.stderr)
-        return 1
+        raise ValueError("--routes requires --config; it cannot be used with --adapter")
     config_path = args.config
     temp_config: str | None = None
     if config_path is None:
@@ -588,12 +539,10 @@ def _cmd_run(args: argparse.Namespace) -> int:
             routes_path=args.routes,
             resumable=args.resumable,
         )
-    except (RuntimeError, ValueError) as exc:
+    except (RuntimeError, ValueError, OSError):
         if not args.json_output and not cost_existed:
             _print_persisted_budget_alerts(args.out)
-        _print_error_json(exc, args)
-        print(f"pageledger: error: {exc}", file=sys.stderr)
-        return 1
+        raise
     finally:
         if temp_config is not None:
             os.unlink(temp_config)
@@ -630,19 +579,14 @@ def _cmd_run(args: argparse.Namespace) -> int:
 # -- classify -----------------------------------------------------------------
 
 def _cmd_classify(args: argparse.Namespace) -> int:
-    try:
-        result = classify(
-            inputs=args.inputs,
-            config_path=args.config,
-            out_path=args.out,
-            from_run=args.from_run,
-            probe_adapter=args.adapter,
-            adapter_path=args.adapter_path,
-        )
-    except (RuntimeError, ValueError) as exc:
-        _print_error_json(exc, args)
-        print(f"pageledger: error: {exc}", file=sys.stderr)
-        return 1
+    result = classify(
+        inputs=args.inputs,
+        config_path=args.config,
+        out_path=args.out,
+        from_run=args.from_run,
+        probe_adapter=args.adapter,
+        adapter_path=args.adapter_path,
+    )
     if args.json_output:
         print(json.dumps(result, ensure_ascii=False, sort_keys=True))
     else:
@@ -655,16 +599,11 @@ def _cmd_classify(args: argparse.Namespace) -> int:
 
 
 def _cmd_resume(args: argparse.Namespace) -> int:
-    try:
-        if (args.run_dir / "job.json").exists():
-            from .processing import resume_job
-            result = resume_job(args.run_dir, adapter_path=args.adapter_path)
-        else:
-            result = resume(args.run_dir, adapter_path=args.adapter_path)
-    except (RuntimeError, ValueError, OSError) as exc:
-        _print_error_json(exc, args)
-        print(f"pageledger: error: {exc}", file=sys.stderr)
-        return 1
+    if (args.run_dir / "job.json").exists():
+        from .processing import resume_job
+        result = resume_job(args.run_dir, adapter_path=args.adapter_path)
+    else:
+        result = resume(args.run_dir, adapter_path=args.adapter_path)
     if args.json_output:
         print(json.dumps(result, ensure_ascii=False, sort_keys=True))
     else:
@@ -675,23 +614,18 @@ def _cmd_resume(args: argparse.Namespace) -> int:
 
 def _cmd_job(args: argparse.Namespace) -> int:
     from .processing import process, review_job, verify_job
-    try:
-        if args.command == "process":
-            result = process(source=args.source, config_path=args.config, out_dir=args.out,
-                             pages=args.pages, adapter_path=args.adapter_path, review_path=args.review)
-        elif args.command == "review-job":
-            result = review_job(args.job_dir, args.review)
-        elif args.command == "verify-job":
-            result = verify_job(args.job_dir)
-        else:
-            if not args.json_output:
-                print((args.job_dir / "report.md").read_text(encoding="utf-8"), end="")
-                return 0
-            result = json.loads((args.job_dir / "document.json").read_text(encoding="utf-8"))
-    except (RuntimeError, ValueError, OSError) as exc:
-        _print_error_json(exc, args)
-        print(f"pageledger: error: {exc}", file=sys.stderr)
-        return 1
+    if args.command == "process":
+        result = process(source=args.source, config_path=args.config, out_dir=args.out,
+                         pages=args.pages, adapter_path=args.adapter_path, review_path=args.review)
+    elif args.command == "review-job":
+        result = review_job(args.job_dir, args.review)
+    elif args.command == "verify-job":
+        result = verify_job(args.job_dir)
+    else:
+        if not args.json_output:
+            print((args.job_dir / "report.md").read_text(encoding="utf-8"), end="")
+            return 0
+        result = json.loads((args.job_dir / "document.json").read_text(encoding="utf-8"))
     if args.json_output:
         print(json.dumps(result, ensure_ascii=False, sort_keys=True))
     else:
@@ -718,12 +652,10 @@ def _cmd_rerun(args: argparse.Namespace) -> int:
             log_level=args.log_level,
             adapter_path=args.adapter_path,
         )
-    except (RuntimeError, ValueError) as exc:
+    except (RuntimeError, ValueError, OSError):
         if not args.json_output and not cost_existed:
             _print_persisted_budget_alerts(args.out)
-        _print_error_json(exc, args)
-        print(f"pageledger: error: {exc}", file=sys.stderr)
-        return 1
+        raise
     if args.json_output:
         print(json.dumps(result, ensure_ascii=False, sort_keys=True))
     else:

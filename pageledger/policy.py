@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+from decimal import Decimal
 from typing import Any
 
 from .grading import GRADES, grade_is_below
@@ -74,7 +75,7 @@ def evaluate_policies(
                 isinstance(pass_rate, (int, float))
                 and not isinstance(pass_rate, bool)
                 and math.isfinite(pass_rate)
-                and pass_rate < 1 - operand
+                and Decimal(str(pass_rate)) < Decimal(1) - Decimal(str(operand))
             )
         if matched:
             matches.append(predicate)

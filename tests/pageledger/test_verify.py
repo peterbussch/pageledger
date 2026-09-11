@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 
@@ -19,13 +20,13 @@ run:
 """
 
 
-def _run(tmp_path: Path) -> tuple[Path, Path]:
+def _run(tmp_path: Path, *, config_text: str = MINIMAL) -> tuple[Path, Path]:
     from pageledger.runner import run
 
     source = tmp_path / "doc.txt"
     source.write_text("short\fa second clean page of text\n", encoding="utf-8")
     config = tmp_path / "pageledger.yml"
-    config.write_text(MINIMAL, encoding="utf-8")
+    config.write_text(config_text, encoding="utf-8")
     out_dir = tmp_path / "run"
     run(inputs=[source], config_path=config, out_dir=out_dir, dry_run=False)
     return out_dir, source
@@ -326,6 +327,97 @@ def test_verify_run_rejects_duplicate_common_comparison_page_ids(tmp_path: Path)
 
     assert report["status"] == "fail"
     assert "replay_linkage_mismatch" in _codes(report, "errors")
+
+
+@pytest.mark.parametrize("mutation", ["omit_one", "omit_all", "unknown_b_only"])
+def test_verify_run_binds_replay_comparison_to_current_pages(tmp_path: Path, mutation: str) -> None:
+    from pageledger.replay import bundle_run, replay_bundle
+    from pageledger.verify import verify_run
+
+    run_dir, _ = _run(tmp_path)
+    bundle_dir = tmp_path / "bundle"
+    bundle_run(run_dir, bundle_dir)
+    replay_dir = tmp_path / "replayed"
+    replay_bundle(bundle_dir, replay_dir)
+    replay_path = replay_dir / "replay.json"
+    replay = json.loads(replay_path.read_text(encoding="utf-8"))
+    if mutation == "unknown_b_only":
+        replay["comparison"]["pages_only_in_b"] = ["unknown-page"]
+        replay["raw"]["missing"] = 1
+        replay["raw"]["missing_page_ids"] = ["unknown-page"]
+        replay["outcome"] = "deterministic_mismatch"
+        manifest_path = replay_dir / "manifest.json"
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        manifest["outcome"] = "deterministic_mismatch"
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    else:
+        replay["comparison"]["pages"] = replay["comparison"]["pages"][:1] if mutation == "omit_one" else []
+        replay["raw"]["equal"] = len(replay["comparison"]["pages"])
+    replay_path.write_text(json.dumps(replay), encoding="utf-8")
+
+    report = verify_run(replay_dir)
+
+    assert report["status"] == "fail"
+    assert "replay_linkage_mismatch" in _codes(report, "errors")
+
+
+@pytest.mark.parametrize("outcome", [[], {}, None, 1])
+def test_verify_run_returns_structured_failure_for_invalid_replay_outcome(
+    tmp_path: Path, outcome: object
+) -> None:
+    from pageledger.replay import bundle_run, replay_bundle
+    from pageledger.verify import verify_run
+
+    run_dir, _ = _run(tmp_path)
+    bundle_dir = tmp_path / "bundle"
+    bundle_run(run_dir, bundle_dir)
+    replay_dir = tmp_path / "replayed"
+    replay_bundle(bundle_dir, replay_dir)
+    replay_path = replay_dir / "replay.json"
+    replay = json.loads(replay_path.read_text(encoding="utf-8"))
+    replay["outcome"] = outcome
+    replay_path.write_text(json.dumps(replay), encoding="utf-8")
+
+    report = verify_run(replay_dir)
+
+    assert report["status"] == "fail"
+    assert "replay_artifact_malformed" in _codes(report, "errors")
+
+
+@pytest.mark.parametrize("missing", ["baseline_page", "baseline_raw"])
+def test_verify_run_accepts_replay_comparison_with_missing_baseline_evidence(
+    tmp_path: Path, missing: str
+) -> None:
+    from pageledger.replay import bundle_run, replay_bundle
+    from pageledger.verify import verify_run
+
+    run_dir, _ = _run(tmp_path)
+    bundle_dir = tmp_path / "bundle"
+    bundle_run(run_dir, bundle_dir)
+    replay_dir = tmp_path / "replayed"
+    replay_bundle(bundle_dir, replay_dir)
+    replay_path = replay_dir / "replay.json"
+    replay = json.loads(replay_path.read_text(encoding="utf-8"))
+    page = replay["comparison"]["pages"][0]
+    if missing == "baseline_page":
+        replay["comparison"]["pages"].pop(0)
+        replay["comparison"]["pages_only_in_b"] = [page["page_id"]]
+    else:
+        page["raw_sha256_a"] = None
+        page["raw_equal"] = None
+    replay["raw"]["equal"] = 1
+    replay["raw"]["missing"] = 1
+    replay["raw"]["missing_page_ids"] = [page["page_id"]]
+    replay["outcome"] = "deterministic_mismatch"
+    replay_path.write_text(json.dumps(replay), encoding="utf-8")
+    manifest_path = replay_dir / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["outcome"] = "deterministic_mismatch"
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    report = verify_run(replay_dir)
+
+    assert report["status"] == "pass", report["errors"]
 
 
 def test_verify_run_rejects_raw_equal_contradiction_with_consistent_counters(
@@ -805,6 +897,28 @@ def test_verify_run_enforces_route_action_accounting(tmp_path):
     } <= _codes(report, "errors")
 
 
+@pytest.mark.parametrize("page_id", [[], {}, None, 1, ""])
+def test_verify_run_returns_structured_failure_for_invalid_normalized_page_id(
+    tmp_path: Path, page_id: object
+) -> None:
+    from pageledger.verify import verify_run
+
+    out_dir, _ = _run(tmp_path)
+    manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
+    entry = {
+        "schema_version": manifest["schema_version"],
+        "run_id": manifest["run_id"],
+        "page_id": page_id,
+        "records": [],
+    }
+    (out_dir / "normalized" / "malformed.json").write_text(json.dumps(entry), encoding="utf-8")
+
+    report = verify_run(out_dir)
+
+    assert report["status"] == "fail"
+    assert "artifact_structure_invalid" in _codes(report, "errors")
+
+
 def test_verify_run_checks_provenance_quality_raw_and_normalized(tmp_path):
     from pageledger.verify import verify_run
 
@@ -1100,6 +1214,46 @@ def test_verify_run_rejects_edited_rerun_plan(tmp_path):
 
     assert report["status"] == "fail"
     assert "rerun_plan_mismatch" in _codes(report, "errors")
+
+
+@pytest.mark.parametrize("depth", ["2", '"2"', "null"])
+def test_verify_run_checks_rerun_plan_for_all_valid_depth_spellings(tmp_path: Path, depth: str) -> None:
+    from pageledger.verify import verify_run
+
+    out_dir, _ = _run(tmp_path, config_text=MINIMAL + f"  max_rerun_depth: {depth}\n")
+    assert verify_run(out_dir)["status"] == "pass"
+    rerun_path = out_dir / "rerun-manifest.yml"
+    rerun = yaml.safe_load(rerun_path.read_text(encoding="utf-8"))
+    assert rerun["items"]
+    rerun["items"] = []
+    rerun_path.write_text(yaml.safe_dump(rerun), encoding="utf-8")
+
+    report = verify_run(out_dir)
+
+    assert report["status"] == "fail"
+    assert "rerun_plan_mismatch" in _codes(report, "errors")
+
+
+@pytest.mark.parametrize("depth", ["invalid", True, -1, [], {}])
+def test_verify_run_returns_structured_failure_for_invalid_rerun_depth(
+    tmp_path: Path, depth: object
+) -> None:
+    from pageledger.verify import verify_run
+
+    out_dir, _ = _run(tmp_path)
+    config_path = out_dir / "config-snapshot.yml"
+    config = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    config["run"]["max_rerun_depth"] = depth
+    config_path.write_text(yaml.safe_dump(config), encoding="utf-8")
+    manifest_path = out_dir / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["config"]["sha256"] = hashlib.sha256(config_path.read_bytes()).hexdigest()
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    report = verify_run(out_dir)
+
+    assert report["status"] == "fail"
+    assert "config_rerun_depth_invalid" in _codes(report, "errors")
 
 
 def test_verify_run_derives_adapter_chain_from_config_snapshot(tmp_path):

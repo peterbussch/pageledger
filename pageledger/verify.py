@@ -13,23 +13,11 @@ from typing import Any, cast
 
 import yaml
 
-from .artifacts import build_rerun_manifest, render_audit_markdown
+from .artifacts import ARTIFACT_PATHS, _safe_resolve, build_rerun_manifest, render_audit_markdown
 from .config import PageLedgerConfig
 from .replay import ReplayError, _validate_reproducibility_profile
 
-REQUIRED_ARTIFACTS = {
-    "config_snapshot",
-    "route_map",
-    "raw_dir",
-    "normalized_dir",
-    "audit",
-    "audit_md",
-    "provenance",
-    "quality",
-    "cost",
-    "run_log",
-    "rerun_manifest",
-}
+REQUIRED_ARTIFACTS = set(ARTIFACT_PATHS)
 
 
 def verify_run(
@@ -930,22 +918,20 @@ def _check_rerun_plan(
             artifact="manifest.json",
         )
 
-    run_config = config.get("run")
-    if not isinstance(run_config, dict):
-        run_config = {}
-    max_rerun_depth = run_config.get("max_rerun_depth", 2)
-    if (
-        not isinstance(max_rerun_depth, int)
-        or isinstance(max_rerun_depth, bool)
-        or max_rerun_depth < 0
-    ):
+    configuration = PageLedgerConfig(schema_version=schema_version, data=config)
+    try:
+        max_rerun_depth = configuration.max_rerun_depth
+    except ValueError as exc:
+        _add(
+            errors,
+            "config_rerun_depth_invalid",
+            f"Config snapshot rerun depth is invalid: {exc}",
+            artifact="config-snapshot.yml",
+        )
         return
 
     try:
-        configured_order = PageLedgerConfig(
-            schema_version=schema_version,
-            data=config,
-        ).adapter_order
+        configured_order = configuration.adapter_order
     except ValueError as exc:
         _add(
             errors,
@@ -1172,7 +1158,9 @@ def _check_replay_linkage(
         _add(errors, "replay_artifact_malformed", "Replay replay_run_id is invalid", artifact="replay.json")
     if not _is_sha256(replay.get("bundle_manifest_sha256")):
         _add(errors, "replay_artifact_malformed", "Replay bundle manifest hash is invalid", artifact="replay.json")
-    if replay.get("outcome") not in {"exact", "evidence_compared", "deterministic_mismatch"}:
+    if not isinstance(replay.get("outcome"), str) or replay["outcome"] not in {
+        "exact", "evidence_compared", "deterministic_mismatch"
+    }:
         _add(errors, "replay_artifact_malformed", "Replay outcome is invalid", artifact="replay.json")
     if replay.get("profile_match") is not None and not isinstance(replay.get("profile_match"), bool):
         _add(errors, "replay_artifact_malformed", "Replay profile_match is invalid", artifact="replay.json")
@@ -1350,6 +1338,13 @@ def _check_replay_linkage(
         if isinstance(page, dict) and isinstance(page.get("page_id"), str) and page["page_id"]
     ]
     common_page_set = set(common_page_ids)
+    if common_page_set | set(pages_only_b) != set(provenance):
+        _add(
+            errors,
+            "replay_linkage_mismatch",
+            "Replay comparison current-page inventory differs from provenance",
+            artifact="replay.json",
+        )
     if len(common_page_ids) != len(common_page_set):
         _add(errors, "replay_linkage_mismatch", "Replay comparison contains duplicate common page IDs", artifact="replay.json")
     if set(pages_only_a) & set(pages_only_b) or (
@@ -1657,6 +1652,14 @@ def _check_normalized(
             )
             continue
         page_id = entry.get("page_id")
+        if not isinstance(page_id, str) or not page_id:
+            _add(
+                errors,
+                "artifact_structure_invalid",
+                "Normalized page_id must be a non-empty string",
+                artifact=str(path.relative_to(root)),
+            )
+            continue
         _check_identity(
             entry,
             run_id,
@@ -1690,7 +1693,7 @@ def _check_normalized(
             )
         else:
             counts["normalized_records"] += len(records)
-        prov = provenance.get(page_id) if isinstance(page_id, str) else None
+        prov = provenance.get(page_id)
         result = prov.get("result") if isinstance(prov, dict) else None
         raw_artifact = result.get("raw_artifact") if isinstance(result, dict) else None
         if prov is not None and entry.get("raw_artifact") != raw_artifact:
@@ -1866,30 +1869,6 @@ def _is_sha256(value: Any) -> bool:
     return isinstance(value, str) and len(value) == 64 and all(
         character in "0123456789abcdef" for character in value
     )
-
-
-def _safe_resolve(path: Path) -> Path | None:
-    """Resolve safely across Python versions, retaining only missing tail parts."""
-    unresolved: list[str] = []
-    candidate = path
-    while True:
-        try:
-            resolved = candidate.resolve(strict=True)
-        except FileNotFoundError:
-            try:
-                if candidate.is_symlink():
-                    return None
-            except (OSError, ValueError):
-                return None
-            parent = candidate.parent
-            if parent == candidate:
-                return None
-            unresolved.append(candidate.name)
-            candidate = parent
-        except (OSError, RuntimeError, ValueError):
-            return None
-        else:
-            return resolved.joinpath(*reversed(unresolved))
 
 
 def _add(issues: list[dict[str, Any]], code: str, message: str, **details: Any) -> None:

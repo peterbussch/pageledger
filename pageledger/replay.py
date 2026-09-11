@@ -388,7 +388,7 @@ def bundle_run(run_dir: Path, out_dir: Path) -> dict[str, Any]:
     source_records, source_paths = _bundle_sources(run_root, manifest)
     route_source = _declared_file(run_root, manifest, "route_map")
     route_map = _read_yaml_mapping(route_source, "route map")
-    _check_source_route(run_root, manifest, route_map, source_paths)
+    _check_source_route(manifest, route_map, source_paths)
 
     requested = Path(out_dir).expanduser()
     if requested.exists() or requested.is_symlink():
@@ -512,11 +512,10 @@ def validate_bundle(bundle_dir: Path) -> dict[str, Any]:
     config_path = root / replay["config"]
     config = _read_yaml_mapping(config_path, "bundle config snapshot")
     _check_config_credentials(config)
-    _validate_sources_against_manifest(root, manifest, sources)
+    _validate_sources_against_manifest(manifest, sources)
     _validate_source_files(root, sources)
     route_map = _read_yaml_mapping(root / replay["route_map"], "bundle route map")
-    source_paths = [entry["path"] for entry in sources]
-    _check_portable_route(route_map, manifest, source_paths, sources)
+    _check_portable_route(route_map, manifest, sources)
     baseline_route = _read_yaml_mapping(root / "baseline" / "route-map.yml", "baseline route map")
     expected_route = copy.deepcopy(baseline_route)
     _rewrite_route_map(expected_route, sources)
@@ -871,7 +870,9 @@ def _read_worker_response(
             "bundle_manifest_sha256", "profile_match", "raw",
         }:
             raise invalid()
-        if result.get("outcome") not in {"exact", "deterministic_mismatch", "evidence_compared"}:
+        if not isinstance(result.get("outcome"), str) or result["outcome"] not in {
+            "exact", "deterministic_mismatch", "evidence_compared"
+        }:
             raise invalid()
         for key in ("run_id", "baseline_run_id"):
             if not isinstance(result.get(key), str) or not result[key]:
@@ -1201,9 +1202,8 @@ def _inventory(root: Path) -> list[dict[str, Any]]:
 
 
 def _validate_declared_paths(root: Path, baseline: dict[str, Any], replay: dict[str, Any], sources: list[Any], files: list[Any]) -> None:
-    paths: list[str] = []
     for value in (baseline["manifest"], replay["config"], replay["route_map"]):
-        paths.append(_safe_relative(value))
+        _safe_relative(value)
     if not isinstance(sources, list) or not isinstance(files, list):
         _fail("bundle_structure_invalid", "Bundle sources and files must be lists")
     sources = cast(list[Any], sources)
@@ -1225,7 +1225,6 @@ def _validate_declared_paths(root: Path, baseline: dict[str, Any], replay: dict[
         source_path = _safe_relative(entry.get("path"))
         if Path(source_path).parent.as_posix() != "sources":
             _fail("source_path_invalid", "Bundle source must be directly beneath sources/")
-        paths.append(source_path)
     if [entry.get("index") for entry in sources] != list(range(1, len(sources) + 1)):
         _fail("source_order_invalid", "Bundle source indexes must be consecutive")
     if len({entry.get("path") for entry in sources}) != len(sources):
@@ -1243,7 +1242,6 @@ def _validate_declared_paths(root: Path, baseline: dict[str, Any], replay: dict[
             _fail("inventory_order_invalid", "Bundle inventory paths must be sorted")
         previous = relative
         seen_files.add(relative)
-        paths.append(relative)
         if not isinstance(entry["size"], int) or isinstance(entry["size"], bool) or entry["size"] < 0 or not _is_sha256(entry["sha256"]):
             _fail("inventory_invalid", f"Invalid bundle inventory metadata: {relative}")
         candidate = root / relative
@@ -1264,7 +1262,7 @@ def _validate_declared_paths(root: Path, baseline: dict[str, Any], replay: dict[
         _fail("inventory_missing", "Bundle inventory omits a source")
 
 
-def _validate_sources_against_manifest(root: Path, manifest: dict[str, Any], sources: list[Any]) -> None:
+def _validate_sources_against_manifest(manifest: dict[str, Any], sources: list[Any]) -> None:
     inputs = manifest.get("inputs")
     if not isinstance(inputs, list) or len(inputs) != len(sources):
         _fail("source_manifest_mismatch", "Bundle sources disagree with baseline manifest")
@@ -1353,7 +1351,7 @@ def _validate_transport_allowlist(root: Path, manifest: dict[str, Any], sources:
         _fail("inventory_mismatch", f"Bundle contains undeclared transported files: {unexpected}")
 
 
-def _check_source_route(run_root: Path, manifest: dict[str, Any], route_map: dict[str, Any], source_paths: list[Path]) -> None:
+def _check_source_route(manifest: dict[str, Any], route_map: dict[str, Any], source_paths: list[Path]) -> None:
     docs = route_map.get("documents")
     inputs = manifest.get("inputs")
     if not isinstance(docs, list) or not isinstance(inputs, list) or len(docs) != len(inputs):
@@ -1370,13 +1368,14 @@ def _check_source_route(run_root: Path, manifest: dict[str, Any], route_map: dic
             _fail("route_source_mismatch", "Route map source hash disagrees with manifest")
 
 
-def _check_portable_route(route_map: dict[str, Any], manifest: dict[str, Any], source_paths: list[str], sources: list[Any]) -> None:
+def _check_portable_route(route_map: dict[str, Any], manifest: dict[str, Any], sources: list[Any]) -> None:
     docs = route_map.get("documents")
     if not isinstance(docs, list) or len(docs) != len(sources):
         _fail("route_source_mismatch", "Portable route map documents do not match sources")
     docs = cast(list[Any], docs)
     seen: set[str] = set()
-    for document, path, source in zip(docs, source_paths, sources, strict=True):
+    for document, source in zip(docs, sources, strict=True):
+        path = source["path"]
         if not isinstance(document, dict) or document.get("source") != path:
             _fail("route_source_mismatch", "Portable route map source disagrees with bundle")
         if path in seen:

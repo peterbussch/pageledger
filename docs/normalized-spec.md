@@ -71,12 +71,17 @@ and rewritten by `pageledger align`.
 - Coercion (`integer`/`number`) tolerates thousand separators (`,`, space,
   NBSP). A non-empty cell that fails to parse becomes `null` and the raw
   string is preserved in `coercion_errors`. Nothing is silently fixed.
+- Integer columns and integer-only arithmetic preserve large whole-number
+  values exactly. `number` columns use finite floating-point values; values
+  outside that range produce coercion errors. Arithmetic that overflows the
+  floating-point range is counted as unchecked.
 - Check rows with a `null` operand are counted as `rows_unchecked` -
   missing evidence, neither pass nor fail.
 - Unparseable structured content (e.g. an adapter declared
   `markdown_table` but no table was found) still writes the file, with
   `records: []` and `metrics.parse_error` set. The failure is evidence and
-  grades the page's schema axis F.
+  grades the page's schema axis F. CSV reader failures, including fields above
+  the parser's size limit, use `invalid_csv`; the raw artifact remains intact.
 - `metrics.required_column_coverage` and `metrics.arithmetic_pass_rate`
   feed the schema axis of the page grade (see `quality.jsonl`).
 - `structure_issues` records duplicate mapped headers, rows whose cell count

@@ -12,6 +12,7 @@ import yaml
 
 import pageledger.runner as runner_module
 from pageledger.artifacts import write_json, write_jsonl
+from pageledger.quality import _output_integrity
 from pageledger.runner import rerun, run
 
 CONFIG = textwrap.dedent(
@@ -159,7 +160,7 @@ def test_rerun_flags_output_inflation_and_records_parent_evidence(tmp_path: Path
 def test_output_inflation_thresholds(
     parent_count: int, child_count: int, warns: bool
 ) -> None:
-    evidence, warnings = runner_module._output_integrity(
+    evidence, warnings = _output_integrity(
         "x" * child_count,
         {"character_count": parent_count},
     )
@@ -168,7 +169,7 @@ def test_output_inflation_thresholds(
 
 
 def test_missing_parent_evidence_cannot_trigger_output_inflation() -> None:
-    evidence, warnings = runner_module._output_integrity("x" * 5000, None)
+    evidence, warnings = _output_integrity("x" * 5000, None)
 
     assert "output_inflation" not in warnings
     assert evidence == {

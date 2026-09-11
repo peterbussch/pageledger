@@ -9,7 +9,7 @@ from typing import Any
 
 import yaml
 
-from .artifacts import read_jsonl
+from .artifacts import _safe_resolve, read_jsonl
 from .grading import format_grade, grade_is_below, merge_thresholds, validate_thresholds
 
 
@@ -487,20 +487,10 @@ def _manifest_extractor_options_hash(
         if not _manifest_extractor_matches(candidate, page_extractor):
             continue
         assert isinstance(candidate, dict)
-        options = candidate.get("options", {})
-        if not isinstance(options, dict):
+        options_hash = _canonical_mapping_hash(candidate.get("options", {}))
+        if options_hash is None:
             return None
-        try:
-            canonical = json.dumps(
-                options,
-                ensure_ascii=False,
-                allow_nan=False,
-                separators=(",", ":"),
-                sort_keys=True,
-            ).encode("utf-8")
-        except (TypeError, ValueError):
-            return None
-        option_hashes.add(hashlib.sha256(canonical).hexdigest())
+        option_hashes.add(options_hash)
     if len(option_hashes) != 1:
         return None
     return next(iter(option_hashes))
@@ -697,30 +687,6 @@ def _file_hash_matches(path: Path, expected: str) -> bool:
         return path.is_file() and _file_sha256(path) == expected
     except OSError:
         return False
-
-
-def _safe_resolve(path: Path) -> Path | None:
-    """Resolve safely across Python versions, retaining only missing tail parts."""
-    unresolved: list[str] = []
-    candidate = path
-    while True:
-        try:
-            resolved = candidate.resolve(strict=True)
-        except FileNotFoundError:
-            try:
-                if candidate.is_symlink():
-                    return None
-            except (OSError, ValueError):
-                return None
-            parent = candidate.parent
-            if parent == candidate:
-                return None
-            unresolved.append(candidate.name)
-            candidate = parent
-        except (OSError, RuntimeError, ValueError):
-            return None
-        else:
-            return resolved.joinpath(*reversed(unresolved))
 
 
 def _contained_regular_file(

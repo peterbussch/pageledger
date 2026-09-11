@@ -139,6 +139,18 @@ def test_evaluate_policies(
     assert evaluate_policies(rules, grade=grade, alignment=alignment) == matches
 
 
+@pytest.mark.parametrize(
+    ("pass_rate", "matches"),
+    [(0.2999, ["arithmetic_failure_rate_above"]), (0.3, []), (0.3001, [])],
+)
+def test_arithmetic_failure_threshold_is_strict_at_decimal_boundary(pass_rate, matches):
+    assert evaluate_policies(
+        [{"arithmetic_failure_rate_above": 0.7}],
+        grade="A",
+        alignment={"metrics": {"arithmetic_pass_rate": pass_rate}},
+    ) == matches
+
+
 _TABLE_ADAPTER = '''\
 from pageledger.adapters import ExtractionResult
 
