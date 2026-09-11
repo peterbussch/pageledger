@@ -229,6 +229,7 @@ def test_forged_internally_consistent_report_is_not_authoritative_over_job(setup
 
 
 def test_read_only_source_inspection_counts_annotations_without_exposing_contents(tmp_path):
+    pytest.importorskip('pypdf')
     from pypdf import PdfWriter
     from pypdf.generic import ArrayObject, DictionaryObject, NameObject, TextStringObject
 
@@ -247,6 +248,7 @@ def test_read_only_source_inspection_counts_annotations_without_exposing_content
 
 
 def test_declared_pdf_count_mismatch_fails_without_reindexing(tmp_path):
+    pytest.importorskip('pypdf')
     from pypdf import PdfWriter
     from pypdf.generic import NameObject, NumberObject
 
