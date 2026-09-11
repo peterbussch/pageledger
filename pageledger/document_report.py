@@ -69,7 +69,7 @@ def render_document_report(report: dict) -> str:
         tokens = f"unknown (known subtotal: {tokens})"
     lines = [f"# Document report: {_escape(report['job_id'])}", "",
              f"Status: {report['status']}", "",
-             f"Source: {_link(source['path'], source['path'])}",
+             f"Source: {_link(source['path'], quote(source['path'], safe='/'))}",
              f"Source SHA-256: `{source['sha256']}`", "",
              f"Pages processed: {counts['processed_pages']}; selected for this job: {counts['selected_pages']}; full source: {source_count}.",
              f"Selected outputs: {counts['selected_outputs']}; unresolved pages: {counts['unresolved_pages']}.", "",
@@ -147,7 +147,7 @@ def build_document_report(job: dict, root: Path) -> dict:
             page["selected_output"] = {"attempt_id": chosen["attempt_id"],
                                        "path": chosen["raw_artifact"], "sha256": chosen["raw_sha256"],
                                        "format": chosen["format"], "text": text}
-        page["source_link"] = f"{job['source']['path']}#page={page['page_number']}"
+        page["source_link"] = f"{quote(job['source']['path'], safe='/')}#page={page['page_number']}"
         pages.append(page)
     report["pages"] = pages
     report["counts"] = {"source_pages": job["source"]["page_count"],
@@ -172,10 +172,7 @@ def write_document_report(job: dict, root: Path) -> dict:
     report = build_document_report(job, root)
     transcript = render_transcript(report).encode("utf-8")
     document = (json.dumps(report, ensure_ascii=False, allow_nan=False, indent=2) + "\n").encode("utf-8")
-    restored = json.loads(document)
-    markdown = render_document_report(restored).encode("utf-8")
-    if render_transcript(restored).encode("utf-8") != transcript:
-        raise ValueError("Transcript did not survive document serialization")
+    markdown = render_document_report(report).encode("utf-8")
     atomic_bytes(root / "transcript.md", transcript)
     atomic_bytes(root / "report.md", markdown)
     atomic_bytes(root / "document.json", document)

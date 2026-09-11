@@ -117,14 +117,14 @@ def adapter_identity(adapter: Any, profile: Any) -> dict[str, Any]:
 
 
 class Checkpoint:
-    def __init__(self, root: Path, *, existing: bool = False):
+    def __init__(self, root: Path, *, existing: bool = False, verify_sources: bool = True):
         self.root = root
         self.job: dict[str, Any] | None = None
         self.records: dict[str, dict[str, Any]] = {}
         if existing:
             self.job = read_record(root / "checkpoint.json")
             try:
-                self.validate()
+                self.validate(sources=verify_sources)
             except (KeyError, TypeError, AttributeError) as exc:
                 raise ValueError("Malformed recovery evidence") from exc
 

@@ -111,7 +111,9 @@ never counted as completed or eligible for automatic retry. Final
 provenance still contains one successful extraction record per page; recovery
 does not add duplicate page rows or count reused responses as new calls.
 Aggregates reconstruct the original successful-page usage, timing and budget
-crossings. A process interruption cannot reset the budget.
+crossings. A process interruption cannot reset the budget. Resumable runs stop
+before a pending request when accumulated usage has reached a configured cap;
+saved responses and completed pages can still be recovered at that cap.
 
 A raw file written before completion is checked against the saved response.
 A valid saved response can be published after interruption. Raw output without

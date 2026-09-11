@@ -336,7 +336,6 @@ def resume(run_dir: Path, *, adapter_path: Path | None = None) -> dict[str, Any]
         checkpoint.require_resumable()
         assert checkpoint.job is not None
         job = checkpoint.job
-        assert job is not None
         return _run(inputs=[Path(item["path"]) for item in job["inputs"]],
                     config_path=root / "config-snapshot.yml", out_dir=root,
                     dry_run=False, log_level=job["log_level"], adapter_path=adapter_path,
@@ -685,6 +684,20 @@ def _run(
         if dry_run:
             continue
         page_id = cast(str, page["page_id"])
+        if _checkpoint is not None and _checkpoint.records[page_id]["state"] == "pending":
+            # Saved results still need replay at the cap; only new calls stop.
+            for unit, cap, current in _budget_caps(
+                config, pages_total=pages_extracted, tokens_total=tokens_total,
+                estimated_cost_usd=estimated_cost_usd,
+            ):
+                if current >= cap:
+                    failure_error = BudgetExceededError(
+                        f"Budget reached before {page_id}: {unit}={current} max_{unit}={cap}"
+                    )
+                    halt_reason = "budget"
+                    break
+            if halt_reason == "budget":
+                break
         attempted_page_ids.add(page_id)
         page_prompt = cast(str | None, page.get("prompt"))
         prompt_hash = _sha256_text(page_prompt or "")

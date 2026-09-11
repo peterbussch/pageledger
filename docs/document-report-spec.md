@@ -71,6 +71,8 @@ For a selected output, the report decodes its verified raw bytes as UTF-8 and
 embeds the resulting string without Unicode normalization, whitespace trimming,
 newline conversion, or JSON/table reformatting. The transcript adds page headings,
 source links, selected-attempt links, and page separators around those strings.
+Source paths are percent-encoded before adding the `#page=N` fragment, so
+filename characters such as `#`, `?`, and `%` remain part of the path.
 It also lists pages without selected text. The transcript hash covers that whole
 Markdown serialization, including the added material and final newlines.
 

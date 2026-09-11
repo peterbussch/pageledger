@@ -14,13 +14,10 @@ from decimal import Decimal, InvalidOperation
 from itertools import combinations
 from typing import Any
 
-STAGES = ("local_text", "local_ocr", "image", "second_opinion")
+from .processing_config import STAGES
+
 REVIEW_DISPOSITIONS = frozenset({
     "reviewed_text", "reviewed_blank", "illustration", "handwriting", "unreadable", "source_defect",
-})
-DISPOSITIONS = frozenset({
-    "unreviewed_text", "coverage_defect", "numeric_column_conflict", "blank_candidate",
-    "provider_failure", "outcome_unknown", "pending", *REVIEW_DISPOSITIONS,
 })
 _HOLD_ORDER = ("source_defect", "numeric_column_conflict", "coverage_defect",
                "handwriting", "unreadable", "illustration", "blank_candidate")

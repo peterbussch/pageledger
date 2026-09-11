@@ -64,6 +64,27 @@ def test_report_embeds_exact_output_bytes_and_hashes_final_transcript(tmp_path):
     validate(stored, schema)
 
 
+@pytest.mark.parametrize('filename', ['synthetic#draft.pdf', 'synthetic?draft.pdf',
+                                    'synthetic%20draft.pdf', 'synthetic 日本語.pdf'])
+def test_source_links_preserve_filename_characters(tmp_path, filename):
+    from urllib.parse import quote, unquote, urlsplit
+    job = job_fixture(tmp_path)
+    job['source']['path'] = f'/documents/{filename}'
+    article = 'https://example.org/article?q=synthetic%20draft#section'
+    job['links']['article'] = article
+    report = write_document_report(job, tmp_path)
+    source_link = report['pages'][0]['source_link']
+    parsed = urlsplit(source_link)
+    assert unquote(parsed.path) == job['source']['path']
+    assert parsed.query == ''
+    assert parsed.fragment == 'page=1'
+    markdown = render_document_report(report)
+    assert f"(<{quote(job['source']['path'], safe='/')}>)" in markdown
+    assert f'(<{source_link}>)' in markdown
+    assert f'(<{source_link}>)' in render_transcript(report)
+    assert f'(<{article}>)' in markdown
+
+
 def test_report_keeps_partial_evidence_without_selecting_it(tmp_path):
     job = job_fixture(tmp_path)
     partial = tmp_path / "attempts" / "partial.md"

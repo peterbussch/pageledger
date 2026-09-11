@@ -378,3 +378,64 @@ def test_review_during_interruption_cannot_execute_an_obsolete_pending_plan(setu
     assert review_job(setup[2], review)['status'] == 'halted'
     assert resume_job(setup[2])['status'] == 'halted'
     assert setup[3]['calls'] == []
+
+
+@pytest.mark.parametrize('limit,value', [('max_tokens', 10), ('max_cost_usd', 1.0)])
+def test_reaching_exact_budget_cap_stops_before_next_local_request(setup, monkeypatch, limit, value):
+    from dataclasses import replace
+    original = StageAdapter.extract
+    def billed(self, *args, **kwargs):
+        result = original(self, *args, **kwargs)
+        return replace(result, usage={**result.usage, 'cost_usd': 1.0})
+    monkeypatch.setattr(StageAdapter, 'extract', billed)
+    config = yaml.safe_load(setup[1].read_text())
+    config['processing']['limits'][limit] = value
+    setup[1].write_text(yaml.safe_dump(config))
+    assert launch(setup)['status'] == 'halted'
+    assert setup[3]['calls'] == [('local_text', 1)]
+    assert verify_job(setup[2])['status'] == 'pass'
+
+
+def test_refresh_checks_shared_source_once_for_all_child_runs(setup, monkeypatch):
+    from pageledger.processing import _refresh
+    launch(setup)
+    job = read_record(setup[2] / 'job.json')
+    original = Path.open
+    reads = []
+    def counted(path, *args, **kwargs):
+        if path == setup[0]:
+            reads.append(path)
+        return original(path, *args, **kwargs)
+    monkeypatch.setattr(Path, 'open', counted)
+    _refresh(job, setup[2], materialize=False)
+    assert len(reads) == 1
+
+
+@pytest.mark.parametrize('completed', [False, True])
+def test_resume_rejects_child_using_a_different_config(setup, monkeypatch, tmp_path, completed):
+    def stop(*args, **kwargs):
+        raise KeyboardInterrupt
+    with monkeypatch.context() as patch:
+        patch.setattr(runner, 'run', stop)
+        with pytest.raises(KeyboardInterrupt):
+            launch(setup)
+    job = read_record(setup[2] / 'job.json')
+    stage = job['stages'][0]
+    alternate = tmp_path / 'alternate.yml'
+    config = yaml.safe_load((setup[2] / stage['config_path']).read_text())
+    config['run']['adapter'] = 'alternate_engine'
+    alternate.write_text(yaml.safe_dump(config))
+    kwargs = dict(inputs=[setup[0]], config_path=alternate,
+                  out_dir=setup[2] / stage['run_path'], dry_run=False,
+                  pages=','.join(map(str, stage['pages'])), resumable=True)
+    if completed:
+        runner.run(**kwargs)
+    else:
+        with monkeypatch.context() as patch:
+            patch.setattr(Checkpoint, 'extract', stop)
+            with pytest.raises(KeyboardInterrupt):
+                runner.run(**kwargs)
+    before = list(setup[3]['calls'])
+    with pytest.raises(ValueError, match='configuration'):
+        resume_job(setup[2])
+    assert setup[3]['calls'] == before

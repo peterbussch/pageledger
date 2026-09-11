@@ -431,3 +431,23 @@ def test_imported_routes_resume_without_original_file_or_default_action(job):
     assert result["status"] == "completed"
     assert job[3].calls == [1, 2, 3]
     assert verify_run(job[2])["status"] == "pass"
+
+
+@pytest.mark.parametrize('phase', ['response', 'completed'])
+def test_saved_page_at_exact_budget_cap_replays_without_next_request(job, monkeypatch, phase):
+    from pageledger.checkpoint import Checkpoint
+    source, config, out, adapter = job
+    config.write_text(config.read_text() + '  budget:\n    max_tokens: 6\n')
+    original = Checkpoint.save
+    def interrupt(self, page_id, record):
+        original(self, page_id, record)
+        if record['state'] == phase:
+            raise KeyboardInterrupt
+    with monkeypatch.context() as patch:
+        patch.setattr(Checkpoint, 'save', interrupt)
+        with pytest.raises(KeyboardInterrupt):
+            launch(job)
+    with pytest.raises(runner.BudgetExceededError):
+        runner.resume(out)
+    assert adapter.calls == [1]
+    assert verify_run(out)['status'] == 'pass'

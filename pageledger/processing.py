@@ -24,6 +24,7 @@ from .config import load_config
 from .processing_config import STAGES, processing_config
 from .processing_source import inspect_source
 from .replay import _package_code_sha256
+from .verify import verify_run
 
 
 def _page_id(number: int) -> str:
@@ -214,9 +215,13 @@ def _refresh(job: dict, root: Path, *, materialize: bool = True) -> None:
             job.update(status='halted', halt_reason='initialization_incomplete',
                        next_action='Inspect the retained incomplete initialization before starting a new job; no calls were scheduled without a durable plan.')
             continue
-        checkpoint = Checkpoint(child, existing=True)
+        # The shared source was checked above; bind each child's claims to it
+        # without rereading the whole input for every historical attempt.
+        checkpoint = Checkpoint(child, existing=True, verify_sources=False)
         identity = checkpoint.job
         assert identity is not None
+        if identity['config_sha256'] != stage['config_sha256']:
+            raise ValueError('Child run configuration disagrees with document job')
         sources = identity['inputs']
         if (len(sources) != 1 or sources[0]['path'] != job['source']['path']
                 or sources[0]['sha256'] != job['source']['sha256']
@@ -224,7 +229,7 @@ def _refresh(job: dict, root: Path, *, materialize: bool = True) -> None:
                 or set(checkpoint.records) != {_page_id(n) for n in stage['pages']}):
             raise ValueError('Child run source/page identity disagrees with document job')
         if (child / 'manifest.json').exists():
-            verification = runner_verify(child)
+            verification = verify_run(child, check_external_sources=False)
             if verification['status'] != 'pass':
                 raise ValueError('Child run verification failed')
         for page_id, record in checkpoint.records.items():
@@ -289,11 +294,6 @@ def _refresh(job: dict, root: Path, *, materialize: bool = True) -> None:
                     'known_cost_usd': known_cost, 'cost_known': all(c is not None for c in cost_values),
                     'paid_cost_known': all(c is not None for c in paid_costs),
                     'paid_tokens_known': all(t is not None for t in paid_tokens)}
-
-
-def runner_verify(root: Path) -> dict:
-    from .verify import verify_run
-    return verify_run(root)
 
 
 def _budget_reason(job: dict, stage: str, count: int) -> str | None:

@@ -63,12 +63,13 @@ an alternate source and prevents further automatic extraction.
 | `max_attempt_pages` | Before scheduling: every attempted source page across all stages counts, including failed/uncertain attempts. A local batch must fit in full. |
 | `max_image_pages` | Required positive limit when image processing is enabled. Counts both image and second-opinion attempts; checked before every call. |
 | `max_tokens` | Accumulates reported usage across stages. Stops at the cap before new work and after a response crosses it. A response can exceed the remaining amount; this is not a provider billing ceiling. Unknown paid token usage prevents another image attempt when this cap is configured. |
-| `max_cost_usd` | Accumulates reported dollar charges. Stops after a response crosses the cap. Unknown paid cost stops another image attempt. The first charge can be unknown or exceed the remaining amount; use a provider-side spending limit for a hard monetary ceiling. |
+| `max_cost_usd` | Accumulates reported dollar charges. Stops at the cap before new work and after a response crosses it. Unknown paid cost stops another image attempt. The first charge can be unknown or exceed the remaining amount; use a provider-side spending limit for a hard monetary ceiling. |
 
 Unknown cost stays `null`; `known_cost_usd` is only the available subtotal.
 Local execution is not assigned an invented dollar price. Image calls are
 bounded even when a provider does not report prices. Budgets persist across
-resume; saved responses are counted once.
+resume; saved responses are counted once. Local batches check the remaining
+budget before each pending call, including after recovering a saved response.
 
 ## Durable job and attempts
 
@@ -86,7 +87,10 @@ commands, selected denominators and generation-zero text replay keep their
 contracts.
 
 Before further calls, resume checks all retained child records, outputs,
-source/page identities and configuration snapshots. A child completed before
+source/page identities and configuration snapshots. Each child's configuration
+digest must match its saved stage plan. Refresh hashes the shared source once,
+then checks every child's source identity against that digest while still
+verifying all retained child artifacts. A child completed before
 the job index was saved is adopted without extraction. A response saved before
 publication is recovered by the child runner. A started request without a
 response becomes `outcome_unknown`; no automatic retry or fallback is allowed.
