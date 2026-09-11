@@ -175,6 +175,16 @@
                     "object",
                     "null"
                   ]
+                },
+                "input_evidence": {
+                  "anyOf": [
+                    {
+                      "type": "null"
+                    },
+                    {
+                      "$ref": "image-evidence.schema.json"
+                    }
+                  ]
                 }
               },
               "required": [
@@ -290,6 +300,16 @@
                     "object",
                     "null"
                   ]
+                },
+                "input_evidence": {
+                  "anyOf": [
+                    {
+                      "type": "null"
+                    },
+                    {
+                      "$ref": "image-evidence.schema.json"
+                    }
+                  ]
                 }
               },
               "required": [
@@ -373,14 +393,18 @@
                 },
                 "code": {
                   "enum": [
-                    "adapter_failure",
-                    "timeout",
-                    "MODEL_TIMEOUT",
+                    "IMAGE_EVIDENCE_INVALID",
+                    "IMAGE_RENDER_ERROR",
+                    "MODEL_EMPTY_RESPONSE",
                     "MODEL_HTTP_ERROR",
-                    "MODEL_OUTPUT_TRUNCATED",
-                    "MODEL_NETWORK_ERROR",
                     "MODEL_INVALID_RESPONSE",
-                    "MODEL_EMPTY_RESPONSE"
+                    "MODEL_NETWORK_ERROR",
+                    "MODEL_OUTPUT_TRUNCATED",
+                    "MODEL_QUOTA",
+                    "MODEL_TIMEOUT",
+                    "MODEL_UNAVAILABLE",
+                    "adapter_failure",
+                    "timeout"
                   ]
                 },
                 "http_status": {
@@ -392,7 +416,11 @@
                   "maximum": 599
                 },
                 "cost_usd": {
-                  "type": "null"
+                  "type": [
+                    "number",
+                    "null"
+                  ],
+                  "minimum": 0
                 }
               },
               "required": [
@@ -402,6 +430,102 @@
                 "cost_usd"
               ],
               "additionalProperties": false
+            },
+            "partial_result": {
+              "type": "object",
+              "properties": {
+                "content": {
+                  "type": [
+                    "string",
+                    "object",
+                    "array"
+                  ]
+                },
+                "format": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9_]+$"
+                },
+                "confidence": {
+                  "type": [
+                    "number",
+                    "null"
+                  ],
+                  "minimum": 0,
+                  "maximum": 1
+                },
+                "model": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "warnings": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "usage": {
+                  "type": "object",
+                  "required": [
+                    "pages"
+                  ],
+                  "properties": {
+                    "pages": {
+                      "const": 1,
+                      "type": "integer"
+                    },
+                    "tokens": {
+                      "type": [
+                        "integer",
+                        "null"
+                      ]
+                    },
+                    "compute_seconds": {
+                      "type": [
+                        "number",
+                        "null"
+                      ]
+                    },
+                    "cost_usd": {
+                      "type": [
+                        "number",
+                        "null"
+                      ]
+                    }
+                  }
+                },
+                "confidence_detail": {
+                  "type": [
+                    "object",
+                    "null"
+                  ]
+                },
+                "input_evidence": {
+                  "anyOf": [
+                    {
+                      "type": "null"
+                    },
+                    {
+                      "$ref": "image-evidence.schema.json"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "content",
+                "format",
+                "confidence",
+                "model",
+                "warnings",
+                "usage",
+                "confidence_detail"
+              ],
+              "additionalProperties": false
+            },
+            "extraction_seconds": {
+              "type": "number",
+              "minimum": 0
             }
           },
           "required": [
@@ -411,7 +535,15 @@
             "started_at",
             "error"
           ],
-          "additionalProperties": false
+          "additionalProperties": false,
+          "dependentRequired": {
+            "partial_result": [
+              "extraction_seconds"
+            ],
+            "extraction_seconds": [
+              "partial_result"
+            ]
+          }
         }
       ]
     }

@@ -63,6 +63,26 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
+    process_parser = subparsers.add_parser(
+        "process", help="Process one document through local text, OCR and bounded image stages")
+    process_parser.add_argument("source", type=Path)
+    process_parser.add_argument("--config", type=Path, required=True)
+    process_parser.add_argument("--out", type=Path, required=True)
+    process_parser.add_argument("--pages", default=None)
+    process_parser.add_argument("--adapter-path", type=Path, default=None)
+    process_parser.add_argument("--review", type=Path, default=None,
+                                help="Source-bound review receipts, including known blank or damaged pages")
+    process_parser.add_argument("--json", action="store_true", dest="json_output")
+    for command, help_text in (
+            ("inspect-job", "Show a document report"),
+            ("verify-job", "Verify document source, attempts, selection and report"),
+            ("review-job", "Apply source/output-bound human review without extraction")):
+        job_parser = subparsers.add_parser(command, help=help_text)
+        job_parser.add_argument("job_dir", type=Path)
+        job_parser.add_argument("--json", action="store_true", dest="json_output")
+        if command == "review-job":
+            job_parser.add_argument("--review", type=Path, required=True)
+
     run_parser = subparsers.add_parser(
         "run",
         help="Run extraction with a built-in/custom adapter or configured adapter chain",
@@ -281,6 +301,9 @@ def _print_error_json(exc: Exception, args: argparse.Namespace) -> None:
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
+
+    if args.command in {"process", "inspect-job", "verify-job", "review-job"}:
+        return _cmd_job(args)
 
     if args.command == "init-config":
         return _cmd_init_config(args)
@@ -633,7 +656,11 @@ def _cmd_classify(args: argparse.Namespace) -> int:
 
 def _cmd_resume(args: argparse.Namespace) -> int:
     try:
-        result = resume(args.run_dir, adapter_path=args.adapter_path)
+        if (args.run_dir / "job.json").exists():
+            from .processing import resume_job
+            result = resume_job(args.run_dir, adapter_path=args.adapter_path)
+        else:
+            result = resume(args.run_dir, adapter_path=args.adapter_path)
     except (RuntimeError, ValueError, OSError) as exc:
         _print_error_json(exc, args)
         print(f"pageledger: error: {exc}", file=sys.stderr)
@@ -641,9 +668,41 @@ def _cmd_resume(args: argparse.Namespace) -> int:
     if args.json_output:
         print(json.dumps(result, ensure_ascii=False, sort_keys=True))
     else:
-        print(f"PageLedger run {result['run_id']} wrote {result['out_dir']}")
+        print(f"PageLedger {result.get('job_id', result.get('run_id'))} wrote {result['out_dir']}")
         print(f"Status: {result['status']}")
-    return 0
+    return 1 if result['status'] in {'failed', 'halted'} else 0
+
+
+def _cmd_job(args: argparse.Namespace) -> int:
+    from .processing import process, review_job, verify_job
+    try:
+        if args.command == "process":
+            result = process(source=args.source, config_path=args.config, out_dir=args.out,
+                             pages=args.pages, adapter_path=args.adapter_path, review_path=args.review)
+        elif args.command == "review-job":
+            result = review_job(args.job_dir, args.review)
+        elif args.command == "verify-job":
+            result = verify_job(args.job_dir)
+        else:
+            if not args.json_output:
+                print((args.job_dir / "report.md").read_text(encoding="utf-8"), end="")
+                return 0
+            result = json.loads((args.job_dir / "document.json").read_text(encoding="utf-8"))
+    except (RuntimeError, ValueError, OSError) as exc:
+        _print_error_json(exc, args)
+        print(f"pageledger: error: {exc}", file=sys.stderr)
+        return 1
+    if args.json_output:
+        print(json.dumps(result, ensure_ascii=False, sort_keys=True))
+    else:
+        print(f"Status: {result['status']}")
+        if result.get("report"):
+            print(f"Report: {result['report']}")
+        if result.get("next_action"):
+            print(result["next_action"])
+        if result.get("error"):
+            print(result["error"], file=sys.stderr)
+    return 1 if result.get("status") in {"halted", "failed", "fail"} else 0
 
 
 # -- rerun ---------------------------------------------------------------------

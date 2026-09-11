@@ -96,12 +96,18 @@ Every page payload includes `run_id`, `page_id` and `state`. All states except
 `extraction_seconds`; `completed` also adds `completion`, with `provenance`,
 `quality` and nullable `alignment`. `failed` adds `error`, with the safe
 exception `type`, normalized `code`, nullable integer `http_status` (100–599)
-and `cost_usd: null`. These state-specific fields are required; extra envelope
+and nullable `cost_usd`. A typed failure can also include `partial_result` and
+`extraction_seconds` together. The partial result has the same shape and
+validation as a successful result, including optional `input_evidence`; its
+cost, if reported, must equal the error cost. Without a validated partial
+result, error cost remains null. These state-specific fields are required; extra envelope
 and page-payload fields are rejected. The schemas define the complete shapes
 and allowed diagnostic codes.
 
 Successful response records preserve content, format, confidence, actual
-returned model, warnings, usage and optional confidence detail. Final
+returned model, warnings, usage, optional confidence detail and optional image
+input evidence. Partial failure results are retained in the failure receipt,
+never counted as completed or eligible for automatic retry. Final
 provenance still contains one successful extraction record per page; recovery
 does not add duplicate page rows or count reused responses as new calls.
 Aggregates reconstruct the original successful-page usage, timing and budget
@@ -143,9 +149,9 @@ not establish the cause of an earlier failure.
 - Checks detect inconsistent evidence, not maliciously rewritten complete
   histories. Advisory locks coordinate cooperating recovery writers; they
   do not prevent unrelated tools from editing files or remote execution.
-- Native local → OCR → bounded image-model routing and the compact document
-  report are subsequent 0.5 work. This recovery slice does not implement or
-  certify that workflow, image provenance, OCR accuracy or storage custody.
+- Input image evidence follows [`image-evidence-spec.md`](image-evidence-spec.md).
+  Recovery validates provenance and byte identity; it does not certify OCR
+  accuracy or storage custody.
 
 ## Verification evidence
 

@@ -7,6 +7,14 @@ an existing run; the rest inspect, compare, diagnose, or scaffold.
 
 `pageledger --version` prints the installed release.
 
+The development `process SOURCE --config FILE --out JOB` command runs a document
+through local text, OCR and explicitly bounded image stages. Use `resume JOB`,
+`inspect-job JOB`, `verify-job JOB`, and `review-job JOB --review FILE` for its
+recovery, report and human decisions. Each accepts `--json`; `process` also
+accepts `--pages`, `--adapter-path`, and preflight `--review`. See the
+[processing job contract](processing-spec.md). These stages are separate from
+the rerun generations in `run.adapter_order`.
+
 For a complete run/inspect/raw/audit/verify/rerun journey using only the built-in
 text adapter, follow [First run](first-run.md).
 

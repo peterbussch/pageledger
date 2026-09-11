@@ -1,0 +1,776 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/peterbussch/pageledger/schemas/job.json",
+  "title": "PageLedger Document Job Checkpoint",
+  "description": "One source document, stable selected source pages, linked resumable child runs and durable processing policy.",
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "const": "0.1"
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "payload": {
+      "type": "object",
+      "properties": {
+        "schema_version": {
+          "const": "0.1"
+        },
+        "job_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "source": {
+          "type": "object",
+          "properties": {
+            "path": {
+              "type": "string",
+              "minLength": 1
+            },
+            "sha256": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "page_count": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 0
+            },
+            "annotations": {
+              "type": "object",
+              "properties": {
+                "status": {
+                  "enum": [
+                    "present",
+                    "none",
+                    "unknown"
+                  ]
+                },
+                "count": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ],
+                  "minimum": 0
+                }
+              },
+              "required": [
+                "status",
+                "count"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "path",
+            "sha256",
+            "page_count",
+            "annotations"
+          ],
+          "additionalProperties": false
+        },
+        "selected_pages": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "uniqueItems": true
+        },
+        "status": {
+          "enum": [
+            "processing",
+            "completed",
+            "halted"
+          ]
+        },
+        "pages": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "page_id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "page_number": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "source_sha256": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              },
+              "attempts": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "attempt_id": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "stage": {
+                      "enum": [
+                        "local_text",
+                        "local_ocr",
+                        "image",
+                        "second_opinion"
+                      ]
+                    },
+                    "outcome": {
+                      "enum": [
+                        "completed",
+                        "failed",
+                        "outcome_unknown",
+                        "response"
+                      ]
+                    },
+                    "raw_artifact": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "raw_sha256": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "pattern": "^[0-9a-f]{64}$"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "format": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "warnings": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "classification": {
+                      "type": [
+                        "object",
+                        "null"
+                      ]
+                    },
+                    "alignment": {
+                      "type": [
+                        "object",
+                        "null"
+                      ]
+                    },
+                    "usage": {
+                      "type": "object"
+                    },
+                    "failure": {
+                      "type": [
+                        "object",
+                        "null"
+                      ]
+                    },
+                    "run_path": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "run_id": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "page_id": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "page_number": {
+                      "type": "integer",
+                      "minimum": 1
+                    },
+                    "source_sha256": {
+                      "type": "string",
+                      "pattern": "^[0-9a-f]{64}$"
+                    },
+                    "input_evidence": {
+                      "type": [
+                        "object",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "attempt_id",
+                    "stage",
+                    "outcome",
+                    "raw_artifact",
+                    "raw_sha256",
+                    "format",
+                    "warnings",
+                    "classification",
+                    "alignment",
+                    "usage",
+                    "failure"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "selected_attempt": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "disposition": {
+                "enum": [
+                  "unreviewed_text",
+                  "coverage_defect",
+                  "numeric_column_conflict",
+                  "blank_candidate",
+                  "provider_failure",
+                  "outcome_unknown",
+                  "pending",
+                  "reviewed_text",
+                  "reviewed_blank",
+                  "illustration",
+                  "handwriting",
+                  "unreadable",
+                  "source_defect"
+                ]
+              },
+              "review_reasons": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "review": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "schema_version": {
+                        "const": "0.1"
+                      },
+                      "source_sha256": {
+                        "type": "string",
+                        "pattern": "^[0-9a-f]{64}$"
+                      },
+                      "decisions": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "page_id": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "page_number": {
+                              "type": "integer",
+                              "minimum": 1
+                            },
+                            "disposition": {
+                              "enum": [
+                                "reviewed_text",
+                                "reviewed_blank",
+                                "illustration",
+                                "handwriting",
+                                "unreadable",
+                                "source_defect"
+                              ]
+                            },
+                            "selected_attempt": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "output_sha256": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "pattern": "^[0-9a-f]{64}$"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "reason": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "reviewer": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "reviewed_at": {
+                              "type": "string",
+                              "format": "date-time"
+                            }
+                          },
+                          "required": [
+                            "page_id",
+                            "page_number",
+                            "disposition",
+                            "selected_attempt",
+                            "output_sha256",
+                            "reason",
+                            "reviewer",
+                            "reviewed_at"
+                          ],
+                          "additionalProperties": false,
+                          "allOf": [
+                            {
+                              "if": {
+                                "properties": {
+                                  "disposition": {
+                                    "const": "reviewed_text"
+                                  }
+                                }
+                              },
+                              "then": {
+                                "properties": {
+                                  "selected_attempt": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  },
+                                  "output_sha256": {
+                                    "type": "string",
+                                    "pattern": "^[0-9a-f]{64}$"
+                                  }
+                                }
+                              }
+                            },
+                            {
+                              "if": {
+                                "properties": {
+                                  "selected_attempt": {
+                                    "type": "null"
+                                  }
+                                }
+                              },
+                              "then": {
+                                "properties": {
+                                  "output_sha256": {
+                                    "type": "null"
+                                  }
+                                }
+                              },
+                              "else": {
+                                "properties": {
+                                  "selected_attempt": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  },
+                                  "output_sha256": {
+                                    "type": "string",
+                                    "pattern": "^[0-9a-f]{64}$"
+                                  }
+                                }
+                              }
+                            }
+                          ]
+                        }
+                      }
+                    },
+                    "required": [
+                      "schema_version",
+                      "source_sha256",
+                      "decisions"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "next_action": {
+                "type": "string",
+                "minLength": 1
+              },
+              "review_history": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "schema_version": {
+                      "const": "0.1"
+                    },
+                    "source_sha256": {
+                      "type": "string",
+                      "pattern": "^[0-9a-f]{64}$"
+                    },
+                    "decisions": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "page_id": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "page_number": {
+                            "type": "integer",
+                            "minimum": 1
+                          },
+                          "disposition": {
+                            "enum": [
+                              "reviewed_text",
+                              "reviewed_blank",
+                              "illustration",
+                              "handwriting",
+                              "unreadable",
+                              "source_defect"
+                            ]
+                          },
+                          "selected_attempt": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "output_sha256": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "pattern": "^[0-9a-f]{64}$"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "reason": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "reviewer": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "reviewed_at": {
+                            "type": "string",
+                            "format": "date-time"
+                          }
+                        },
+                        "required": [
+                          "page_id",
+                          "page_number",
+                          "disposition",
+                          "selected_attempt",
+                          "output_sha256",
+                          "reason",
+                          "reviewer",
+                          "reviewed_at"
+                        ],
+                        "additionalProperties": false,
+                        "allOf": [
+                          {
+                            "if": {
+                              "properties": {
+                                "disposition": {
+                                  "const": "reviewed_text"
+                                }
+                              }
+                            },
+                            "then": {
+                              "properties": {
+                                "selected_attempt": {
+                                  "type": "string",
+                                  "minLength": 1
+                                },
+                                "output_sha256": {
+                                  "type": "string",
+                                  "pattern": "^[0-9a-f]{64}$"
+                                }
+                              }
+                            }
+                          },
+                          {
+                            "if": {
+                              "properties": {
+                                "selected_attempt": {
+                                  "type": "null"
+                                }
+                              }
+                            },
+                            "then": {
+                              "properties": {
+                                "output_sha256": {
+                                  "type": "null"
+                                }
+                              }
+                            },
+                            "else": {
+                              "properties": {
+                                "selected_attempt": {
+                                  "type": "string",
+                                  "minLength": 1
+                                },
+                                "output_sha256": {
+                                  "type": "string",
+                                  "pattern": "^[0-9a-f]{64}$"
+                                }
+                              }
+                            }
+                          }
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "schema_version",
+                    "source_sha256",
+                    "decisions"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            },
+            "required": [
+              "page_id",
+              "page_number",
+              "source_sha256",
+              "attempts",
+              "selected_attempt",
+              "disposition",
+              "review_reasons",
+              "review",
+              "next_action"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "usage": {
+          "type": "object",
+          "properties": {
+            "attempt_pages": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "image_calls": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "tokens": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 0
+            },
+            "cost_usd": {
+              "type": [
+                "number",
+                "null"
+              ],
+              "minimum": 0
+            },
+            "cost_known": {
+              "type": "boolean"
+            },
+            "known_cost_usd": {
+              "type": "number",
+              "minimum": 0
+            },
+            "tokens_known": {
+              "type": "boolean"
+            },
+            "paid_cost_known": {
+              "type": "boolean"
+            },
+            "paid_tokens_known": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "attempt_pages",
+            "image_calls",
+            "tokens",
+            "cost_usd",
+            "cost_known"
+          ],
+          "additionalProperties": false
+        },
+        "limits": {
+          "type": "object"
+        },
+        "links": {
+          "type": "object",
+          "properties": {
+            "article": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "custody": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "article",
+            "custody"
+          ],
+          "additionalProperties": false
+        },
+        "source_retention": {
+          "type": "object",
+          "properties": {
+            "capture": {
+              "const": "present"
+            },
+            "preservation": {
+              "const": "unverified"
+            },
+            "removal_eligibility": {
+              "const": "not_assessed"
+            },
+            "removed": {
+              "const": false
+            }
+          },
+          "required": [
+            "capture",
+            "preservation",
+            "removal_eligibility",
+            "removed"
+          ],
+          "additionalProperties": false
+        },
+        "next_action": {
+          "type": "string",
+          "minLength": 1
+        },
+        "root": {
+          "type": "string",
+          "minLength": 1
+        },
+        "config": {
+          "type": "object"
+        },
+        "config_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "policy": {
+          "type": "object"
+        },
+        "package_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "halt_reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "stages": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "stage_id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "stage": {
+                "enum": [
+                  "local_text",
+                  "local_ocr",
+                  "image",
+                  "second_opinion"
+                ]
+              },
+              "pages": {
+                "type": "array",
+                "minItems": 1,
+                "uniqueItems": true,
+                "items": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              },
+              "run_path": {
+                "type": "string",
+                "minLength": 1
+              },
+              "config_path": {
+                "type": "string",
+                "minLength": 1
+              },
+              "config_sha256": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              },
+              "status": {
+                "enum": [
+                  "planned",
+                  "running",
+                  "completed",
+                  "halted"
+                ]
+              }
+            },
+            "required": [
+              "stage_id",
+              "stage",
+              "pages",
+              "run_path",
+              "config_path",
+              "config_sha256",
+              "status"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "schema_version",
+        "job_id",
+        "created_at",
+        "source",
+        "selected_pages",
+        "status",
+        "pages",
+        "usage",
+        "limits",
+        "links",
+        "source_retention",
+        "next_action",
+        "root",
+        "config",
+        "config_sha256",
+        "policy",
+        "package_sha256",
+        "halt_reason",
+        "stages"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "schema_version",
+    "sha256",
+    "payload"
+  ],
+  "additionalProperties": false
+}

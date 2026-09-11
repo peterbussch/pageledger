@@ -103,6 +103,7 @@
       "type": ["number", "null"],
       "description": "Wall-clock seconds for the successful extraction attempt, measured by the runner. Null in artifacts predating this field."
     },
+    "input_evidence": {"anyOf": [{"type": "null"}, {"$ref": "image-evidence.schema.json"}]},
     "timestamp": { "type": "string", "description": "Extraction time in UTC ISO 8601." }
   },
   "additionalProperties": false

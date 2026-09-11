@@ -143,7 +143,7 @@ def test_pdf_ocr_run_without_profile_is_ordinary_but_not_bundleable(
 
 def test_pdf_text_records_pypdf_backend_version(tmp_path: Path, monkeypatch) -> None:
     pytest.importorskip("pypdf")
-    monkeypatch.setattr(adapters_module, "_pdf_page_text", lambda source, page: "text")
+    monkeypatch.setattr(PdfTextAdapter, "_document_text", lambda self, source: ("text",))
     result = PdfTextAdapter().extract(
         tmp_path / "input.pdf",
         page_id="doc_0001_page_0001",
@@ -157,7 +157,7 @@ def test_pdf_text_records_pypdf_backend_version(tmp_path: Path, monkeypatch) -> 
 def test_pdf_text_records_unversioned_backend_when_metadata_is_missing(
     tmp_path: Path, monkeypatch
 ) -> None:
-    monkeypatch.setattr(adapters_module, "_pdf_page_text", lambda source, page: "text")
+    monkeypatch.setattr(PdfTextAdapter, "_document_text", lambda self, source: ("text",))
 
     def missing_distribution(name: str) -> str:
         raise importlib.metadata.PackageNotFoundError(name)

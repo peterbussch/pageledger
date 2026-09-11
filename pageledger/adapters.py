@@ -4,12 +4,13 @@ from __future__ import annotations
 
 import importlib
 import importlib.metadata
+import io
 import re
 import shutil
 import subprocess
 import tempfile
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from functools import lru_cache
 from pathlib import Path
 from typing import Any, ClassVar, Literal
@@ -34,6 +35,31 @@ class ExtractionResult:
     # confidences). Shape is adapter-defined; recorded, never interpreted as
     # calibrated probability.
     confidence_detail: dict[str, Any] | None = None
+    input_evidence: dict[str, Any] | None = None
+
+
+ADAPTER_FAILURE_CODES = frozenset({
+    "MODEL_TIMEOUT", "MODEL_HTTP_ERROR", "MODEL_QUOTA", "MODEL_OUTPUT_TRUNCATED",
+    "MODEL_NETWORK_ERROR", "MODEL_INVALID_RESPONSE", "MODEL_EMPTY_RESPONSE",
+    "MODEL_UNAVAILABLE", "IMAGE_RENDER_ERROR", "IMAGE_EVIDENCE_INVALID",
+})
+
+
+class AdapterFailure(RuntimeError):
+    """Safe, terminal failure; partial output is evidence, never a completion."""
+
+    def __init__(self, code: str, *, http_status: int | None = None,
+                 partial_result: ExtractionResult | None = None):
+        if not isinstance(code, str) or code not in ADAPTER_FAILURE_CODES:
+            raise ValueError("Unsupported adapter failure code")
+        if http_status is not None and (type(http_status) is not int or not 100 <= http_status <= 599):
+            raise ValueError("Adapter failure HTTP status must be 100..599 or null")
+        if partial_result is not None and not isinstance(partial_result, ExtractionResult):
+            raise ValueError("Adapter failure partial_result must be ExtractionResult or null")
+        super().__init__(code)
+        self.code = code
+        self.http_status = http_status
+        self.partial_result = partial_result
 
 
 PDF_ADAPTER_NAMES = {"pdf_text", "pdf"}
@@ -128,6 +154,7 @@ class TextAdapter:
 
 @dataclass(frozen=True)
 class PdfTextAdapter:
+    _documents: dict = field(default_factory=dict, init=False, repr=False, compare=False)
     name: ClassVar[str] = "pdf_text"
     version: ClassVar[str] = "0.1"
     deterministic: ClassVar[bool] = True
@@ -148,7 +175,27 @@ class PdfTextAdapter:
         return {"materials": [material]}
 
     def page_count(self, source: Path) -> int:
-        return paginate(source, allow_pdf=True)
+        return len(self._document_text(source))
+
+    def _document_text(self, source: Path) -> tuple[str, ...]:
+        source = source.absolute()
+        stat = source.stat()
+        identity = (stat.st_dev, stat.st_ino, stat.st_size, stat.st_mtime_ns, stat.st_ctime_ns)
+        cached = self._documents.get(source)
+        if cached is not None:
+            if cached[0] != identity:
+                raise ValueError("PDF source changed during adapter lifetime")
+            return cached[1]
+        data = source.read_bytes()
+        reader = _load_pypdf()(io.BytesIO(data))
+        pages = tuple(page.extract_text() or "" for page in reader.pages)
+        after = source.stat()
+        if (after.st_dev, after.st_ino, after.st_size, after.st_mtime_ns, after.st_ctime_ns) != identity:
+            raise ValueError("PDF source changed while reading")
+        if not pages:
+            raise ValueError("PDF source has no pages")
+        self._documents[source] = (identity, pages)
+        return pages
 
     def extract(
         self,
@@ -163,7 +210,10 @@ class PdfTextAdapter:
             raise ValueError(f"PDF text adapter does not support action: {action}")
 
         _ = page_id, prompt
-        text = _pdf_page_text(source, page_number)
+        pages = self._document_text(source)
+        if type(page_number) is not int or not 1 <= page_number <= len(pages):
+            raise ValueError(f"page_number {page_number} out of range for {source}")
+        text = pages[page_number - 1]
         return ExtractionResult(
             content=text,
             format="text",

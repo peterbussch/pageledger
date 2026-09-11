@@ -543,6 +543,20 @@ def verify_run(
                     errors,
                     "provenance.jsonl",
                 )
+        evidence = entry.get("input_evidence")
+        if evidence is not None:
+            from .image_evidence import validate_input_evidence
+            try:
+                validate_input_evidence(
+                    evidence, root=root,
+                    source_sha256=source.get("sha256") if isinstance(source, dict) else None,
+                    page_number=source.get("page_number") if isinstance(source, dict) else None,
+                    prompt_sha256=entry.get("extractor", {}).get("prompt_hash"),
+                )
+                if evidence["model"] != entry.get("extractor", {}).get("model"):
+                    raise ValueError("Image evidence model differs from provenance")
+            except (ValueError, TypeError, AttributeError) as exc:
+                _add(errors, "input_evidence_invalid", str(exc), page_id=page_id)
         result = entry.get("result")
         recorded_route = entry.get("route")
         if isinstance(recorded_route, dict) and route_page is not None:

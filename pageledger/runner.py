@@ -22,6 +22,7 @@ from . import reports as _reports
 from .adapters import (
     PDF_ADAPTER_NAMES,
     PDF_ONLY_ADAPTER_NAMES,
+    AdapterFailure,
     adapter_page_count,
     load_adapter,
     ocr_pdf_page_count,
@@ -196,7 +197,7 @@ def _extract_adapter_page(
             extraction_seconds = round(time.perf_counter() - attempt_started, 3)
             break
         except Exception as exc:
-            final_attempt = attempt > config.max_retries
+            final_attempt = isinstance(exc, AdapterFailure) or attempt > config.max_retries
             adapter_error = AdapterExecutionError(
                 adapter=adapter.name,
                 page_id=page_id,
@@ -333,6 +334,7 @@ def resume(run_dir: Path, *, adapter_path: Path | None = None) -> dict[str, Any]
                     "summary": manifest["summary"], "resumed": True}
         checkpoint = Checkpoint(root, existing=True)
         checkpoint.require_resumable()
+        assert checkpoint.job is not None
         job = checkpoint.job
         assert job is not None
         return _run(inputs=[Path(item["path"]) for item in job["inputs"]],
@@ -729,6 +731,11 @@ def _run(
                     break
                 continue
             assert result is not None
+            if getattr(result, "input_evidence", None) is not None:
+                from .image_evidence import validate_input_evidence
+                validate_input_evidence(result.input_evidence, root=out_dir,
+                                        source_sha256=_sha256_path(source),
+                                        page_number=page["page_number"], prompt_sha256=prompt_hash)
             consecutive_failures = 0
             phase_clock.switch("raw_artifact")
             raw_artifact = Path("raw") / f"{page_id}.{_artifact_extension(result.format)}"
@@ -1455,6 +1462,12 @@ def _backoff_seconds(backoff: str, attempt: int) -> float:
 
 
 def _validate_extraction_result(adapter_name: str, result: Any) -> None:
+    input_evidence = getattr(result, "input_evidence", None)
+    if input_evidence is not None:
+        from .image_evidence import validate_input_evidence
+        validate_input_evidence(input_evidence)
+        if input_evidence["model"] != result.model:
+            raise ValueError("Image evidence actual model disagrees with extraction result")
     if not isinstance(result.content, (str, dict, list)):
         raise ValueError(f"Adapter '{adapter_name}' content must be string, object, or list")
     _require_json_serializable(
@@ -1597,6 +1610,8 @@ def _build_provenance_entry(
         "cost": {"usd": page_cost, "basis": page_cost_basis},
         "extraction_seconds": extraction_seconds,
         "timestamp": timestamp,
+        **({"input_evidence": result.input_evidence}
+           if getattr(result, "input_evidence", None) is not None else {}),
     }
 
 

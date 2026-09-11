@@ -376,6 +376,7 @@ def bundle_run(run_dir: Path, out_dir: Path) -> dict[str, Any]:
     if report.get("status") != "pass":
         raise ReplayError("run_not_verified", "Run directory did not pass verification")
     manifest = _read_json_object(run_root / "manifest.json", "manifest")
+    _reject_image_evidence(run_root, manifest)
     _check_bundle_eligibility(manifest)
     _validate_manifest_artifacts(manifest)
     extractor = _ordinary_extractor_identity(manifest)
@@ -497,6 +498,7 @@ def validate_bundle(bundle_dir: Path) -> dict[str, Any]:
     if _canonical(identity) != _canonical(extractor):
         _fail("bundle_extractor_mismatch", "Bundle extractor differs from baseline manifest")
     _validate_baseline_artifacts(root, manifest)
+    _reject_image_evidence(root / "baseline", manifest)
     _validate_transport_allowlist(root, manifest, sources)
     from .verify import verify_run
 
@@ -1124,6 +1126,14 @@ def _validate_manifest_artifacts(manifest: dict[str, Any]) -> dict[str, str]:
     if not isinstance(declarations, dict) or declarations != _CANONICAL_ARTIFACTS:
         _fail("artifact_declarations_invalid", "Manifest artifact declarations are not canonical")
     return cast(dict[str, str], declarations)
+
+
+def _reject_image_evidence(run_root: Path, manifest: dict[str, Any]) -> None:
+    """Image transport is not yet part of generation-zero text replay."""
+    path = _declared_file(run_root, manifest, "provenance")
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if line.strip() and json.loads(line).get("input_evidence") is not None:
+            _fail("image_evidence_unsupported", "Image evidence cannot yet be transported or replayed")
 
 
 def _copy_baseline(run_root: Path, manifest: dict[str, Any], destination: Path) -> None:

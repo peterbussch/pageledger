@@ -4,10 +4,17 @@ What PageLedger 0.4.2 does, what it leaves to you, and what is documented
 design rather than working code. This is the honest-scope page; the README
 stays short because this exists.
 
-The development checkout also includes the unreleased atomic-resume slice
-described below. The package version remains 0.4.2; this is not a 0.5.0 release.
+The development checkout also includes unreleased document processing and
+atomic resume. The package version remains 0.4.2; this is not a 0.5.0 release.
 
 ## Built in and tested
+
+- Development `process` jobs own local-text → OCR → bounded image attempts,
+  shared budgets, source/page identities, persistent review holds and a
+  JSON-derived document report. `review-job` applies source/output-bound human
+  receipts without extraction; `verify-job` checks the retained evidence.
+  Structural checks cannot prove text completeness or numeric fidelity.
+  See [processing-spec.md](processing-spec.md) for the workflow and limits.
 
 - Opt-in `run --resumable` and `resume RUN_DIR` retain durable page attempts,
   verify source/config/adapter/output identities, reuse saved responses, and

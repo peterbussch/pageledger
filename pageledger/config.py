@@ -26,6 +26,7 @@ _KNOWN_TOP_LEVEL = frozenset({
     "taxonomy",
     "schema",
     "run",
+    "processing",
 })
 
 _KNOWN_RUN_KEYS = frozenset({

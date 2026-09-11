@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import os
 import re
 import tempfile
@@ -10,14 +11,14 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
-from .adapters import ExtractionResult
+from .adapters import ADAPTER_FAILURE_CODES, AdapterFailure, ExtractionResult
+from .image_evidence import validate_input_evidence
 from .replay import _adapter_code_sha256, _package_code_sha256
 
 PAGE_ID = re.compile(r"[A-Za-z0-9_-]+\Z")
 STATES = {"pending", "started", "outcome_unknown", "response", "completed", "failed"}
-SAFE_ERROR_CODES = {"MODEL_TIMEOUT", "MODEL_HTTP_ERROR", "MODEL_OUTPUT_TRUNCATED",
-                    "MODEL_NETWORK_ERROR", "MODEL_INVALID_RESPONSE", "MODEL_EMPTY_RESPONSE"}
-RESULT_FIELDS = {"content", "format", "confidence", "model", "warnings", "usage", "confidence_detail"}
+SAFE_ERROR_CODES = ADAPTER_FAILURE_CODES
+RESULT_FIELDS = {"content", "format", "confidence", "model", "warnings", "usage", "confidence_detail", "input_evidence"}
 
 
 def digest(value: Any) -> str:
@@ -197,6 +198,7 @@ class Checkpoint:
         config = load_config(snapshot, validate_adapter=False)
         schema_spec = load_schema_spec(config.data)
         expected: dict[str, dict[str, Any]] = {}
+        page_sources: dict[str, str] = {}
         source_paths: set[str] = set()
         for source, document in zip(job["inputs"], job["documents"], strict=True):
             if (not isinstance(source, dict) or not isinstance(document, dict)
@@ -222,6 +224,7 @@ class Checkpoint:
                 self.page_path(page["page_id"])
                 numbers.add(page["page_number"])
                 expected[page["page_id"]] = page
+                page_sources[page["page_id"]] = source["sha256"]
             from .runner import _parse_pages_expression
             planned_numbers = (set(_parse_pages_expression(source["pages"])) if "pages" in source
                                else set(range(1, source["page_count"] + 1)))
@@ -249,6 +252,8 @@ class Checkpoint:
                 required_fields.add("completion")
             if state == "failed":
                 required_fields.add("error")
+                if "partial_result" in record:
+                    required_fields.update({"partial_result", "extraction_seconds"})
             if (set(record) != required_fields or state not in STATES
                     or record["run_id"] != job["run_id"] or record["page_id"] != page_id):
                 raise ValueError("Invalid recovery page state")
@@ -260,20 +265,29 @@ class Checkpoint:
                         or not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", error["type"])
                         or not isinstance(error["code"], str)
                         or error["code"] not in SAFE_ERROR_CODES | {"adapter_failure", "timeout"}
-                        or error["cost_usd"] is not None
+                        or (error["cost_usd"] is not None and (
+                            type(error["cost_usd"]) not in {int, float}
+                            or not math.isfinite(error["cost_usd"])
+                            or error["cost_usd"] < 0))
                         or (error["http_status"] is not None
                             and (type(error["http_status"]) is not int
                                  or not 100 <= error["http_status"] <= 599))):
                     raise ValueError("Invalid typed recovery failure")
+                if "partial_result" in record:
+                    self._validate_saved_result(record["partial_result"],
+                                                page_sources[page_id], expected[page_id])
+                    seconds = record["extraction_seconds"]
+                    if type(seconds) not in {int, float} or not math.isfinite(seconds) or seconds < 0:
+                        raise ValueError("Invalid partial extraction duration")
+                    if error["cost_usd"] != record["partial_result"]["usage"].get("cost_usd"):
+                        raise ValueError("Partial response cost disagrees with failure")
+                elif error["cost_usd"] is not None:
+                    raise ValueError("Failure cost requires validated partial response")
             if "started_at" in record and not isinstance(record["started_at"], str):
                 raise ValueError("Invalid recovery attempt timestamp")
             if state in {"response", "completed"}:
-                from .runner import _validate_extraction_result
                 result_data = record["result"]
-                if not isinstance(result_data, dict) or set(result_data) != RESULT_FIELDS:
-                    raise ValueError("Invalid saved response")
-                result = ExtractionResult(**result_data)
-                _validate_extraction_result("checkpoint", result)
+                result = self._validate_saved_result(result_data, page_sources[page_id], expected[page_id])
                 seconds = record["extraction_seconds"]
                 if type(seconds) not in {int, float} or seconds < 0:
                     raise ValueError("Invalid saved extraction duration")
@@ -310,7 +324,8 @@ class Checkpoint:
                             or completion["provenance"].get("page_id") != page_id
                             or completion["quality"].get("page_id") != page_id
                             or completion["provenance"].get("result", {}).get("raw_sha256") != expected_sha
-                            or completion["provenance"].get("result", {}).get("raw_artifact") != relative):
+                            or completion["provenance"].get("result", {}).get("raw_artifact") != relative
+                            or completion["provenance"].get("input_evidence") != result.input_evidence):
                         raise ValueError("Invalid completion evidence")
                     alignment = completion["alignment"]
                     if alignment is not None:
@@ -340,6 +355,20 @@ class Checkpoint:
                 raise ValueError("Unexpected recovery output artifact")
         if sources:
             self.check_sources()
+
+    def _validate_saved_result(self, data: Any, source_sha256: str,
+                               page: dict[str, Any]) -> ExtractionResult:
+        from .runner import _validate_extraction_result
+        if (not isinstance(data, dict) or set(data) not in
+                (RESULT_FIELDS, RESULT_FIELDS - {"input_evidence"})):
+            raise ValueError("Invalid saved response")
+        result = ExtractionResult(**data)
+        _validate_extraction_result("checkpoint", result)
+        if result.input_evidence is not None:
+            validate_input_evidence(result.input_evidence, root=self.root,
+                                    source_sha256=source_sha256, page_number=page["page_number"],
+                                    prompt_sha256=hashlib.sha256((page.get("prompt") or "").encode()).hexdigest())
+        return result
 
     @staticmethod
     def _check_file(path: Path, expected: str) -> None:
@@ -386,10 +415,14 @@ class Checkpoint:
                                      action=page["action"], prompt=prompt)
             elapsed = round(time.perf_counter() - started, 3)
             _validate_extraction_result(adapter.name, result)
+            if getattr(result, "input_evidence", None) is not None:
+                validate_input_evidence(result.input_evidence, root=self.root,
+                                        source_sha256=file_digest(source), page_number=page["page_number"],
+                                        prompt_sha256=hashlib.sha256((prompt or "").encode()).hexdigest())
             result_data = {key: getattr(result, key, None) for key in RESULT_FIELDS}
         except Exception as exc:
             error_type = type(exc).__name__
-            error = {"type": error_type if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", error_type) else "AdapterError",
+            error: dict[str, Any] = {"type": error_type if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", error_type) else "AdapterError",
                      "code": "adapter_failure", "http_status": None, "cost_usd": None}
             if isinstance(exc, TimeoutError):
                 error["code"] = "timeout"
@@ -401,7 +434,21 @@ class Checkpoint:
                 if type(value) is int and 100 <= value <= 599:
                     error["http_status"] = value
                     break
-            self.save(page_id, {"state": "failed", "started_at": started_at, "error": error})
+            failed: dict[str, Any] = {"state": "failed", "started_at": started_at, "error": error}
+            if isinstance(exc, AdapterFailure) and exc.partial_result is not None:
+                partial: dict[str, Any] = {key: getattr(exc.partial_result, key, None) for key in RESULT_FIELDS}
+                try:
+                    self._validate_saved_result(partial, file_digest(source), {**page, "prompt": prompt})
+                    cost = partial["usage"].get("cost_usd")
+                    if cost is not None and cost < 0:
+                        raise ValueError("Negative partial cost")
+                except (OSError, ValueError, TypeError, AttributeError):
+                    error["code"] = "IMAGE_EVIDENCE_INVALID"
+                else:
+                    failed["partial_result"] = partial
+                    failed["extraction_seconds"] = round(time.perf_counter() - started, 3)
+                    error["cost_usd"] = cost
+            self.save(page_id, failed)
             raise RuntimeError(f"Adapter {error['type']} (HTTP {error['http_status']}); outcome retained, queued work stopped") from None
         # Persistence failures remain started/outcome_unknown; never label them provider failures.
         self.save(page_id, {"state": "response", "started_at": started_at,

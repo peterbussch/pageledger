@@ -46,6 +46,10 @@ yet, install the exact candidate wheel in a fresh environment and confirm
 [maintained first-run guide](docs/first-run.md#maintainer-verification) for the
 isolated-wheel command and import-path check.
 
+The development checkout also includes document jobs with local text, OCR,
+bounded image escalation and a source-linked report. See the
+[document processing guide](docs/processing-spec.md); this work is unreleased.
+
 ## Quickstart
 
 Start with the built-in text adapter; it needs no OCR engine or provider. The

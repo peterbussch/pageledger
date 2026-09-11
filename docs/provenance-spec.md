@@ -61,6 +61,13 @@ metadata needed to understand and reconstruct the recorded method.
 
 ## Optional per-record links
 
+Image adapters may add top-level `input_evidence`, described in
+[`image-evidence-spec.md`](image-evidence-spec.md). It binds the exact retained
+JPEG to the source page, rendering parameters, prompts, requested model and
+actual returned model/provider. `result.raw_sha256` continues to hash output;
+`input_evidence.sha256` hashes the transmitted input. Existing records may omit
+the field or use null. Final verification checks non-null image evidence.
+
 Normalized records should preserve links back to provenance lines:
 
 ```json

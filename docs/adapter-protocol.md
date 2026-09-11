@@ -54,6 +54,7 @@ class ExtractionResult:
     warnings: list[str]
     usage: dict[str, Any]  # {"pages": 1, "tokens": int|None, ...}
     confidence_detail: dict[str, Any] | None = None  # engine-native evidence
+    input_evidence: dict[str, Any] | None = None  # exact page image descriptor
 
 
 class ExtractorAdapter:
@@ -116,6 +117,24 @@ messages and stdout/stderr remain redacted; safe typed outcome and available
 HTTP status are diagnostic evidence, not proof of the root cause.
 
 Adapters must report the actual returned model and usage when available.
+An optional `ExtractionResult.input_evidence` dictionary records an exact page
+JPEG and its rendering/request identity; see
+[`image-evidence-spec.md`](image-evidence-spec.md). It defaults to null, so old
+adapters remain compatible.
+
+Use `pageledger.adapters.AdapterFailure(code, http_status=None,
+partial_result=None)` for a typed terminal failure. Codes are
+`MODEL_TIMEOUT`, `MODEL_HTTP_ERROR`, `MODEL_QUOTA`, `MODEL_OUTPUT_TRUNCATED`,
+`MODEL_NETWORK_ERROR`, `MODEL_INVALID_RESPONSE`, `MODEL_EMPTY_RESPONSE`,
+`MODEL_UNAVAILABLE`, `IMAGE_RENDER_ERROR`, and `IMAGE_EVIDENCE_INVALID`.
+`http_status` is an integer 100–599 or null. `partial_result` is an
+`ExtractionResult` or null. The resumable runner validates and retains any
+partial result, including truncated text and reported usage, in the failed
+receipt. It never completes that page or retries it. A malformed partial
+result is discarded and the receipt reports `IMAGE_EVIDENCE_INVALID`.
+Typed failures also bypass ordinary runner retries; use resumable execution
+when durable partial output is required.
+
 Recovery preserves that evidence, including null monetary cost. It cannot
 observe retries hidden inside an adapter or establish provider-side
 idempotency. Keep such behavior explicit in the adapter's own contract.
@@ -415,6 +434,7 @@ Adapters should return `ExtractionResult` instances with:
 | `warnings` | array | Non-fatal quality issues (empty list if none). Preserved in provenance and copied into `quality.jsonl`, so they affect grades and audit routing. |
 | `usage` | object | **`pages` must be 1**; `tokens`, `compute_seconds`, `cost_usd` optional/nullable. |
 | `confidence_detail` | object or null | Optional engine-native confidence evidence, adapter-defined shape; recorded into `quality.jsonl` verbatim. `pdf_ocr` fills Tesseract per-word statistics (`scale`, `word_count`, `mean`, `min`, `below_60_count`, `below_60_ratio`). |
+| `input_evidence` | object or null | Optional exact page image descriptor; shape, file containment, hashes and dimensions follow `image-evidence-spec.md`. |
 
 ## Adapter candidates
 

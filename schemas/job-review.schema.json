@@ -1,0 +1,138 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/peterbussch/pageledger/schemas/job-review.json",
+  "title": "PageLedger Job Review Receipt",
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "const": "0.1"
+    },
+    "source_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "decisions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "page_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "page_number": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "disposition": {
+            "enum": [
+              "reviewed_text",
+              "reviewed_blank",
+              "illustration",
+              "handwriting",
+              "unreadable",
+              "source_defect"
+            ]
+          },
+          "selected_attempt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "output_sha256": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 1
+          },
+          "reviewer": {
+            "type": "string",
+            "minLength": 1
+          },
+          "reviewed_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "page_id",
+          "page_number",
+          "disposition",
+          "selected_attempt",
+          "output_sha256",
+          "reason",
+          "reviewer",
+          "reviewed_at"
+        ],
+        "additionalProperties": false,
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "disposition": {
+                  "const": "reviewed_text"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "selected_attempt": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "output_sha256": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "selected_attempt": {
+                  "type": "null"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "output_sha256": {
+                  "type": "null"
+                }
+              }
+            },
+            "else": {
+              "properties": {
+                "selected_attempt": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "output_sha256": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$"
+                }
+              }
+            }
+          }
+        ]
+      }
+    }
+  },
+  "required": [
+    "schema_version",
+    "source_sha256",
+    "decisions"
+  ],
+  "additionalProperties": false
+}
