@@ -18,7 +18,7 @@ from .doctor import build_doctor_report
 from .grading import GRADES, grade_basis_label
 from .replay import ReplayError, bundle_run, replay_bundle
 from .reports import inspect_run, run_pages_csv
-from .runner import rerun, run
+from .runner import rerun, resume, run
 from .verify import render_verification, verify_run
 
 MINIMAL_CONFIG = textwrap.dedent("""\
@@ -92,6 +92,8 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Execute a complete reviewed route-map.yml (requires --config)",
     )
+    run_parser.add_argument("--resumable", action="store_true",
+                            help="Retain durable responses and resume interrupted work in place")
     run_parser.add_argument("--dry-run", action="store_true")
     run_parser.add_argument("--json", action="store_true", dest="json_output")
     run_parser.add_argument(
@@ -105,6 +107,11 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Directory added to sys.path so custom adapter modules can be imported",
     )
+
+    resume_parser = subparsers.add_parser("resume", help="Resume verified pending work in place")
+    resume_parser.add_argument("run_dir", type=Path)
+    resume_parser.add_argument("--adapter-path", type=Path, default=None)
+    resume_parser.add_argument("--json", action="store_true", dest="json_output")
 
     rerun_parser = subparsers.add_parser(
         "rerun",
@@ -301,6 +308,9 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "classify":
         return _cmd_classify(args)
+
+    if args.command == "resume":
+        return _cmd_resume(args)
 
     if args.command == "rerun":
         return _cmd_rerun(args)
@@ -553,6 +563,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
             pages=args.pages,
             adapter_path=args.adapter_path,
             routes_path=args.routes,
+            resumable=args.resumable,
         )
     except (RuntimeError, ValueError) as exc:
         if not args.json_output and not cost_existed:
@@ -617,6 +628,21 @@ def _cmd_classify(args: argparse.Namespace) -> int:
         print(f"Pages: {result['pages']} across {result['documents']} documents")
         for warning in result.get("warnings", []):
             print(f"WARNING: {warning}")
+    return 0
+
+
+def _cmd_resume(args: argparse.Namespace) -> int:
+    try:
+        result = resume(args.run_dir, adapter_path=args.adapter_path)
+    except (RuntimeError, ValueError, OSError) as exc:
+        _print_error_json(exc, args)
+        print(f"pageledger: error: {exc}", file=sys.stderr)
+        return 1
+    if args.json_output:
+        print(json.dumps(result, ensure_ascii=False, sort_keys=True))
+    else:
+        print(f"PageLedger run {result['run_id']} wrote {result['out_dir']}")
+        print(f"Status: {result['status']}")
     return 0
 
 

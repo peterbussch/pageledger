@@ -1,0 +1,425 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "PageLedger durable page attempt and completion",
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "const": "0.1"
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "payload": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "run_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "page_id": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]+$"
+            },
+            "state": {
+              "const": "pending"
+            }
+          },
+          "required": [
+            "run_id",
+            "page_id",
+            "state"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "run_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "page_id": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]+$"
+            },
+            "state": {
+              "const": "started"
+            },
+            "started_at": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "run_id",
+            "page_id",
+            "state",
+            "started_at"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "run_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "page_id": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]+$"
+            },
+            "state": {
+              "const": "outcome_unknown"
+            },
+            "started_at": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "run_id",
+            "page_id",
+            "state",
+            "started_at"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "run_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "page_id": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]+$"
+            },
+            "state": {
+              "const": "response"
+            },
+            "started_at": {
+              "type": "string",
+              "minLength": 1
+            },
+            "result": {
+              "type": "object",
+              "properties": {
+                "content": {
+                  "type": [
+                    "string",
+                    "object",
+                    "array"
+                  ]
+                },
+                "format": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9_]+$"
+                },
+                "confidence": {
+                  "type": [
+                    "number",
+                    "null"
+                  ],
+                  "minimum": 0,
+                  "maximum": 1
+                },
+                "model": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "warnings": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "usage": {
+                  "type": "object",
+                  "required": [
+                    "pages"
+                  ],
+                  "properties": {
+                    "pages": {
+                      "const": 1,
+                      "type": "integer"
+                    },
+                    "tokens": {
+                      "type": [
+                        "integer",
+                        "null"
+                      ]
+                    },
+                    "compute_seconds": {
+                      "type": [
+                        "number",
+                        "null"
+                      ]
+                    },
+                    "cost_usd": {
+                      "type": [
+                        "number",
+                        "null"
+                      ]
+                    }
+                  }
+                },
+                "confidence_detail": {
+                  "type": [
+                    "object",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "content",
+                "format",
+                "confidence",
+                "model",
+                "warnings",
+                "usage",
+                "confidence_detail"
+              ],
+              "additionalProperties": false
+            },
+            "extraction_seconds": {
+              "type": "number",
+              "minimum": 0
+            }
+          },
+          "required": [
+            "run_id",
+            "page_id",
+            "state",
+            "started_at",
+            "result",
+            "extraction_seconds"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "run_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "page_id": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]+$"
+            },
+            "state": {
+              "const": "completed"
+            },
+            "started_at": {
+              "type": "string",
+              "minLength": 1
+            },
+            "result": {
+              "type": "object",
+              "properties": {
+                "content": {
+                  "type": [
+                    "string",
+                    "object",
+                    "array"
+                  ]
+                },
+                "format": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9_]+$"
+                },
+                "confidence": {
+                  "type": [
+                    "number",
+                    "null"
+                  ],
+                  "minimum": 0,
+                  "maximum": 1
+                },
+                "model": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "warnings": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "usage": {
+                  "type": "object",
+                  "required": [
+                    "pages"
+                  ],
+                  "properties": {
+                    "pages": {
+                      "const": 1,
+                      "type": "integer"
+                    },
+                    "tokens": {
+                      "type": [
+                        "integer",
+                        "null"
+                      ]
+                    },
+                    "compute_seconds": {
+                      "type": [
+                        "number",
+                        "null"
+                      ]
+                    },
+                    "cost_usd": {
+                      "type": [
+                        "number",
+                        "null"
+                      ]
+                    }
+                  }
+                },
+                "confidence_detail": {
+                  "type": [
+                    "object",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "content",
+                "format",
+                "confidence",
+                "model",
+                "warnings",
+                "usage",
+                "confidence_detail"
+              ],
+              "additionalProperties": false
+            },
+            "extraction_seconds": {
+              "type": "number",
+              "minimum": 0
+            },
+            "completion": {
+              "type": "object",
+              "properties": {
+                "provenance": {
+                  "$ref": "provenance-line.schema.json"
+                },
+                "quality": {
+                  "$ref": "quality-line.schema.json"
+                },
+                "alignment": {
+                  "anyOf": [
+                    {
+                      "type": "null"
+                    },
+                    {
+                      "$ref": "normalized-page.schema.json"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "provenance",
+                "quality",
+                "alignment"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "run_id",
+            "page_id",
+            "state",
+            "started_at",
+            "result",
+            "extraction_seconds",
+            "completion"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "run_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "page_id": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]+$"
+            },
+            "state": {
+              "const": "failed"
+            },
+            "started_at": {
+              "type": "string",
+              "minLength": 1
+            },
+            "error": {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+                },
+                "code": {
+                  "enum": [
+                    "adapter_failure",
+                    "timeout",
+                    "MODEL_TIMEOUT",
+                    "MODEL_HTTP_ERROR",
+                    "MODEL_OUTPUT_TRUNCATED",
+                    "MODEL_NETWORK_ERROR",
+                    "MODEL_INVALID_RESPONSE",
+                    "MODEL_EMPTY_RESPONSE"
+                  ]
+                },
+                "http_status": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ],
+                  "minimum": 100,
+                  "maximum": 599
+                },
+                "cost_usd": {
+                  "type": "null"
+                }
+              },
+              "required": [
+                "type",
+                "code",
+                "http_status",
+                "cost_usd"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "run_id",
+            "page_id",
+            "state",
+            "started_at",
+            "error"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    }
+  },
+  "required": [
+    "schema_version",
+    "sha256",
+    "payload"
+  ],
+  "additionalProperties": false
+}

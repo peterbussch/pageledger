@@ -23,6 +23,27 @@ runs/run-001/
 └── rerun-manifest.yml   # executable plan for re-extracting flagged pages
 ```
 
+Runs started with `--resumable` additionally retain operational recovery
+evidence:
+
+```text
+checkpoint.json             # immutable job identity and complete page plan
+.checkpoint/pages/
+    doc_0001_page_0002.json  # durable attempt, response and completion evidence
+.resume.lock                # advisory writer lock; the file can outlive the process
+```
+
+The checkpoint is the recovery authority while final artifacts are incomplete.
+Each page response is persisted before raw publication, and its completion
+record binds the raw bytes to provenance, quality signals and any alignment.
+Resume validates the complete inventory before further calls and regenerates
+the aggregate ledger from retained responses. A surviving raw file is never a
+completion record. `manifest.json` remains the final publication indicator.
+
+Recovery files are separate from the portable artifact inventory. Bundles
+retain the finalized extraction ledger; they do not transport an executable
+recovery journal. See [`checkpoint-spec.md`](checkpoint-spec.md).
+
 `pageledger classify --out route-map.yml` produces a reviewable pair before
 a run directory exists:
 

@@ -271,7 +271,95 @@ def run(
     routes_path: Path | None = None,
     _loaded_adapter: Any | None = None,
     _reproducibility_profile: dict[str, Any] | None = None,
+    resumable: bool = False,
     _phase_observer: PhaseObserver | None = None,
+) -> dict[str, Any]:
+    """Execute a run, optionally retaining durable generation-zero recovery records."""
+    arguments = dict(locals())
+    arguments.pop("resumable")
+    if not resumable:
+        return _run(**arguments)
+    if dry_run or parent_run_id is not None or run_depth != 0 or page_selection is not None:
+        raise ValueError("--resumable supports generation-zero execute runs only")
+    if _loaded_adapter is not None:
+        raise ValueError("--resumable does not support replay adapter injection")
+    config = load_config(config_path, validate_adapter=False)
+    if config.max_retries or config.on_page_error != "stop":
+        raise ValueError("--resumable requires zero retries and on_page_error: stop")
+    from .checkpoint import Checkpoint, _sync_directory, writer_lock
+    root = out_dir.expanduser().resolve()
+    _validate_out_dir(root)
+    new_directories = []
+    ancestor = root
+    while not ancestor.exists():
+        new_directories.append(ancestor)
+        ancestor = ancestor.parent
+    try:
+        root.mkdir(parents=True, exist_ok=False)
+    except FileExistsError as exc:
+        raise ValueError("Resumable output directory already exists") from exc
+    for directory in reversed(new_directories):
+        _sync_directory(directory.parent)
+    arguments["out_dir"] = root
+    arguments["inputs"] = [path.expanduser().resolve() for path in inputs]
+    with writer_lock(root):
+        return _run(**arguments, _checkpoint=Checkpoint(root))
+
+
+def resume(run_dir: Path, *, adapter_path: Path | None = None) -> dict[str, Any]:
+    """Continue verified pending work in place; never repeat an ambiguous request."""
+    from .checkpoint import Checkpoint, read_record, writer_lock
+    root = run_dir.expanduser().resolve()
+    if not root.is_dir():
+        raise ValueError("Recovery run directory is missing")
+    with writer_lock(root):
+        if (root / "manifest.json").exists():
+            job = read_record(root / "checkpoint.json")
+            historical = Checkpoint(root)
+            historical.job = job
+            historical.check_sources()
+            from .verify import verify_run
+            verification = verify_run(root)
+            if verification["status"] != "pass":
+                raise ValueError("Finalized run verification failed; refusing resume")
+            manifest = json.loads((root / "manifest.json").read_text())
+            if (manifest["run_id"] != job.get("run_id") or job.get("root") != str(root)
+                    or manifest.get("run_depth") != 0
+                    or manifest.get("parent_run_id") is not None
+                    or manifest["status"] == "failed"):
+                raise ValueError("Finalized run identity, lineage or status does not permit resume")
+            return {"run_id": manifest["run_id"], "out_dir": str(root), "dry_run": False,
+                    "execution_mode": "execute", "status": manifest["status"],
+                    "summary": manifest["summary"], "resumed": True}
+        checkpoint = Checkpoint(root, existing=True)
+        checkpoint.require_resumable()
+        job = checkpoint.job
+        assert job is not None
+        return _run(inputs=[Path(item["path"]) for item in job["inputs"]],
+                    config_path=root / "config-snapshot.yml", out_dir=root,
+                    dry_run=False, log_level=job["log_level"], adapter_path=adapter_path,
+                    _checkpoint=checkpoint)
+
+
+def _run(
+    *,
+    inputs: list[Path],
+    config_path: Path,
+    out_dir: Path,
+    dry_run: bool,
+    log_level: str = "INFO",
+    pages: str | None = None,
+    page_selection: list[dict[str, Any]] | None = None,
+    parent_run_id: str | None = None,
+    parent_quality_by_page: dict[str, dict[str, Any]] | None = None,
+    source_page_counts: dict[Path, int] | None = None,
+    run_depth: int = 0,
+    adapter_path: Path | None = None,
+    routes_path: Path | None = None,
+    _loaded_adapter: Any | None = None,
+    _reproducibility_profile: dict[str, Any] | None = None,
+    _phase_observer: PhaseObserver | None = None,
+    _checkpoint: Any | None = None,
 ) -> dict[str, Any]:
     """Run the alpha PageLedger loop.
 
@@ -318,7 +406,9 @@ def run(
     if adapter is None and (not dry_run or routes_path is not None):
         if effective_adapter_name is not None:
             adapter = load_adapter(effective_adapter_name, effective_adapter_options)
-    if not dry_run and routes_path is None and _requires_adapter(config.default_action):
+    recovery_job = _checkpoint.job if _checkpoint is not None else None
+    if (not dry_run and routes_path is None and recovery_job is None
+            and _requires_adapter(config.default_action)):
         if effective_adapter_name is None:
             raise ValueError(
                 "No configured adapter; set run.adapter or run.adapter_order in the config"
@@ -336,8 +426,12 @@ def run(
         else None
     )
 
-    started_at = _utc_now()
-    run_id = f"run-{_utc_now_compact()}"
+    if recovery_job is not None:
+        from .checkpoint import adapter_identity
+        if adapter_identity(adapter, adapter_profile) != recovery_job["identity"]:
+            raise ValueError("Recovery adapter or package identity changed")
+    started_at = recovery_job["started_at"] if recovery_job else _utc_now()
+    run_id = recovery_job["run_id"] if recovery_job else f"run-{_utc_now_compact()}"
     selection_by_source: dict[Path, list[dict[str, Any]]] | None = None
     if page_selection is None:
         input_paths = _expand_inputs(inputs)
@@ -350,7 +444,8 @@ def run(
             raise ValueError("--pages requires a single input file")
         selected_page_numbers = _parse_pages_expression(pages)
     _validate_adapter_inputs(input_paths, adapter_name=effective_adapter_name)
-    _validate_out_dir(out_dir)
+    if _checkpoint is None:
+        _validate_out_dir(out_dir)
 
     imported_routes: dict[str, Any] | None = None
     route_warnings: list[str] = []
@@ -419,104 +514,127 @@ def run(
         Path(document["source"]): document
         for document in (imported_routes or {}).get("documents", [])
     }
-    for document_index, source in enumerate(input_paths, start=1):
-        resolved_source = source.resolve()
-        if imported_routes is not None:
-            imported_document = imported_by_source[resolved_source]
-            page_count = page_counts[resolved_source]
-            routed_pages = [dict(page) for page in imported_document["pages"]]
-        elif selection_by_source is None:
-            page_count = _planned_page_count(
-                source, adapter=adapter, adapter_name=effective_adapter_name
-            )
-            page_numbers: Sequence[int] = range(1, page_count + 1)
-            if selected_page_numbers is not None:
-                highest = selected_page_numbers[-1]
-                if highest > page_count:
-                    raise ValueError(
-                        f"--pages selects page {highest} but {source} has "
-                        f"{page_count} pages"
-                    )
-                page_numbers = selected_page_numbers
-            planned = [
-                (f"doc_{document_index:04d}_page_{page_number:04d}", page_number)
-                for page_number in page_numbers
-            ]
-        else:
-            selected = selection_by_source[source]
-            declared_page_count = (
-                source_page_counts.get(source.resolve())
-                if source_page_counts is not None
-                else None
-            )
-            page_count = (
-                declared_page_count
-                if declared_page_count is not None
-                else _planned_page_count(
+    if recovery_job is not None:
+        documents = recovery_job["documents"]
+        input_entries = recovery_job["inputs"]
+        imported_routes = recovery_job["imported_routes"]
+        route_warnings = recovery_job["route_warnings"]
+        for document in documents:
+            source = Path(document["source"])
+            source_sha256_map[source] = document["source_sha256"]
+            for page in document["pages"]:
+                planned_pages.append((source, page))
+                pages_total += 1
+                if page["action"] == "review":
+                    review_queue.append(_review_queue_entry(page))
+                    pages_routed_review += 1
+                if page["action"] == "skip":
+                    pages_skipped += 1
+    else:
+        for document_index, source in enumerate(input_paths, start=1):
+            resolved_source = source.resolve()
+            if imported_routes is not None:
+                imported_document = imported_by_source[resolved_source]
+                page_count = page_counts[resolved_source]
+                routed_pages = [dict(page) for page in imported_document["pages"]]
+            elif selection_by_source is None:
+                page_count = _planned_page_count(
                     source, adapter=adapter, adapter_name=effective_adapter_name
                 )
-            )
-            planned = [(item["page_id"], int(item["page_number"])) for item in selected]
-            if any(page_number > page_count for _, page_number in planned):
-                raise ValueError(
-                    f"Rerun selection exceeds the recorded source page count for {source}"
+                page_numbers: Sequence[int] = range(1, page_count + 1)
+                if selected_page_numbers is not None:
+                    highest = selected_page_numbers[-1]
+                    if highest > page_count:
+                        raise ValueError(
+                            f"--pages selects page {highest} but {source} has "
+                            f"{page_count} pages"
+                        )
+                    page_numbers = selected_page_numbers
+                planned = [
+                    (f"doc_{document_index:04d}_page_{page_number:04d}", page_number)
+                    for page_number in page_numbers
+                ]
+            else:
+                selected = selection_by_source[source]
+                declared_page_count = (
+                    source_page_counts.get(source.resolve())
+                    if source_page_counts is not None
+                    else None
                 )
-        if imported_routes is None:
-            routed_pages = []
-            for page_id, page_number in planned:
-                action = "review" if dry_run else config.default_action
-                reason = _route_reason(action=action, dry_run=dry_run)
-                page = {
-                    "page_id": page_id,
-                    "page_number": page_number,
-                    "type": config.default_review_type,
-                    "confidence": None,
-                    "action": action,
-                    "reason": reason,
-                }
-                if prompt is not None:
-                    page["prompt"] = prompt
-                routed_pages.append(page)
-        for page in routed_pages:
-            action = cast(str, page["action"])
-            if action == "review":
-                review_queue.append(_review_queue_entry(page))
-                pages_routed_review += 1
-            if action == "skip":
-                pages_skipped += 1
-            planned_pages.append((source, page))
-            pages_total += 1
-        try:
-            source_sha256 = _sha256_path(source)
-            source_sha256_map[source] = source_sha256
-        except OSError as exc:
-            raise RuntimeError(f"Cannot read input file '{source}': {exc}") from exc
-        input_entry = {
-            "path": str(source),
-            "sha256": source_sha256,
-            "page_count": page_count,
-        }
-        if selected_page_numbers is not None:
-            input_entry["pages"] = pages
-        elif selection_by_source is not None:
-            input_entry["pages"] = ",".join(
-                str(item["page_number"]) for item in selection_by_source[source]
+                page_count = (
+                    declared_page_count
+                    if declared_page_count is not None
+                    else _planned_page_count(
+                        source, adapter=adapter, adapter_name=effective_adapter_name
+                    )
+                )
+                planned = [(item["page_id"], int(item["page_number"])) for item in selected]
+                if any(page_number > page_count for _, page_number in planned):
+                    raise ValueError(
+                        f"Rerun selection exceeds the recorded source page count for {source}"
+                    )
+            if imported_routes is None:
+                routed_pages = []
+                for page_id, page_number in planned:
+                    action = "review" if dry_run else config.default_action
+                    reason = _route_reason(action=action, dry_run=dry_run)
+                    page = {
+                        "page_id": page_id,
+                        "page_number": page_number,
+                        "type": config.default_review_type,
+                        "confidence": None,
+                        "action": action,
+                        "reason": reason,
+                    }
+                    if prompt is not None:
+                        page["prompt"] = prompt
+                    routed_pages.append(page)
+            for page in routed_pages:
+                action = cast(str, page["action"])
+                if action == "review":
+                    review_queue.append(_review_queue_entry(page))
+                    pages_routed_review += 1
+                if action == "skip":
+                    pages_skipped += 1
+                planned_pages.append((source, page))
+                pages_total += 1
+            try:
+                source_sha256 = _sha256_path(source)
+                source_sha256_map[source] = source_sha256
+            except OSError as exc:
+                raise RuntimeError(f"Cannot read input file '{source}': {exc}") from exc
+            input_entry = {
+                "path": str(source),
+                "sha256": source_sha256,
+                "page_count": page_count,
+            }
+            if selected_page_numbers is not None:
+                input_entry["pages"] = pages
+            elif selection_by_source is not None:
+                input_entry["pages"] = ",".join(
+                    str(item["page_number"]) for item in selection_by_source[source]
+                )
+            input_entries.append(input_entry)
+            declared_sha256 = (
+                imported_by_source[resolved_source].get("source_sha256")
+                if imported_routes is not None
+                else None
             )
-        input_entries.append(input_entry)
-        declared_sha256 = (
-            imported_by_source[resolved_source].get("source_sha256")
-            if imported_routes is not None
-            else None
-        )
-        if declared_sha256 is not None and declared_sha256 != source_sha256:
-            raise ValueError(f"Route map source_sha256 does not match input: {source}")
-        documents.append({
-            "source": str(resolved_source),
-            "source_sha256": source_sha256,
-            "page_count": page_count,
-            "pages": routed_pages,
-        })
+            if declared_sha256 is not None and declared_sha256 != source_sha256:
+                raise ValueError(f"Route map source_sha256 does not match input: {source}")
+            documents.append({
+                "source": str(resolved_source),
+                "source_sha256": source_sha256,
+                "page_count": page_count,
+                "pages": routed_pages,
+            })
 
+    if recovery_job is not None:
+        for _source, page in planned_pages:
+            if _requires_adapter(page["action"]) and (
+                adapter is None or not adapter.supports(page["action"])
+            ):
+                raise ValueError("Recovery adapter does not support a saved planned action")
     preflight_error = _preflight_budget_error(config=config, pages_total=pages_total)
     if preflight_error is not None:
         raise BudgetExceededError(preflight_error)
@@ -526,7 +644,27 @@ def run(
     (out_dir / "normalized").mkdir(exist_ok=True)
 
     config_snapshot = out_dir / "config-snapshot.yml"
-    copyfile(config_path, config_snapshot)
+    if recovery_job is None:
+        if _checkpoint is None:
+            copyfile(config_path, config_snapshot)
+        else:
+            from .checkpoint import atomic_bytes
+            atomic_bytes(config_snapshot, config_path.read_bytes())
+    if _checkpoint is not None and recovery_job is None:
+        from .checkpoint import adapter_identity
+        _checkpoint.initialize({
+            "run_id": run_id, "started_at": started_at, "root": str(out_dir),
+            "config_sha256": _sha256_path(config_snapshot),
+            "config_source_path": str(config_path.resolve()),
+            "identity": adapter_identity(adapter, adapter_profile),
+            "inputs": input_entries, "documents": documents,
+            "imported_routes": imported_routes, "route_warnings": route_warnings,
+            "routing": ({"source_path": str(routes_path.expanduser().resolve()),
+                         "sha256": _sha256_path(routes_path),
+                         "source_run_id": imported_routes["run_id"]}
+                        if routes_path is not None and imported_routes is not None else None),
+            "log_level": log_level,
+        })
 
     # Cache static adapter metadata (unchanged per run)
     adapter_input_types: list[str] = []
@@ -552,16 +690,21 @@ def run(
         if adapter is not None:
             phase_clock.switch("adapter_call")
             try:
+                extract = _extract_adapter_page
+                extract_kwargs: dict[str, Any] = {
+                    "config": config, "run_id": run_id, "log_entries": log_entries,
+                    "phase_clock": phase_clock,
+                }
+                if _checkpoint is not None:
+                    extract = _checkpoint.extract
+                    extract_kwargs = {}
                 result, extraction_seconds, extraction_started_at, attempt, adapter_error = (
-                    _extract_adapter_page(
+                    extract(
                         adapter=adapter,
                         source=source,
                         page=page,
                         prompt=page_prompt,
-                        config=config,
-                        run_id=run_id,
-                        log_entries=log_entries,
-                        phase_clock=phase_clock,
+                        **extract_kwargs,
                     )
                 )
             finally:
@@ -594,7 +737,12 @@ def run(
                 if isinstance(result.content, str)
                 else json.dumps(result.content, ensure_ascii=False, allow_nan=False)
             )
-            (out_dir / raw_artifact).write_text(raw_text, encoding="utf-8")
+            if _checkpoint is not None:
+                from .checkpoint import atomic_bytes
+                if _checkpoint.records[page_id]["state"] != "completed":
+                    atomic_bytes(out_dir / raw_artifact, raw_text.encode("utf-8"))
+            else:
+                (out_dir / raw_artifact).write_text(raw_text, encoding="utf-8")
             raw_sha256 = _sha256_path(out_dir / raw_artifact)
             phase_clock.switch("usage_budget_provenance")
             usage = _canonical_usage(result.usage)
@@ -707,8 +855,18 @@ def run(
                     raw_artifact=raw_artifact.as_posix(),
                 )
                 if alignment is not None:
-                    write_json(out_dir / "normalized" / f"{page_id}.json", alignment)
+                    normalized_path = out_dir / "normalized" / f"{page_id}.json"
+                    if _checkpoint is not None:
+                        from .checkpoint import atomic_bytes
+                        if _checkpoint.records[page_id]["state"] != "completed":
+                            atomic_bytes(normalized_path, (json.dumps(alignment, ensure_ascii=False,
+                                         sort_keys=True, indent=2, allow_nan=False) + "\n").encode())
+                    else:
+                        write_json(normalized_path, alignment)
                     alignments[page_id] = alignment
+            if _checkpoint is not None:
+                _checkpoint.complete(page_id, provenance=provenance_entries[-1],
+                                     quality=quality_entries[-1], alignment=alignments.get(page_id))
             phase_clock.switch("page_log_control")
             log_entries.append(
                 {
@@ -729,6 +887,8 @@ def run(
                 halt_reason = "budget"
                 break
 
+    if _checkpoint is not None:
+        _checkpoint.check_sources()
     phase_clock.switch("halt_accounting_route")
     if halt_reason is not None:
         reason = (
@@ -830,7 +990,8 @@ def run(
         parent_run_id=parent_run_id,
         run_depth=run_depth,
         config_sha256=_sha256_path(config_snapshot),
-        config_source_paths=[str(config_path.resolve())],
+        config_source_paths=[(_checkpoint.job["config_source_path"] if _checkpoint is not None
+                              else str(config_path.resolve()))],
         dataset_citation=config.dataset_citation,
         pages_total=pages_total,
         pages_extracted=pages_extracted,
@@ -846,7 +1007,7 @@ def run(
         quality_warning_pages=quality_warning_pages,
         status=status,
         extractors=extractor_entries,
-        routing=(
+        routing=(_checkpoint.job["routing"] if _checkpoint is not None else (
             {
                 "source_path": str(routes_path.expanduser().resolve()),
                 "sha256": _sha256_path(routes_path),
@@ -854,7 +1015,7 @@ def run(
             }
             if routes_path is not None and imported_routes is not None
             else None
-        ),
+        )),
         escalation=escalation,
     )
     audit = build_audit(
@@ -949,7 +1110,20 @@ def run(
     # The manifest is the commit indicator for a fully written run directory.
     # Write it only after every artifact it points to exists.
     phase_clock.switch("manifest_commit")
-    write_json(out_dir / "manifest.json", manifest)
+    if _checkpoint is not None:
+        from .checkpoint import atomic_bytes
+        _checkpoint.validate()
+        # Flush every completed artifact before publishing the commit indicator.
+        import os
+        for artifact in out_dir.rglob("*"):
+            if artifact.is_file() and not artifact.is_symlink():
+                with artifact.open("rb") as handle:
+                    os.fsync(handle.fileno())
+        atomic_bytes(out_dir / "manifest.json",
+                     (json.dumps(manifest, ensure_ascii=False, sort_keys=True, indent=2,
+                                 allow_nan=False) + "\n").encode())
+    else:
+        write_json(out_dir / "manifest.json", manifest)
     phase_clock.switch("result_return")
     if failure_error is not None:
         phase_clock.finish()

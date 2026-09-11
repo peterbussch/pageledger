@@ -19,6 +19,13 @@ file's checksum no longer matches the parent manifest, the rerun fails before
 creating the child directory; changed bytes are a new input, not the same
 lineage.
 
+`pageledger resume RUN_DIR` is a separate recovery operation for interrupted
+generation-zero runs started with `run --resumable`. It consumes durable
+checkpoint evidence, retains the same run id and adapter step, and does not
+consume this rerun queue. A saved successful response is reused; an unknown
+request outcome is held without automatic retry. See
+[`checkpoint-spec.md`](checkpoint-spec.md).
+
 The supplied config is the execution authority. The optional `escalation`
 block records what the producing run planned; it does not pin a future rerun
 to that plan. If the supplied chain selects a different next adapter,

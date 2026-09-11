@@ -4,8 +4,19 @@ What PageLedger 0.4.2 does, what it leaves to you, and what is documented
 design rather than working code. This is the honest-scope page; the README
 stays short because this exists.
 
+The development checkout also includes the unreleased atomic-resume slice
+described below. The package version remains 0.4.2; this is not a 0.5.0 release.
+
 ## Built in and tested
 
+- Opt-in `run --resumable` and `resume RUN_DIR` retain durable page attempts,
+  verify source/config/adapter/output identities, reuse saved responses, and
+  reconstruct an interrupted generation-zero run without repeating completed
+  adapter calls. Requests with no durable outcome are held as
+  `outcome_unknown`; failures stop queued work. Automatic retry and
+  continue-on-error configurations are refused in this mode. Recovery and
+  extraction quality are separate: a completed page can still need review.
+  See [`checkpoint-spec.md`](checkpoint-spec.md) for the precise boundary.
 - `pageledger run` for text fixtures (form-feed pagination), born-digital
   PDF text layers (`pdf_text`, via `pageledger[pdf]`), and scanned PDFs
   (`pdf_ocr`, using locally installed `pdftoppm` + `tesseract`).

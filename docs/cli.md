@@ -1,6 +1,7 @@
 # CLI reference
 
-Eleven commands ship. `run` and `rerun` extract; `classify` produces an
+`run` and `rerun` extract; `resume` recovers an interrupted resumable run;
+`classify` produces an
 inspectable route map; `align` re-derives normalized records and grades from
 an existing run; the rest inspect, compare, diagnose, or scaffold.
 
@@ -37,6 +38,7 @@ Other flags:
 | `--pages "1-8,81,100-110"` | Extract only these source pages (single input). Page ids keep the source numbering, so provenance stays truthful when you sample a large volume. Recorded in `manifest.inputs[].pages`. |
 | `--routes FILE` | Execute a complete route map from `pageledger classify`, a human, or an external classifier. Requires `--config`; cannot be combined with `--adapter` or `--pages`. |
 | `--dry-run` | Write the route map and planning artifacts without calling extractors. Inspect routing before spending money. |
+| `--resumable` | Retain durable page attempts so an interrupted generation-zero execution can resume in the same directory. Requires zero automatic retries and stop-on-error policy; cannot be combined with `--dry-run`. |
 | `--json` | Machine-readable result on stdout; errors as JSON too. |
 | `--log-level LEVEL` | Minimum `run.log` event level: DEBUG, INFO, WARNING, ERROR. |
 | `--adapter-path DIR` | Add a directory to `sys.path` so custom adapters named by `run.adapter` or `run.adapter_order` can be imported. |
@@ -59,6 +61,45 @@ Dry-run output says that no extraction was performed, so its zero is not
 presented as a provider charge or projected bill. `--json` result mappings are
 unchanged; use `cost.json` for the authoritative `cost_known`, `cost_usd`, and
 `cost_basis` fields.
+
+## resume
+
+```bash
+pageledger run book.pdf --adapter pdf_ocr --resumable --out runs/book/
+# After interruption, with the same source files and adapter environment:
+pageledger resume runs/book/
+pageledger inspect-run runs/book/
+pageledger verify-run runs/book/
+```
+
+Continues a run created with `run --resumable`, in its existing directory and
+with the same run id. The retained config snapshot, source identities, page
+selection, routes and adapter identity are the execution authority. There are
+no replacement-input, config, adapter, budget or page-selection flags.
+`--adapter-path DIR` loads a trusted custom adapter; `--json` emits a
+machine-readable result.
+
+Before further extraction, resume verifies saved page evidence and source
+bytes. Verified completed pages and durably saved responses are reused without
+another adapter call. A raw text file alone is insufficient. Costs and budgets
+include the retained successful pages; unknown dollar costs remain unknown.
+Source hashes are checked again before final publication.
+
+An interrupted request with no durable outcome is `outcome_unknown`. Resume
+refuses to retry it or start queued calls: the provider might already have
+processed and charged for the request. A recorded adapter failure also stops
+queued work. Retain the evidence and resolve the request outcome with the
+provider or adapter operator before deliberately starting new work. Resume
+does not promise exactly-once remote execution.
+
+This first recovery slice supports generation-zero execute runs. Ordinary
+runs without a recovery journal, dry runs and interrupted rerun generations
+cannot be resumed. `run.adapter_order` retains its generation semantics;
+resume does not advance it. Once a run is finalized, resume verifies and
+returns its existing result without reconstructing it or loading the
+extraction adapter. Valid later alignment changes are preserved. Use the
+audit queue and separate `rerun` command for quality-driven re-extraction.
+See the [checkpoint contract](checkpoint-spec.md).
 
 ## classify
 

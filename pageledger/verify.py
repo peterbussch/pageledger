@@ -85,7 +85,22 @@ def verify_run(
         )
         return _report(root, errors, warnings, counts)
     if not manifest_path.is_file():
-        _add(errors, "manifest_missing", "No manifest.json found", artifact="manifest.json")
+        if (root / "checkpoint.json").exists():
+            from .checkpoint import Checkpoint
+            try:
+                checkpoint = Checkpoint(root)
+                from .checkpoint import read_record
+                checkpoint.job = read_record(root / "checkpoint.json")
+                checkpoint.validate(sources=check_external_sources)
+                states = [record["state"] for record in checkpoint.records.values()]
+                counts["routed_pages"] = len(states)
+                counts["extracted_pages"] = states.count("completed")
+                _add(errors, "run_incomplete", "Recovery records verify, but manifest is not committed",
+                     artifact="checkpoint.json")
+            except (OSError, ValueError, TypeError, KeyError) as exc:
+                _add(errors, "checkpoint_invalid", str(exc), artifact="checkpoint.json")
+        else:
+            _add(errors, "manifest_missing", "No manifest.json found", artifact="manifest.json")
         return _report(root, errors, warnings, counts)
     try:
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))

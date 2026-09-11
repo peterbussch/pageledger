@@ -98,6 +98,30 @@ The run controller computes `prompt_hash` from the resolved prompt before
 calling the adapter. Adapters receive the resolved prompt string; they should
 not invent their own prompt hashes.
 
+### Resumable execution
+
+`run --resumable` uses the same adapter protocol. It records a durable request
+start before calling `extract()`, saves the returned result before publishing
+page artifacts, and records completion only after the page evidence is ready.
+`resume` verifies and reuses retained responses without calling `extract()`
+again. Adapter construction and metadata/profile checks can still occur;
+constructors and page-count hooks should not perform extraction requests.
+
+The initial resumable mode requires `run.retry.max_retries: 0` and
+`run.on_page_error: stop` (both are defaults). A request interrupted before a
+durable outcome is `outcome_unknown`, even if a text file survived. PageLedger
+does not infer whether a remote provider processed it and does not retry it
+automatically. A recorded failure also halts queued pages. Adapter exception
+messages and stdout/stderr remain redacted; safe typed outcome and available
+HTTP status are diagnostic evidence, not proof of the root cause.
+
+Adapters must report the actual returned model and usage when available.
+Recovery preserves that evidence, including null monetary cost. It cannot
+observe retries hidden inside an adapter or establish provider-side
+idempotency. Keep such behavior explicit in the adapter's own contract.
+See [`checkpoint-spec.md`](checkpoint-spec.md) for persistence and identity
+checks.
+
 ## The `usage.pages` contract
 
 `usage.pages` **must be exactly 1** for every `extract()` call. PageLedger
