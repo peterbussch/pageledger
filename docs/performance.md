@@ -123,9 +123,9 @@ bytes` formula may justify skipping a run under a declared contract, but it does
 not prove the physical workload is infeasible or establish RSS.
 
 On 2026-09-06 the development volume had about 49 GiB free, below the historical
-75-billion-byte floor. A new trial is therefore inadmissible under that resource
-contract. No more optimization or benchmark trials should run until a reviewer
-approves a fresh time/resource budget and preflight confirms its limits.
+75-billion-byte floor. That preflight did not permit a trial under the resource
+contract. Any new trial needs an approved time/resource budget and a current
+capacity check.
 
 ## Reader impact is still pending
 

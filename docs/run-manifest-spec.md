@@ -8,14 +8,14 @@ is the durable pointer to every other artifact in the run directory.
 ```json
 {
   "schema_version": "0.1",
-  "pageledger_version": "0.4.2",
+  "pageledger_version": "0.5.0",
   "run_id": "run-20260619T193000000000Z",
   "parent_run_id": null,
   "run_depth": 0,
   "execution_mode": "execute",
   "started_at": "2026-06-19T19:30:00Z",
   "completed_at": "2026-06-19T19:42:00Z",
-  "status": "completed",
+  "status": "partial",
   "inputs": [
     {
       "path": "scans/volume_01.pdf",
@@ -63,8 +63,7 @@ is the durable pointer to every other artifact in the run directory.
     "quality": "quality.jsonl",
     "cost": "cost.json",
     "run_log": "run.log",
-    "rerun_manifest": "rerun-manifest.yml",
-    "replay": "replay.json"
+    "rerun_manifest": "rerun-manifest.yml"
   },
   "summary": {
     "pages_total": 240,
@@ -179,7 +178,7 @@ The current generation's effective adapter is also the extractor recorded in
   when non-empty, in `manifest.extractors[].options`. Never put API keys,
   passwords, tokens, or other credentials in adapter options; adapters should
   resolve credentials from their normal external credential mechanism.
-- The current alpha records the copied config snapshot at `config.path` and the
+- PageLedger records the copied config snapshot at `config.path` and the
   absolute source config path in `config.source_paths`. If a future project uses
   split config files, record all source inputs there.
 - Extractor entries should include `prompt_hash` whenever prompts influence
@@ -188,15 +187,17 @@ The current generation's effective adapter is also the extractor recorded in
 - Pricing should be read from user config and recorded in `cost.json`; the
   manifest summary should report the resulting estimate, not hardcode provider
   rates.
-- `estimated_cost_usd` is computed from user-configured prices and recorded
-  usage. It is an estimate, not a provider invoice.
+- `estimated_cost_usd` sums available per-page cost, preferring adapter-reported
+  values over configured rates. Read `cost.json` for `cost_known` and
+  `cost_basis`; the manifest summary alone does not establish a complete bill.
 - `run.log` should record one JSON line per extractor call with timestamp,
   `page_id`, adapter, status, and any error. It is an operational log, not a
   second audit source.
 - `cost.json` reports generated usage rollups with `pages`, `tokens`, and
   `compute_seconds`. Provenance `usage.cost_usd` remains adapter-reported;
   the separate per-page `cost` object records the resolved accounting value.
-  Aggregate dollar cost is an estimate, not a provider invoice. Its optional
+  Aggregate `cost_basis` distinguishes reported cost, configured estimates,
+  mixed evidence, and unknown cost. Its optional
   `alerts`, `by_adapter`, and `by_page_type` fields are additive 0.1 evidence;
   the rollups contain extracted pages only because they are derived from
   `provenance.jsonl`.
@@ -206,7 +207,7 @@ The current generation's effective adapter is also the extractor recorded in
 PageLedger artifacts carry `schema_version: "0.1"` as their release contract.
 
 The package release and artifact schema are versioned independently.
-PageLedger 0.4.2 keeps artifact `schema_version: "0.1"`: its newer classifier,
+PageLedger 0.5.0 keeps artifact `schema_version: "0.1"`: its newer classifier,
 escalation, and cost fields are additive and optional, so existing 0.1
 artifacts remain readable. A package minor release does not by itself require
 an artifact schema bump.
@@ -244,7 +245,9 @@ Additions that do NOT require a schema-version bump:
 ## Failure recovery and partial-run guarantees
 
 PageLedger is designed to produce inspectable artifacts even when a run fails.
-The following guarantees hold for all failure paths:
+The behavior below describes ordinary `run` and `rerun` execution. Resumable
+runs and document jobs retain separate request/response checkpoints; see the
+[checkpoint specification](checkpoint-spec.md) for their failure states.
 
 ### Artifact write order
 
@@ -279,7 +282,7 @@ canonical signal that PageLedger finished writing every artifact it points to;
 | Retry exhausted, adapter still fails | `"failed"` | prior pages | prior pages only | prior pages only | retry+error entries |
 | Page fails with `on_page_error: continue` | `"partial"` | all other successful pages | successful pages only | successful pages only | error + later entries |
 | Consecutive-failure breaker opens | `"failed"` | successes before halt | successful pages only | successful pages only | page errors |
-| Dry-run (always succeeds) | `"partial"` | 0 | empty | none | summary entry |
+| Successful dry run | `"partial"` | 0 | empty | none | summary entry |
 
 ### Key invariants
 

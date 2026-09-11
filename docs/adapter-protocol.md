@@ -36,6 +36,11 @@ sequenceDiagram
     end
 ```
 
+Ordinary runs retry only when configured. Resumable runs and document jobs
+require zero automatic retries and stop after a failed or uncertain request.
+See [checkpoint recovery](checkpoint-spec.md) and
+[image input evidence](image-evidence-spec.md) for durable response handling.
+
 ## Python sketch
 
 ```python
@@ -245,7 +250,7 @@ deterministic local adapter without a profile cannot establish the strict
 material identity required for an `exact` verified replay. A profile covers
 only the materials the adapter declares, not every imported dependency or
 their authenticity. Cloud adapters are evidence-compared because cloud
-identity and service state are outside this contract. See the [honest replay
+identity and service state are outside this contract. See the [replay
 boundary](capabilities-and-limits.md#verified-replay-boundary); this feature is
 intentionally non-hermetic.
 
@@ -415,8 +420,7 @@ if issues:
 
 The checker returns a list of conformance issues (empty = passes). It validates:
 required attributes and their types, sequence item types, required methods, and
-optional `page_count` callability. It does NOT call `extract()` or `supports()`
-- those should be tested in project-specific tests.
+optional `page_count` callability. It does not call `extract()` or `supports()`; test those in the adapter project.
 
 This function is importable from `pageledger.adapters` and has no dependencies
 beyond the Python standard library.
@@ -434,7 +438,7 @@ Adapters should return `ExtractionResult` instances with:
 | `warnings` | array | Non-fatal quality issues (empty list if none). Preserved in provenance and copied into `quality.jsonl`, so they affect grades and audit routing. |
 | `usage` | object | **`pages` must be 1**; `tokens`, `compute_seconds`, `cost_usd` optional/nullable. |
 | `confidence_detail` | object or null | Optional engine-native confidence evidence, adapter-defined shape; recorded into `quality.jsonl` verbatim. `pdf_ocr` fills Tesseract per-word statistics (`scale`, `word_count`, `mean`, `min`, `below_60_count`, `below_60_ratio`). |
-| `input_evidence` | object or null | Optional exact page image descriptor; shape, file containment, hashes and dimensions follow `image-evidence-spec.md`. |
+| `input_evidence` | object or null | Optional exact page image descriptor; shape, file containment, hashes and dimensions follow [the image evidence contract](image-evidence-spec.md). |
 
 ## Adapter candidates
 
@@ -455,7 +459,9 @@ Copy-paste examples live in `examples/`:
 - `docling_adapter.py`: machine-level standard or local-VLM Docling conversion,
   document-batched into page-level Markdown
 - `cloud_vlm_adapter_skeleton.py`
+- `openai_image_adapter.py`: bounded image requests over an OpenAI-compatible
+  transport, restricted to explicit Gemini or DeepSeek model names
 - `prereform_normalizer_adapter.py`: OCR plus pre-1918 Russian orthography
   canonicalization, with the rewrite recorded as a result warning
 
-For a provider-agnostic tier guide, see `docs/ocr-options.md`.
+For extraction options, see [OCR and VLM options](ocr-options.md).

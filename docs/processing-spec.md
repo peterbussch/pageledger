@@ -1,23 +1,71 @@
-# Document processing jobs (development)
+# Document processing jobs
 
-`pageledger process` owns one document's extraction attempts, page selection,
-review state and report. It is available in this development checkout; it does
-not change the package version or the published release.
+`pageledger process` manages one document's extraction attempts, selected text,
+review state, and report. It first reads local text, then sends pages with defect
+evidence to configured OCR and image stages. Every attempt remains available
+for inspection.
 
-```bash
-pageledger process book.pdf --config docs/examples/processing.yml --out jobs/book
-pageledger inspect-job jobs/book
-pageledger verify-job jobs/book
-# After an interruption, using the same source, code and adapter environment:
-pageledger resume jobs/book
+## Start with local text and OCR
+
+Document jobs require POSIX advisory locks, available on macOS and Linux.
+Install `"pageledger[pdf]==0.5.0"`, Poppler, and Tesseract for a PDF job. Create
+`processing.yml` with the following configuration, or copy the repository's
+[processing example](examples/processing.yml):
+
+```yaml
+schema_version: "0.1"
+run:
+  adapter: pdf_text
+processing:
+  local_text:
+    adapter: pdf_text
+  local_ocr:
+    adapter: pdf_ocr
+    adapter_options:
+      lang: eng
+      dpi: 300
+  limits:
+    max_attempt_pages: 100
+    max_image_pages: 0
 ```
 
-The output directory must be new. PDF processing needs the `pdf` extra. Local
-OCR needs installed Poppler and Tesseract; PageLedger does not install engines.
-Text inputs use form-feed pagination. `--pages '2-5,19'` keeps those source page
-numbers and records both the selected denominator and full document count.
-`--adapter-path DIR` loads custom adapters. `--review FILE` supplies existing
-source-bound visual decisions before any extraction.
+Sample the first ten source pages of a PDF:
+
+```bash
+pageledger process book.pdf --config processing.yml --pages "1-10" --out jobs/book
+pageledger inspect-job jobs/book
+pageledger verify-job jobs/book
+```
+
+Use an existing PDF with at least ten pages, adjust `--pages`, or omit the flag
+for the full document. The output directory must be new. Open
+`jobs/book/transcript.md` for selected text and `jobs/book/report.md` for the
+source links, attempts, and unresolved review work. A completed job means its
+configured processing finished; human review may still be needed.
+
+For text files, set `run.adapter` and `processing.local_text.adapter` to `text`
+and set `processing.local_ocr` to `null`. Form-feed characters separate pages.
+Selections such as `--pages "2-5,19"` preserve source page numbers and record both
+the selected count and full document count.
+
+## Resume an interrupted job
+
+Keep the source, job directory, and adapter environment in place:
+
+```bash
+pageledger resume jobs/book
+pageledger inspect-job jobs/book
+pageledger verify-job jobs/book
+```
+
+Recovery validates retained attempts before scheduling pending work. Saved
+responses are reused. A request with no saved outcome, a recorded provider
+failure, or a halted job is not retried automatically. The
+[checkpoint specification](checkpoint-spec.md) describes the recovery records.
+
+`--adapter-path DIR` on `process` or `resume` loads custom adapters. Use
+`process --review FILE` to supply source-bound human decisions before extraction,
+or `review-job` to record them afterward. All job commands accept `--json`.
 
 ## Policy and configuration
 
@@ -25,9 +73,10 @@ source-bound visual decisions before any extraction.
 adapter by explicit rerun generation; `process` rejects it. A document job has
 ordered stages `local_text`, `local_ocr`, `image`, and optional `second_opinion`.
 Each stage is an adapter profile with `adapter`, optional `adapter_options`,
-and optional `prompt`. Set a stage to `null` to disable it. Local text defaults
-to `pdf_text` for PDFs or `text` otherwise. PDF OCR defaults to `pdf_ocr`.
-Image stages are disabled until explicitly configured with a positive
+and optional `prompt`. Set an optional stage to `null` to disable it;
+`local_text` is required. Local text defaults to `pdf_text` for PDFs or `text`
+otherwise. PDF OCR defaults to `pdf_ocr`.
+Image stages are disabled until configured with a positive
 `processing.limits.max_image_pages`. An image stage requires an enabled local
 OCR stage; a second opinion requires an image stage. Invalid combinations fail
 before creating a job.
@@ -77,7 +126,8 @@ budget before each pending call, including after recovering a saved response.
 Its payload includes the absolute root, source SHA-256, full/selected page
 inventory, original configuration and hash, normalized policy, package hash,
 ordered child plans, attempt evidence, page selections/reviews, usage and status.
-The checksum detects corruption, not malicious rewriting or authorship.
+The checksum detects inconsistent content. It does not establish authorship
+or prevent deliberate rewriting.
 
 Child plans are saved before launch; their exact YAML snapshots are under
 `.job/`. Runs under `attempts/` retain the ordinary generation-zero artifacts
@@ -130,9 +180,9 @@ pageledger inspect-job jobs/book --json
 
 Applying review receipts performs no extraction and retains previous receipts
 in `review_history`. Changing reviews in an interrupted processing job halts its
-old plan, so pending calls cannot ignore a newly recorded source defect. The report links every
-selected source page and attempt, retains unresolved states and failed partial
-links, and gives one next action. Optional `processing.links.article` and
+old plan, so pending calls cannot ignore a newly recorded source defect. The
+report links every selected source page and attempt, retains unresolved states
+and failed partial links, and gives one next action. Optional `processing.links.article` and
 `processing.links.custody` are references supplied by the caller, not verified
 claims of preservation or publication. Source capture, preservation, removal
 eligibility and removal are separate fields. This implementation never moves,
@@ -149,6 +199,5 @@ no provider SDK, OCR engine or pricing catalog. See
 
 Image-evidence runs currently refuse `bundle` with an explicit unsupported
 error. They remain verifiable and resumable in place. Ordinary generation-zero
-text bundles/replay remain supported. Whole-job portable bundles, synthesis,
-Zotero/Drive connectors, file retirement and release automation are outside this
-implementation.
+text bundles/replay remain supported. Whole-job portable bundles, synthesis, Zotero/Drive connectors, and file
+retirement are outside the processing workflow.

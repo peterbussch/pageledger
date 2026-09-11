@@ -1,55 +1,36 @@
 # PageLedger design and targets
 
-This document explains the shipped architecture and the remaining targets.
-The release contract is what `capabilities-and-limits.md` lists as built in
-and what the JSON Schemas in [`../schemas/`](../schemas/) validate. PageLedger
-0.4.2 has the run controller, adapter protocol, structural classifier, route
-executor, generation-indexed adapter chains, schema aligner, per-page grading,
-audit queues, rerun execution, comparison, and ledger verification.
+PageLedger has two controllers. `run` applies one adapter to routed pages;
+`process` coordinates a document's local text, OCR, and optional image attempts.
+Both retain page identities and extraction evidence. The
+[capabilities and limits](capabilities-and-limits.md) and
+[artifact schemas](../schemas/) define the 0.5.0 contract.
 
 ```mermaid
-flowchart LR
-    subgraph Shipped["Implemented"]
-        RC["Run controller<br/>budgets/alerts · retry/backoff · provenance<br/>quality signals · audit queues"]
-        AP["Adapter protocol<br/>text · pdf_text · pdf_ocr · custom import strings"]
-        CL["Structural classifier (0.2.0)<br/>route map · evidence sidecar · hooks"]
-        CHAIN["Adapter escalation chains (0.2.0)<br/>one entry per rerun generation"]
-        SA["Schema aligner (0.1.3)<br/>normalized/ records · pageledger align"]
-        AG["Audit grading (0.1.3)<br/>A–F · review_below_grade"]
-        RIF["Page policy grammar (0.1.5)<br/>rerun_if · quarantine_if"]
-        ER["Executable routing (0.1.6)<br/>classified/reviewed route maps"]
-        RR["pageledger rerun<br/>page-scoped re-extraction"]
-        CMP["pageledger compare-runs"]
-        VB["pageledger bundle<br/>directory transport"]
-        RP["pageledger replay<br/>raw comparison + evidence"]
-    end
-    CL --> ER
-    ER --> RC
-    RC --> RR --> CMP
-    AP --> RC
-    CHAIN --> RC
-    CHAIN --> RR
-    SA -- "consumes raw/" --> AG
-    AG --> RIF --> RR
-    RC --> VB --> RP
+flowchart TD
+    Source[Source document] --> Job[Document job: process]
+    Routes[Reviewed routes: classify] --> Run[Extraction run]
+    Job --> Run
+    Run --> Adapter[Configured adapter]
+    Adapter --> Evidence[Raw output, provenance, quality, cost]
+    Evidence --> Review[Review and rerun queues]
+    Evidence --> Checkpoint[Saved responses for resume]
+    Evidence --> Report[Document report and selected transcript]
+    Review --> Rerun[New run: rerun]
+    Report --> Human[Human decisions: review-job]
+    Evidence --> Bundle[Verified run bundle and replay]
 ```
+
+The report and human-receipt paths belong to document jobs. Explicit reruns and
+portable bundles operate on individual runs. Image-evidence runs cannot be
+bundled in this version.
 
 ## The canonical unit: pages
 
-PageLedger's defining decision is that the page is the canonical unit of
-work. It is the only unit every extraction backend shares:
-
-- Cloud OCR (Textract, Azure Document Intelligence, Google Document AI,
-  Mistral OCR) bills and reports per page.
-- VLM/LLM extractors expose tokens, but only on model-backed paths; tokens
-  are meaningless for classical OCR.
-- Self-hosted engines (Docling and friends) have no dollar cost at all,
-  only compute time.
-
-Because pages are the common denominator, routing, budgeting, and audit in
-pages lets you compare a Textract run against a Mistral run against a
-local model with one number. Tokens, compute seconds, and dollars ride on
-top as optional, provider-conditional signals.
+The source page is the common unit across local OCR and model-backed
+extraction. Routes, attempt counts, review decisions, and reruns all retain that
+identity. Tokens, measured time, and dollars are optional usage evidence; many
+local engines report no dollar amount.
 
 Every adapter reports a usage record where `pages` is required and
 everything else is optional:
@@ -63,7 +44,7 @@ usage = {
 }
 ```
 
-Dollar cost is derived by PageLedger, never required of the adapter, in
+Dollar cost is resolved by PageLedger in
 priority order: (1) adapter-reported `cost_usd`, (2) configured unit rates
 (`cost_per_page` / `cost_per_1k_tokens`), (3) otherwise `null`: the run
 still reports raw page counts. Budgets cap on pages, tokens, or dollars,
@@ -82,7 +63,7 @@ present.
   running service or database.
 - Preserve separate citations for software and source data.
 
-## 1. Page router *(shipped in 0.2.0)*
+## Page routing
 
 `pageledger classify` is an explicit pre-extraction stage. Its built-in,
 dependency-free rules propose one of five structural types: `blank`, `sparse`,
@@ -126,7 +107,7 @@ in dry-run mode); `run` never classifies implicitly. PDF embedded-text probes
 cannot distinguish a truly blank page from an image-only page, so empty probe
 output is recorded as `unknown` rather than guessed blank.
 
-## 2. Schema aligner *(shipped in 0.1.3)*
+## Schema alignment
 
 The aligner maps OCR/VLM output to a declared schema. The schema defines
 columns, aliases, required fields, type coercions, and arithmetic checks.
@@ -140,10 +121,9 @@ and aliases; coercion failures and failed checks are recorded, never
 silently fixed. `pageledger align <run-dir> [--schema file.yml]`
 re-aligns an existing run from its raw pages without re-extracting.
 
-This is schema alignment, not orthography normalization. Language- or
-archive-specific normalization should remain in the project pipeline. The
-shipped shape assumes one primary schema per run. Multi-schema routing can
-be added later once the single-schema path is boring and reliable.
+Language- and archive-specific text normalization belongs in the project
+pipeline. The aligner supports one primary schema per run; per-page schemas
+remain future work.
 
 Example schema:
 
@@ -177,7 +157,7 @@ The `quality` keys are floors for grading: coverage below
 `minimum_required_column_coverage` forces the schema axis to F, and a page
 confidence under `low_confidence_threshold` caps its grade at C.
 
-## 3. Run controller
+## Run controller
 
 The controller manages long extraction runs. It implements budgets
 (pages/tokens/dollars, preflight and mid-run), capless absolute warnings and
@@ -188,11 +168,9 @@ consumes the rerun manifest, enforcing `max_rerun_depth`), and cross-run
 comparison (`pageledger compare-runs`). Cost reports group extracted-page
 usage and resolved dollars by adapter and routed page type.
 
-Grading also has the older policy knob
 `run.grading.review_below_grade: C` queues pages graded strictly below the
 threshold (reason `grade_below_threshold`) and fills `previous_grade` in
-the rerun manifest. `0.1.5` adds rules under `run.rerun_if` and
-`run.quarantine_if`:
+the rerun manifest. Conditional rules use `run.rerun_if` and `run.quarantine_if`:
 
 ```yaml
 run:
@@ -222,17 +200,15 @@ Each entry can carry its own adapter options. Chain exhaustion and
 review queue when the chain ends; PageLedger does not silently quarantine
 them or try another adapter inside the same run.
 
-## 4. Verified replay lifecycle
+## Verified replay
 
-`run` remains the sole extraction/audit transaction: it writes the raw,
-provenance, quality, cost, route, audit, rerun, and manifest artifacts as one
-run. There are no separate staged `extract` or `audit` commands. After the run
-is complete, the supported two-command transport lifecycle is:
+A completed generation-zero run can be verified, bundled with its source
+bytes, and replayed using a locally available compatible adapter:
 
 ```bash
 pageledger verify-run runs/run-001
 pageledger bundle runs/run-001 --out bundles/run-001
-# relocate or remove the original source; the bundle owns its source copy
+# the bundle contains a source copy and can be relocated independently
 pageledger replay bundles/run-001 --out runs/replayed
 pageledger verify-run runs/replayed
 ```
@@ -243,36 +219,43 @@ that directory, uses the locally available adapter through the ordinary `run`
 path, and writes `replay.json` with extractor/profile linkage and raw
 comparison. `exact`, `evidence_compared`, and `deterministic_mismatch` are
 evidence outcomes; none claims environment installation, cloud identity, code
-or model transport, signatures, or hermetic reproduction. The [honest replay
+or model transport, signatures, or hermetic reproduction. The [replay
 boundary](capabilities-and-limits.md#verified-replay-boundary) covers the
 authenticity, declared-material, side-effect, mutation, zero-byte, and
 editable-install limits.
 
-## What it should not do first
+## Document jobs and recovery
 
-- It should not train OCR models.
-- It should not replace Docling, Marker, Surya, olmOCR, OCR-D, or Tesseract.
-- It should not start with a web UI.
-- It should not assume one content domain, language, archive, or schema.
-- It should not ship hardcoded provider pricing, domain taxonomies, or
-  column/header dictionaries.
-- It should not include computer-vision fallback heuristics, GIS export,
-  dashboards, or ensemble voting in core.
-- It should not silently fix uncertain data. Uncertainty should be recorded,
-  rerouted, or quarantined for review.
+`process` owns the ordered stages and their shared budget. Each stage produces
+ordinary generation-zero child runs with checkpoints. The job records which
+attempt supplies each page's text and preserves previous defects as review
+holds. A source-bound human receipt can mark text or a blank page as reviewed.
+Grades and model confidence do not select the winning attempt.
 
-## Open research questions
+The job checkpoint retains child plans before launching them. Page checkpoints
+save request starts, responses, and completed output identities. Resume checks
+that evidence before reusing it or starting pending work. A started request
+without a saved response stops the queue because its outcome is unknown.
+Recovery requires the original paths, source bytes, configuration, and compatible
+code; it does not recreate an environment on another machine.
 
-- How should region-level extraction be modeled when a page contains mixed
-  content?
-- How much of OCR-D/PAGE/ALTO/TEI should be supported in the first release,
-  versus deferred to exporters?
-- What is the smallest useful adapter interface for third-party OCR/VLM
-  tools?
-- Should schemas be pure YAML or Python/Pydantic first?
-- How should quality scores be calibrated across extractors that do not
-  expose comparable confidences? (0.1.3 answers this by *labeling*, not
-  calibrating. Every rendered grade carries its basis, `A (signals)` or
-  `A (schema)`, and the docs state that grades are only comparable when the
-  effective extractor identity matches. True cross-extractor calibration
-  remains open.)
+The [processing specification](processing-spec.md),
+[checkpoint specification](checkpoint-spec.md), and
+[document report specification](document-report-spec.md) describe the state and
+verification rules.
+
+## Future work and external integrations
+
+Directory surveys, storage custody, Zotero integration, and Git reconciliation
+belong to collection-management workflows outside the current package. Jobs
+accept caller-supplied article and custody links, but those links do not verify
+preservation or authorize source removal. PageLedger never retires source files.
+
+PDF inspection counts annotations without ingesting their content. Annotation
+extraction, article synthesis, and cross-document interpretation remain external
+integrations or future work. Whole-job portable bundles, region-level routing,
+and per-page schemas are also unimplemented.
+
+OCR model training, provider pricing catalogs, domain dictionaries, dashboards,
+and TEI/PAGE/ALTO/GIS exporters remain outside core. Custom adapters and consumers
+of the plain-file artifacts can provide them without changing the page ledger.

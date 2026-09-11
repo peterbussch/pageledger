@@ -4,8 +4,7 @@ PageLedger is provider-agnostic. It records page routing, adapter metadata,
 provenance, quality signals, usage, cost rollups, and failure evidence. The OCR
 or VLM engine is a pluggable choice made by the user.
 
-Use this guide to choose a path. Treat tool names as examples, not blessed
-providers.
+The examples below show local, hosted, and mixed extraction paths.
 
 ## Decision matrix
 
@@ -34,6 +33,10 @@ providers.
    especially complex, or managed infrastructure is required.
 6. Inspect `quality.jsonl`, `provenance.jsonl`, `run.log`, and `cost.json`
    before deciding whether to rerun pages with a stronger adapter.
+
+For automatic local-text/OCR stages with optional bounded image escalation,
+use [document processing jobs](processing-spec.md). Use separate `run` and
+`rerun` commands when you want to choose each generation's adapter yourself.
 
 New runs record the concrete built-in backend identity in per-page provenance:
 `pdf_text` includes the installed pypdf version; `pdf_ocr` includes Tesseract,
@@ -65,11 +68,11 @@ Standard mode supports `transcribe_text` and `extract_table`; only VLM mode
 supports `vlm_table`. The example rejects non-null route prompts because it
 does not pass them to Docling.
 
-For a worked example of steps 2–3 and the rerun loop on a real scanned
-document, see `docs/examples/jfk-scanned-archive.md` (including the
+For a worked example of steps 2–3 and the rerun loop on a scanned
+document, see [the archive walkthrough](examples/jfk-scanned-archive.md) (including the
 local-LLM and cloud-VLM escalation tiers measured on the same pages).
 For non-English and historical documents (language packs, DPI, pre-1918
-Russian orthography), see `docs/multilingual-ocr.md`.
+Russian orthography), see [multilingual OCR](multilingual-ocr.md).
 
 ## Two-page spreads
 

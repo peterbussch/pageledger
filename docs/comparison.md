@@ -1,102 +1,46 @@
-# PageLedger comparison
+# PageLedger and extraction tools
 
-PageLedger should be positioned as a control plane around extraction tools,
-not as a replacement for them.
+PageLedger calls extraction tools through adapters and records their work in a
+common page ledger. Choose the extractor for the source material and required
+output; use PageLedger when you also need source hashes, adapter provenance,
+budgets, review decisions, or selective reruns across those tools.
 
-| Tool | Strong At | PageLedger Difference |
+## Where each tool fits
+
+| Tool | Primary role | Integration with PageLedger |
 |---|---|---|
-| Mistral OCR | Hosted OCR/document understanding with Markdown, images, and table reconstruction. | PageLedger records why pages went to Mistral, what it cost, and which pages need review or rerun. |
-| Google Document AI / Gemini layout parser | Managed OCR, layout parsing, table structure, and RAG-oriented chunking. | PageLedger keeps provider-neutral run artifacts and project-local audit queues outside a cloud workflow. |
-| Azure Document Intelligence | Managed text, key-value, table, and field extraction for enterprise document workflows. | PageLedger can track Azure runs beside local or other-provider runs with the same page-denominated manifest. |
-| AWS Bedrock Data Automation | Managed classification, extraction, validation, HITL review, and business-rule workflows. | PageLedger stays lighter and filesystem-native for research projects that do not want a cloud stack. |
-| Docling / Granite Docling | Converting PDFs and documents into structured output, with OCR and VLM support. | PageLedger records which pages went to Docling, the usage and cost evidence, and which pages need review or rerun. |
-| Marker | High-quality document conversion to Markdown/JSON/chunks/HTML, with schema extraction in beta. | PageLedger handles routing, run manifests, cost controls, and review queues around conversion. |
-| Surya | OCR, layout analysis, reading order, and table recognition. | PageLedger can call Surya as an extractor, then audit the result across a full archive run. |
-| olmOCR | LLM-based PDF extraction with document-oriented output and strong benchmark results. | PageLedger adds page routing, quality diagnostics, cost evidence, and rerun manifests. |
-| OCR-D | Mature OCR workflow model with METS/PAGE/ALTO conventions. | PageLedger aims to be lighter, VLM-aware, and friendlier to local research workflows that need JSON/YAML artifacts before full library infrastructure. |
-| Unstructured | Document partitioning and preprocessing for downstream use. | PageLedger focuses on extraction run control: what ran, what passed, what failed, what cost money, and what should be rerun. |
+| Tesseract | Local OCR of page images | Built-in `pdf_ocr` adapter with Poppler rendering. |
+| [Docling](https://github.com/docling-project/docling) | Document conversion with layout, table, OCR, and VLM support | [Working example](../examples/docling_adapter.py) produces per-page Markdown. |
+| [Marker](https://github.com/datalab-to/marker) | Document conversion to Markdown, JSON, and other formats | Supply a custom extraction adapter. |
+| [Surya](https://github.com/datalab-to/surya) | OCR, layout analysis, reading order, and table recognition | Supply a custom extraction adapter. |
+| [OCR-D](https://ocr-d.de/en/workflows) | OCR workflows built around METS workspaces and PAGE-XML | Keep OCR-D as the workflow engine; integration requires a custom adapter or artifact conversion. |
+| [Unstructured](https://docs.unstructured.io/open-source/core-functionality/partitioning) | Partitioning documents into typed elements | Supply an adapter if page identity can be retained; downstream element processing remains separate. |
+| Hosted OCR or image-model APIs | Provider-managed extraction | Supply credentials and an adapter. The [image example](image-evidence-spec.md) supports explicit Gemini or DeepSeek models over an OpenAI-compatible API. |
 
-## 2026 threat model
+External tool descriptions were checked against the linked project documentation
+on September 11, 2026. This table describes integration choices, not comparative
+accuracy or speed. The listed custom integrations are not bundled adapters.
 
-The short answer is: modern OCR is swallowing the naive version of this niche,
-but not the whole PageLedger niche.
+## When a ledger helps
 
-Capabilities that are becoming commodity:
+A collection may need PDF text extraction for some pages, Tesseract for scans,
+and an image model for a few difficult pages. PageLedger gives those attempts
+consistent page identities and records the settings, output, usage, and review
+reasons for each one. Its document jobs also retain selected text and human
+review receipts without discarding earlier attempts.
 
-- High-quality PDF/image to Markdown or structured text conversion.
-- Table reconstruction, reading order, layout regions, equations, and image
-  extraction.
-- Multilingual OCR and VLM-assisted handling of difficult scans.
-- Hosted document extraction APIs that combine OCR, classification, schema-like
-  extraction, validation, and human review.
+For a single conversion, the extractor's own CLI may be enough. For an existing
+OCR-D or managed-cloud workflow, assess whether PageLedger's local artifacts
+add useful evidence before introducing another controller. PageLedger does not
+import those systems' workflow histories automatically.
 
-This means PageLedger should not claim that extraction quality, Markdown
-conversion, table detection, or generic OCR workflow orchestration are its core
-defensible wedge. Those claims age quickly.
+## What remains with the project
 
-The remaining wedge is narrower and more useful: a local, provider-neutral run
-ledger for projects that need to compare heterogeneous extraction runs and
-reconstruct their recorded methodology. PageLedger's alpha should emphasize:
+The project chooses engines and schemas, supplies credentials and any accounting
+rates, and reviews output against the source. PageLedger's grades summarize
+recorded signals; they do not calibrate accuracy across engines. Token and dollar
+budgets also depend on the usage an adapter reports.
 
-- Page-denominated routing and budgeting across tools with incompatible native
-  usage metrics.
-- Filesystem artifacts that survive without a service, database, or cloud
-  account.
-- Review and rerun queues that are tied to page ids, source checksums, prompts,
-  adapter versions, and cost evidence.
-- Research and archive workflows where source citation, reproducibility, and
-  selective reruns matter more than one-shot conversion.
-
-## Competitor workflow features
-
-Several competitors already reach beyond raw OCR:
-
-- AWS Bedrock Data Automation includes document classification, extraction,
-  validation, human review patterns, and business-rule workflows.
-- Google Document AI's Gemini layout parser targets structured layout parsing,
-  complex tables, reduced hallucinations, and context-aware chunks.
-- Marker has moved beyond PDF-to-Markdown into JSON/chunks/HTML and beta
-  structured extraction from a JSON schema.
-- Docling includes OCR, advanced PDF understanding, VLM support, and integrations
-  with common GenAI frameworks.
-- OCR-D remains the serious workflow reference for library-grade OCR, especially
-  where METS/PAGE/ALTO conventions matter.
-
-PageLedger should therefore present itself as complementary infrastructure, not
-as a workflow category owner. Its first public release is strongest when it says:
-bring your extractor; PageLedger records the run, the route, the cost evidence,
-and the review/rerun queue.
-
-## Distinctive claim
-
-Most document-AI packages optimize for extraction output. PageLedger optimizes
-for the extraction process:
-
-- routing before extraction,
-- evidence and provenance around extraction,
-- rerun decisions after audit,
-- schema alignment after extraction, with uncertainty and discarded structure
-  recorded rather than silently repaired.
-
-That process orientation is the reason the package could be interesting to
-archives, libraries, digital-humanities labs, and research projects.
-
-## Non-goal
-
-PageLedger is not an OCR engine, PDF converter, layout detector, or hosted
-document-AI platform. It is useful when a project needs to decide what to run,
-check whether outputs meet project rules, record what happened, and rerun only
-the uncertain parts.
-
-## Sources checked
-
-- [Mistral OCR 3](https://mistral.ai/news/mistral-ocr-3/)
-- [Ai2 olmOCR 2](https://allenai.org/blog/olmocr-2)
-- [Docling](https://github.com/docling-project/docling)
-- [Marker](https://github.com/datalab-to/marker)
-- [Surya](https://github.com/datalab-to/surya)
-- [Google Document AI Gemini layout parser](https://docs.cloud.google.com/document-ai/docs/layout-parse-chunk)
-- [Azure AI Document Intelligence](https://azure.microsoft.com/en-us/products/ai-foundry/tools/document-intelligence)
-- [AWS Bedrock Data Automation IDP](https://aws.amazon.com/blogs/machine-learning/accelerate-intelligent-document-processing-with-generative-ai-on-aws/)
-- [OCR-D workflow guide](https://ocr-d.de/en/workflows)
-- [Unstructured partitioning docs](https://docs.unstructured.io/open-source/core-functionality/partitioning)
+Use [OCR options](ocr-options.md) for configuration paths and
+[capabilities and limits](capabilities-and-limits.md) for the exact supported
+workflows.

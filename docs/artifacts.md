@@ -1,9 +1,31 @@
-# Run artifacts
+# Run and document-job artifacts
 
-A run is a directory of plain files. No service, no database; everything
-is inspectable with `cat`, `grep`, and `jq`. JSON/JSONL artifacts validate
+Runs and document jobs are directories of plain files that you can inspect
+with `cat`, `grep`, and `jq`. JSON/JSONL artifacts validate
 against schemas in [`schemas/`](../schemas/); YAML artifacts use documented
 field contracts, also tested in CI.
+
+## Document jobs
+
+`process` creates a job directory containing its attempts and combined report:
+
+```text
+jobs/book/
+├── job.json          # saved policy, source identity, attempts, and review state
+├── document.json     # authoritative document report
+├── report.md         # human rendering of document.json
+├── transcript.md     # selected text with source-page and attempt links
+├── attempts/         # ordinary resumable runs for the processing stages
+├── partials/         # retained failed output, excluded from transcript selection
+└── .job/             # exact child configuration snapshots
+```
+
+Use `inspect-job` to read the report, `verify-job` to check its retained evidence,
+and `review-job` to apply human review receipts. A job's `completed` status does
+not mean every page has passed review. See [document processing](processing-spec.md)
+and the [report contract](document-report-spec.md).
+
+## Individual runs
 
 ```text
 runs/run-001/
@@ -56,9 +78,8 @@ The evidence filename always uses `<out-stem>.evidence.jsonl`. Passing the
 route map to `pageledger run --routes route-map.yml` executes the classified
 plan and copies its decisions into the run artifacts.
 
-The point is not only the extracted text but the evidence around it: which
-pages were skipped, which engine ran with which options, what it cost and
-on what basis, which pages failed or need review, and what should be rerun.
+These records identify skipped pages, adapter settings, cost evidence,
+failures, and pages needing review or re-extraction.
 
 ## What each file answers
 
@@ -127,10 +148,10 @@ pages produce no normalized file.
 Spec: [`normalized-spec.md`](normalized-spec.md).
 
 `cost.json` records what it cost and how we know. It has usage totals plus
-`cost_basis`: `adapter_reported` (the provider said so), `configured_rate`
+`cost_basis`: `adapter_reported` (the adapter supplied it), `configured_rate`
 (derived from your configured prices), `mixed`, or `none` (cost is unknown or
 unreported; this can be a free local engine or an adapter that omitted cost
-evidence). PageLedger refuses to invent dollars.
+evidence).
 
 Three optional 0.1-compatible fields add operational detail:
 
@@ -190,7 +211,7 @@ Spec: [`rerun-manifest-spec.md`](rerun-manifest-spec.md).
 
 ## Re-alignment
 
-`pageledger align <run-dir>` is the one sanctioned mutation of a run
+`pageledger align <run-dir>` updates an existing run
 directory: it re-derives `normalized/`, the grade fields in
 `quality.jsonl`, the grade-threshold audit entries, and the rerun
 manifest from the untouched `raw/` evidence. `--dry-run` previews the same
@@ -198,7 +219,8 @@ derived result without changing the run. Applied output is staged before
 replacement, individual artifact writes are atomic, the mutation is logged
 in `run.log` (`status: aligned`), and `manifest.json` is written last with an
 `alignment` block (timestamp, schema source and hash, PageLedger version) as
-the commit point. This is crash-honest, not a cross-file transaction. An
+the commit point. A crash between artifact writes can leave an incomplete update that verification
+will detect. An
 external `--schema` file is snapshotted as `align-schema-snapshot.yml` only
 when the preview is applied.
 
@@ -266,13 +288,13 @@ replay uses only the copied source bytes. The bundle is not an archive and does
 not install an environment, code, model, provider identity, or credentials.
 Profiles attest only adapter-declared materials, and the checks observe files
 at rest rather than locking them against concurrent mutation. See the
-[honest replay boundary](capabilities-and-limits.md#verified-replay-boundary).
+[replay boundary](capabilities-and-limits.md#verified-replay-boundary).
 
 ## Compatibility
 
 Artifact fields follow the compatibility policy in
 [`run-manifest-spec.md`](run-manifest-spec.md): additions are backward
-compatible within a schema version. PageLedger 0.4.2 therefore retains
+compatible within a schema version. PageLedger 0.5.0 therefore retains
 `schema_version: "0.1"` for its optional classifier, escalation, alert, and
 rollup, and replay-linkage fields. The schemas in
 [`schemas/`](../schemas/) are the machine-readable authority, enforced by

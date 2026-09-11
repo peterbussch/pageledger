@@ -1,9 +1,37 @@
 # Checkpoint specification
 
-This is the unreleased first recovery slice for generation-zero execution.
-`pageledger run --resumable` opts in; `pageledger resume RUN_DIR` continues in
-place. Ordinary runs retain their existing artifact contract. Package and
-schema release versions are unchanged.
+`pageledger run --resumable` retains per-page recovery records for an original
+(generation-zero) execution. `pageledger resume RUN_DIR` continues that run in
+place. Document jobs created with `process` retain checkpoints automatically.
+These workflows ship in 0.5.0 with artifact schema version 0.1.
+
+## Get started
+
+Recovery requires a POSIX system such as macOS or Linux.
+
+Try recovery with the built-in text adapter:
+
+```bash
+printf 'A first source page.\fA second source page.\n' > sample.txt
+pageledger run sample.txt --adapter text --resumable --out runs/recoverable
+pageledger resume runs/recoverable
+pageledger verify-run runs/recoverable
+```
+
+This small run will usually finish before you can interrupt it. Resuming a
+finished run verifies and returns its existing result. For a longer run, use
+`--adapter pdf_ocr` with a PDF, or supply a config with zero retries and
+`on_page_error: stop`. After an interruption, run `resume` in the same environment
+with the same source files and output directory.
+
+Resume reuses verified responses and completed pages. If a request started but
+no response was saved, it records `outcome_unknown` and stops. Investigate that
+request with the adapter or provider before starting any new work; resume does
+not automatically retry an uncertain call.
+
+For document jobs, use `pageledger resume jobs/book` followed by
+`pageledger inspect-job jobs/book` and `pageledger verify-job jobs/book`. See
+[document processing](processing-spec.md) for job-level status and review.
 
 ## Files and authority
 
@@ -45,8 +73,8 @@ accuracy; quality warnings and review queues remain independent evidence.
 
 Once the final manifest exists, the ordinary run artifacts are authoritative.
 Resume rechecks original source bytes and verifies a finalized successful run
-without replaying its historical checkpoint or loading an adapter. This preserves valid later
-`align` changes. Failed finalized runs are refused. `verify-run` does not
+without replaying its historical checkpoint or loading an adapter. Valid later
+`align` changes are preserved. Failed finalized runs are refused. `verify-run` does not
 certify the retained historical recovery records of a finalized run; an
 interrupted run with valid recovery evidence is still reported as incomplete.
 
@@ -131,7 +159,7 @@ No automatic possibly charged retry or provider-side exactly-once guarantee
 is made.
 
 Keep an unknown or failed run and investigate its provider/adapter evidence
-before deliberately starting new work. This slice provides no force-retry,
+before deliberately starting new work. There is no force-retry,
 outcome-reconciliation or budget-override flag. Adapter-controlled error
 messages and stdout/stderr are not retained. A successful later request does
 not establish the cause of an earlier failure.

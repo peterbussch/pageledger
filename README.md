@@ -7,8 +7,6 @@
   </picture>
 </p>
 
-<p align="center"><em>Record, route, and review document extraction: one page at a time.</em></p>
-
 <p align="center">
   <a href="https://pypi.org/project/pageledger/"><img src="https://img.shields.io/pypi/v/pageledger" alt="PyPI"></a>
   <a href="https://github.com/peterbussch/pageledger/actions/workflows/ci.yml"><img src="https://github.com/peterbussch/pageledger/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
@@ -17,44 +15,33 @@
   <a href="https://doi.org/10.5281/zenodo.21340651"><img src="https://zenodo.org/badge/DOI/10.5281/zenodo.21340651.svg" alt="DOI"></a>
 </p>
 
-You OCR'd three thousand archive pages last spring. Which engine did page
-341 go through, what did the run cost, which pages were too noisy to
-trust, and which ones still needed review? PageLedger is a run ledger for
-document extraction that keeps those answers on disk: you bring the
-engine (Tesseract, Docling, Marker, a cloud VLM), it produces structural
-page routes or applies configured/reviewed ones, enforces page/token/dollar
-budgets, and writes the
-evidence as plain files you can grep, cite, and use to reconstruct the
-recorded methodology. No service, no database.
+PageLedger records document extraction one page at a time. It calls your
+chosen engine, tracks source files and adapter settings, checks budgets, and
+writes the text with its provenance and review queue. Runs are directories of
+JSON, YAML, Markdown, and raw output that you can inspect without a service or
+database.
 
-It grew out of a Soviet census digitization project, where "the model
-returned JSON" was the beginning of the work, not the end. It is built
-for people with the same problem: digital humanities labs, archives,
-historians, and anyone who has to defend their methodology months later.
+It grew out of a Soviet census digitization project. The same records help
+archives, historians, and research teams trace an extracted page back to its
+source and reconstruct how it was produced.
 
 ## Install
 
-Install the current stable package:
+PageLedger 0.5.0 requires Python 3.10 or later:
 
 ```bash
-pip install pageledger
+pip install pageledger==0.5.0
+pageledger --version
 ```
 
-This documentation targets 0.4.2. If that version is not on the package index
-yet, install the exact candidate wheel in a fresh environment and confirm
-`pageledger --version` before following the quickstart. See the
-[maintained first-run guide](docs/first-run.md#maintainer-verification) for the
-isolated-wheel command and import-path check.
+For PDFs, install `"pageledger[pdf]==0.5.0"`. Scanned PDFs also need Poppler and
+Tesseract installed separately. `pageledger doctor` checks the available tools.
 
-The development checkout also includes document jobs with local text, OCR,
-bounded image escalation and a source-linked report. See the
-[document processing guide](docs/processing-spec.md); this work is unreleased.
+## First run
 
-## Quickstart
-
-Start with the built-in text adapter; it needs no OCR engine or provider. The
-form feed makes two source pages, and the source stays in place for a later
-rerun:
+The built-in text adapter needs no OCR engine or provider. This example creates
+two source pages; the replacement character on page 2 deliberately triggers a
+review warning.
 
 ```bash
 printf 'first page\fsecond page with a replacement character �\n' > sample.txt
@@ -66,177 +53,126 @@ sed -n '1,80p' runs/first/audit.md
 pageledger verify-run runs/first
 ```
 
-`runs/first/` now holds the extracted text plus the ledger: a manifest,
-per-page provenance, quality warnings, cost evidence, and a review queue. The
-terminal reports unknown cost as unknown rather than as a known zero. Follow
-the maintained [offline text tutorial](docs/first-run.md) to export CSV, trace
-the flagged page to its source, record an external review decision, and run the
-selected-page rerun. For a scanned document, use the separate
-[PDF/OCR first-run recipe](docs/pdf-ocr-first-run.md).
+`runs/first/` contains the extracted text, per-page provenance, quality signals,
+cost evidence, and an executable rerun plan. Unknown cost stays unknown.
+Verification checks the ledger's integrity; review the output against the
+source to judge transcription accuracy.
 
-Flagged pages are already listed in an executable rerun plan, so escalating just
-those pages is one command. The config is always explicit; replace it with a
-stronger-adapter config when appropriate. A rerun is a new ledger, not an
-automatically assembled corrected corpus:
+Rerun the flagged pages into a new directory and compare the results:
 
 ```bash
 pageledger rerun runs/first --config pageledger.yml --out runs/second
 pageledger compare-runs runs/first runs/second
-pageledger verify-run runs/second
 ```
 
-Bundling and replay are optional relocation steps, separate from rerunning.
-Only a verified generation-zero execute run can be a bundle baseline; a rerun
-child keeps its parent linkage and cannot be bundled:
+This example uses the same adapter, so its output stays the same. Supply a
+stronger adapter config when needed. A rerun retains the parent linkage and
+source page numbers; you decide which outputs to use.
+
+The [text tutorial](docs/first-run.md) continues through CSV export, review
+notes, and bundle replay. For scans, follow the
+[PDF/OCR tutorial](docs/pdf-ocr-first-run.md).
+
+## Process a document
+
+Document processing and resumable runs require a POSIX system such as macOS or
+Linux. Use `process` when you want one job to manage local text extraction, OCR for
+pages with defect evidence, and optional image-model attempts. The job retains
+every attempt and publishes a transcript with links to source pages and a
+report of unresolved work.
+
+Create `processing.yml`:
+
+```yaml
+schema_version: "0.1"
+run:
+  adapter: pdf_text
+processing:
+  local_ocr:
+    adapter: pdf_ocr
+    adapter_options:
+      lang: eng
+      dpi: 300
+  limits:
+    max_attempt_pages: 100
+    max_image_pages: 0
+```
+
+With the PDF extra, Poppler, and Tesseract installed, sample a document:
 
 ```bash
-pageledger bundle runs/first --out bundles/first
-pageledger replay bundles/first --out runs/replayed
-pageledger verify-run runs/replayed
+pageledger process book.pdf --config processing.yml --pages "1-10" --out jobs/book
+pageledger inspect-job jobs/book
+pageledger verify-job jobs/book
 ```
 
-The bundle includes the unchanged baseline and source bytes. Replay writes
-`replay.json`; its outcome distinguishes exact bytes, evidence-only comparison,
-and deterministic mismatch. This is a locally verified transport workflow, not
-a hermetic environment reproduction; see the [honest replay
-boundary](docs/capabilities-and-limits.md#verified-replay-boundary).
+Open `jobs/book/transcript.md` for the selected text and `jobs/book/report.md`
+for the source links, attempts, and review reasons. Image stages require an
+explicit adapter and a positive page limit. A completed job can still have
+pages awaiting human review; `review-job` records decisions bound to the source
+and selected output. See the [document processing guide](docs/processing-spec.md)
+for configuration, budgets, and review receipts.
 
-Other first moves:
+## Recover interrupted work
+
+Document jobs retain recovery evidence automatically. For an individual run,
+opt in when starting it:
 
 ```bash
-pageledger run report.pdf --adapter pdf_text --out runs/text   # born-digital PDF (pip install "pageledger[pdf]")
-pageledger run scan.pdf --adapter pdf_ocr --out runs/sample --pages "1-10"   # sample before committing
-pageledger run scan.pdf --config pageledger.yml --out runs/tuned --dry-run   # inspect routing, spend nothing
-pageledger classify scan.pdf --config pageledger.yml --adapter pdf_ocr --out routes.yml  # route proposal + evidence
-pageledger run scan.pdf --config pageledger.yml --routes reviewed-routes.yml --out runs/routed
-pageledger inspect-run runs/first --csv > pages.csv            # triage in a spreadsheet
+pageledger run book.pdf --adapter pdf_ocr --resumable --out runs/book
+# After an interruption:
+pageledger resume runs/book
 ```
 
-Non-English documents: set `lang` and `dpi` in the config
-(`pageledger init-config --adapter pdf_ocr` writes one with both knobs
-visible). See [`docs/multilingual-ocr.md`](docs/multilingual-ocr.md) for a
-worked Cyrillic example, including what the signals catch on an 1850 scan.
+Use `pageledger resume jobs/book` for a document job. Keep the source files,
+output directory, and adapter environment in place. Resume verifies saved
+responses and reuses them without another extraction call. A request started
+without a saved outcome stops recovery because it may already have been
+processed. See the [checkpoint specification](docs/checkpoint-spec.md) for
+supported states and recovery limits.
 
-For layout-aware tables or a fully local VLM escalation, install Docling as a
-machine tool (`uv tool install docling`) and use the functional
-[`examples/docling_adapter.py`](examples/docling_adapter.py) custom adapter.
-It keeps Docling's ML dependencies out of PageLedger core and records the exact
-Docling/pipeline identity in page provenance; see
-[`docs/adapter-protocol.md`](docs/adapter-protocol.md#local-docling-example).
+## What the ledger records
 
-## How a run works
+| Record | Use |
+|---|---|
+| Source hashes and page IDs | Trace output to the original document and page, including samples and reruns. |
+| Adapter, model, options, and prompt | Identify how each page was extracted. |
+| Page, token, time, and cost totals | Check budgets and distinguish reported charges from configured estimates. |
+| Quality signals and grades | Find pages to inspect, with the evidence behind each warning. Grades are not accuracy scores. |
+| Normalized records | Align structured tables, JSON, or CSV to declared columns and arithmetic checks; retain failed checks and coercions. |
+| Review and rerun queues | Re-extract selected pages or hold them for human review. |
+| Verified bundles and replay results | Transport a completed generation-zero run and its source bytes; compare output under the recorded adapter identity. |
 
-```mermaid
-flowchart TD
-    A["inputs (text / PDF)"] --> B["paginate<br/>(form-feed or PDF pages)"]
-    B --> C["route pages<br/>route-map.yml"]
-    C --> D{"budget preflight<br/>max_pages"}
-    D -- over cap --> X["refuse: nothing written"]
-    D -- ok --> E["extract page via adapter<br/>(retry + backoff)"]
-    E --> F["quality signals<br/>quality.jsonl"]
-    E --> G["provenance.jsonl<br/>+ cost.json (cost_basis)"]
-    E --> H{"budget mid-run<br/>pages / tokens / USD"}
-    H -- over cap --> Y["halt: manifest status=failed,<br/>partial artifacts consistent"]
-    H -- ok --> E
-    F -- warnings --> I["review queue<br/>audit.json / audit.md"]
-    I --> J["rerun-manifest.yml"]
-    J -- "pageledger rerun<br/>(stronger adapter)" --> E
-    G --> K["pageledger compare-runs<br/>(parent vs rerun)"]
-```
+Built-in adapters cover text files, PDF text layers, and Tesseract OCR. The
+[adapter protocol](docs/adapter-protocol.md) supports other engines; the
+[Docling example](examples/docling_adapter.py) supplies local layout and VLM
+conversion. Core depends on PyYAML, with pypdf in the PDF extra.
 
-Every box on the right is a plain file in the run directory.
-
-## What's in the box
-
-- Three built-in adapters (`text`, `pdf_text`, `pdf_ocr`) and a thin
-  protocol for wrapping anything else, from OCRmyPDF to a cloud VLM.
-- A dependency-free structural classifier that emits executable route maps
-  plus per-page evidence for `blank`, `sparse`, `prose`, `table_likely`, and
-  `unknown`. Importable hooks supply domain-specific taxonomies.
-- Quality signals per page: shape heuristics, Tesseract word confidence
-  with a `low_confidence` warning, and pre-1918 Russian orthography
-  detection that flags a likely historical-model mismatch, plus conservative
-  chat-template leakage and adapter-agnostic rerun-inflation warnings. Large
-  growth from an empty parent can be legitimate OCR recovery; the warning asks
-  for source review and does not establish hallucination.
-- Budgets denominated in pages, the one unit every backend shares, with
-  tokens and dollars on top when they exist. Absolute warn thresholds fire
-  without a cap and record their first crossing without stopping the run.
-- Cost records that name their basis, so a derived estimate is never
-  mistaken for provider-billed spend, plus extracted-page rollups by adapter
-  and routed page type.
-- Schema alignment: declare columns, aliases, types, and arithmetic checks
-  once, and structured extractor output (markdown tables, JSON, CSV)
-  becomes normalized records. Coercion failures and failed checks are
-  recorded, never silently fixed. Structural loss such as duplicate headers,
-  uneven rows, and ignored tables is recorded too. `pageledger align` can
-  preview or apply a revised schema without re-extracting (or re-paying).
-- Per-page grades (A–F) that combine text signals with schema evidence and
-  always name their basis. `A (signals)` and `A (schema)` are different
-  claims. `review_below_grade: C` turns grades into a review queue.
-- Conditional page policies under `run.rerun_if` and `run.quarantine_if`
-  act on grades, missing required columns, and arithmetic failure rates.
-  Quarantined pages keep their audit evidence but stay out of rerun plans.
-- Classify/review/execute routing: `pageledger classify` produces per-page
-  type/action/prompt decisions, and `run --routes` accepts that map unchanged
-  (or one from a human/external classifier), validates complete source
-  coverage, and preserves the routing evidence.
-- Optional continue-on-page-error behavior with a consecutive-failure circuit
-  breaker. Failed and unattempted pages become auditable rerun work rather than
-  disappearing behind the first exception.
-- Page-scoped reruns with lineage and optional generation-indexed adapter
-  chains; provenance-aware cross-run diffs, runtime ledger verification, CSV
-  export, and environment diagnostics.
-- Verified directory bundles and replay: `bundle` preserves the baseline run,
-  source copies, inventory, and a portable route map; `replay` records raw
-  comparison, extractor/profile linkage, and an exact/evidence/mismatch outcome.
-- Optional adapter reproducibility profiles that may report exact material
-  hashes. Missing profile evidence limits deterministic exactness but does not
-  prevent an ordinary extraction run.
-- JSON Schemas for JSON/JSONL artifacts, shipped in source and wheel
-  distributions, plus field-contract tests for YAML, enforced in CI, and an
-  [`AGENTS.md`](AGENTS.md) so AI coding agents can operate the tool and
-  validate their own output.
-
-Classification is an explicit, inspectable stage: ordinary `run` commands do
-not invoke it automatically. Adapter chains escalate across rerun generations,
-not as same-run exception fallback.
-The full honest-scope list is in
-[`docs/capabilities-and-limits.md`](docs/capabilities-and-limits.md).
-
-## Tested on
-
-Real documents, with walkthroughs: a 107-page declassified JFK-files scan
-(free Tesseract pass, then a free local-LLM cleanup tier, then a paid
-cloud VLM on the pages that needed it), a modern 259-page Russian report,
-and an 1850 military-statistical review in pre-reform orthography that
-the quality signals flagged page by page. Synthetic stress runs cover
-5,000 pages at ~2,100 pages/sec. Details in
-[`docs/capabilities-and-limits.md`](docs/capabilities-and-limits.md#tested-scale-and-documents).
+`classify` produces a separate route map for review before `run --routes`.
+`align` can revise structured records without re-extracting. Bundle replay
+requires a locally available compatible adapter; whole document jobs and runs
+with image-input evidence cannot yet be bundled. The
+[capabilities and limits](docs/capabilities-and-limits.md) describe these
+contracts in full.
 
 ## Documentation
 
-| | |
+| Start here | Reference |
 |---|---|
-| [`docs/README.md`](docs/README.md) | Documentation index |
-| [`docs/first-run.md`](docs/first-run.md) | Maintained offline reader journey |
-| [`docs/cli.md`](docs/cli.md) | Command, flag, and config reference |
-| [`docs/classifier.md`](docs/classifier.md) | Structural signals, thresholds, hooks, and route evidence |
-| [`docs/artifacts.md`](docs/artifacts.md) | What each file in a run directory answers |
-| [`docs/capabilities-and-limits.md`](docs/capabilities-and-limits.md) | What works, what you supply, what is design |
-| [`docs/ocr-options.md`](docs/ocr-options.md) | Choosing local, cloud, or hybrid extraction |
-| [`docs/multilingual-ocr.md`](docs/multilingual-ocr.md) | Non-English and historical documents |
-| [`docs/examples/jfk-scanned-archive.md`](docs/examples/jfk-scanned-archive.md) | Worked example: scan → flags → rerun → compare |
-| [`docs/adapter-protocol.md`](docs/adapter-protocol.md) | Wrapping your own OCR/VLM engine |
-| [`docs/design.md`](docs/design.md) | Why pages, design principles, and what comes next |
-| [`docs/comparison.md`](docs/comparison.md) | Positioning against the 2026 extraction ecosystem |
-| [`schemas/`](schemas/) | JSON Schemas, the machine-readable artifact contract |
+| [Documentation index](docs/README.md) | All guides and artifact specifications |
+| [Text tutorial](docs/first-run.md) · [PDF/OCR tutorial](docs/pdf-ocr-first-run.md) | Run, inspect, review, and rerun |
+| [Document processing](docs/processing-spec.md) | Stages, shared budgets, reports, and human review |
+| [Checkpoint recovery](docs/checkpoint-spec.md) | Resume rules and uncertain requests |
+| [CLI and configuration](docs/cli.md) | Commands, flags, and settings |
+| [Run artifacts](docs/artifacts.md) | Files, identities, and verification |
+| [OCR options](docs/ocr-options.md) · [Multilingual OCR](docs/multilingual-ocr.md) | Engines, languages, and historical documents |
+| [Scanned archive example](docs/examples/jfk-scanned-archive.md) | Recorded OCR and escalation on a declassified document |
 
 ## Contributing
 
 Testing a collection we haven't seen? [Open a corpus
 report](https://github.com/peterbussch/pageledger/issues/new?template=corpus-report.yml)
-with the script, adapter, page count, and a redacted sample — real
+with the script, adapter, page count, and a redacted sample. New
 collections are how the quality signals improve. Development setup and
 guidelines are in [CONTRIBUTING.md](CONTRIBUTING.md).
 

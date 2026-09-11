@@ -37,7 +37,7 @@ def _write_release_fixture(root: Path, *, citation_version: str = "1.2.3") -> No
 
 
 def test_release_metadata_agrees_for_current_version() -> None:
-    assert check_release(REPO, "v0.4.2") == []
+    assert check_release(REPO, "v0.5.0") == []
 
 
 def test_release_check_rejects_tag_and_metadata_mismatches(tmp_path: Path) -> None:
@@ -127,7 +127,7 @@ def test_package_workflows_run_shared_reader_journey_outside_checkout() -> None:
         assert '--document "$GITHUB_WORKSPACE/docs/first-run.md"' in command
         assert '--work-dir "$WORK_ROOT/first-run"' in command
         assert f"--python {isolated_python}" in command
-        assert "--expected-version 0.4.2" in command
+        assert "--expected-version 0.5.0" in command
         assert '--forbid-import-root "$GITHUB_WORKSPACE"' in command
         assert "--source-root" not in command
 
@@ -139,12 +139,7 @@ def test_package_workflows_validate_schema_and_document_inventories() -> None:
     ]
 
     for workflow in workflows:
-        for schema_name in (
-            "manifest.schema.json",
-            "bundle.schema.json",
-            "replay.schema.json",
-        ):
-            assert schema_name in workflow
+        assert 'Path("schemas").glob("*.schema.json")' in workflow
         for packaged_path in (
             "docs/first-run.md",
             "docs/performance.md",
@@ -152,7 +147,8 @@ def test_package_workflows_validate_schema_and_document_inventories() -> None:
             "examples/run_first_run.py",
         ):
             assert packaged_path in workflow
-        assert "docs/superpowers/plans/" in workflow
+        for excluded in ("docs/superpowers/", "docs/proposals/", "docs/reports/"):
+            assert excluded in workflow
 
 
 def test_all_github_actions_are_pinned_and_ci_has_a_frozen_lane() -> None:

@@ -1,27 +1,21 @@
 # First run: text, review, rerun, and replay
 
-This maintained tutorial uses the built-in `text` adapter, a synthetic
+This tutorial uses the built-in `text` adapter, a synthetic
 three-page file, and no network, OCR engine, or provider. Run it in a fresh
-scratch directory after installing PageLedger. It shows the ordinary reader
-journey first: run, inspect, open the raw text and audit, export CSV, and verify.
-The selective rerun follows. Bundle relocation and replay are last and optional.
+scratch directory after installing PageLedger. You will inspect the raw text
+and audit, export CSV, and verify the run before trying selective reruns and
+optional bundle replay.
 
-This guide targets **0.4.2**. If that version is not yet on the package index,
-install the exact candidate wheel by absolute path, then work outside the
-checkout:
+Install 0.5.0 in a virtual environment:
 
 ```bash
-python -m venv /tmp/pageledger-0.4.2
-. /tmp/pageledger-0.4.2/bin/activate
-python -m pip install /absolute/path/to/pageledger-0.4.2-py3-none-any.whl
+python -m venv /tmp/pageledger-0.5.0
+. /tmp/pageledger-0.5.0/bin/activate
+python -m pip install pageledger==0.5.0
 pageledger --version
 mkdir /tmp/pageledger-reader-tutorial
 cd /tmp/pageledger-reader-tutorial
 ```
-
-As of 2026-09-10, `pip install pageledger` installed the older 0.2.0 stable
-release. Use the documentation shipped with an older installed version rather
-than assuming it has the 0.4.2 replay and reader behavior described here.
 
 ## Run and inspect
 
@@ -124,6 +118,9 @@ pageledger verify-run runs/second
 test -f review/decisions.csv
 ```
 
+For document jobs, use [review-job](processing-spec.md#reports-and-review) to
+record source-bound human decisions. The CSV above is for ordinary runs.
+
 Do not edit `audit.md`, `audit.json`, or raw files inside a verified run to keep
 review notes: `audit.md` is a rendering of `audit.json`, and changing either it
 or the raw evidence invalidates verification. External notes can point to both
@@ -215,7 +212,7 @@ PYTHONPATH= /path/to/wheel-venv/bin/python /path/to/checkout/examples/run_first_
   --document /path/to/checkout/docs/first-run.md \
   --work-dir /tmp/pageledger-first-run \
   --python /path/to/wheel-venv/bin/python \
-  --expected-version 0.4.2 \
+  --expected-version 0.5.0 \
   --forbid-import-root /path/to/checkout
 ```
 

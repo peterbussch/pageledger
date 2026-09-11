@@ -1,15 +1,16 @@
 # Release procedure
 
-PageLedger publication is deliberately manual and tag-only. A GitHub release
-does not trigger package publication: source verification, inspection of the
-exact built artifact, and a protected production approval come first. The
-current repository does not assume that a PageLedger TestPyPI project exists.
+Publish from an annotated version tag after reviewing and testing its source
+and built packages. The manual **Publish** workflow verifies the release;
+uploading to PyPI also requires approval through the `pypi` environment.
 
 ## Prepare the release commit
 
 1. Choose a version that is not already present on PyPI.
 2. Update `pyproject.toml`, `pageledger/_version.py`, `CITATION.cff`, the dated
    `CHANGELOG.md` heading, and the editable PageLedger entry in `uv.lock`.
+   Update version assertions, workflow smoke commands and active documentation
+   examples too. Artifact schema versions change only when their contracts do.
 3. Run the complete local source gate:
 
    ```bash
@@ -23,13 +24,12 @@ current repository does not assume that a PageLedger TestPyPI project exists.
 4. Review `git diff` and `git status --ignored`. No run directories, PDFs,
    rendered pages, credentials, planning notes, or local research corpora
    belong in the public commit. Commit the reviewed source and record its full
-   SHA; this is the source identity, not yet a distribution or publication
-   receipt.
+   SHA.
 5. Build wheel and sdist once from that exact clean source into a fresh `dist/`,
    run `twine check`, and inspect both archive inventories. The sdist must carry
    the maintained first-run, performance, and release documentation plus the
-   tutorial helper, while excluding local planning state and historical
-   execution checklists. The wheel must carry the complete schema inventory.
+   tutorial helper, while excluding local planning state, proposals and
+   historical execution reports. The wheel must carry every schema in `schemas/`.
 6. Install the exact wheel into a fresh environment and, from outside the
    checkout with `PYTHONPATH` cleared, run the maintained reader journey:
 
@@ -43,12 +43,12 @@ current repository does not assume that a PageLedger TestPyPI project exists.
    ```
 
    Record the imported module path/version and the tutorial's warning,
-   selected-page rerun, external-review integrity, and relocated exact-replay
-   receipts. A source-checkout test is not an exact-wheel receipt.
+   selected-page rerun, external-review integrity and relocated replay results.
+   Exercise document processing and `verify-job` against the installed wheel
+   as well. Repeat the installation smoke test with the sdist.
 7. Record SHA-256 hashes for both distributions alongside the source SHA and
-   exact-wheel smoke result. Keep these as separate fields; matching source
-   metadata alone does not identify the built bytes.
-8. Merge the reviewed release commit to `main`, then create and push an
+   installed-package smoke results.
+8. Fast-forward or merge the reviewed release commit to `main`, then create and push an
    annotated (preferably signed) version tag such as `vX.Y.Z` or `vX.Y.ZaN`
    pointing at that exact commit.
 
@@ -61,7 +61,7 @@ changelog date, or committed lock disagree.
    target, `verify`. The workflow recreates the committed lock, runs the suite
    and static checks, builds once, checks the wheel schema and sdist documentation
    inventories, runs the maintained journey against the exact wheel outside the
-   checkout, records distribution hashes, and retains `dist-vX.Y.Z`.
+   checkout, records distribution hashes, and retains `dist-vX.Y.Z` for 14 days.
 2. Download that artifact, inspect `SHA256SUMS` and both archive inventories,
    then install its wheel into a new environment and run a representative
    PageLedger workflow. The verification dispatch cannot upload a package.
@@ -86,10 +86,6 @@ changelog date, or committed lock disagree.
    tag only after PyPI shows the expected files and metadata. Attach or publish
    the production run's recorded SHA-256 values with the release notes, then
    verify the release page and tag target.
-
-If a PageLedger TestPyPI project and trusted publisher are configured later,
-add a rehearsal lane that promotes the same retained artifact by digest. Do not
-claim a TestPyPI gate or rebuild between rehearsal and production.
 
 PyPI files and public Git tags are effectively immutable. If any identity,
 artifact, or smoke test differs, stop and prepare a new version; never move a

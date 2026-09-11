@@ -1,4 +1,4 @@
-# Development document job: local PDF text followed by OCR for weak pages.
+# Document job: local PDF text followed by OCR for weak pages.
 schema_version: '0.1'
 run:
   adapter: pdf_text
@@ -14,12 +14,13 @@ processing:
     max_attempt_pages: 2000
     max_image_pages: 0
   # Explicit opt-in, with examples/ on --adapter-path and the adapter's optional
-  # dependencies installed. Check model availability in your provider/router.
+  # dependencies installed. Replace the model placeholder with an available
+  # Gemini or DeepSeek model from your provider/router.
   # image:
   #   adapter: openai_image_adapter:OpenAIImageAdapter
   #   adapter_options:
-  #     model: antigravity/gemini-3.6-flash-high
+  #     model: gemini-YOUR_MODEL
   #     max_output_tokens: 8192
   #     timeout: 120
   # Set limits.max_image_pages to a positive bound before enabling image.
-  # second_opinion can use the same adapter with an explicit DeepSeek model.
+  # second_opinion can use another explicit Gemini or DeepSeek model.

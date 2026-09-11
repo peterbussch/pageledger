@@ -1,37 +1,48 @@
 # PageLedger documentation
 
-PageLedger records OCR and document extraction runs one page at a time. Start
-with the maintained [offline text first run](first-run.md), which needs no OCR
-engine or provider. Use the [PDF/OCR first-run recipe](pdf-ocr-first-run.md)
-when you are ready to bring a scanned document.
+PageLedger 0.5.0 records extraction attempts, source identity, cost, and review
+work as plain files. Choose an entry point below.
 
-## Guides
+## Getting started
+
+| Task | Guide |
+|---|---|
+| Try PageLedger without an OCR engine | [First run: text, review, rerun, and replay](first-run.md) |
+| Extract a PDF text layer or scanned PDF | [First PDF/OCR run](pdf-ocr-first-run.md) |
+| Process a document through local text, OCR, and optional image stages | [Document processing jobs](processing-spec.md) |
+| Recover interrupted extraction in place | [Checkpoint recovery](checkpoint-spec.md#get-started) |
+| Review selected text and record human decisions | [Document reports and review receipts](document-report-spec.md) |
+
+## Working with a collection
 
 - [Choose an OCR or VLM adapter](ocr-options.md)
-- [Read the CLI and configuration reference](cli.md)
 - [Classify pages and review route evidence](classifier.md)
 - [Run OCR on non-English and historical documents](multilingual-ocr.md)
 - [Work through a scanned government archive](examples/jfk-scanned-archive.md)
 - [Write a custom extraction adapter](adapter-protocol.md)
-- [Compare PageLedger with document extraction tools](comparison.md)
-- [Release PageLedger conservatively](releasing.md)
+- [Compare PageLedger with extraction tools](comparison.md)
 
-## Artifact reference
+## Reference
 
+- [CLI commands and configuration](cli.md)
 - [Run directory and artifact overview](artifacts.md)
-- [Run manifest specification](run-manifest-spec.md)
-- [Route map specification](route-map-spec.md)
-- [Provenance and quality JSONL specification](provenance-spec.md)
-- [Normalized page specification](normalized-spec.md)
-- [Audit queue specification](audit-spec.md)
-- [Rerun manifest specification](rerun-manifest-spec.md)
+- [Run manifest](run-manifest-spec.md)
+- [Route map](route-map-spec.md)
+- [Provenance and quality JSONL](provenance-spec.md)
+- [Normalized records](normalized-spec.md)
+- [Audit queue](audit-spec.md)
+- [Rerun manifest](rerun-manifest-spec.md)
+- [Checkpoint and page-attempt records](checkpoint-spec.md)
+- [Document job](processing-spec.md#durable-job-and-attempts)
+- [Document report and human review receipts](document-report-spec.md)
+- [Page image input evidence](image-evidence-spec.md)
 
-## Scope and design
+The [JSON Schemas](../schemas/) define the machine-readable artifact contract.
+Package 0.5.0 retains artifact `schema_version: "0.1"`.
+
+## Scope and maintenance
 
 - [Capabilities and limits](capabilities-and-limits.md)
-- [Measured performance and limits](performance.md)
-- [Current design and future targets](design.md)
-
-The JSON Schemas in [`schemas/`](../schemas/) are the machine-readable
-artifact contract. The Markdown specifications explain the same fields for
-people.
+- [Measured performance](performance.md)
+- [Architecture and future work](design.md)
+- [Release procedure](releasing.md)

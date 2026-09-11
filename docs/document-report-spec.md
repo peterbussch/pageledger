@@ -1,13 +1,12 @@
 # Document report and human review receipts
 
-Schema version: **0.1**. The schemas are
+Schema version: `0.1`. The schemas are
 [`document.schema.json`](../schemas/document.schema.json) and
 [`job-review.schema.json`](../schemas/job-review.schema.json).
 
 `document.json` is the authoritative document report. `report.md` and
-`transcript.md` are deterministic renderings of that JSON. The immutable job
-checkpoint and retained attempt evidence remain the sources for reconstructing
-the report. A report does not certify transcription accuracy or source preservation.
+`transcript.md` are deterministic renderings of that JSON. The saved job state
+and retained attempt evidence are the sources for reconstructing the report. A report does not certify transcription accuracy or source preservation.
 
 ## Document fields
 
@@ -137,6 +136,36 @@ Each decision contains:
 | `output_sha256` | Exact selected raw artifact digest, or null when no attempt is selected |
 | `reason`, `reviewer` | Nonempty human review explanation and reviewer identity |
 | `reviewed_at` | ISO-8601 timestamp with timezone |
+
+After inspecting a page against its source, create `reviewed-pages.json`:
+
+```json
+{
+  "schema_version": "0.1",
+  "source_sha256": "<source.sha256 from document.json>",
+  "decisions": [
+    {
+      "page_id": "doc_0001_page_0001",
+      "page_number": 1,
+      "disposition": "reviewed_text",
+      "selected_attempt": "<page.selected_output.attempt_id>",
+      "output_sha256": "<page.selected_output.sha256>",
+      "reason": "Checked the selected text against source page 1.",
+      "reviewer": "<reviewer identity>",
+      "reviewed_at": "2026-09-11T14:00:00Z"
+    }
+  ]
+}
+```
+
+Replace the angle-bracket placeholders with values from the job report and the
+reviewer's identity. Set the page, reason, and timestamp to the review performed.
+Then apply and verify it:
+
+```bash
+pageledger review-job jobs/book --review reviewed-pages.json
+pageledger verify-job jobs/book
+```
 
 `reviewed_text` always requires a completed artifact and its matching output
 digest. Other dispositions allow a null selection, including preflight confirmation

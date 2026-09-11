@@ -1,15 +1,11 @@
-# Capabilities and limits (PageLedger 0.4.2)
+# Capabilities and limits (PageLedger 0.5.0)
 
-What PageLedger 0.4.2 does, what it leaves to you, and what is documented
-design rather than working code. This is the honest-scope page; the README
-stays short because this exists.
-
-The development checkout also includes unreleased document processing and
-atomic resume. The package version remains 0.4.2; this is not a 0.5.0 release.
+This page lists the supported workflows, the adapters you supply, and the
+limits of the recorded evidence. Artifact schemas remain at version 0.1.
 
 ## Built in and tested
 
-- Development `process` jobs own local-text → OCR → bounded image attempts,
+- `process` jobs manage local text, OCR, and bounded image attempts with
   shared budgets, source/page identities, persistent review holds and a
   JSON-derived document report. `review-job` applies source/output-bound human
   receipts without extraction; `verify-job` checks the retained evidence.
@@ -35,7 +31,7 @@ atomic resume. The package version remains 0.4.2; this is not a 0.5.0 release.
   explicitly given.
 - `--pages "1-8,81,100-110"` extracts a page selection from one source
   while keeping the source page numbering in every artifact. Sampling a
-  large volume no longer means splitting the PDF and losing page identity.
+  large volume keeps the original page identity without splitting the PDF.
 - `--routes route-map.yml` executes complete, reviewed per-page decisions from
   `pageledger classify`, a human, or an external classifier. It validates
   source coverage, page identity, taxonomy types, confidence, prompts, and
@@ -238,7 +234,7 @@ Details and examples live in [`design.md`](design.md).
   per-page evidence a human should weigh, not accuracy scores. Shape-based
   heuristics cannot detect word-level misrecognition ("matericl" for
   "material"); Tesseract's own word confidence (`low_confidence`) is the
-  closest signal the alpha ships, and it reflects the engine's opinion of
+  closest built-in signal, and it reflects the engine's opinion of
   itself, not ground truth.
 - Output-integrity signals are deliberately conservative heuristics. A marker
   or large rerun expansion queues review; it does not prove that an adapter
@@ -304,7 +300,9 @@ PageLedger has been exercised locally on:
   census spreads. That pass tuned the column-line threshold; it is evidence for
   the default, not a general benchmark.
 
-This is evidence of the envelope, not a performance guarantee. Stress
+These historical checks describe the tested documents and workloads. They
+are not benchmarks of every 0.5.0 workflow; see [performance](performance.md)
+for the measured serialization improvement and its limits. Stress
 tests are marked `@pytest.mark.stress` and skipped in default CI:
 
 ```bash

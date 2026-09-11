@@ -58,7 +58,7 @@ Three assertions that bite during routine changes:
 
 - The release version is pinned in `test_dry_run.py`
   (`test_package_exports_release_version`) — bump it with
-  `pyproject.toml`, `pageledger/__init__.py`, `CITATION.cff`, and the editable
+  `pyproject.toml`, `pageledger/_version.py`, `CITATION.cff`, and the editable
   package entry in `uv.lock`.
 - `test_docs_examples_smoke_without_heavy_ocr_installs` pins strings in
   README, `docs/ocr-options.md`, `MANIFEST.in`, and `examples/` — docs

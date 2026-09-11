@@ -1,26 +1,54 @@
 # CLI reference
 
-`run` and `rerun` extract; `resume` recovers an interrupted resumable run;
-`classify` produces an
-inspectable route map; `align` re-derives normalized records and grades from
-an existing run; the rest inspect, compare, diagnose, or scaffold.
+Use `process` to manage a document job, or `run` for an extraction run with one
+adapter. `rerun` extracts flagged pages into a new run; `resume` recovers pending
+work in place. `classify` prepares routes, and `align` revises structured records
+from retained output.
 
-`pageledger --version` prints the installed release.
+`pageledger --version` prints the installed release. Execution errors return
+exit code 1 with a diagnostic on stderr. Commands with `--json` also emit the
+error as JSON on stdout. Invalid command-line syntax returns exit code 2.
 
-Execution errors return exit code 1 with a diagnostic on stderr. Commands with
-`--json` also emit the error as JSON on stdout. Invalid command-line syntax
-returns exit code 2.
+For a complete text-only example, follow [First run](first-run.md).
 
-The development `process SOURCE --config FILE --out JOB` command runs a document
-through local text, OCR and explicitly bounded image stages. Use `resume JOB`,
-`inspect-job JOB`, `verify-job JOB`, and `review-job JOB --review FILE` for its
-recovery, report and human decisions. Each accepts `--json`; `process` also
-accepts `--pages`, `--adapter-path`, and preflight `--review`. See the
-[processing job contract](processing-spec.md). These stages are separate from
-the rerun generations in `run.adapter_order`.
+## process
 
-For a complete run/inspect/raw/audit/verify/rerun journey using only the built-in
-text adapter, follow [First run](first-run.md).
+```bash
+pageledger process book.pdf --config processing.yml --pages "1-10" --out jobs/book
+```
+
+Processes one source document through local text, OCR, and optional image
+stages. `--config` and `--out` are required, and the output directory must be
+new. Use the [processing guide](processing-spec.md) to create the config.
+Document jobs retain checkpoints automatically. Stages use `processing`
+profiles; `run.adapter_order` is reserved for explicit rerun generations and
+is rejected here.
+
+| Flag | Effect |
+|---|---|
+| `--pages "1-10,25"` | Select source pages while preserving original numbering. |
+| `--adapter-path DIR` | Add a trusted import directory for custom adapters. |
+| `--review FILE` | Apply source-bound human review receipts before extraction. |
+| `--json` | Print the job result as JSON. |
+
+A job can finish with unresolved pages. `completed` means processing finished,
+while `halted` records a stop that will not be retried automatically.
+
+## inspect-job, verify-job, and review-job
+
+```bash
+pageledger inspect-job jobs/book
+pageledger inspect-job jobs/book --json
+pageledger verify-job jobs/book
+pageledger review-job jobs/book --review reviewed-pages.json
+```
+
+`inspect-job` displays `report.md`, or `document.json` with `--json`.
+`verify-job` checks the source, retained attempts, selections, and report.
+`review-job` applies human decisions without extraction and preserves previous
+receipts. Create the review file using the
+[review receipt contract](document-report-spec.md#human-review-receipt).
+All three commands accept `--json`.
 
 ## run
 
@@ -84,8 +112,11 @@ pageledger inspect-run runs/book/
 pageledger verify-run runs/book/
 ```
 
-Continues a run created with `run --resumable`, in its existing directory and
-with the same run id. The retained config snapshot, source identities, page
+Continues a run created with `run --resumable`, or a document job created with
+`process`, in its existing directory. For a job, use `pageledger resume jobs/book`;
+see [job recovery](processing-spec.md#resume-an-interrupted-job).
+
+For an individual run, resume retains the run id. The retained config snapshot, source identities, page
 selection, routes and adapter identity are the execution authority. There are
 no replacement-input, config, adapter, budget or page-selection flags.
 `--adapter-path DIR` loads a trusted custom adapter; `--json` emits a
@@ -104,12 +135,12 @@ queued work. Retain the evidence and resolve the request outcome with the
 provider or adapter operator before deliberately starting new work. Resume
 does not promise exactly-once remote execution.
 
-This first recovery slice supports generation-zero execute runs. Ordinary
+Run recovery supports generation-zero execute runs. Ordinary
 runs without a recovery journal, dry runs and interrupted rerun generations
 cannot be resumed. `run.adapter_order` retains its generation semantics;
-resume does not advance it. Once a run is finalized, resume verifies and
-returns its existing result without reconstructing it or loading the
-extraction adapter. Valid later alignment changes are preserved. Use the
+resume does not advance it. Resume refuses finalized failed runs. For other
+finalized runs, it verifies and returns the existing result without reconstructing
+it or loading the extraction adapter. Valid later alignment changes are preserved. Use the
 audit queue and separate `rerun` command for quality-driven re-extraction.
 See the [checkpoint contract](checkpoint-spec.md).
 
@@ -293,7 +324,7 @@ exist. `--json` emits the result and `replay.json` records baseline/local
 extractor linkage, profile match, raw equal/different/missing counts, and the
 comparison object.
 Human output also prints `Raw comparison: N equal / N different / N missing`;
-these counts are evidence, not an authenticity claim. See the [honest replay
+these counts are evidence, not an authenticity claim. See the [replay
 boundary](capabilities-and-limits.md#verified-replay-boundary).
 
 Exit codes are consistent across these commands: 0 means bundle creation or a

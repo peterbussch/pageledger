@@ -1,6 +1,6 @@
 ---
 name: pageledger
-description: This skill should be used when the user asks to "OCR these scans", "extract text from this archive", "track what my extraction run did", "rerun the bad pages", "compare two runs", or otherwise wants document extraction with provenance, quality review, cost budgets, or reproducibility — digitization projects, archival scans, batch PDF extraction, OCR auditing. Also use it when operating or extending the pageledger CLI or writing a PageLedger adapter.
+description: This skill should be used when the user asks to "OCR these scans", "extract text from this archive", "track what my extraction run did", "rerun the bad pages", "compare two runs", or otherwise wants document extraction with provenance, quality review, cost budgets, or reproducibility, including digitization projects, archival scans, batch PDF extraction, OCR auditing. Also use it when operating or extending the pageledger CLI or writing a PageLedger adapter.
 ---
 
 # PageLedger
@@ -11,14 +11,19 @@ does not extract anything itself: it routes pages to an adapter
 page/token/dollar budgets, and records provenance, quality signals, cost,
 review queues, and rerun plans as plain files in a run directory.
 
-Trust the version installed, not memory of an older one. `pageledger
-doctor` reports the version; `docs/capabilities-and-limits.md` is the
+Use `pageledger --version` to check the installed release. This guide covers
+0.5.0; `docs/capabilities-and-limits.md` is the
 authoritative scope list.
 
 ## Command quick reference
 
 | Task | Command |
 |---|---|
+| Process a document with staged attempts | `pageledger process book.pdf --config processing.yml --out jobs/book` |
+| Read or verify a document report | `pageledger inspect-job jobs/book`; `pageledger verify-job jobs/book` |
+| Record human review | `pageledger review-job jobs/book --review reviewed-pages.json` |
+| Start a resumable run | `pageledger run scan.pdf --adapter pdf_ocr --resumable --out runs/a` |
+| Recover pending work in place | `pageledger resume runs/a` or `pageledger resume jobs/book` |
 | OCR a scan, no config | `pageledger run scan.pdf --adapter pdf_ocr --out runs/a` |
 | Born-digital PDF | `pageledger run doc.pdf --adapter pdf_text --out runs/a` (needs `pageledger[pdf]`) |
 | Sample pages first | add `--pages "1-10,50-60"` (page ids keep source numbering) |
@@ -30,7 +35,7 @@ authoritative scope list.
 | Re-extract flagged pages | `pageledger rerun runs/a --config stronger.yml --out runs/b` |
 | Re-align/regrade without re-extracting | `pageledger align runs/a --schema table-v2.yml` |
 | Preview re-alignment | add `--dry-run` (no run artifacts change) |
-| Diff two runs | `pageledger compare-runs runs/a runs/b` (ranks only same-source, same-adapter evidence) |
+| Diff two runs | `pageledger compare-runs runs/a runs/b` (ranks only comparable source and extractor evidence) |
 | Verify ledger coherence | `pageledger verify-run runs/a` |
 | Create a portable verified bundle | `pageledger bundle runs/a --out bundles/a --json` |
 | Replay a relocated bundle | `pageledger replay bundles/a --out runs/replayed --json` |
@@ -54,7 +59,7 @@ trusted import directory; a trusted path must not be equal to, inside, or above
 the bundle. Replay preserves
 source bytes and records profile, extractor, and raw-comparison evidence; it
 does not install environments or adapter/model materials. Human replay output
-also prints raw equal/different/missing counts. Read the [honest replay
+also prints raw equal/different/missing counts. Read the [replay
 boundary](../../docs/capabilities-and-limits.md#verified-replay-boundary) for
 the limits on authenticity, declared materials, side effects, mutation,
 zero-byte evidence, and editable-install hooks.
@@ -70,9 +75,8 @@ zero-byte evidence, and editable-install hooks.
    normalized), then `quality.jsonl` warnings and grades (`empty_text`,
    `low_confidence`, `historical_orthography`, `instruction_echo`,
    `output_inflation`, and others; grades A–F with
-   a basis label — `A (signals)` is weaker evidence than `A (schema)` and
-   grades only compare within one adapter), `cost.json` (check
-   `cost_basis` — derived rates are not billed spend), and `audit.json`'s
+   a basis label; `A (signals)` and `A (schema)` describe different evidence),
+   `cost.json` (check `cost_basis` for reported versus estimated cost), and `audit.json`'s
    review queue.
 4. For tabular work, declare a `schema` section (columns, aliases,
    arithmetic checks) so structured adapter output lands in `normalized/`
@@ -82,16 +86,41 @@ zero-byte evidence, and editable-install hooks.
 5. `rerun` re-extracts exactly the flagged pages. Either supply a stronger
    plain `run.adapter` config or define `run.adapter_order`; chain entry N is
    used by rerun generation N. Exhausted chains leave pages in review.
-   `compare-runs` ranks improvement only when source identity and adapter
-   match.
+   `compare-runs` ranks improvement only when source and effective extractor
+   identities match. Grade comparisons also require matching PageLedger
+   versions, grading policies, evidence bases, and schema identities.
 6. Run `verify-run` before publishing or archiving a ledger. It checks
    cross-artifact coherence, not OCR correctness.
-7. For transport, run `bundle` only after verification, relocate or remove
-   the original source, then run `replay` and `verify-run` on the new run.
+7. For transport, run `bundle` on a verified generation-zero execute run,
+   then run `replay` and `verify-run` on the new run. The bundle includes its
+   source copy; moving or deleting the original is unnecessary.
    Treat `exact`, `evidence_compared`, and `deterministic_mismatch` as evidence
    outcomes, not accuracy claims.
-8. Merging parent and rerun output into a corpus is the project's call —
-   present the compare-runs evidence rather than deciding silently.
+8. The project chooses which parent and rerun outputs belong in its corpus.
+   Present the compare-runs evidence rather than deciding silently.
+
+## Document jobs and recovery
+
+Use `process` when one document needs local text, OCR for defective pages, and
+optional image stages under a shared budget. The `processing` section defines
+`local_text`, `local_ocr`, `image`, and optional `second_opinion`. Local text is
+required; other stages can be disabled with `null`. Image stages require a
+positive `processing.limits.max_image_pages`. The limits also accept
+`max_attempt_pages`, `max_tokens`, and `max_cost_usd`. See
+[the processing guide](../../docs/processing-spec.md) for a complete config.
+
+Jobs retain all attempts and publish `document.json`, `report.md`, and
+`transcript.md`. A clean later attempt may supply the transcript while an earlier
+review hold remains. Only source/output-bound human receipts establish reviewed
+text; never create a receipt claiming a human review that did not happen.
+
+`process` retains checkpoints automatically; individual runs require
+`--resumable` at creation. Both require zero retries and stop-on-error policy.
+`resume DIR` verifies saved evidence and continues pending work in place. Keep
+source paths, output paths, configuration, and compatible code unchanged. A
+started request without a saved response becomes `outcome_unknown` and stops
+queued calls. Do not retry or delete that evidence automatically. Jobs and
+image-evidence runs cannot be bundled in this version.
 
 ## Configuration essentials
 
@@ -129,14 +158,15 @@ domain types belong in a hook.
   do not compare grades across adapters or drop the basis label.
 - Still out of scope: classification invoked implicitly inside `run`, region-
   level routing, same-run adapter fallback, environment installation, adapter
-  or model bundling, signatures, and cloud identity. Explicit `classify`,
-  generation-indexed rerun chains, and the verified `bundle`/`replay` lifecycle
-  first shipped in 0.4.1.
+  or model bundling, signatures, and cloud identity. Document jobs provide
+  explicit staged attempts; rerun chains retain their generation semantics.
 
 ## Where to read more
 
 | Need | Read |
 |---|---|
+| Document jobs and review | `docs/processing-spec.md`, `docs/document-report-spec.md` |
+| Recovery and image input evidence | `docs/checkpoint-spec.md`, `docs/image-evidence-spec.md` |
 | Exact scope of this version | `docs/capabilities-and-limits.md` |
 | Classifier signals, hooks, and evidence | `docs/classifier.md` |
 | All flags and config keys | `docs/cli.md` |

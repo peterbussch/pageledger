@@ -1,43 +1,64 @@
 # Changelog
 
-All notable changes to PageLedger will be documented in this file.
+Release changes follow the [artifact compatibility policy](docs/run-manifest-spec.md#compatibility-policy).
 
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
-and this project adheres to the artifact compatibility policy documented in
-`docs/run-manifest-spec.md` → Compatibility Policy.
+## 0.5.0 - 2026-09-11
 
-## 0.4.2 - 2026-09-10
+### Added
 
-Prepared release notes; publication requires a separate verified release
-receipt.
+- Document processing jobs with local text extraction, local OCR and optional
+  image-model stages. `process` writes a page-referenced transcript, a document
+  report and a review queue; `inspect-job` summarizes progress and `verify-job`
+  checks the recorded evidence.
+- Durable page checkpoints and `resume` for interrupted runs and jobs.
+  Completed pages are verified before reuse. Changed sources, configuration
+  mismatches and damaged checkpoints stop recovery. Attempts with an unknown
+  provider outcome remain held for review rather than being retried automatically.
+- Explicit processing limits for attempt pages, image pages, tokens and cost.
+  An exhausted limit stops further attempts, including when usage reaches the
+  limit exactly.
+- Image evidence that records the source page, render or crop, dimensions,
+  hashes and adapter identity. An optional OpenAI-compatible example adapter
+  supplies image transport without adding a provider SDK to core.
+
+### Changed
+
+- Consolidated CLI error handling, fresh/resumed page accounting, extractor
+  metadata and path validation. Removed dead aliases and replay bookkeeping.
+- Updated the documentation around document jobs, recovery, review and the
+  existing single-run workflow. Removed obsolete implementation plans and
+  local readiness reports from the maintained documentation tree.
 
 ### Fixed
 
 - When no shared pages are comparable, the human `compare-runs` summary now
   says warning and grade changes were not assessed instead of rendering
   directional zero totals. Per-page evidence and JSON counts are unchanged.
-
-### Documentation
-
-- Clarified that rerun `output_inflation` is adapter-agnostic review evidence,
-  so legitimate OCR recovery from an empty text-layer parent can trigger it.
-- Put the generation-zero bundle requirement beside the first-run rerun and
-  replay workflow.
+- Verification now rejects incomplete replay-page coverage, malformed page
+  identities and malformed worker outcomes. Rerun-depth checks use the same
+  configuration interpretation as execution.
+- Integer columns and integer-only arithmetic preserve values beyond floating
+  point precision. CSV parser failures produce structured error evidence.
+- Strict failure-rate policy thresholds handle equality correctly. Existing
+  arithmetic failure-delta serialization is retained whenever it preserves
+  the exact value.
+- Child runs are bound to their job configuration, and source-page links in
+  document reports resolve from their output directory.
 
 ### Compatibility
 
-- The CLI command/option surface, JSON/result mappings, warning policy, provenance rules,
-  artifact schemas, and `schema_version: "0.1"` contract are unchanged.
-- Grades and `verify-run` describe recorded evidence, not OCR or transcription
-  accuracy. The accepted 5,000-page ledger result remains 1.428x / 29.993%,
-  not the original 2x target and not an OCR-speed claim.
-- This entry describes the prepared candidate; publication requires its own
-  verified release receipt.
+- Existing run artifacts retain `schema_version: "0.1"`. New checkpoint,
+  image-evidence and job artifacts have their own schemas. Generation-indexed
+  `run.adapter_order` semantics are unchanged.
+- Core still depends only on PyYAML; PDF support remains optional. OCR engines
+  and provider dependencies belong to the selected adapters.
+- Grades and verification describe recorded evidence. They do not certify
+  transcription accuracy, downstream interpretation or original-file custody.
+- Includes the reader fixes prepared for 0.4.2, which was not published.
 
 ## 0.4.1 - 2026-09-06
 
-Prepared release notes; publication requires a separate verified release
-receipt.
+Available as the source tag `v0.4.1`; this version was not published to PyPI.
 
 ### Changed
 
@@ -59,8 +80,6 @@ receipt.
 - Replay's honest trust boundaries are documented, including adapter-declared
   material evidence and the non-hermetic credential/network boundary.
 - The public CLI, JSON/result mappings, and artifact schemas are unchanged.
-- This entry describes the prepared candidate; publication requires its own
-  verified release receipt.
 
 ## 0.4.0 - 2026-08-17
 

@@ -3,7 +3,7 @@
 `ExtractionResult.input_evidence` is an optional dictionary, defaulting to
 `None`. Successful extraction provenance includes the descriptor as a top-level
 `input_evidence` field. Older results and checkpoints without the field remain
-readable. The schema is `schemas/image-evidence.schema.json`.
+readable. See the [image evidence schema](../schemas/image-evidence.schema.json).
 
 | Field | Meaning |
 |---|---|
@@ -45,7 +45,7 @@ byte count, and dimensions. Output content hashes and usage remain in ordinary
 provenance; input evidence does not replace them. Completed checkpoint
 provenance must agree with its saved input descriptor.
 
-Image-evidence bundles and replay are currently unsupported. `bundle-run`
+Image-evidence bundles and replay are currently unsupported. `pageledger bundle`
 rejects them explicitly with `image_evidence_unsupported`; it never emits a
 bundle silently omitting the JPEG. Bundle validation rejects transported image
 descriptors too. Existing generation-zero text bundles and replay retain their

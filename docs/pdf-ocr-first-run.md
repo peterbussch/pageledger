@@ -4,31 +4,23 @@ This tutorial walks a PDF (replace the path with your own file) through
 extraction: born-digital first, then scanned via the built-in `pdf_ocr`
 adapter.
 
-PageLedger stays lean: it counts pages, runs configured adapters, writes
-provenance, and audits output. It does not install OCR engines for you.
+PageLedger counts pages, calls configured adapters, and records the output
+with provenance and quality signals. Install OCR engines separately.
 
 For choosing between local OCR, open-source document conversion, cloud OCR, VLM
-adapters, and hybrid workflows, see `docs/ocr-options.md`.
+adapters, and hybrid workflows, see [OCR options](ocr-options.md).
 
 ## 1. Clean install
 
-For the current package-index release:
+Install the PDF extra for 0.5.0:
 
 ```bash
 python3 -m venv /tmp/pageledger-first-run
-/tmp/pageledger-first-run/bin/python -m pip install "pageledger[pdf]"
+/tmp/pageledger-first-run/bin/python -m pip install "pageledger[pdf]==0.5.0"
+/tmp/pageledger-first-run/bin/pageledger --version
 ```
 
-If 0.4.2 is not yet on the package index, verify its exact candidate wheel by
-absolute path in a fresh environment rather than importing a checkout:
-
-```bash
-/tmp/pageledger-first-run/bin/python -m pip install \
-  "/absolute/path/to/pageledger-0.4.2-py3-none-any.whl[pdf]"
-```
-
-Contributors working from a source checkout use `python -m pip install -e
-".[dev,pdf]"`; that is development setup, not the package-install path above.
+Contributors can use the [development setup](../CONTRIBUTING.md).
 
 ## 2. Doctor
 
@@ -126,7 +118,7 @@ run:
 ```
 
 For a full worked example on a real scanned document, see
-`docs/examples/jfk-scanned-archive.md`. To produce a searchable PDF for other
+[the scanned archive example](examples/jfk-scanned-archive.md). To produce a searchable PDF for other
 tools as a side effect, preprocess with `examples/ocrmypdf_preprocess.sh`
 instead and run `pdf_text` on the output.
 
@@ -205,5 +197,14 @@ lineage and cannot be used as bundle baselines.
   failure) vs. `"completed"` (success). Inspect `run.log` for per-page error
   envelopes including adapter name, page ID, and error message. Pages that
   succeeded before the failure have raw artifacts, provenance lines, and quality
-  entries. See `docs/run-manifest-spec.md` → "Failure Recovery and Partial-Run
-  Guarantees" for the full failure scenario table and common error actions.
+  entries. See [failure recovery and partial-run
+  guarantees](run-manifest-spec.md#failure-recovery-and-partial-run-guarantees) for the full failure scenario table and common error actions.
+
+## Document jobs and recovery
+
+For a document that needs both text-layer extraction and OCR, use
+[`process`](processing-spec.md). It manages attempts under one budget and
+produces a source-linked transcript and report. Document jobs retain
+checkpoints automatically; individual `run` commands need `--resumable` at
+creation. Both use [`pageledger resume DIR`](checkpoint-spec.md#get-started)
+after an interruption.

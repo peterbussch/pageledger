@@ -1,10 +1,10 @@
 # Contributing to PageLedger
 
-## Corpus and script reports (most wanted)
+## Corpus and script reports
 
-PageLedger's quality signals are heuristics, and real collections are how
-they improve — the 0.1.7 Unicode fixes exist because clean Indic-script
-prose was being flagged as OCR noise. If PageLedger misjudges your
+Reports from real collections help improve PageLedger's quality heuristics.
+The 0.1.7 Unicode fixes followed reports of clean Indic-script prose being
+flagged as OCR noise. If PageLedger misjudges your
 collection, [open a corpus
 report](https://github.com/peterbussch/pageledger/issues/new?template=corpus-report.yml)
 with:
@@ -24,13 +24,12 @@ bugs, include `pageledger --version`, OS/Python, and the exact command.
 ## Development
 
 ```bash
-pip install -e ".[dev,pdf]"
-python -m pytest tests/pageledger/ -q
-ruff check pageledger/ tests/ examples/
+uv sync --frozen --extra dev --extra pdf
+uv run --frozen --extra dev --extra pdf python -m pytest tests/pageledger/ -q
+uv run --frozen --extra dev --extra pdf ruff check pageledger/ tests/ examples/ scripts/
+uv run --frozen --extra dev --extra pdf mypy pageledger/
 ```
 
-[AGENTS.md](AGENTS.md) is the full operating guide: repository
-orientation, test gotchas, and the constraints changes must respect
-(dependency-light core, adapters stay thin wrappers, record uncertainty
-rather than silently fixing it, docs never describe unimplemented
-behavior as current).
+[AGENTS.md](AGENTS.md) covers repository structure, test requirements and
+implementation constraints. See [the release procedure](docs/releasing.md)
+for package checks and publication.
