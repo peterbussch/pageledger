@@ -487,17 +487,42 @@ def _classify_from_run(
         raise ValueError("Parent route map documents must be a list")
     if len(parent_documents) != len(inputs):
         raise ValueError("Parent manifest and route map document counts do not match")
-    raw_root = (parent / "raw").resolve()
-    for document_index, document in enumerate(parent_documents):
+    # Validate every document before reading raw evidence or calling a classifier hook.
+    for document_index, (document, manifest_input) in enumerate(
+        zip(parent_documents, inputs, strict=True), start=1
+    ):
+        if not isinstance(manifest_input, dict):
+            raise ValueError("Parent manifest contains an invalid input entry")
+        count = manifest_input.get("page_count")
+        if type(count) is not int or count < 1:
+            raise ValueError("Parent manifest input needs a positive page count")
         if not isinstance(document, dict) or not isinstance(document.get("source"), str):
             raise ValueError("Parent route map contains an invalid document")
+        route_pages = document.get("pages")
+        if not isinstance(route_pages, list):
+            raise ValueError("Parent route map has invalid pages")
+        if len(route_pages) != count:
+            raise ValueError(f"Parent route map must cover every page of document {document_index}")
+        seen: set[int] = set()
+        for page in route_pages:
+            if not isinstance(page, dict):
+                raise ValueError("Parent route map has an invalid page")
+            number = page.get("page_number")
+            if (
+                type(number) is not int
+                or not 1 <= number <= count
+                or number in seen
+                or page.get("page_id") != f"doc_{document_index:04d}_page_{number:04d}"
+            ):
+                raise ValueError("Parent route map has an invalid page identity")
+            seen.add(number)
+    raw_root = (parent / "raw").resolve()
+    for document_index, document in enumerate(parent_documents):
         source = Path(document["source"]).expanduser()
         if not source.is_absolute():
             source = parent / source
         source = source.resolve()
         manifest_input = inputs[document_index]
-        if not isinstance(manifest_input, dict):
-            raise ValueError("Parent manifest contains an invalid input entry")
         recorded_hash = manifest_input.get("sha256")
         if isinstance(recorded_hash, str):
             if not source.is_file():
@@ -505,16 +530,9 @@ def _classify_from_run(
             elif _sha256_path(source) != recorded_hash:
                 warnings.append(f"Source changed since parent run: {source}")
         pages: list[dict[str, Any]] = []
-        route_pages = document.get("pages")
-        if not isinstance(route_pages, list):
-            raise ValueError(f"Parent route map has invalid pages for {source}")
-        for page in route_pages:
-            if not isinstance(page, dict):
-                raise ValueError(f"Parent route map has an invalid page for {source}")
-            page_id = page.get("page_id")
-            page_number = page.get("page_number")
-            if not isinstance(page_id, str) or type(page_number) is not int:
-                raise ValueError(f"Parent route map has an invalid page for {source}")
+        for page in document["pages"]:
+            page_id = page["page_id"]
+            page_number = page["page_number"]
             provenance = provenance_by_page.get(page_id)
             quality = quality_by_page.get(page_id)
             raw_path: Path | None = None

@@ -37,7 +37,7 @@ def _write_release_fixture(root: Path, *, citation_version: str = "1.2.3") -> No
 
 
 def test_release_metadata_agrees_for_current_version() -> None:
-    assert check_release(REPO, "v0.5.1") == []
+    assert check_release(REPO, "v0.5.2") == []
 
 
 def test_release_check_rejects_tag_and_metadata_mismatches(tmp_path: Path) -> None:
@@ -129,7 +129,7 @@ def test_package_workflows_run_shared_reader_journey_outside_checkout() -> None:
             assert f'--document "$GITHUB_WORKSPACE/docs/{tutorial}.md"' in command
             assert f'--work-dir "$WORK_ROOT/{tutorial}"' in command
         assert f"--python {isolated_python}" in command
-        assert "--expected-version 0.5.1" in command
+        assert "--expected-version 0.5.2" in command
         assert '--forbid-import-root "$GITHUB_WORKSPACE"' in command
         assert "--source-root" not in command
 

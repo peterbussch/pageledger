@@ -12,11 +12,11 @@ adapters, and hybrid workflows, see [OCR options](ocr-options.md).
 
 ## 1. Clean install
 
-Install the PDF extra for 0.5.1:
+Install the PDF extra for 0.5.2:
 
 ```bash
 python3 -m venv /tmp/pageledger-first-run
-/tmp/pageledger-first-run/bin/python -m pip install "pageledger[pdf]==0.5.1"
+/tmp/pageledger-first-run/bin/python -m pip install "pageledger[pdf]==0.5.2"
 /tmp/pageledger-first-run/bin/pageledger --version
 ```
 

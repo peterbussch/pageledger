@@ -138,9 +138,14 @@ readable.
 - Preserve the route map that governed extraction. `classify --from-run` can
   create a later map from retained raw evidence, but it does not replace the
   map stored in the parent run.
+- Reclassification requires every page declared by the parent manifest, with
+  unique numbers from 1 through its page count and matching document/page IDs.
+  Invalid inventories stop the command before classification or output writes.
+  Missing raw evidence still produces an `unknown` classification; it does not
+  remove that page from the new map.
 - Since route-map.yml is YAML, its field contract is documented in this spec
   rather than a JSON Schema file. These field tables define the v0.1 artifact
-  contract even when the PageLedger package version is 0.5.1.
+  contract even when the PageLedger package version is 0.5.2.
 - Schema validation tests (manual YAML assertions) are in
   `tests/pageledger/test_schemas.py`.
 

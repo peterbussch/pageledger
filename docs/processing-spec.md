@@ -8,7 +8,7 @@ for inspection.
 ## Start with local text and OCR
 
 Document jobs require POSIX advisory locks, available on macOS and Linux.
-Install `"pageledger[pdf]==0.5.1"`, Poppler, and Tesseract for a PDF job. Create
+Install `"pageledger[pdf]==0.5.2"`, Poppler, and Tesseract for a PDF job. Create
 `processing.yml` with the following configuration, or copy the repository's
 [processing example](examples/processing.yml):
 

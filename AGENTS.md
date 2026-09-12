@@ -68,8 +68,19 @@ Three assertions that bite during routine changes:
   mocked binaries don't leak between tests. Keep new subprocess caches on
   that list.
 
-## Constraints for changes
+## GitHub workflow
 
+Use GitHub's native features throughout work on this repository, including
+issues, pull requests, Actions checks, review threads, and releases where they
+fit the task. Read and assess Copilot's guidance during development and review.
+Verify findings against the code, address substantive issues, and request
+another Copilot review after substantive fixes when available.
+
+Before merging, read all reviews and inline comments alongside the check
+results. Check again before publishing through the protected release environment.
+Passing checks do not mean reviews are complete or their findings resolved.
+
+## Constraints for changes
 - Core stays dependency-light: PyYAML only; `pypdf` behind the `[pdf]` extra.
 - Adapters are thin wrappers; PageLedger owns the process around extraction,
   not extraction itself. No OCR engines, provider SDKs, or pricing catalogs

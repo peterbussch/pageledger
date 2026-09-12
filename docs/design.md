@@ -4,7 +4,7 @@ PageLedger has two controllers. `run` applies one adapter to routed pages;
 `process` coordinates a document's local text, OCR, and optional image attempts.
 Both retain page identities and extraction evidence. The
 [capabilities and limits](capabilities-and-limits.md) and
-[artifact schemas](../schemas/) define the 0.5.1 contract.
+[artifact schemas](../schemas/) define the 0.5.2 contract.
 
 ```mermaid
 flowchart TD

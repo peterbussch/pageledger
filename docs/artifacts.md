@@ -294,7 +294,7 @@ at rest rather than locking them against concurrent mutation. See the
 
 Artifact fields follow the compatibility policy in
 [`run-manifest-spec.md`](run-manifest-spec.md): additions are backward
-compatible within a schema version. PageLedger 0.5.1 therefore retains
+compatible within a schema version. PageLedger 0.5.2 therefore retains
 `schema_version: "0.1"` for its optional classifier, escalation, alert, and
 rollup, and replay-linkage fields. The schemas in
 [`schemas/`](../schemas/) are the machine-readable authority, enforced by

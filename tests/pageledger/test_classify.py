@@ -337,6 +337,116 @@ def test_cli_json_success_and_source_mode_error(
     assert "requires input paths" in json.loads(captured.out)["error"]
 
 
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        "truncated",
+        "empty",
+        "duplicate",
+        "zero",
+        "negative",
+        "past_end",
+        "empty_id",
+        "wrong_document_id",
+        "wrong_page_id",
+    ],
+)
+def test_from_run_rejects_incomplete_or_misidentified_parent_inventory(tmp_path, mutation):
+    source = tmp_path / "source.txt"
+    source.write_text("first page\fsecond page")
+    config = _write_config(tmp_path)
+    parent = tmp_path / "parent"
+    run(inputs=[source], config_path=config, out_dir=parent, dry_run=False)
+    path = parent / "route-map.yml"
+    route = yaml.safe_load(path.read_text())
+    pages = route["documents"][0]["pages"]
+    if mutation == "truncated":
+        pages.pop()
+    elif mutation == "empty":
+        pages.clear()
+    elif mutation == "duplicate":
+        pages[1] = dict(pages[0])
+    elif mutation in {"zero", "negative", "past_end"}:
+        pages[1]["page_number"] = {"zero": 0, "negative": -1, "past_end": 3}[mutation]
+    else:
+        pages[1]["page_id"] = {
+            "empty_id": "",
+            "wrong_document_id": "doc_0002_page_0002",
+            "wrong_page_id": "doc_0001_page_0001",
+        }[mutation]
+    path.write_text(yaml.safe_dump(route))
+    before = {p: p.read_bytes() for p in parent.rglob("*") if p.is_file()}
+    output = tmp_path / "classified.yml"
+
+    with pytest.raises(ValueError, match="[Pp]age"):
+        classify(inputs=[], config_path=config, out_path=output, from_run=parent)
+
+    assert not output.exists()
+    assert not output.with_suffix(".evidence.jsonl").exists()
+    assert {p: p.read_bytes() for p in parent.rglob("*") if p.is_file()} == before
+
+
+def test_from_run_validates_all_documents_before_classifying_any_page(tmp_path, monkeypatch):
+    first = tmp_path / "first.txt"
+    second = tmp_path / "second.txt"
+    first.write_text("first document")
+    second.write_text("first page\fsecond page")
+    config = _write_config(tmp_path)
+    parent = tmp_path / "parent"
+    run(inputs=[first, second], config_path=config, out_dir=parent, dry_run=False)
+    path = parent / "route-map.yml"
+    route = yaml.safe_load(path.read_text())
+    route["documents"][1]["pages"].pop()
+    path.write_text(yaml.safe_dump(route))
+
+    def unexpected_classification(*args, **kwargs):
+        pytest.fail("Classification started before the parent inventory was validated")
+
+    monkeypatch.setattr("pageledger.classifier.classify_signals", unexpected_classification)
+    with pytest.raises(ValueError, match="every page"):
+        classify(
+            inputs=[], config_path=config, out_path=tmp_path / "classified.yml", from_run=parent
+        )
+
+
+@pytest.mark.parametrize("count", [None, -1, 0, True, "2", 2.0])
+def test_from_run_rejects_invalid_manifest_page_count(tmp_path, count):
+    source = tmp_path / "source.txt"
+    source.write_text("first page\fsecond page")
+    config = _write_config(tmp_path)
+    parent = tmp_path / "parent"
+    run(inputs=[source], config_path=config, out_dir=parent, dry_run=False)
+    path = parent / "manifest.json"
+    manifest = json.loads(path.read_text())
+    manifest["inputs"][0]["page_count"] = count
+    path.write_text(json.dumps(manifest))
+    with pytest.raises(ValueError, match="positive page count"):
+        classify(
+            inputs=[], config_path=config, out_path=tmp_path / "classified.yml", from_run=parent
+        )
+
+
+def test_from_run_preserves_complete_multi_document_inventory(tmp_path):
+    sources = [tmp_path / "first.txt", tmp_path / "second.txt"]
+    for source in sources:
+        source.write_text("ordinary prose " * 30 + "\f" + "another page " * 30)
+    config = _write_config(tmp_path)
+    parent = tmp_path / "parent"
+    run(inputs=sources, config_path=config, out_dir=parent, dry_run=False)
+    parent_route = parent / "route-map.yml"
+    route = yaml.safe_load(parent_route.read_text())
+    route["documents"][1]["pages"].reverse()
+    parent_route.write_text(yaml.safe_dump(route))
+    output = tmp_path / "classified.yml"
+
+    result = classify(inputs=[], config_path=config, out_path=output, from_run=parent)
+    rerouted = tmp_path / "rerouted"
+    run(inputs=sources, config_path=config, out_dir=rerouted, dry_run=False, routes_path=output)
+
+    assert result["pages"] == 4
+    assert verify_run(rerouted)["status"] == "pass"
+
+
 def test_generated_config_is_ready_for_classify(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
