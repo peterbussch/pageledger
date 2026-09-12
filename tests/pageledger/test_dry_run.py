@@ -219,9 +219,7 @@ def test_dry_run_writes_auditable_artifacts(tmp_path):
     assert audit["quarantine_queue"] == []
     assert audit["review_queue"][0]["page_id"] == page["page_id"]
 
-    rerun_manifest = yaml.safe_load(
-        (out_dir / "rerun-manifest.yml").read_text(encoding="utf-8")
-    )
+    rerun_manifest = yaml.safe_load((out_dir / "rerun-manifest.yml").read_text(encoding="utf-8"))
     assert rerun_manifest["parent_run_id"] == manifest["run_id"]
     assert rerun_manifest["reason"] == "dry_run"
     assert rerun_manifest["max_rerun_depth"] == 2
@@ -230,7 +228,7 @@ def test_dry_run_writes_auditable_artifacts(tmp_path):
 
 
 def test_package_exports_release_version():
-    assert pageledger.__version__ == "0.5.0"
+    assert pageledger.__version__ == "0.5.1"
 
 
 def test_dry_run_expands_directory_inputs_in_stable_order(tmp_path):
@@ -267,7 +265,9 @@ run:
         str((input_dir / "a.txt").resolve()),
         str((input_dir / "b.txt").resolve()),
     ]
-    assert [page["page_id"] for document in route_map["documents"] for page in document["pages"]] == [
+    assert [
+        page["page_id"] for document in route_map["documents"] for page in document["pages"]
+    ] == [
         "doc_0001_page_0001",
         "doc_0002_page_0001",
     ]
@@ -436,10 +436,10 @@ taxonomy:
     manifest = json.loads((tmp_path / "run" / "manifest.json").read_text(encoding="utf-8"))
     assert manifest["summary"] == {
         "pages_total": 1,
-            "pages_extracted": 0,
-            "pages_skipped": 1,
-            "pages_routed_review": 0,
-            "pages_quarantined": 0,
+        "pages_extracted": 0,
+        "pages_skipped": 1,
+        "pages_routed_review": 0,
+        "pages_quarantined": 0,
         "records_normalized": 0,
         "estimated_cost_usd": 0.0,
         "quality_warning_pages": 0,
@@ -579,9 +579,7 @@ def test_text_adapter_writes_raw_output_and_provenance(tmp_path):
             "input_types": ["text"],
             "output_types": ["text"],
             "capabilities": ["embedded_text", "local"],
-            "reproducibility_profile": manifest["extractors"][0][
-                "reproducibility_profile"
-            ],
+            "reproducibility_profile": manifest["extractors"][0]["reproducibility_profile"],
         }
     ]
     assert provenance["result"]["raw_artifact"] == "raw/doc_0001_page_0001.txt"
@@ -701,8 +699,12 @@ run:
 
 
 def test_configured_prompt_is_routed_to_adapter_and_provenance(tmp_path, monkeypatch):
-    monkeypatch.setattr(config_module, "load_adapter", lambda name, options=None: PromptEchoAdapter())
-    monkeypatch.setattr(runner_module, "load_adapter", lambda name, options=None: PromptEchoAdapter())
+    monkeypatch.setattr(
+        config_module, "load_adapter", lambda name, options=None: PromptEchoAdapter()
+    )
+    monkeypatch.setattr(
+        runner_module, "load_adapter", lambda name, options=None: PromptEchoAdapter()
+    )
     source = tmp_path / "sample.txt"
     source.write_text("example page", encoding="utf-8")
     config = tmp_path / "pageledger.yml"
@@ -723,7 +725,9 @@ run:
 
     run(inputs=[source], config_path=config, out_dir=out_dir, dry_run=False)
 
-    assert (out_dir / "raw" / "doc_0001_page_0001.txt").read_text(encoding="utf-8") == "table-default-v1"
+    assert (out_dir / "raw" / "doc_0001_page_0001.txt").read_text(
+        encoding="utf-8"
+    ) == "table-default-v1"
     route_map = yaml.safe_load((out_dir / "route-map.yml").read_text(encoding="utf-8"))
     assert route_map["documents"][0]["pages"][0]["prompt"] == "table-default-v1"
     provenance = json.loads((out_dir / "provenance.jsonl").read_text(encoding="utf-8"))
@@ -758,12 +762,13 @@ run:
 
     run(inputs=[source], config_path=config, out_dir=out_dir, dry_run=False)
 
-    assert (out_dir / "raw" / "doc_0001_page_0001.txt").read_text(encoding="utf-8") == "retried result"
+    assert (out_dir / "raw" / "doc_0001_page_0001.txt").read_text(
+        encoding="utf-8"
+    ) == "retried result"
     manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
     assert manifest["status"] == "completed"
     log_events = [
-        json.loads(line)
-        for line in (out_dir / "run.log").read_text(encoding="utf-8").splitlines()
+        json.loads(line) for line in (out_dir / "run.log").read_text(encoding="utf-8").splitlines()
     ]
     assert [event["status"] for event in log_events] == ["retry", "extracted"]
     assert log_events[0]["attempt"] == 1
@@ -799,8 +804,7 @@ run:
     run(inputs=[source], config_path=config, out_dir=out_dir, dry_run=False, log_level="WARNING")
 
     log_events = [
-        json.loads(line)
-        for line in (out_dir / "run.log").read_text(encoding="utf-8").splitlines()
+        json.loads(line) for line in (out_dir / "run.log").read_text(encoding="utf-8").splitlines()
     ]
     assert [event["status"] for event in log_events] == ["retry"]
     assert log_events[0]["level"] == "WARNING"
@@ -888,7 +892,9 @@ run:
         str(second.resolve()),
         str(third.resolve()),
     ]
-    assert [page["page_id"] for document in route_map["documents"] for page in document["pages"]] == [
+    assert [
+        page["page_id"] for document in route_map["documents"] for page in document["pages"]
+    ] == [
         "doc_0001_page_0001",
         "doc_0002_page_0001",
         "doc_0003_page_0001",
@@ -934,8 +940,12 @@ run:
 
 
 def test_path_like_adapter_format_writes_failed_manifest_and_run_log(tmp_path, monkeypatch):
-    monkeypatch.setattr(config_module, "load_adapter", lambda name, options=None: BadFormatAdapter())
-    monkeypatch.setattr(runner_module, "load_adapter", lambda name, options=None: BadFormatAdapter())
+    monkeypatch.setattr(
+        config_module, "load_adapter", lambda name, options=None: BadFormatAdapter()
+    )
+    monkeypatch.setattr(
+        runner_module, "load_adapter", lambda name, options=None: BadFormatAdapter()
+    )
     source = tmp_path / "sample.txt"
     source.write_text("example page", encoding="utf-8")
     config = tmp_path / "pageledger.yml"
@@ -1191,7 +1201,9 @@ def test_config_validation_reports_unsupported_adapter(tmp_path):
         encoding="utf-8",
     )
 
-    with pytest.raises(ValueError, match="Unsupported adapter 'imaginary'. Valid adapters: text, pdf_text"):
+    with pytest.raises(
+        ValueError, match="Unsupported adapter 'imaginary'. Valid adapters: text, pdf_text"
+    ):
         run(inputs=[source], config_path=config, out_dir=tmp_path / "run", dry_run=False)
 
 
@@ -1930,9 +1942,7 @@ def test_docs_examples_smoke_without_heavy_ocr_installs():
     ]:
         py_compile.compile(str(example), doraise=True)
 
-    ocrmypdf_example = (root / "examples" / "ocrmypdf_preprocess.sh").read_text(
-        encoding="utf-8"
-    )
+    ocrmypdf_example = (root / "examples" / "ocrmypdf_preprocess.sh").read_text(encoding="utf-8")
     assert "ocrmypdf --skip-text" in ocrmypdf_example
     assert os.access(root / "examples" / "ocrmypdf_preprocess.sh", os.X_OK)
 

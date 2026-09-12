@@ -39,14 +39,14 @@
     "tests/pageledger/test_benchmark_workloads.py"
   ],
   "recipe_sha256": {
-    "scripts/pageledger_bench/workloads.py": "74dfc035ef87be6e3101e98b5bc2b7dc6eace0f938393ca5af1509ac3890a118"
+    "scripts/pageledger_bench/workloads.py": "77a9d27136b529addcdeed156a4f2e07389af7dbe9c40309a7fbdd268c20531b"
   },
   "schema_sha256": {
     "audit.schema.json": "4f18182140c5aee9eb4d40e0fd7d49df25e5dfdd5c3c426041c1fed520521848",
-    "cost.schema.json": "59fc9c713df17fa33a88ad42131523f442385b1cb9baf791bb227e7d0e98518a",
+    "cost.schema.json": "542482726ac823edcfd85d711e8501201bc12f58ec7f325ed39a06289d84cc29",
     "manifest.schema.json": "f1b7d36066c1b61bcb9cc7d1445b02d440c76f122b089c554dd05979735cbd58",
     "normalized-page.schema.json": "7d0a89882a2347c86e1c03b1a7d4a27015bcf5aac91db408f0d75c7d9c6d9483",
-    "provenance-line.schema.json": "8cfdad21e2db03fcc555dad0d91c62cb0d31e1de8031fd6b001fad168576f68a",
+    "provenance-line.schema.json": "f0912b845dd0496d23a164ddca0e33c1ef01d8344d8705444c575f3e4e6562ec",
     "quality-line.schema.json": "353f6e59ef95d796d0c03ce4971b874039bec09dbbf02ee1e89000d9f6d817c5",
     "run-log-line.schema.json": "8eb64137d57f4736ad54ad898103d3c6abbaa951d2c2f2bc22028d864bc56113"
   },

@@ -109,7 +109,7 @@ def load_schema_spec(config_data: dict[str, Any]) -> SchemaSpec | None:
         ):
             raise ValueError(f"{prefix}.aliases must be a list of strings")
         column_type = raw.get("type", "string")
-        if column_type not in COLUMN_TYPES:
+        if not isinstance(column_type, str) or column_type not in COLUMN_TYPES:
             raise ValueError(f"{prefix}.type must be one of: {', '.join(sorted(COLUMN_TYPES))}")
         required = raw.get("required", False)
         if not isinstance(required, bool):
@@ -246,9 +246,7 @@ def align_page(
             extra.append(header)
             if matched_column is not None:
                 kept_header = next(
-                    source
-                    for source, target in matched.items()
-                    if target == matched_column.name
+                    source for source, target in matched.items() if target == matched_column.name
                 )
                 structure_issues.append(
                     {
@@ -291,9 +289,7 @@ def align_page(
         for column in spec.columns:
             column_index = matched_columns.get(column.name)
             raw_value = (
-                row[column_index]
-                if column_index is not None and column_index < len(row)
-                else None
+                row[column_index] if column_index is not None and column_index < len(row) else None
             )
             value, error = _coerce(raw_value, column.type)
             if error is not None:
@@ -339,9 +335,7 @@ def align_page(
             "required_column_coverage": (
                 1.0 if required_total == 0 else round(required_matched / required_total, 4)
             ),
-            "column_coverage": (
-                round(len(matched_columns) / len(spec.columns), 4)
-            ),
+            "column_coverage": (round(len(matched_columns) / len(spec.columns), 4)),
             "arithmetic_pass_rate": (
                 None if total_checked == 0 else round(total_passed / total_checked, 4)
             ),
@@ -431,9 +425,7 @@ def align_run(
     previous_rerun = yaml.safe_load(rerun_path.read_text(encoding="utf-8"))
     route_map = yaml.safe_load((out_dir / "route-map.yml").read_text(encoding="utf-8"))
     routes = {
-        page["page_id"]: page
-        for document in route_map["documents"]
-        for page in document["pages"]
+        page["page_id"]: page for document in route_map["documents"] for page in document["pages"]
     }
     review_queue, quarantine_queue = rebuild_policy_queues(
         config=config,
@@ -445,9 +437,7 @@ def align_run(
     )
     audit["review_queue"] = review_queue
     audit["quarantine_queue"] = quarantine_queue
-    manifest["summary"]["pages_quarantined"] = len({
-        item["page_id"] for item in quarantine_queue
-    })
+    manifest["summary"]["pages_quarantined"] = len({item["page_id"] for item in quarantine_queue})
     grades = {entry["page_id"]: entry for entry in quality_entries}
     aligned_at = (
         datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")

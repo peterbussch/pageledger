@@ -88,7 +88,9 @@ def main() -> int:
 
     clean_install_checks(stress_dir, pageledger_python, pageledger_bin, summary)
     run_pageledger_builtin_checks(stress_dir, pdf, pageledger_python, pageledger_bin, summary)
-    run_ocrmypdf_roundtrip(stress_dir, pdf, pageledger_python, pageledger_bin, summary, args.ocrmypdf_bin)
+    run_ocrmypdf_roundtrip(
+        stress_dir, pdf, pageledger_python, pageledger_bin, summary, args.ocrmypdf_bin
+    )
     run_tesseract_adapter_probe(
         stress_dir,
         pdf,
@@ -130,9 +132,20 @@ def build_wheel(stress_dir: Path, summary: dict[str, Any]) -> Path:
     builder = stress_dir / "venvs" / "builder"
     run(["python3", "-m", "venv", str(builder)], "create-builder-venv", summary)
     python = builder / "bin" / "python"
-    run([str(python), "-m", "pip", "install", "--quiet", "--upgrade", "pip", "build"], "install-build", summary, timeout=OCR_COMMAND_TIMEOUT)
+    run(
+        [str(python), "-m", "pip", "install", "--quiet", "--upgrade", "pip", "build"],
+        "install-build",
+        summary,
+        timeout=OCR_COMMAND_TIMEOUT,
+    )
     dist = stress_dir / "dist"
-    result = run([str(python), "-m", "build", "--wheel", "--outdir", str(dist)], "build-wheel", summary, cwd=ROOT, timeout=OCR_COMMAND_TIMEOUT)
+    result = run(
+        [str(python), "-m", "build", "--wheel", "--outdir", str(dist)],
+        "build-wheel",
+        summary,
+        cwd=ROOT,
+        timeout=OCR_COMMAND_TIMEOUT,
+    )
     if result.returncode != 0:
         summary["critical_failures"].append("Could not build PageLedger wheel")
         raise SystemExit(1)
@@ -147,8 +160,18 @@ def create_pageledger_venv(stress_dir: Path, wheel: Path, summary: dict[str, Any
     venv = stress_dir / "venvs" / "pageledger"
     run(["python3", "-m", "venv", str(venv)], "create-pageledger-venv", summary)
     python = venv / "bin" / "python"
-    run([str(python), "-m", "pip", "install", "--quiet", "--upgrade", "pip"], "upgrade-pageledger-pip", summary, timeout=OCR_COMMAND_TIMEOUT)
-    result = run([str(python), "-m", "pip", "install", "--quiet", f"{wheel}[pdf]"], "install-pageledger-wheel-pdf", summary, timeout=OCR_COMMAND_TIMEOUT)
+    run(
+        [str(python), "-m", "pip", "install", "--quiet", "--upgrade", "pip"],
+        "upgrade-pageledger-pip",
+        summary,
+        timeout=OCR_COMMAND_TIMEOUT,
+    )
+    result = run(
+        [str(python), "-m", "pip", "install", "--quiet", f"{wheel}[pdf]"],
+        "install-pageledger-wheel-pdf",
+        summary,
+        timeout=OCR_COMMAND_TIMEOUT,
+    )
     if result.returncode != 0:
         summary["critical_failures"].append("Could not install PageLedger wheel with [pdf] extra")
         raise SystemExit(1)
@@ -161,7 +184,11 @@ def clean_install_checks(
     pageledger_bin: Path,
     summary: dict[str, Any],
 ) -> None:
-    run([str(python), "-c", "import pageledger; print(pageledger.__version__)"], "import-pageledger", summary)
+    run(
+        [str(python), "-c", "import pageledger; print(pageledger.__version__)"],
+        "import-pageledger",
+        summary,
+    )
     run([str(pageledger_bin), "--help"], "pageledger-help", summary)
     run([str(pageledger_bin), "run", "--help"], "pageledger-run-help", summary)
     doctor = run([str(pageledger_bin), "doctor", "--json"], "pageledger-doctor-json", summary)
@@ -215,14 +242,43 @@ def run_pageledger_builtin_checks(
     )
 
     dry_out = stress_dir / "runs" / "pdf-text-dry"
-    run([str(pageledger_bin), "run", str(pdf), "--config", str(pdf_config), "--out", str(dry_out), "--dry-run", "--json"], "pageledger-pdf-text-dry-run", summary, timeout=OCR_COMMAND_TIMEOUT)
+    run(
+        [
+            str(pageledger_bin),
+            "run",
+            str(pdf),
+            "--config",
+            str(pdf_config),
+            "--out",
+            str(dry_out),
+            "--dry-run",
+            "--json",
+        ],
+        "pageledger-pdf-text-dry-run",
+        summary,
+        timeout=OCR_COMMAND_TIMEOUT,
+    )
     dry_manifest = read_manifest(dry_out)
     summary["checks"]["pdf_text_dry_run"] = dry_manifest
     if dry_manifest.get("summary", {}).get("pages_total") != 72:
         summary["critical_failures"].append("pdf_text dry-run did not report 72 pages")
 
     exec_out = stress_dir / "runs" / "pdf-text-execute"
-    run([str(pageledger_bin), "run", str(pdf), "--config", str(pdf_config), "--out", str(exec_out), "--json"], "pageledger-pdf-text-execute", summary, timeout=OCR_COMMAND_TIMEOUT)
+    run(
+        [
+            str(pageledger_bin),
+            "run",
+            str(pdf),
+            "--config",
+            str(pdf_config),
+            "--out",
+            str(exec_out),
+            "--json",
+        ],
+        "pageledger-pdf-text-execute",
+        summary,
+        timeout=OCR_COMMAND_TIMEOUT,
+    )
     exec_manifest = read_manifest(exec_out)
     raw_count = len(list((exec_out / "raw").glob("*.txt"))) if (exec_out / "raw").exists() else 0
     provenance_lines = line_count(exec_out / "provenance.jsonl")
@@ -231,20 +287,46 @@ def run_pageledger_builtin_checks(
         "raw_count": raw_count,
         "provenance_lines": provenance_lines,
     }
-    if exec_manifest.get("summary", {}).get("pages_extracted") != 72 or raw_count != 72 or provenance_lines != 72:
-        summary["critical_failures"].append("pdf_text execute did not produce 72 raw/provenance outputs")
+    if (
+        exec_manifest.get("summary", {}).get("pages_extracted") != 72
+        or raw_count != 72
+        or provenance_lines != 72
+    ):
+        summary["critical_failures"].append(
+            "pdf_text execute did not produce 72 raw/provenance outputs"
+        )
 
     mismatch_out = stress_dir / "runs" / "text-on-pdf"
-    mismatch = run([str(pageledger_bin), "run", str(pdf), "--config", str(text_config), "--out", str(mismatch_out), "--json"], "pageledger-text-on-pdf-preflight", summary)
+    mismatch = run(
+        [
+            str(pageledger_bin),
+            "run",
+            str(pdf),
+            "--config",
+            str(text_config),
+            "--out",
+            str(mismatch_out),
+            "--json",
+        ],
+        "pageledger-text-on-pdf-preflight",
+        summary,
+    )
     summary["checks"]["text_on_pdf_preflight"] = {
         "returncode": mismatch.returncode,
         "out_dir_exists": mismatch_out.exists(),
         "stderr_tail": mismatch.stderr_tail,
     }
     if mismatch.returncode == 0 or mismatch_out.exists():
-        summary["critical_failures"].append("text adapter on PDF did not fail before writing output")
+        summary["critical_failures"].append(
+            "text adapter on PDF did not fail before writing output"
+        )
     else:
-        update_command(summary, "pageledger-text-on-pdf-preflight", classification="ok", note="Expected preflight failure with no output directory")
+        update_command(
+            summary,
+            "pageledger-text-on-pdf-preflight",
+            classification="ok",
+            note="Expected preflight failure with no output directory",
+        )
 
 
 def run_ocrmypdf_roundtrip(
@@ -258,22 +340,60 @@ def run_ocrmypdf_roundtrip(
     tool_venv = stress_dir / "venvs" / "ocrmypdf"
     run(["python3", "-m", "venv", str(tool_venv)], "create-ocrmypdf-venv", summary)
     python = tool_venv / "bin" / "python"
-    run([str(python), "-m", "pip", "install", "--quiet", "--upgrade", "pip", "ocrmypdf"], "install-ocrmypdf", summary, timeout=OCR_COMMAND_TIMEOUT)
+    run(
+        [str(python), "-m", "pip", "install", "--quiet", "--upgrade", "pip", "ocrmypdf"],
+        "install-ocrmypdf",
+        summary,
+        timeout=OCR_COMMAND_TIMEOUT,
+    )
     ocrmypdf = ocrmypdf_bin or tool_venv / "bin" / "ocrmypdf"
     if not ocrmypdf.exists():
-        record_skip(summary, "ocrmypdf-force-ocr", "external tool/environment", "ocrmypdf command was not installed")
+        record_skip(
+            summary,
+            "ocrmypdf-force-ocr",
+            "external tool/environment",
+            "ocrmypdf command was not installed",
+        )
         return
 
     ocr_pdf = stress_dir / "ocr" / "ocrmypdf-force-pages-1-2.pdf"
     ocr_pdf.parent.mkdir(exist_ok=True)
-    result = run([str(ocrmypdf), "--force-ocr", "--pages", "1-2", "--output-type", "pdf", str(pdf), str(ocr_pdf)], "ocrmypdf-force-ocr", summary, timeout=OCR_COMMAND_TIMEOUT)
+    result = run(
+        [
+            str(ocrmypdf),
+            "--force-ocr",
+            "--pages",
+            "1-2",
+            "--output-type",
+            "pdf",
+            str(pdf),
+            str(ocr_pdf),
+        ],
+        "ocrmypdf-force-ocr",
+        summary,
+        timeout=OCR_COMMAND_TIMEOUT,
+    )
     if result.returncode != 0:
         update_command(summary, "ocrmypdf-force-ocr", classification="external tool/environment")
         return
 
     config = stress_dir / "configs" / "pageledger-pdf.yml"
     out_dir = stress_dir / "runs" / "ocrmypdf-roundtrip"
-    run([str(pageledger_bin), "run", str(ocr_pdf), "--config", str(config), "--out", str(out_dir), "--json"], "pageledger-over-ocrmypdf-output", summary, timeout=OCR_COMMAND_TIMEOUT)
+    run(
+        [
+            str(pageledger_bin),
+            "run",
+            str(ocr_pdf),
+            "--config",
+            str(config),
+            "--out",
+            str(out_dir),
+            "--json",
+        ],
+        "pageledger-over-ocrmypdf-output",
+        summary,
+        timeout=OCR_COMMAND_TIMEOUT,
+    )
     summary["checks"]["ocrmypdf_roundtrip"] = {
         "manifest": read_manifest(out_dir),
         "first_page_sample": read_text_sample(out_dir / "raw" / "doc_0001_page_0001.txt"),
@@ -318,9 +438,28 @@ def run_tesseract_adapter_probe(
         env["PAGELEDGER_TESSERACT"] = str(tesseract_bin)
     env["PAGELEDGER_MAX_HEAVY_PAGES"] = str(max(1, max_pages))
     out_dir = stress_dir / "runs" / "tesseract-custom-adapter"
-    result = run([str(pageledger_bin), "run", str(pdf), "--config", str(config), "--out", str(out_dir), "--json"], "pageledger-tesseract-custom-adapter", summary, env=env, timeout=OCR_COMMAND_TIMEOUT)
+    result = run(
+        [
+            str(pageledger_bin),
+            "run",
+            str(pdf),
+            "--config",
+            str(config),
+            "--out",
+            str(out_dir),
+            "--json",
+        ],
+        "pageledger-tesseract-custom-adapter",
+        summary,
+        env=env,
+        timeout=OCR_COMMAND_TIMEOUT,
+    )
     if result.returncode != 0:
-        update_command(summary, "pageledger-tesseract-custom-adapter", classification="external tool/environment")
+        update_command(
+            summary,
+            "pageledger-tesseract-custom-adapter",
+            classification="external tool/environment",
+        )
     summary["checks"]["tesseract_adapter"] = {
         "returncode": result.returncode,
         "manifest": read_manifest(out_dir) if out_dir.exists() else {},
@@ -346,38 +485,103 @@ def run_heavy_tool_probes(
 
     docling = str(docling_bin) if docling_bin else shutil.which("docling")
     if docling:
-        run([docling, "convert", "--to", "md", "--to", "json", "--output", str(heavy_dir / "docling"), str(pdf)], "docling-convert", summary, timeout=OCR_COMMAND_TIMEOUT)
+        run(
+            [
+                docling,
+                "convert",
+                "--to",
+                "md",
+                "--to",
+                "json",
+                "--output",
+                str(heavy_dir / "docling"),
+                str(pdf),
+            ],
+            "docling-convert",
+            summary,
+            timeout=OCR_COMMAND_TIMEOUT,
+        )
     else:
-        record_skip(summary, "docling-convert", "external tool/environment", "docling command not found")
+        record_skip(
+            summary, "docling-convert", "external tool/environment", "docling command not found"
+        )
 
     marker = str(marker_bin) if marker_bin else shutil.which("marker_single")
     if marker:
-        run([marker, str(pdf), "--page_range", f"0-{max_pages - 1}", "--output_format", "markdown", "--paginate_output", "--output_dir", str(heavy_dir / "marker")], "marker-single", summary, timeout=OCR_COMMAND_TIMEOUT)
+        run(
+            [
+                marker,
+                str(pdf),
+                "--page_range",
+                f"0-{max_pages - 1}",
+                "--output_format",
+                "markdown",
+                "--paginate_output",
+                "--output_dir",
+                str(heavy_dir / "marker"),
+            ],
+            "marker-single",
+            summary,
+            timeout=OCR_COMMAND_TIMEOUT,
+        )
     else:
-        record_skip(summary, "marker-single", "external tool/environment", "marker_single command not found")
+        record_skip(
+            summary, "marker-single", "external tool/environment", "marker_single command not found"
+        )
 
     surya = str(surya_bin) if surya_bin else shutil.which("surya_ocr")
     has_surya_backend = shutil.which("llama-server") or os.environ.get("SURYA_INFERENCE_URL")
     if surya and has_surya_backend:
-        run([surya, str(pdf), "--page_range", f"0-{max_pages - 1}", "--output_dir", str(heavy_dir / "surya")], "surya-ocr", summary, timeout=OCR_COMMAND_TIMEOUT)
+        run(
+            [
+                surya,
+                str(pdf),
+                "--page_range",
+                f"0-{max_pages - 1}",
+                "--output_dir",
+                str(heavy_dir / "surya"),
+            ],
+            "surya-ocr",
+            summary,
+            timeout=OCR_COMMAND_TIMEOUT,
+        )
     elif surya:
-        record_skip(summary, "surya-ocr", "external tool/environment", "surya_ocr found but no llama-server or SURYA_INFERENCE_URL backend was found")
+        record_skip(
+            summary,
+            "surya-ocr",
+            "external tool/environment",
+            "surya_ocr found but no llama-server or SURYA_INFERENCE_URL backend was found",
+        )
     else:
-        record_skip(summary, "surya-ocr", "external tool/environment", "surya_ocr command not found")
+        record_skip(
+            summary, "surya-ocr", "external tool/environment", "surya_ocr command not found"
+        )
 
 
 def run_cloud_probe(stress_dir: Path, pdf: Path, max_pages: int, summary: dict[str, Any]) -> None:
     if max_pages <= 0:
         record_skip(summary, "cloud-vlm-ocr", "backlog", "max cloud pages is 0")
         return
-    provider_info = next(((name, key) for name, key in CLOUD_ENV_ORDER if os.environ.get(key)), None)
+    provider_info = next(
+        ((name, key) for name, key in CLOUD_ENV_ORDER if os.environ.get(key)), None
+    )
     if provider_info is None:
-        record_skip(summary, "cloud-vlm-ocr", "external tool/environment", "no supported cloud OCR/VLM env var is set")
+        record_skip(
+            summary,
+            "cloud-vlm-ocr",
+            "external tool/environment",
+            "no supported cloud OCR/VLM env var is set",
+        )
         return
     provider, _key = provider_info
     image = render_first_page(stress_dir, pdf, summary)
     if image is None:
-        record_skip(summary, f"cloud-vlm-ocr-{provider}", "external tool/environment", "could not render page 1 for cloud probe")
+        record_skip(
+            summary,
+            f"cloud-vlm-ocr-{provider}",
+            "external tool/environment",
+            "could not render page 1 for cloud probe",
+        )
         return
 
     venv = stress_dir / "venvs" / f"cloud-{provider}"
@@ -389,15 +593,38 @@ def run_cloud_probe(stress_dir: Path, pdf: Path, max_pages: int, summary: dict[s
         "claude": ["anthropic"],
         "openai": ["openai"],
     }
-    run([str(python), "-m", "pip", "install", "--quiet", "--upgrade", "pip", *package_map[provider]], f"install-cloud-{provider}-deps", summary, timeout=OCR_COMMAND_TIMEOUT)
+    run(
+        [
+            str(python),
+            "-m",
+            "pip",
+            "install",
+            "--quiet",
+            "--upgrade",
+            "pip",
+            *package_map[provider],
+        ],
+        f"install-cloud-{provider}-deps",
+        summary,
+        timeout=OCR_COMMAND_TIMEOUT,
+    )
     probe = stress_dir / f"cloud_{provider}_probe.py"
     output = stress_dir / "cloud" / f"{provider}-page-1.json"
     output.parent.mkdir(exist_ok=True)
     probe.write_text(CLOUD_PROBES[provider], encoding="utf-8")
-    result = run([str(python), str(probe), str(image), str(output)], f"cloud-vlm-ocr-{provider}", summary, timeout=OCR_COMMAND_TIMEOUT)
+    result = run(
+        [str(python), str(probe), str(image), str(output)],
+        f"cloud-vlm-ocr-{provider}",
+        summary,
+        timeout=OCR_COMMAND_TIMEOUT,
+    )
     if result.returncode != 0:
-        update_command(summary, f"cloud-vlm-ocr-{provider}", classification="external tool/environment")
-    summary["checks"][f"cloud_{provider}"] = json.loads(output.read_text(encoding="utf-8")) if output.exists() else {}
+        update_command(
+            summary, f"cloud-vlm-ocr-{provider}", classification="external tool/environment"
+        )
+    summary["checks"][f"cloud_{provider}"] = (
+        json.loads(output.read_text(encoding="utf-8")) if output.exists() else {}
+    )
 
 
 def render_first_page(stress_dir: Path, pdf: Path, summary: dict[str, Any]) -> Path | None:
@@ -408,7 +635,11 @@ def render_first_page(stress_dir: Path, pdf: Path, summary: dict[str, Any]) -> P
     image_dir = stress_dir / "cloud" / "rendered"
     image_dir.mkdir(parents=True, exist_ok=True)
     prefix = image_dir / "page"
-    result = run([pdftoppm, "-f", "1", "-l", "1", "-r", "120", "-png", str(pdf), str(prefix)], "render-cloud-page-1", summary)
+    result = run(
+        [pdftoppm, "-f", "1", "-l", "1", "-r", "120", "-png", str(pdf), str(prefix)],
+        "render-cloud-page-1",
+        summary,
+    )
     if result.returncode != 0:
         return None
     images = sorted(image_dir.glob("page-*.png"))
@@ -523,7 +754,9 @@ def line_count(path: Path) -> int:
 
 
 def write_json(path: Path, data: dict[str, Any]) -> None:
-    path.write_text(json.dumps(data, indent=2, ensure_ascii=False, sort_keys=True) + "\n", encoding="utf-8")
+    path.write_text(
+        json.dumps(data, indent=2, ensure_ascii=False, sort_keys=True) + "\n", encoding="utf-8"
+    )
 
 
 def write_markdown(path: Path, summary: dict[str, Any]) -> None:
@@ -573,7 +806,7 @@ def tail(text: str | bytes, limit: int = 4000) -> str:
     return text[-limit:]
 
 
-TESSERACT_ADAPTER_CODE = r'''
+TESSERACT_ADAPTER_CODE = r"""
 from __future__ import annotations
 
 import subprocess
@@ -635,11 +868,11 @@ class TesseractCliAdapter:
             warnings=[],
             usage={"pages": 1, "tokens": None, "compute_seconds": None, "cost_usd": None},
         )
-'''
+"""
 
 
 CLOUD_PROBES = {
-    "gemini": r'''
+    "gemini": r"""
 from __future__ import annotations
 
 import json
@@ -677,8 +910,8 @@ output_path.write_text(
     + "\n",
     encoding="utf-8",
 )
-''',
-    "openrouter": r'''
+""",
+    "openrouter": r"""
 from __future__ import annotations
 
 import base64
@@ -723,8 +956,8 @@ output_path.write_text(
     + "\n",
     encoding="utf-8",
 )
-''',
-    "claude": r'''
+""",
+    "claude": r"""
 from __future__ import annotations
 
 import base64
@@ -769,8 +1002,8 @@ output_path.write_text(
     + "\n",
     encoding="utf-8",
 )
-''',
-    "openai": r'''
+""",
+    "openai": r"""
 from __future__ import annotations
 
 import base64
@@ -814,7 +1047,7 @@ output_path.write_text(
     + "\n",
     encoding="utf-8",
 )
-''',
+""",
 }
 
 

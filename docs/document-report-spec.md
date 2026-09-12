@@ -13,6 +13,7 @@ and retained attempt evidence are the sources for reconstructing the report. A r
 | Field | Meaning |
 | --- | --- |
 | `schema_version` | `"0.1"` |
+| `report_format` | Optional `"0.5.1"` marker for the current human summary layout. Its absence identifies a 0.5.0 report and selects the legacy renderer during verification. |
 | `job_id`, `created_at` | Job identity and creation timestamp |
 | `source` | Original `path`, exact byte `sha256`, `page_count`, and annotation inventory |
 | `selected_pages` | Unique, one-based source page numbers requested for this job |
@@ -183,6 +184,31 @@ replaces a decision. The active `page.review` equals the latest receipt; earlier
 receipts remain source/page/output-bound evidence. Applying the same latest
 receipt again does not append a duplicate. Reports preserve the full history in
 `document.json` while the human summary displays the active decision.
+
+## Human summary rendering
+
+Current reports marked with `report_format: "0.5.1"` use separate page-summary
+columns for `Current output`, `Review status`, and `Recorded concerns`. Current
+output links to the selected completed artifact and identifies its extraction
+stage. Review status describes whether source review is pending or records the
+bound human receipt, including source-only decisions. Recorded concerns retain
+the readable meaning of every stored review reason. A concern is attributed to
+an attempt only when that attempt records matching warning, classification, or
+alignment evidence; otherwise it is shown as a retained review concern without
+inventing an origin. An explicit `empty_text` warning is rendered as empty text
+returned by the named extraction stage.
+
+These labels describe presentation only. They do not change `selected_attempt`,
+`disposition`, `review_reasons`, review receipts, or the unresolved-page count.
+For example, an OCR output can be the current selected output while a prior
+empty native-text attempt remains a recorded `blank_candidate` concern awaiting
+source review. Failed and unknown latest attempts remain visible even when a
+previous completed output is selected. A source-only human receipt is shown as
+such and does not acquire a selected output.
+
+Reports without `report_format` use the 0.5.0 renderer. `verify_document_report`
+and `verify_job` select that renderer for those reports so existing report bytes
+remain verifiable; current reports select the 0.5.1 renderer from their marker.
 
 ## Integrity and rendering APIs
 

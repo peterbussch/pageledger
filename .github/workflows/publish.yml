@@ -12,7 +12,7 @@ on:
           - verify
           - pypi
       production_confirmation:
-        description: For PyPI, type the exact release tag (for example v0.5.0)
+        description: For PyPI, type the exact release tag (for example v0.5.1)
         required: false
         type: string
 
@@ -111,6 +111,7 @@ jobs:
       - name: Verify release source
         run: |
           uv run --frozen --extra dev --extra pdf ruff check pageledger/ tests/ examples/ scripts/
+          uv run --frozen --extra dev --extra pdf ruff format --check pageledger/ tests/ examples/ scripts/
           uv run --frozen --extra dev --extra pdf mypy pageledger/
           uv run --frozen --extra dev --extra pdf python -m pytest tests/pageledger/ -q -m "not stress"
 
@@ -133,40 +134,7 @@ jobs:
           uv run --frozen --extra dev python scripts/check_release.py "$RELEASE_TAG"
           uv run --frozen --extra dev python -m build
           uv run --frozen --extra dev twine check dist/*
-          uv run --frozen --extra dev python - <<'PY'
-          from pathlib import Path
-          from tarfile import open as open_tar
-          from zipfile import ZipFile
-
-          dist = Path("dist")
-          wheel = next(dist.glob("pageledger-*.whl"))
-          with ZipFile(wheel) as archive:
-              wheel_names = set(archive.namelist())
-          schemas = tuple(path.name for path in Path("schemas").glob("*.schema.json"))
-          assert schemas
-          assert all(
-              any(name.endswith(".data/data/share/pageledger/schemas/" + schema) for name in wheel_names)
-              for schema in schemas
-          )
-
-          sdist = next(dist.glob("pageledger-*.tar.gz"))
-          with open_tar(sdist, "r:gz") as archive:
-              sdist_names = set(archive.getnames())
-          required = (
-              "docs/first-run.md",
-              "docs/performance.md",
-              "docs/releasing.md",
-              "examples/run_first_run.py",
-          )
-          assert all(any(name.endswith("/" + path) for name in sdist_names) for path in required)
-          assert not any(
-              prefix in name
-              for name in sdist_names
-              for prefix in ("/docs/superpowers/", "/docs/proposals/", "/docs/reports/")
-          )
-          assert not any("/.planning/" in name or "/.superpowers/" in name for name in sdist_names)
-          print("wheel schema and sdist documentation inventories verified")
-          PY
+          uv run --frozen --extra dev python scripts/check_distributions.py dist
       - name: Smoke-test the exact wheel
         env:
           PYTHONPATH: ""
@@ -180,7 +148,34 @@ jobs:
             --document "$GITHUB_WORKSPACE/docs/first-run.md" \
             --work-dir "$WORK_ROOT/first-run" \
             --python /tmp/pageledger-release-wheel/bin/python \
-            --expected-version 0.5.0 \
+            --expected-version 0.5.1 \
+            --forbid-import-root "$GITHUB_WORKSPACE"
+          /tmp/pageledger-release-wheel/bin/python examples/run_first_run.py \
+            --document "$GITHUB_WORKSPACE/docs/document-first-run.md" \
+            --work-dir "$WORK_ROOT/document-first-run" \
+            --python /tmp/pageledger-release-wheel/bin/python \
+            --expected-version 0.5.1 \
+            --forbid-import-root "$GITHUB_WORKSPACE"
+      - name: Smoke-test the exact sdist
+        env:
+          PYTHONPATH: ""
+        run: |
+          python -m venv /tmp/pageledger-release-sdist
+          /tmp/pageledger-release-sdist/bin/pip install "$(ls dist/pageledger-*.tar.gz)[pdf]"
+          /tmp/pageledger-release-sdist/bin/pageledger --version
+          /tmp/pageledger-release-sdist/bin/pageledger doctor --json
+          WORK_ROOT="$(mktemp -d)"
+          /tmp/pageledger-release-sdist/bin/python examples/run_first_run.py \
+            --document "$GITHUB_WORKSPACE/docs/first-run.md" \
+            --work-dir "$WORK_ROOT/first-run" \
+            --python /tmp/pageledger-release-sdist/bin/python \
+            --expected-version 0.5.1 \
+            --forbid-import-root "$GITHUB_WORKSPACE"
+          /tmp/pageledger-release-sdist/bin/python examples/run_first_run.py \
+            --document "$GITHUB_WORKSPACE/docs/document-first-run.md" \
+            --work-dir "$WORK_ROOT/document-first-run" \
+            --python /tmp/pageledger-release-sdist/bin/python \
+            --expected-version 0.5.1 \
             --forbid-import-root "$GITHUB_WORKSPACE"
       - name: Record distribution hashes
         run: sha256sum dist/pageledger-* > dist/SHA256SUMS

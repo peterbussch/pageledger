@@ -113,9 +113,7 @@ class LocalLlmCleanupAdapter:
             or not math.isfinite(temperature)
             or temperature < 0
         ):
-            raise ValueError(
-                "run.adapter_options.temperature must be a finite non-negative number"
-            )
+            raise ValueError("run.adapter_options.temperature must be a finite non-negative number")
         self._ocr = PdfOcrAdapter(dpi=dpi, lang=lang)
         self.model = model
         self.max_tokens = max_tokens
@@ -137,9 +135,7 @@ class LocalLlmCleanupAdapter:
             self._llm = load(self.model)
         model, tokenizer = self._llm
         messages = [{"role": "user", "content": prompt}]
-        templated = tokenizer.apply_chat_template(
-            messages, add_generation_prompt=True
-        )
+        templated = tokenizer.apply_chat_template(messages, add_generation_prompt=True)
         completion = generate(
             model,
             tokenizer,
@@ -185,8 +181,7 @@ class LocalLlmCleanupAdapter:
         usage = dict(ocr_result.usage)
         usage["tokens"] = tokens
         usage["compute_seconds"] = round(
-            (usage.get("compute_seconds") or 0.0)
-            + (time.perf_counter() - started),
+            (usage.get("compute_seconds") or 0.0) + (time.perf_counter() - started),
             3,
         )
         return ExtractionResult(

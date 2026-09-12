@@ -40,10 +40,14 @@ from pageledger.adapters import ExtractionResult, PdfOcrAdapter
 
 # Letters abolished in 1918 and their modern equivalents.
 PREREFORM_CHARS = {
-    "ѣ": "е", "Ѣ": "Е",  # yat
-    "і": "и", "І": "И",  # decimal i
-    "ѳ": "ф", "Ѳ": "Ф",  # fita
-    "ѵ": "и", "Ѵ": "И",  # izhitsa
+    "ѣ": "е",
+    "Ѣ": "Е",  # yat
+    "і": "и",
+    "І": "И",  # decimal i
+    "ѳ": "ф",
+    "Ѳ": "Ф",  # fita
+    "ѵ": "и",
+    "Ѵ": "И",  # izhitsa
 }
 
 # Modern vowels plus pre-reform yat, which normalizes to a vowel.

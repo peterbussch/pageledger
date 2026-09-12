@@ -157,9 +157,7 @@ def test_rerun_flags_output_inflation_and_records_parent_evidence(tmp_path: Path
         (0, 1000, True),
     ],
 )
-def test_output_inflation_thresholds(
-    parent_count: int, child_count: int, warns: bool
-) -> None:
+def test_output_inflation_thresholds(parent_count: int, child_count: int, warns: bool) -> None:
     evidence, warnings = _output_integrity(
         "x" * child_count,
         {"character_count": parent_count},
@@ -223,9 +221,7 @@ def test_artifact_json_writers_reject_non_finite_numbers(tmp_path: Path) -> None
         ({"usage": {"pages": 1, "compute_seconds": True}}, "compute_seconds"),
     ],
 )
-def test_adapter_result_validation_rejects_dishonest_values(
-    changes: dict, message: str
-) -> None:
+def test_adapter_result_validation_rejects_dishonest_values(changes: dict, message: str) -> None:
     result = SimpleNamespace(
         content="text",
         format="text",

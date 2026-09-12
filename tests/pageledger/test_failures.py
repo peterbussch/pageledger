@@ -26,13 +26,15 @@ from pageledger.runner import (
 # Adapter fails after prior pages succeed → partial artifacts
 # =========================================================================
 
+
 def test_adapter_fails_on_page_3_of_5_preserves_prior_pages(tmp_path):
     """Pages 1-2 are extracted; page 3 fails; manifest shows partial counts."""
     source = tmp_path / "multi.txt"
     source.write_text("p1\fp2\fp3\fp4\fp5\n", encoding="utf-8")
 
     config = tmp_path / "config.yml"
-    config.write_text(textwrap.dedent("""\
+    config.write_text(
+        textwrap.dedent("""\
         schema_version: "0.1"
         taxonomy:
           page_types:
@@ -40,12 +42,16 @@ def test_adapter_fails_on_page_3_of_5_preserves_prior_pages(tmp_path):
               default_action: transcribe_text
         run:
           adapter: test_fail_p3:FailingOnPage3Adapter
-        """), encoding="utf-8")
+        """),
+        encoding="utf-8",
+    )
 
     # Write a custom adapter module that fails on page 3
     import os
+
     mod_path = tmp_path / "test_fail_p3.py"
-    mod_path.write_text(textwrap.dedent("""\
+    mod_path.write_text(
+        textwrap.dedent("""\
     from dataclasses import dataclass
     from pathlib import Path
     from pageledger.adapters import ExtractionResult
@@ -72,14 +78,29 @@ def test_adapter_fails_on_page_3_of_5_preserves_prior_pages(tmp_path):
                 model=None, warnings=[],
                 usage={"pages": 1, "tokens": None, "compute_seconds": None, "cost_usd": None},
             )
-    """))
+    """)
+    )
 
     env = {**os.environ, "PYTHONPATH": str(tmp_path)}
     import subprocess
+
     result = subprocess.run(
-        [sys.executable, "-m", "pageledger", "run", str(source),
-         "--config", str(config), "--out", str(tmp_path / "out"), "--json"],
-        capture_output=True, text=True, cwd=str(tmp_path), env=env,
+        [
+            sys.executable,
+            "-m",
+            "pageledger",
+            "run",
+            str(source),
+            "--config",
+            str(config),
+            "--out",
+            str(tmp_path / "out"),
+            "--json",
+        ],
+        capture_output=True,
+        text=True,
+        cwd=str(tmp_path),
+        env=env,
     )
     assert result.returncode == 1  # run failed
 
@@ -98,14 +119,16 @@ def test_adapter_fails_on_page_3_of_5_preserves_prior_pages(tmp_path):
 
     # Provenance: only 2 lines (pages 1-2)
     provenance_lines = [
-        line for line in (out_dir / "provenance.jsonl").read_text(encoding="utf-8").splitlines()
+        line
+        for line in (out_dir / "provenance.jsonl").read_text(encoding="utf-8").splitlines()
         if line.strip()
     ]
     assert len(provenance_lines) == 2
 
     # Quality: only 2 entries
     quality_lines = [
-        line for line in (out_dir / "quality.jsonl").read_text(encoding="utf-8").splitlines()
+        line
+        for line in (out_dir / "quality.jsonl").read_text(encoding="utf-8").splitlines()
         if line.strip()
     ]
     assert len(quality_lines) == 2
@@ -119,6 +142,7 @@ def test_adapter_fails_on_page_3_of_5_preserves_prior_pages(tmp_path):
 
     # Route map still has all 5 pages
     import yaml
+
     route_map = yaml.safe_load((out_dir / "route-map.yml").read_text(encoding="utf-8"))
     assert len(route_map["documents"][0]["pages"]) == 5
 
@@ -130,13 +154,17 @@ def test_adapter_fails_on_page_3_of_5_preserves_prior_pages(tmp_path):
 # Budget mid-run → artifacts intact, budget error in run.log
 # =========================================================================
 
+
 def test_budget_exceeded_mid_run_preserves_partial_output(tmp_path):
     """Budget exceeded after some pages; artifacts show completed pages."""
     source = tmp_path / "multi.txt"
-    source.write_text("page one content here\fpage two also here\fpage three here too\n", encoding="utf-8")
+    source.write_text(
+        "page one content here\fpage two also here\fpage three here too\n", encoding="utf-8"
+    )
 
     config = tmp_path / "config.yml"
-    config.write_text(textwrap.dedent("""\
+    config.write_text(
+        textwrap.dedent("""\
         schema_version: "0.1"
         taxonomy:
           page_types:
@@ -148,7 +176,9 @@ def test_budget_exceeded_mid_run_preserves_partial_output(tmp_path):
             cost_per_page: 50.0
           budget:
             max_usd: 75
-        """), encoding="utf-8")
+        """),
+        encoding="utf-8",
+    )
 
     out_dir = tmp_path / "out"
     with pytest.raises(BudgetExceededError, match="Budget exceeded"):
@@ -166,11 +196,19 @@ def test_budget_exceeded_mid_run_preserves_partial_output(tmp_path):
     assert not (out_dir / "raw" / "doc_0001_page_0003.txt").exists()
 
     # Provenance has 2 lines
-    prov_count = sum(1 for line in (out_dir / "provenance.jsonl").read_text(encoding="utf-8").splitlines() if line.strip())
+    prov_count = sum(
+        1
+        for line in (out_dir / "provenance.jsonl").read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    )
     assert prov_count == 2
 
     # Run log has budget_exceeded entry
-    log_lines = [(line, json.loads(line)) for line in (out_dir / "run.log").read_text(encoding="utf-8").splitlines() if line.strip()]
+    log_lines = [
+        (line, json.loads(line))
+        for line in (out_dir / "run.log").read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
     budget_entries = [entry for _, entry in log_lines if entry.get("status") == "budget_exceeded"]
     assert len(budget_entries) >= 1
     assert "max_usd=75" in budget_entries[0]["error"]
@@ -181,9 +219,79 @@ def test_budget_exceeded_mid_run_preserves_partial_output(tmp_path):
     assert cost["budget"]["usd"]["exceeded"] is True
 
 
+def test_budget_at_exact_cost_cap_stops_before_next_page(tmp_path):
+    """A page that reaches the USD cap must prevent the next adapter call."""
+
+    class CountingAdapter:
+        name = "counting"
+        version = "1.0"
+        deterministic = True
+        input_types = ("text",)
+        output_types = ("text",)
+        capabilities = ("local",)
+
+        def __init__(self):
+            self.calls = 0
+
+        def supports(self, action):
+            return action == "transcribe_text"
+
+        def extract(self, source, *, page_id, page_number, action, prompt=None):
+            from pageledger.adapters import ExtractionResult
+
+            _ = source, page_id, action, prompt
+            self.calls += 1
+            return ExtractionResult(
+                content=f"page {page_number}",
+                format="text",
+                confidence=None,
+                model=None,
+                warnings=[],
+                usage={
+                    "pages": 1,
+                    "tokens": None,
+                    "compute_seconds": None,
+                    "cost_usd": 1.0,
+                },
+            )
+
+    source = tmp_path / "multi.txt"
+    source.write_text("page one\fpage two\n", encoding="utf-8")
+    config = tmp_path / "config.yml"
+    config.write_text(
+        textwrap.dedent("""\
+        schema_version: "0.1"
+        taxonomy:
+          page_types:
+            prose:
+              default_action: transcribe_text
+        run:
+          adapter: text
+          budget:
+            max_usd: 1
+        """),
+        encoding="utf-8",
+    )
+    adapter = CountingAdapter()
+
+    with pytest.raises(BudgetExceededError, match="Budget reached before"):
+        run(
+            inputs=[source],
+            config_path=config,
+            out_dir=tmp_path / "out",
+            dry_run=False,
+            _loaded_adapter=adapter,
+        )
+
+    assert adapter.calls == 1
+    manifest = json.loads((tmp_path / "out" / "manifest.json").read_text())
+    assert manifest["summary"]["pages_extracted"] == 1
+
+
 # =========================================================================
 # Retry exhausted → retry entries + final error
 # =========================================================================
+
 
 def test_retry_exhausted_writes_retry_and_error_entries(tmp_path):
     """Adapter always fails; retry WARNING entries precede final ERROR entry."""
@@ -193,7 +301,8 @@ def test_retry_exhausted_writes_retry_and_error_entries(tmp_path):
     source.write_text("first page\fsecond page\n", encoding="utf-8")
 
     config = tmp_path / "config.yml"
-    config.write_text(textwrap.dedent("""\
+    config.write_text(
+        textwrap.dedent("""\
         schema_version: "0.1"
         taxonomy:
           page_types:
@@ -203,10 +312,13 @@ def test_retry_exhausted_writes_retry_and_error_entries(tmp_path):
           adapter: test_retry_fail:AlwaysFailsAdapter
           retry:
             max_retries: 2
-        """), encoding="utf-8")
+        """),
+        encoding="utf-8",
+    )
 
     mod_path = tmp_path / "test_retry_fail.py"
-    mod_path.write_text(textwrap.dedent("""\
+    mod_path.write_text(
+        textwrap.dedent("""\
     from dataclasses import dataclass
     from pageledger.adapters import ExtractionResult
 
@@ -224,20 +336,36 @@ def test_retry_exhausted_writes_retry_and_error_entries(tmp_path):
 
         def extract(self, source, *, page_id, page_number, action, prompt=None):
             raise TimeoutError("simulated timeout")
-    """))
+    """)
+    )
 
     env = {**os.environ, "PYTHONPATH": str(tmp_path)}
     import subprocess
+
     result = subprocess.run(
-        [sys.executable, "-m", "pageledger", "run", str(source),
-         "--config", str(config), "--out", str(tmp_path / "out"), "--json"],
-        capture_output=True, text=True, cwd=str(tmp_path), env=env,
+        [
+            sys.executable,
+            "-m",
+            "pageledger",
+            "run",
+            str(source),
+            "--config",
+            str(config),
+            "--out",
+            str(tmp_path / "out"),
+            "--json",
+        ],
+        capture_output=True,
+        text=True,
+        cwd=str(tmp_path),
+        env=env,
     )
     assert result.returncode == 1
 
     out_dir = tmp_path / "out"
     log_lines = [
-        json.loads(line) for line in (out_dir / "run.log").read_text(encoding="utf-8").splitlines()
+        json.loads(line)
+        for line in (out_dir / "run.log").read_text(encoding="utf-8").splitlines()
         if line.strip()
     ]
 
@@ -269,7 +397,8 @@ def test_continue_policy_finishes_later_pages_and_queues_failure(tmp_path):
     source = tmp_path / "multi.txt"
     source.write_text("one\ftwo\fthree", encoding="utf-8")
     module = tmp_path / "fail_second.py"
-    module.write_text(textwrap.dedent("""\
+    module.write_text(
+        textwrap.dedent("""\
         from pageledger.adapters import ExtractionResult
 
         class Adapter:
@@ -288,9 +417,12 @@ def test_continue_policy_finishes_later_pages_and_queues_failure(tmp_path):
                     content=f"page {page_number}", format="text", confidence=None,
                     model=None, warnings=[], usage={"pages": 1, "tokens": None,
                     "compute_seconds": None, "cost_usd": None})
-        """), encoding="utf-8")
+        """),
+        encoding="utf-8",
+    )
     config = tmp_path / "config.yml"
-    config.write_text(textwrap.dedent("""\
+    config.write_text(
+        textwrap.dedent("""\
         schema_version: "0.1"
         taxonomy:
           page_types:
@@ -298,11 +430,16 @@ def test_continue_policy_finishes_later_pages_and_queues_failure(tmp_path):
         run:
           adapter: fail_second:Adapter
           on_page_error: continue
-        """), encoding="utf-8")
+        """),
+        encoding="utf-8",
+    )
     out_dir = tmp_path / "out"
 
     result = run(
-        inputs=[source], config_path=config, out_dir=out_dir, dry_run=False,
+        inputs=[source],
+        config_path=config,
+        out_dir=out_dir,
+        dry_run=False,
         adapter_path=tmp_path,
     )
 
@@ -316,10 +453,9 @@ def test_continue_policy_finishes_later_pages_and_queues_failure(tmp_path):
         for item in audit["review_queue"]
     )
     import yaml
+
     rerun = yaml.safe_load((out_dir / "rerun-manifest.yml").read_text(encoding="utf-8"))
-    failed_items = [
-        item for item in rerun["items"] if "extraction_failed" in item["reason"]
-    ]
+    failed_items = [item for item in rerun["items"] if "extraction_failed" in item["reason"]]
     assert [item["page_number"] for item in failed_items] == [2]
     assert verify_run(out_dir)["status"] == "pass"
 
@@ -330,7 +466,8 @@ def test_consecutive_failure_breaker_queues_unattempted_pages(tmp_path):
     source = tmp_path / "multi.txt"
     source.write_text("one\ftwo\fthree\ffour", encoding="utf-8")
     module = tmp_path / "always_fail.py"
-    module.write_text(textwrap.dedent("""\
+    module.write_text(
+        textwrap.dedent("""\
         class Adapter:
             name = "always-fail"
             version = "1"
@@ -342,9 +479,12 @@ def test_consecutive_failure_breaker_queues_unattempted_pages(tmp_path):
             def page_count(self, source): return 4
             def extract(self, source, *, page_id, page_number, action, prompt=None):
                 raise RuntimeError("service unavailable")
-        """), encoding="utf-8")
+        """),
+        encoding="utf-8",
+    )
     config = tmp_path / "config.yml"
-    config.write_text(textwrap.dedent("""\
+    config.write_text(
+        textwrap.dedent("""\
         schema_version: "0.1"
         taxonomy:
           page_types:
@@ -353,12 +493,17 @@ def test_consecutive_failure_breaker_queues_unattempted_pages(tmp_path):
           adapter: always_fail:Adapter
           on_page_error: continue
           max_consecutive_failures: 2
-        """), encoding="utf-8")
+        """),
+        encoding="utf-8",
+    )
     out_dir = tmp_path / "out"
 
     with pytest.raises(RuntimeError, match="Circuit breaker opened"):
         run(
-            inputs=[source], config_path=config, out_dir=out_dir, dry_run=False,
+            inputs=[source],
+            config_path=config,
+            out_dir=out_dir,
+            dry_run=False,
             adapter_path=tmp_path,
         )
 
@@ -376,12 +521,14 @@ def test_consecutive_failure_breaker_queues_unattempted_pages(tmp_path):
 # Dry-run never fails
 # =========================================================================
 
+
 def test_dry_run_succeeds_even_with_errors_in_inputs(tmp_path):
     """Dry-run succeeds even with unreadable inputs (routing happens before access)."""
     source = tmp_path / "doc.txt"
     source.write_text("hello\n", encoding="utf-8")
     config = tmp_path / "config.yml"
-    config.write_text(textwrap.dedent("""\
+    config.write_text(
+        textwrap.dedent("""\
         schema_version: "0.1"
         taxonomy:
           page_types:
@@ -389,7 +536,9 @@ def test_dry_run_succeeds_even_with_errors_in_inputs(tmp_path):
               default_action: transcribe_text
         run:
           adapter: text
-        """), encoding="utf-8")
+        """),
+        encoding="utf-8",
+    )
 
     out_dir = tmp_path / "out"
     # Dry-run with a valid config and adapter should complete
@@ -405,12 +554,14 @@ def test_dry_run_succeeds_even_with_errors_in_inputs(tmp_path):
 # Failed run does NOT claim completion
 # =========================================================================
 
+
 def test_failed_run_manifest_status_is_failed_not_completed(tmp_path):
     """Every failure path produces 'failed' or 'partial', never 'completed'."""
     source = tmp_path / "doc.txt"
     source.write_text("test\n", encoding="utf-8")
     config = tmp_path / "config.yml"
-    config.write_text(textwrap.dedent("""\
+    config.write_text(
+        textwrap.dedent("""\
         schema_version: "0.1"
         taxonomy:
           page_types:
@@ -420,7 +571,9 @@ def test_failed_run_manifest_status_is_failed_not_completed(tmp_path):
           adapter: text
           budget:
             max_pages: 0
-        """), encoding="utf-8")
+        """),
+        encoding="utf-8",
+    )
 
     out_dir = tmp_path / "out"
     # Preflight budget exceeded → no run dir
@@ -430,7 +583,8 @@ def test_failed_run_manifest_status_is_failed_not_completed(tmp_path):
 
     # Verify that completed runs say "completed"
     config2 = tmp_path / "config2.yml"
-    config2.write_text(textwrap.dedent("""\
+    config2.write_text(
+        textwrap.dedent("""\
         schema_version: "0.1"
         taxonomy:
           page_types:
@@ -438,7 +592,9 @@ def test_failed_run_manifest_status_is_failed_not_completed(tmp_path):
               default_action: transcribe_text
         run:
           adapter: text
-        """), encoding="utf-8")
+        """),
+        encoding="utf-8",
+    )
     out_dir2 = tmp_path / "out2"
     run(inputs=[source], config_path=config2, out_dir=out_dir2, dry_run=False)
     manifest = json.loads((out_dir2 / "manifest.json").read_text(encoding="utf-8"))
@@ -448,6 +604,7 @@ def test_failed_run_manifest_status_is_failed_not_completed(tmp_path):
 # =========================================================================
 # Secrets do not appear in logs
 # =========================================================================
+
 
 @pytest.mark.parametrize(
     "secret_text",
@@ -477,16 +634,19 @@ def test_adapter_error_envelope_discards_adapter_controlled_diagnostics(secret_t
     assert error.stdout == "<redacted>"
     assert error.stderr == "<redacted>"
 
+
 def test_run_log_does_not_contain_environment_secrets(tmp_path, monkeypatch):
     """Adapter exception messages in run.log do not expose env vars."""
     import os
+
     monkeypatch.setenv("MY_SECRET_KEY", "sk-should-not-leak")
 
     source = tmp_path / "doc.txt"
     source.write_text("hello\n", encoding="utf-8")
 
     mod_path = tmp_path / "test_secret_fail.py"
-    mod_path.write_text(textwrap.dedent("""\
+    mod_path.write_text(
+        textwrap.dedent("""\
     from dataclasses import dataclass
     from pageledger.adapters import ExtractionResult
 
@@ -507,10 +667,12 @@ def test_run_log_does_not_contain_environment_secrets(tmp_path, monkeypatch):
             error.stdout = "Authorization: Bearer sk-stdout-should-not-leak"
             error.stderr = "password=stderr-should-not-leak"
             raise error
-    """))
+    """)
+    )
 
     config = tmp_path / "config.yml"
-    config.write_text(textwrap.dedent("""\
+    config.write_text(
+        textwrap.dedent("""\
         schema_version: "0.1"
         taxonomy:
           page_types:
@@ -518,14 +680,30 @@ def test_run_log_does_not_contain_environment_secrets(tmp_path, monkeypatch):
               default_action: transcribe_text
         run:
           adapter: test_secret_fail:SecretFailingAdapter
-        """), encoding="utf-8")
+        """),
+        encoding="utf-8",
+    )
 
     env = {**os.environ, "PYTHONPATH": str(tmp_path)}
     import subprocess
+
     completed = subprocess.run(
-        [sys.executable, "-m", "pageledger", "run", str(source),
-         "--config", str(config), "--out", str(tmp_path / "out"), "--json"],
-        capture_output=True, text=True, cwd=str(tmp_path), env=env,
+        [
+            sys.executable,
+            "-m",
+            "pageledger",
+            "run",
+            str(source),
+            "--config",
+            str(config),
+            "--out",
+            str(tmp_path / "out"),
+            "--json",
+        ],
+        capture_output=True,
+        text=True,
+        cwd=str(tmp_path),
+        env=env,
     )
     assert completed.returncode != 0
     terminal_text = completed.stdout + completed.stderr

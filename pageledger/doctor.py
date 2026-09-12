@@ -48,6 +48,8 @@ CLOUD_ENV_EXPLANATIONS = {
     "OPENROUTER_API_KEY": "Optional for OpenRouter VLM adapters.",
     "OPENAI_API_KEY": "Optional for OpenAI VLM adapters.",
 }
+
+
 def build_doctor_report() -> dict[str, Any]:
     return {
         "pageledger_version": __version__,
@@ -60,10 +62,7 @@ def build_doctor_report() -> dict[str, Any]:
         "optional_packages": {
             "pypdf": {"available": importlib.util.find_spec("pypdf") is not None}
         },
-        "external_commands": {
-            name: _command_report(name)
-            for name in EXTERNAL_COMMANDS
-        },
+        "external_commands": {name: _command_report(name) for name in EXTERNAL_COMMANDS},
         "ocr_languages": _ocr_languages_report(),
         "cloud_environment": {
             name: {
@@ -101,7 +100,9 @@ def _command_report(name: str) -> dict[str, Any]:
         "available": available,
         "path": path,
         "version": _command_version(path, version_args) if path else None,
-        "explanation": "Command is available on PATH." if available else f"{name} was not found on PATH.",
+        "explanation": "Command is available on PATH."
+        if available
+        else f"{name} was not found on PATH.",
         "install_hint": install_hint,
     }
 

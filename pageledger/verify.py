@@ -60,11 +60,7 @@ def verify_run(
         return _report(declared_root.absolute(), errors, warnings, counts)
     declared_manifest_path = root / "manifest.json"
     manifest_path = _safe_resolve(declared_manifest_path)
-    if (
-        declared_manifest_path.is_symlink()
-        or manifest_path is None
-        or manifest_path.parent != root
-    ):
+    if declared_manifest_path.is_symlink() or manifest_path is None or manifest_path.parent != root:
         _add(
             errors,
             "manifest_path_invalid",
@@ -75,16 +71,22 @@ def verify_run(
     if not manifest_path.is_file():
         if (root / "checkpoint.json").exists():
             from .checkpoint import Checkpoint
+
             try:
                 checkpoint = Checkpoint(root)
                 from .checkpoint import read_record
+
                 checkpoint.job = read_record(root / "checkpoint.json")
                 checkpoint.validate(sources=check_external_sources)
                 states = [record["state"] for record in checkpoint.records.values()]
                 counts["routed_pages"] = len(states)
                 counts["extracted_pages"] = states.count("completed")
-                _add(errors, "run_incomplete", "Recovery records verify, but manifest is not committed",
-                     artifact="checkpoint.json")
+                _add(
+                    errors,
+                    "run_incomplete",
+                    "Recovery records verify, but manifest is not committed",
+                    artifact="checkpoint.json",
+                )
             except (OSError, ValueError, TypeError, KeyError) as exc:
                 _add(errors, "checkpoint_invalid", str(exc), artifact="checkpoint.json")
         else:
@@ -264,8 +266,7 @@ def verify_run(
                 "pageledger_version",
             )
             if any(
-                not isinstance(alignment.get(field), str)
-                or not alignment.get(field)
+                not isinstance(alignment.get(field), str) or not alignment.get(field)
                 for field in required_alignment_fields
             ):
                 _add(
@@ -335,9 +336,7 @@ def verify_run(
             _add(errors, "artifact_structure_invalid", "Route documents must be a list")
         else:
             for document_index, document in enumerate(documents):
-                route_sources.append(
-                    document.get("source") if isinstance(document, dict) else None
-                )
+                route_sources.append(document.get("source") if isinstance(document, dict) else None)
                 if not isinstance(document, dict) or not isinstance(document.get("pages"), list):
                     _add(errors, "artifact_structure_invalid", "Route document is malformed")
                     continue
@@ -348,9 +347,7 @@ def verify_run(
                     else None
                 )
                 source_sha256 = (
-                    manifest_input.get("sha256")
-                    if isinstance(manifest_input, dict)
-                    else None
+                    manifest_input.get("sha256") if isinstance(manifest_input, dict) else None
                 )
                 if (
                     document.get("source_sha256") is not None
@@ -375,7 +372,11 @@ def verify_run(
                     )
                 for page in document["pages"]:
                     counts["routed_pages"] += 1
-                    if not isinstance(page, dict) or not isinstance(page.get("page_id"), str):
+                    if (
+                        not isinstance(page, dict)
+                        or not isinstance(page.get("page_id"), str)
+                        or not isinstance(page.get("action"), str)
+                    ):
                         _add(errors, "artifact_structure_invalid", "Route page is malformed")
                         continue
                     page_id = page["page_id"]
@@ -404,12 +405,8 @@ def verify_run(
             actual=counts["routed_pages"],
         )
 
-    routed_review_count = sum(
-        page.get("action") == "review" for page in route_pages.values()
-    )
-    skipped_page_count = sum(
-        page.get("action") == "skip" for page in route_pages.values()
-    )
+    routed_review_count = sum(page.get("action") == "review" for page in route_pages.values())
+    skipped_page_count = sum(page.get("action") == "skip" for page in route_pages.values())
     if "pages_routed_review" not in summary:
         _add(
             warnings,
@@ -446,9 +443,7 @@ def verify_run(
             for value in accounting_values.values()
         ):
             accounted = sum(
-                value
-                for key, value in accounting_values.items()
-                if key != "pages_total"
+                value for key, value in accounting_values.items() if key != "pages_total"
             )
             if accounting_values["pages_total"] != accounted:
                 _add(
@@ -534,9 +529,11 @@ def verify_run(
         evidence = entry.get("input_evidence")
         if evidence is not None:
             from .image_evidence import validate_input_evidence
+
             try:
                 validate_input_evidence(
-                    evidence, root=root,
+                    evidence,
+                    root=root,
                     source_sha256=source.get("sha256") if isinstance(source, dict) else None,
                     page_number=source.get("page_number") if isinstance(source, dict) else None,
                     prompt_sha256=entry.get("extractor", {}).get("prompt_hash"),
@@ -616,10 +613,7 @@ def verify_run(
                     f"Provenance lacks a raw artifact hash for {page_id}",
                     page_id=page_id,
                 )
-            elif (
-                not isinstance(expected_raw_hash, str)
-                or _sha256(raw_path) != expected_raw_hash
-            ):
+            elif not isinstance(expected_raw_hash, str) or _sha256(raw_path) != expected_raw_hash:
                 _add(
                     errors,
                     "raw_artifact_hash_mismatch",
@@ -656,9 +650,7 @@ def verify_run(
                 f"Quality and provenance adapters differ for {page_id}",
                 page_id=page_id,
             )
-    counts["quality_warning_pages"] = sum(
-        1 for entry in quality.values() if entry.get("warnings")
-    )
+    counts["quality_warning_pages"] = sum(1 for entry in quality.values() if entry.get("warnings"))
     if summary.get("quality_warning_pages") != counts["quality_warning_pages"]:
         _add(
             errors,
@@ -782,11 +774,7 @@ def verify_run(
         else:
             counts["rerun_references"] = len(items)
             _check_references(items, route_pages, errors, paths["rerun_manifest"].name)
-        if (
-            isinstance(config, dict)
-            and isinstance(route, dict)
-            and isinstance(audit, dict)
-        ):
+        if isinstance(config, dict) and isinstance(route, dict) and isinstance(audit, dict):
             _check_rerun_plan(
                 rerun,
                 manifest,
@@ -804,8 +792,7 @@ def verify_run(
         extracted = sum(
             entry.get("usage", {}).get("pages", 0)
             for entry in provenance.values()
-            if isinstance(entry.get("usage"), dict)
-            and isinstance(entry["usage"].get("pages"), int)
+            if isinstance(entry.get("usage"), dict) and isinstance(entry["usage"].get("pages"), int)
         )
         expected_pages = summary.get("pages_extracted")
         cost_pages = cost.get("pages_extracted")
@@ -828,16 +815,31 @@ def verify_run(
 
     log_entries = loaded.get("run_log")
     if isinstance(log_entries, list):
+        for line_number, entry in enumerate(log_entries, start=1):
+            _check_identity(
+                entry,
+                run_id,
+                schema_version,
+                errors,
+                paths["run_log"].name,
+                line_number=line_number,
+            )
+            if not isinstance(entry.get("status"), str):
+                _add(
+                    errors,
+                    "artifact_structure_invalid",
+                    "Run log status must be a string",
+                    artifact=paths["run_log"].name,
+                    line_number=line_number,
+                )
         failed_page_ids = {
             entry.get("page_id")
             for entry in log_entries
-            if entry.get("status") in {"failed", "invalid_result"}
+            if isinstance(entry.get("status"), str)
+            and entry["status"] in {"failed", "invalid_result"}
             and isinstance(entry.get("page_id"), str)
         }
-        if (
-            "pages_failed" in summary
-            and summary["pages_failed"] != len(failed_page_ids)
-        ):
+        if "pages_failed" in summary and summary["pages_failed"] != len(failed_page_ids):
             _add(
                 errors,
                 "failed_page_count_mismatch",
@@ -863,19 +865,7 @@ def verify_run(
                 expected=summary["pages_not_attempted"],
                 actual=len(not_attempted),
             )
-        for line_number, entry in enumerate(log_entries, start=1):
-            _check_identity(
-                entry,
-                run_id,
-                schema_version,
-                errors,
-                paths["run_log"].name,
-                line_number=line_number,
-            )
-
-    _check_replay_linkage(
-        manifest, declarations, loaded, provenance, manifest_identities, errors
-    )
+    _check_replay_linkage(manifest, declarations, loaded, provenance, manifest_identities, errors)
 
     return _report(root, errors, warnings, counts)
 
@@ -947,9 +937,7 @@ def _check_rerun_plan(
         else None
     )
     expected_manifest_escalation = (
-        {"adapter_order": adapter_order, "step": run_depth}
-        if adapter_order is not None
-        else None
+        {"adapter_order": adapter_order, "step": run_depth} if adapter_order is not None else None
     )
     if manifest.get("escalation") != expected_manifest_escalation:
         _add(
@@ -967,9 +955,7 @@ def _check_rerun_plan(
             "adapter_order": adapter_order,
             "step": run_depth,
             "next_adapter": (
-                adapter_order[run_depth + 1]
-                if run_depth + 1 < len(adapter_order)
-                else None
+                adapter_order[run_depth + 1] if run_depth + 1 < len(adapter_order) else None
             ),
         }
 
@@ -980,11 +966,7 @@ def _check_rerun_plan(
             parent_run_id=run_id,
             created_at=str(rerun.get("created_at", "")),
             max_rerun_depth=max_rerun_depth,
-            reason=(
-                "dry_run"
-                if manifest.get("execution_mode") == "dry_run"
-                else "audit_policy"
-            ),
+            reason=("dry_run" if manifest.get("execution_mode") == "dry_run" else "audit_policy"),
             audit=audit,
             route_map=route,
             run_depth=run_depth,
@@ -1153,17 +1135,43 @@ def _check_replay_linkage(
             artifact="replay.json",
         )
     if not isinstance(replay.get("baseline_run_id"), str) or not replay["baseline_run_id"]:
-        _add(errors, "replay_artifact_malformed", "Replay baseline_run_id is invalid", artifact="replay.json")
+        _add(
+            errors,
+            "replay_artifact_malformed",
+            "Replay baseline_run_id is invalid",
+            artifact="replay.json",
+        )
     if not isinstance(replay.get("replay_run_id"), str) or not replay["replay_run_id"]:
-        _add(errors, "replay_artifact_malformed", "Replay replay_run_id is invalid", artifact="replay.json")
+        _add(
+            errors,
+            "replay_artifact_malformed",
+            "Replay replay_run_id is invalid",
+            artifact="replay.json",
+        )
     if not _is_sha256(replay.get("bundle_manifest_sha256")):
-        _add(errors, "replay_artifact_malformed", "Replay bundle manifest hash is invalid", artifact="replay.json")
+        _add(
+            errors,
+            "replay_artifact_malformed",
+            "Replay bundle manifest hash is invalid",
+            artifact="replay.json",
+        )
     if not isinstance(replay.get("outcome"), str) or replay["outcome"] not in {
-        "exact", "evidence_compared", "deterministic_mismatch"
+        "exact",
+        "evidence_compared",
+        "deterministic_mismatch",
     }:
-        _add(errors, "replay_artifact_malformed", "Replay outcome is invalid", artifact="replay.json")
-    if replay.get("profile_match") is not None and not isinstance(replay.get("profile_match"), bool):
-        _add(errors, "replay_artifact_malformed", "Replay profile_match is invalid", artifact="replay.json")
+        _add(
+            errors, "replay_artifact_malformed", "Replay outcome is invalid", artifact="replay.json"
+        )
+    if replay.get("profile_match") is not None and not isinstance(
+        replay.get("profile_match"), bool
+    ):
+        _add(
+            errors,
+            "replay_artifact_malformed",
+            "Replay profile_match is invalid",
+            artifact="replay.json",
+        )
 
     if (
         replay.get("replay_schema_version") != manifest.get("replay_schema_version")
@@ -1184,17 +1192,25 @@ def _check_replay_linkage(
     baseline_extractor = replay.get("baseline_extractor")
     local_extractor = replay.get("local_extractor")
     if not isinstance(raw, dict) or not isinstance(comparison, dict):
-        _add(errors, "replay_artifact_malformed", "Replay raw/comparison evidence is malformed", artifact="replay.json")
+        _add(
+            errors,
+            "replay_artifact_malformed",
+            "Replay raw/comparison evidence is malformed",
+            artifact="replay.json",
+        )
         return
     if not isinstance(baseline_extractor, dict) or not isinstance(local_extractor, dict):
-        _add(errors, "replay_artifact_malformed", "Replay extractor evidence is malformed", artifact="replay.json")
+        _add(
+            errors,
+            "replay_artifact_malformed",
+            "Replay extractor evidence is malformed",
+            artifact="replay.json",
+        )
         return
     baseline_identity = _validate_replay_extractor_identity(
         baseline_extractor, "baseline_extractor", errors
     )
-    local_identity = _validate_replay_extractor_identity(
-        local_extractor, "local_extractor", errors
-    )
+    local_identity = _validate_replay_extractor_identity(local_extractor, "local_extractor", errors)
     if not manifest_identities:
         _add(
             errors,
@@ -1233,7 +1249,12 @@ def _check_replay_linkage(
     for name in ("equal", "different", "missing"):
         value = raw.get(name)
         if not isinstance(value, int) or isinstance(value, bool) or value < 0:
-            _add(errors, "replay_artifact_malformed", f"Replay raw.{name} must be a nonnegative integer", artifact="replay.json")
+            _add(
+                errors,
+                "replay_artifact_malformed",
+                f"Replay raw.{name} must be a nonnegative integer",
+                artifact="replay.json",
+            )
         else:
             counts[name] = value
     page_lists: dict[str, list[str]] = {}
@@ -1244,22 +1265,42 @@ def _check_replay_linkage(
             or any(not isinstance(value, str) or not value for value in values)
             or len(values) != len(set(values))
         ):
-            _add(errors, "replay_artifact_malformed", f"Replay raw.{name} must be unique page-id strings", artifact="replay.json")
+            _add(
+                errors,
+                "replay_artifact_malformed",
+                f"Replay raw.{name} must be unique page-id strings",
+                artifact="replay.json",
+            )
         else:
             page_lists[name] = values
             count_name = "different" if name.startswith("different") else "missing"
             if count_name in counts and len(values) != counts[count_name]:
-                _add(errors, "replay_linkage_mismatch", f"Replay raw.{name} length does not match its count", artifact="replay.json")
+                _add(
+                    errors,
+                    "replay_linkage_mismatch",
+                    f"Replay raw.{name} length does not match its count",
+                    artifact="replay.json",
+                )
 
     run_a = comparison.get("run_a")
     run_b = comparison.get("run_b")
     if not isinstance(run_a, dict) or not isinstance(run_b, dict):
-        _add(errors, "replay_artifact_malformed", "Replay comparison run summaries are malformed", artifact="replay.json")
+        _add(
+            errors,
+            "replay_artifact_malformed",
+            "Replay comparison run summaries are malformed",
+            artifact="replay.json",
+        )
         return
     baseline_id = replay.get("baseline_run_id")
     replay_id = replay.get("replay_run_id")
     if run_a.get("run_id") != baseline_id or run_b.get("run_id") != replay_id:
-        _add(errors, "replay_linkage_mismatch", "Replay comparison run IDs do not match replay IDs", artifact="replay.json")
+        _add(
+            errors,
+            "replay_linkage_mismatch",
+            "Replay comparison run IDs do not match replay IDs",
+            artifact="replay.json",
+        )
 
     pages_only_a = comparison.get("pages_only_in_a", [])
     pages_only_b = comparison.get("pages_only_in_b", [])
@@ -1270,19 +1311,38 @@ def _check_replay_linkage(
         or len(pages_only_a) != len(set(pages_only_a))
         or len(pages_only_b) != len(set(pages_only_b))
     ):
-        _add(errors, "replay_artifact_malformed", "Replay comparison page sets are malformed", artifact="replay.json")
+        _add(
+            errors,
+            "replay_artifact_malformed",
+            "Replay comparison page sets are malformed",
+            artifact="replay.json",
+        )
         pages_only_a = []
         pages_only_b = []
     pages = comparison.get("pages", [])
     if not isinstance(pages, list):
-        _add(errors, "replay_artifact_malformed", "Replay comparison pages must be a list", artifact="replay.json")
+        _add(
+            errors,
+            "replay_artifact_malformed",
+            "Replay comparison pages must be a list",
+            artifact="replay.json",
+        )
         pages = []
     comparison_different: list[str] = []
     comparison_missing: list[str] = list(pages_only_a) + list(pages_only_b)
     comparison_equal = 0
     for page in pages:
-        if not isinstance(page, dict) or not isinstance(page.get("page_id"), str) or not page["page_id"]:
-            _add(errors, "replay_artifact_malformed", "Replay comparison page is malformed", artifact="replay.json")
+        if (
+            not isinstance(page, dict)
+            or not isinstance(page.get("page_id"), str)
+            or not page["page_id"]
+        ):
+            _add(
+                errors,
+                "replay_artifact_malformed",
+                "Replay comparison page is malformed",
+                artifact="replay.json",
+            )
             continue
         page_id = page["page_id"]
         raw_a = page.get("raw_sha256_a")
@@ -1331,7 +1391,12 @@ def _check_replay_linkage(
         elif raw_equal is None:
             comparison_missing.append(page_id)
         else:
-            _add(errors, "replay_artifact_malformed", "Replay comparison raw_equal is invalid", artifact="replay.json")
+            _add(
+                errors,
+                "replay_artifact_malformed",
+                "Replay comparison raw_equal is invalid",
+                artifact="replay.json",
+            )
     common_page_ids = [
         page["page_id"]
         for page in pages
@@ -1346,11 +1411,21 @@ def _check_replay_linkage(
             artifact="replay.json",
         )
     if len(common_page_ids) != len(common_page_set):
-        _add(errors, "replay_linkage_mismatch", "Replay comparison contains duplicate common page IDs", artifact="replay.json")
+        _add(
+            errors,
+            "replay_linkage_mismatch",
+            "Replay comparison contains duplicate common page IDs",
+            artifact="replay.json",
+        )
     if set(pages_only_a) & set(pages_only_b) or (
         common_page_set & (set(pages_only_a) | set(pages_only_b))
     ):
-        _add(errors, "replay_linkage_mismatch", "Replay comparison page identity sets overlap", artifact="replay.json")
+        _add(
+            errors,
+            "replay_linkage_mismatch",
+            "Replay comparison page identity sets overlap",
+            artifact="replay.json",
+        )
     expected_missing = sorted(set(comparison_missing))
     if (
         counts.get("equal") != comparison_equal
@@ -1359,7 +1434,12 @@ def _check_replay_linkage(
         or set(page_lists.get("different_page_ids", [])) != set(comparison_different)
         or set(page_lists.get("missing_page_ids", [])) != set(expected_missing)
     ):
-        _add(errors, "replay_linkage_mismatch", "Replay raw evidence does not match comparison evidence", artifact="replay.json")
+        _add(
+            errors,
+            "replay_linkage_mismatch",
+            "Replay raw evidence does not match comparison evidence",
+            artifact="replay.json",
+        )
 
     if not extractor_evidence_valid:
         return
@@ -1399,15 +1479,35 @@ def _check_replay_linkage(
         or pages_only_a
         or pages_only_b
     ):
-        _add(errors, "replay_linkage_mismatch", "Exact replay invariants are not satisfied", artifact="replay.json")
+        _add(
+            errors,
+            "replay_linkage_mismatch",
+            "Exact replay invariants are not satisfied",
+            artifact="replay.json",
+        )
     elif outcome == "evidence_compared" and deterministic and not cloud:
-        _add(errors, "replay_linkage_mismatch", "Evidence-compared outcome requires a nondeterministic or cloud extractor", artifact="replay.json")
+        _add(
+            errors,
+            "replay_linkage_mismatch",
+            "Evidence-compared outcome requires a nondeterministic or cloud extractor",
+            artifact="replay.json",
+        )
     elif outcome == "deterministic_mismatch" and (
         not deterministic
         or cloud
-        or (counts.get("different", 0) == 0 and counts.get("missing", 0) == 0 and not pages_only_a and not pages_only_b)
+        or (
+            counts.get("different", 0) == 0
+            and counts.get("missing", 0) == 0
+            and not pages_only_a
+            and not pages_only_b
+        )
     ):
-        _add(errors, "replay_linkage_mismatch", "Deterministic mismatch outcome has no differing or missing pages", artifact="replay.json")
+        _add(
+            errors,
+            "replay_linkage_mismatch",
+            "Deterministic mismatch outcome has no differing or missing pages",
+            artifact="replay.json",
+        )
 
 
 def _validate_replay_extractor_identity(
@@ -1424,7 +1524,12 @@ def _validate_replay_extractor_identity(
         "reproducibility_profile_sha256",
     }
     if set(identity) != expected:
-        _add(errors, "replay_artifact_malformed", f"Replay {label} has invalid fields", artifact="replay.json")
+        _add(
+            errors,
+            "replay_artifact_malformed",
+            f"Replay {label} has invalid fields",
+            artifact="replay.json",
+        )
         return None
     if (
         not isinstance(identity["adapter"], str)
@@ -1433,28 +1538,58 @@ def _validate_replay_extractor_identity(
         or not identity["version"]
         or not isinstance(identity["deterministic"], bool)
     ):
-        _add(errors, "replay_artifact_malformed", f"Replay {label} has invalid scalar identity fields", artifact="replay.json")
+        _add(
+            errors,
+            "replay_artifact_malformed",
+            f"Replay {label} has invalid scalar identity fields",
+            artifact="replay.json",
+        )
         return None
     for field in ("input_types", "output_types", "capabilities"):
         values = identity[field]
         if not isinstance(values, list) or any(not isinstance(value, str) for value in values):
-            _add(errors, "replay_artifact_malformed", f"Replay {label}.{field} must be a list of strings", artifact="replay.json")
+            _add(
+                errors,
+                "replay_artifact_malformed",
+                f"Replay {label}.{field} must be a list of strings",
+                artifact="replay.json",
+            )
             return None
         if values != sorted(set(values)):
-            _add(errors, "replay_artifact_malformed", f"Replay {label}.{field} must be sorted and unique", artifact="replay.json")
+            _add(
+                errors,
+                "replay_artifact_malformed",
+                f"Replay {label}.{field} must be sorted and unique",
+                artifact="replay.json",
+            )
             return None
     options = identity["options"]
     if not isinstance(options, dict) or any(not isinstance(key, str) for key in options):
-        _add(errors, "replay_artifact_malformed", f"Replay {label}.options must be a mapping", artifact="replay.json")
+        _add(
+            errors,
+            "replay_artifact_malformed",
+            f"Replay {label}.options must be a mapping",
+            artifact="replay.json",
+        )
         return None
     try:
         json.dumps(options, ensure_ascii=False, allow_nan=False)
     except (TypeError, ValueError) as exc:
-        _add(errors, "replay_artifact_malformed", f"Replay {label}.options must contain finite JSON: {exc}", artifact="replay.json")
+        _add(
+            errors,
+            "replay_artifact_malformed",
+            f"Replay {label}.options must contain finite JSON: {exc}",
+            artifact="replay.json",
+        )
         return None
     profile_hash = identity["reproducibility_profile_sha256"]
     if profile_hash is not None and not _is_sha256(profile_hash):
-        _add(errors, "replay_artifact_malformed", f"Replay {label} profile hash is invalid", artifact="replay.json")
+        _add(
+            errors,
+            "replay_artifact_malformed",
+            f"Replay {label} profile hash is invalid",
+            artifact="replay.json",
+        )
         return None
     return identity
 
@@ -1532,9 +1667,7 @@ def _manifest_replay_extractor_identity(
     return first
 
 
-def _canonical_extractor_core(
-    extractor: object, *, provenance: bool
-) -> tuple | None:
+def _canonical_extractor_core(extractor: object, *, provenance: bool) -> tuple | None:
     if not isinstance(extractor, dict):
         return None
     version_key = "adapter_version" if provenance else "version"
@@ -1552,9 +1685,7 @@ def _canonical_extractor_core(
     lists: list[tuple] = []
     for field in ("input_types", "output_types", "capabilities"):
         values = extractor.get(field)
-        if not isinstance(values, list) or any(
-            not isinstance(value, str) for value in values
-        ):
+        if not isinstance(values, list) or any(not isinstance(value, str) for value in values):
             return None
         lists.append(tuple(sorted(values)))
     return (adapter, version, deterministic, *lists)
@@ -1566,8 +1697,7 @@ def _check_provenance_extractor_membership(
     errors: list[dict[str, Any]],
 ) -> None:
     manifest_cores = {
-        _canonical_extractor_core(identity, provenance=False)
-        for identity in manifest_identities
+        _canonical_extractor_core(identity, provenance=False) for identity in manifest_identities
     }
     for page_id, entry in provenance.items():
         extractor = entry.get("extractor")
@@ -1866,8 +1996,10 @@ def _sha256(path: Path) -> str:
 
 
 def _is_sha256(value: Any) -> bool:
-    return isinstance(value, str) and len(value) == 64 and all(
-        character in "0123456789abcdef" for character in value
+    return (
+        isinstance(value, str)
+        and len(value) == 64
+        and all(character in "0123456789abcdef" for character in value)
     )
 
 

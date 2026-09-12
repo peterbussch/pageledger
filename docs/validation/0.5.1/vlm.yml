@@ -1,0 +1,25 @@
+schema_version: '0.1'
+run:
+  adapter: pdf_text
+processing:
+  local_ocr:
+    adapter: pdf_ocr
+    adapter_options:
+      lang: rus
+      dpi: 300
+  limits:
+    max_attempt_pages: 3
+    max_image_pages: 1
+  image:
+    adapter: openai_image_adapter:OpenAIImageAdapter
+    adapter_options:
+      model: cursor/gemini-3.6-flash-high
+      allowed_models:
+      - cursor/gemini-3.6-flash-high
+      base_url: http://127.0.0.1:20128/v1
+      env_key: OMNIROUTE_API_KEY
+      max_output_tokens: 8192
+      timeout: 180
+      dpi: 150
+      max_image_bytes: 1048576
+      max_image_dimension: 3072

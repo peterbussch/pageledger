@@ -1,0 +1,1616 @@
+{
+  "title": "AI-assisted source spot checks for PageLedger 0.5.1",
+  "method": "Short source-image checks, with mismatches checked against the actual image and selected output. Kharkov and census each received a new direct comparison of all 20 pages after initial source-note defects were found.",
+  "source_pdf_pages": 60,
+  "human_reviewed_pages": 0,
+  "models": {
+    "initial_notes": "gpt-5.6-luna",
+    "corrective_comparisons": "gpt-6-astra"
+  },
+  "accuracy_rate": null,
+  "human_review_seconds": null,
+  "limits": [
+    "AI-assisted observations may still be wrong. No page is certified correct.",
+    "Checks cover short readings and visible layout, not complete page transcription.",
+    "Corrective comparisons are nonblind. Example selection favors observed errors and cannot estimate accuracy or false-negative rates.",
+    "Initial phrase-match counts are excluded because source notes contained capitalization, omitted-marker, and wrong-page errors.",
+    "Selected warnings belong to the selected attempt; review reasons may include earlier attempts.",
+    "No human review receipt was applied to any real source page.",
+    "Full source scans, rendered images, and local transcripts are not distributed with this summary."
+  ],
+  "pages": [
+    {
+      "source_key": "nara",
+      "page_number": 1,
+      "source_sha256": "8ef0c35cbb61bd57683a1b62cce80896d410672326a4c9836c009f970a5f3e34",
+      "source_image_sha256": "c0f7066964345ff8632da8521f31889a2bfabefbaae91eb949e8640db4ef51f7",
+      "selected_output_sha256": "02616d064c253d4394f4fc15c685a1fd0390c39a07cc8463e03de5ccf252f3b3",
+      "reviewer_kind": "ai_assisted",
+      "human_review_performed": false,
+      "selected_warnings": [],
+      "review_reasons": [
+        "blank_candidate"
+      ],
+      "source_page_kind": "archival_typescript_with_marks",
+      "scope": "Initial short source readings compared with selected text. Mismatching readings were reopened against the source image; matching readings were not a full-page audit.",
+      "checks": [
+        {
+          "location": "upper body",
+          "kind": "output_error",
+          "note": "The source ends the line with the clear word “that”. OCR mixes that word with the handwritten margin note.",
+          "reviewer_kind": "ai_assisted",
+          "model": "gpt-6-astra",
+          "selected_attempt_warning_present": false
+        }
+      ]
+    },
+    {
+      "source_key": "nara",
+      "page_number": 2,
+      "source_sha256": "8ef0c35cbb61bd57683a1b62cce80896d410672326a4c9836c009f970a5f3e34",
+      "source_image_sha256": "939ff6ca3d3fbe32de6962ebfc8d0c232ac3f5c6760ef6ad38b048d848d2596b",
+      "selected_output_sha256": "9e88bed503722b709dacb2aa6498a87fdbee5fad1178d6d81274cf56f9511516",
+      "reviewer_kind": "ai_assisted",
+      "human_review_performed": false,
+      "selected_warnings": [],
+      "review_reasons": [
+        "blank_candidate"
+      ],
+      "source_page_kind": "archival_typescript_with_marks",
+      "scope": "Initial short source readings compared with selected text. Mismatching readings were reopened against the source image; matching readings were not a full-page audit.",
+      "checks": [
+        {
+          "kind": "spot_check_only",
+          "note": "Short phrases from the initial source-image notes were found in selected text. This does not show that the rest of the page is correct."
+        }
+      ]
+    },
+    {
+      "source_key": "nara",
+      "page_number": 3,
+      "source_sha256": "8ef0c35cbb61bd57683a1b62cce80896d410672326a4c9836c009f970a5f3e34",
+      "source_image_sha256": "1ab55a7c263b76c9be1c2257cc18e19d093597141cbbfe0c41d0ce87ea7afcb7",
+      "selected_output_sha256": "676beab113e89e0015b53f44275ddea834113bc91ec9078f545c296a3f74f5d6",
+      "reviewer_kind": "ai_assisted",
+      "human_review_performed": false,
+      "selected_warnings": [],
+      "review_reasons": [
+        "blank_candidate"
+      ],
+      "source_page_kind": "archival_typescript_with_marks",
+      "scope": "Initial short source readings compared with selected text. Mismatching readings were reopened against the source image; matching readings were not a full-page audit.",
+      "checks": [
+        {
+          "kind": "spot_check_only",
+          "note": "Short phrases from the initial source-image notes were found in selected text. This does not show that the rest of the page is correct."
+        }
+      ]
+    },
+    {
+      "source_key": "nara",
+      "page_number": 4,
+      "source_sha256": "8ef0c35cbb61bd57683a1b62cce80896d410672326a4c9836c009f970a5f3e34",
+      "source_image_sha256": "dda574f537f0e6a5aa4e17750c0e8cadc0d24ca52874b419ab0c5cd7d1dc6448",
+      "selected_output_sha256": "6631ebb9e1e92ccf0d2980e9b1d1a5eb5aebbdbeff8f555ba4eaf202a0e83b7e",
+      "reviewer_kind": "ai_assisted",
+      "human_review_performed": false,
+      "selected_warnings": [],
+      "review_reasons": [
+        "blank_candidate"
+      ],
+      "source_page_kind": "archival_typescript_with_marks",
+      "scope": "Initial short source readings compared with selected text. Mismatching readings were reopened against the source image; matching readings were not a full-page audit.",
+      "checks": [
+        {
+          "location": "upper body",
+          "kind": "visual_ambiguity",
+          "note": "A small mark connects taken and in. OCR interprets it as an opening quotation mark. This spot check cannot settle whether to preserve the mark as punctuation.",
+          "reviewer_kind": "ai_assisted",
+          "model": "gpt-6-astra",
+          "selected_attempt_warning_present": false
+        }
+      ]
+    },
+    {
+      "source_key": "nara",
+      "page_number": 5,
+      "source_sha256": "8ef0c35cbb61bd57683a1b62cce80896d410672326a4c9836c009f970a5f3e34",
+      "source_image_sha256": "7dcb8cc1b4e8ccd27dc457531f53cadb9c32ce56055e5bc1701361cf77edd0f2",
+      "selected_output_sha256": "0ff220e8c51907cf71c827b9a3ecb06dca24d49567bfb4aa187b9cdb314509be",
+      "reviewer_kind": "ai_assisted",
+      "human_review_performed": false,
+      "selected_warnings": [],
+      "review_reasons": [
+        "blank_candidate"
+      ],
+      "source_page_kind": "archival_typescript_with_marks",
+      "scope": "Initial short source readings compared with selected text. Mismatching readings were reopened against the source image; matching readings were not a full-page audit.",
+      "checks": [
+        {
+          "kind": "spot_check_only",
+          "note": "Short phrases from the initial source-image notes were found in selected text. This does not show that the rest of the page is correct."
+        }
+      ]
+    },
+    {
+      "source_key": "nara",
+      "page_number": 21,
+      "source_sha256": "8ef0c35cbb61bd57683a1b62cce80896d410672326a4c9836c009f970a5f3e34",
+      "source_image_sha256": "2a36aba9a9443d113cddb00a6a48e540b3e64f475886518d75c026d68d1a995d",
+      "selected_output_sha256": "a76f1cf675b0c186145565e13312fd64ab4e4d2fcd317cb822aa2fcfb99f7cf6",
+      "reviewer_kind": "ai_assisted",
+      "human_review_performed": false,
+      "selected_warnings": [],
+      "review_reasons": [
+        "blank_candidate"
+      ],
+      "source_page_kind": "archival_typescript_with_marks",
+      "scope": "Initial short source readings compared with selected text. Mismatching readings were reopened against the source image; matching readings were not a full-page audit.",
+      "checks": [
+        {
+          "location": "upper body",
+          "kind": "source_anchor_error",
+          "note": "The visible line begins xplained. The initial AI anchor silently supplied an e; OCR preserves the visible beginning.",
+          "reviewer_kind": "ai_assisted",
+          "model": "gpt-6-astra",
+          "selected_attempt_warning_present": false
+        }
+      ]
+    },
+    {
+      "source_key": "nara",
+      "page_number": 22,
+      "source_sha256": "8ef0c35cbb61bd57683a1b62cce80896d410672326a4c9836c009f970a5f3e34",
+      "source_image_sha256": "2199259f9ca7c2b5a913b277940cfc2c7af533c918e3328fc1b0ac577c4a2626",
+      "selected_output_sha256": "7c70f04f716f580d584e263a0aa8cf09acadb7c2b51005ceb607bfe480931237",
+      "reviewer_kind": "ai_assisted",
+      "human_review_performed": false,
+      "selected_warnings": [],
+      "review_reasons": [
+        "blank_candidate"
+      ],
+      "source_page_kind": "archival_typescript_with_marks",
+      "scope": "Initial short source readings compared with selected text. Mismatching readings were reopened against the source image; matching readings were not a full-page audit.",
+      "checks": [
+        {
+          "kind": "spot_check_only",
+          "note": "Short phrases from the initial source-image notes were found in selected text. This does not show that the rest of the page is correct."
+        }
+      ]
+    },
+    {
+      "source_key": "nara",
+      "page_number": 23,
+      "source_sha256": "8ef0c35cbb61bd57683a1b62cce80896d410672326a4c9836c009f970a5f3e34",
+      "source_image_sha256": "d0bb25350d66adcd0fd355fc11e16e4c3288aa482fbdb51bc8f753bb8e513876",
+      "selected_output_sha256": "e55e388136c5ef93ac8f7ae838ecd7702dab2255bbfaa6e60a9cd677837aab59",
+      "reviewer_kind": "ai_assisted",
+      "human_review_performed": false,
+      "selected_warnings": [],
+      "review_reasons": [
+        "blank_candidate"
+      ],
+      "source_page_kind": "archival_typescript_with_marks",
+      "scope": "Initial short source readings compared with selected text. Mismatching readings were reopened against the source image; matching readings were not a full-page audit.",
+      "checks": [
+        {
+          "kind": "spot_check_only",
+          "note": "Short phrases from the initial source-image notes were found in selected text. This does not show that the rest of the page is correct."
+        }
+      ]
+    },
+    {
+      "source_key": "nara",
+      "page_number": 24,
+      "source_sha256": "8ef0c35cbb61bd57683a1b62cce80896d410672326a4c9836c009f970a5f3e34",
+      "source_image_sha256": "7862fa24e079535fcdbac5dcc4ae1216fa57e4bab52a76a6687b3425b8aa8db0",
+      "selected_output_sha256": "f66a6797c85fcbb97293de10dae19494e192fdde8f3895d7ad722db6ceed383e",
+      "reviewer_kind": "ai_assisted",
+      "human_review_performed": false,
+      "selected_warnings": [],
+      "review_reasons": [
+        "blank_candidate"
+      ],
+      "source_page_kind": "archival_typescript_with_marks",
+      "scope": "Initial short source readings compared with selected text. Mismatching readings were reopened against the source image; matching readings were not a full-page audit.",
+      "checks": [
+        {
+          "location": "upper body",
+          "kind": "visual_ambiguity",
+          "note": "The final mark after made has a visible tail. Period versus comma is not settled by this inspection.",
+          "reviewer_kind": "ai_assisted",
+          "model": "gpt-6-astra",
+          "selected_attempt_warning_present": false
+        }
+      ]
+    },
+    {
+      "source_key": "nara",
+      "page_number": 25,
+      "source_sha256": "8ef0c35cbb61bd57683a1b62cce80896d410672326a4c9836c009f970a5f3e34",
+      "source_image_sha256": "381b9be5c442287e618b663793d8fae257e3d8f8e40b89c565aaa159b0502974",
+      "selected_output_sha256": "8503289ed555f22aa9141a5a1033948dff111d176eee249a3a6818c7ba4ac71e",
+      "reviewer_kind": "ai_assisted",
+      "human_review_performed": false,
+      "selected_warnings": [],
+      "review_reasons": [
+        "blank_candidate"
+      ],
+      "source_page_kind": "archival_typescript_with_marks",
+      "scope": "Initial short source readings compared with selected text. Mismatching readings were reopened against the source image; matching readings were not a full-page audit.",
+      "checks": [
+        {
+          "location": "lower body",
+          "kind": "mixed",
+          "note": "The source begins lowercase the, unlike the initial anchor. OCR also adds an accent to different. This anchor was already marked uncertain and is excluded from exact-match totals.",
+          "reviewer_kind": "ai_assisted",
+          "model": "gpt-6-astra",
+          "selected_attempt_warning_present": false
+        }
+      ]
+    },
+    {
+      "source_key": "nara",
+      "page_number": 51,
+      "source_sha256": "8ef0c35cbb61bd57683a1b62cce80896d410672326a4c9836c009f970a5f3e34",
+      "source_image_sha256": "19ec9ade95af76bb481fd1bba8ff0e87977bc2412e8a948a67cd1c2f89c8cfb5",
+      "selected_output_sha256": "3faa51a896bf0c98896c4d67c8bae39b81ba0db830e02d345e5dd6b12677f2fc",
+      "reviewer_kind": "ai_assisted",
+      "human_review_performed": false,
+      "selected_warnings": [],
+      "review_reasons": [
+        "blank_candidate"
+      ],
+      "source_page_kind": "archival_typescript_with_marks",
+      "scope": "Initial short source readings compared with selected text. Mismatching readings were reopened against the source image; matching readings were not a full-page audit.",
+      "checks": [
+        {
+          "location": "upper body",
+          "kind": "visual_ambiguity",
+          "note": "A small dot is visible after this. The initial note omitted it; OCR includes a period. Its role is uncertain.",
+          "reviewer_kind": "ai_assisted",
+          "model": "gpt-6-astra",
+          "selected_attempt_warning_present": false
+        },
+        {
+          "location": "lower body",
+          "kind": "output_error",
+          "note": "The source reads The Committee sought to determine across a line break. OCR inserts a vertical bar between sought and to.",
+          "reviewer_kind": "ai_assisted",
+          "model": "gpt-6-astra",
+          "selected_attempt_warning_present": false
+        }
+      ]
+    },
+    {
+      "source_key": "nara",
+      "page_number": 52,
+      "source_sha256": "8ef0c35cbb61bd57683a1b62cce80896d410672326a4c9836c009f970a5f3e34",
+      "source_image_sha256": "8af9a0bbd0c502a5cad50f2facee51ef3d9294188aea4cef6dda0fe93352faeb",
+      "selected_output_sha256": "fd1caee397ca8924bbd664382eee1fcbf8ecaf827e9ac7c67e27cce3b6633d1f",
+      "reviewer_kind": "ai_assisted",
+      "human_review_performed": false,
+      "selected_warnings": [],
+      "review_reasons": [
+        "blank_candidate"
+      ],
+      "source_page_kind": "archival_typescript_with_marks",
+      "scope": "Initial short source readings compared with selected text. Mismatching readings were reopened against the source image; matching readings were not a full-page audit.",
+      "checks": [
+        {
+          "kind": "spot_check_only",
+          "note": "Short phrases from the initial source-image notes were found in selected text. This does not show that the rest of the page is correct."
+        }
+      ]
+    },
+    {
+      "source_key": "nara",
+      "page_number": 53,
+      "source_sha256": "8ef0c35cbb61bd57683a1b62cce80896d410672326a4c9836c009f970a5f3e34",
+      "source_image_sha256": "c7a82ac7430c23fa52608f7b44f987c5fc1fa82ce627512d5e2d8de3300a8b65",
+      "selected_output_sha256": "0c15e8ab822b0a67bda37145fc67131d390110ddb24a1adc7f4adbac1b6d3cc0",
+      "reviewer_kind": "ai_assisted",
+      "human_review_performed": false,
+      "selected_warnings": [],
+      "review_reasons": [
+        "blank_candidate"
+      ],
+      "source_page_kind": "archival_typescript_with_marks",
+      "scope": "Initial short source readings compared with selected text. Mismatching readings were reopened against the source image; matching readings were not a full-page audit.",
+      "checks": [
+        {
+          "kind": "spot_check_only",
+          "note": "Short phrases from the initial source-image notes were found in selected text. This does not show that the rest of the page is correct."
+        }
+      ]
+    },
+    {
+      "source_key": "nara",
+      "page_number": 54,
+      "source_sha256": "8ef0c35cbb61bd57683a1b62cce80896d410672326a4c9836c009f970a5f3e34",
+      "source_image_sha256": "0bf7148e266a0b484e2615ada112fd79fde5214ccbb26f79121b6769cc9fe18f",
+      "selected_output_sha256": "e3b431727418d1b2dae0b3488c34a915c975bbc2f0b42cc90ad7b1268db95678",
+      "reviewer_kind": "ai_assisted",
+      "human_review_performed": false,
+      "selected_warnings": [],
+      "review_reasons": [
+        "blank_candidate"
+      ],
+      "source_page_kind": "archival_typescript_with_marks",
+      "scope": "Initial short source readings compared with selected text. Mismatching readings were reopened against the source image; matching readings were not a full-page audit.",
+      "checks": [
+        {
+          "location": "upper body",
+          "kind": "source_anchor_error",
+          "note": "The source includes an underline/slash reference mark after Union. The initial anchor omitted that visible mark.",
+          "reviewer_kind": "ai_assisted",
+          "model": "gpt-6-astra",
+          "selected_attempt_warning_present": false
+        }
+      ]
+    },
+    {
+      "source_key": "nara",
+      "page_number": 55,
+      "source_sha256": "8ef0c35cbb61bd57683a1b62cce80896d410672326a4c9836c009f970a5f3e34",
+      "source_image_sha256": "75374bc9afaf7be8ac0519940bb3e4a5f9bf6c94874f0ebd8bd94d1cfd10c9c0",
+      "selected_output_sha256": "55f7f37e373eed1f365e4c92bfbd86a99e478f7902ffa707e139359ddf56e918",
+      "reviewer_kind": "ai_assisted",
+      "human_review_performed": false,
+      "selected_warnings": [],
+      "review_reasons": [
+        "blank_candidate"
+      ],
+      "source_page_kind": "archival_typescript_with_marks",
+      "scope": "Initial short source readings compared with selected text. Mismatching readings were reopened against the source image; matching readings were not a full-page audit.",
+      "checks": [
+        {
+          "kind": "spot_check_only",
+          "note": "Short phrases from the initial source-image notes were found in selected text. This does not show that the rest of the page is correct."
+        }
+      ]
+    },
+    {
+      "source_key": "nara",
+      "page_number": 101,
+      "source_sha256": "8ef0c35cbb61bd57683a1b62cce80896d410672326a4c9836c009f970a5f3e34",
+      "source_image_sha256": "d684f0b3a40a476bdcc9a736099d79f9ad326b96ebf690f86edd6de32dbaee57",
+      "selected_output_sha256": "24d790196e404541264e8c2c5f02c3eec30b822abe233b1bdf21ff0d92808d06",
+      "reviewer_kind": "ai_assisted",
+      "human_review_performed": false,
+      "selected_warnings": [],
+      "review_reasons": [
+        "blank_candidate"
+      ],
+      "source_page_kind": "archival_typescript_with_marks",
+      "scope": "Initial short source readings compared with selected text. Mismatching readings were reopened against the source image; matching readings were not a full-page audit.",
+      "checks": [
+        {
+          "location": "upper body",
+          "kind": "output_error",
+          "note": "The source begins Jones with capital J. The selected output uses lowercase j.",
+          "reviewer_kind": "ai_assisted",
+          "model": "gpt-6-astra",
+          "selected_attempt_warning_present": false
+        }
+      ]
+    },
+    {
+      "source_key": "nara",
+      "page_number": 102,
+      "source_sha256": "8ef0c35cbb61bd57683a1b62cce80896d410672326a4c9836c009f970a5f3e34",
+      "source_image_sha256": "f59fa45a41ced0a2c70777390b7946d6674ecceae270befacc1525d8342bf48c",
+      "selected_output_sha256": "9e2ad1a5dfb88d6b35fb0c5cc63430c130e76f57389adea948c8678c922286b2",
+      "reviewer_kind": "ai_assisted",
+      "human_review_performed": false,
+      "selected_warnings": [],
+      "review_reasons": [
+        "blank_candidate"
+      ],
+      "source_page_kind": "archival_typescript_with_marks",
+      "scope": "Initial short source readings compared with selected text. Mismatching readings were reopened against the source image; matching readings were not a full-page audit.",
+      "checks": [
+        {
+          "location": "upper body",
+          "kind": "visual_ambiguity",
+          "note": "A small mark is visible after would. OCR interprets it as a quotation mark; this inspection does not settle its role.",
+          "reviewer_kind": "ai_assisted",
+          "model": "gpt-6-astra",
+          "selected_attempt_warning_present": false
+        },
+        {
+          "location": "lower body",
+          "kind": "source_anchor_error",
+          "note": "The source uses double quotation marks around after action. The initial AI anchor used single quotes.",
+          "reviewer_kind": "ai_assisted",
+          "model": "gpt-6-astra",
+          "selected_attempt_warning_present": false
+        }
+      ]
+    },
+    {
+      "source_key": "nara",
+      "page_number": 103,
+      "source_sha256": "8ef0c35cbb61bd57683a1b62cce80896d410672326a4c9836c009f970a5f3e34",
+      "source_image_sha256": "3ff73a25769611fa9ed98f01a664bbe3d78784d9d9f298a2074a8ab693346b06",
+      "selected_output_sha256": "e89af26b7b8c3d32e225248bfb41043427c08416a241b2d71db9646a038eb0be",
+      "reviewer_kind": "ai_assisted",
+      "human_review_performed": false,
+      "selected_warnings": [],
+      "review_reasons": [
+        "blank_candidate"
+      ],
+      "source_page_kind": "archival_typescript_with_marks",
+      "scope": "Initial short source readings compared with selected text. Mismatching readings were reopened against the source image; matching readings were not a full-page audit.",
+      "checks": [
+        {
+          "location": "lower body",
+          "kind": "source_anchor_error",
+          "note": "The source uses lowercase office. The initial AI anchor incorrectly capitalized it.",
+          "reviewer_kind": "ai_assisted",
+          "model": "gpt-6-astra",
+          "selected_attempt_warning_present": false
+        }
+      ]
+    },
+    {
+      "source_key": "nara",
+      "page_number": 104,
+      "source_sha256": "8ef0c35cbb61bd57683a1b62cce80896d410672326a4c9836c009f970a5f3e34",
+      "source_image_sha256": "0915f99caf2fa9bfa6d2f5e3954868e4b0c7582f768abc8f94820614fa6b2603",
+      "selected_output_sha256": "66e5183b16e1ef52bdf7924ca15ff04ec22f2fdaa79c32bab761493aeac7d0ba",
+      "reviewer_kind": "ai_assisted",
+      "human_review_performed": false,
+      "selected_warnings": [],
+      "review_reasons": [
+        "blank_candidate"
+      ],
+      "source_page_kind": "archival_typescript_with_marks",
+      "scope": "Initial short source readings compared with selected text. Mismatching readings were reopened against the source image; matching readings were not a full-page audit.",
+      "checks": [
+        {
+          "kind": "spot_check_only",
+          "note": "Short phrases from the initial source-image notes were found in selected text. This does not show that the rest of the page is correct."
+        }
+      ]
+    },
+    {
+      "source_key": "nara",
+      "page_number": 105,
+      "source_sha256": "8ef0c35cbb61bd57683a1b62cce80896d410672326a4c9836c009f970a5f3e34",
+      "source_image_sha256": "5f580cf180ca717131233b6c30de05d882fbb2907252ca9b1502fe1632f22d27",
+      "selected_output_sha256": "294ab760e65b7d5430a05140d32e52b2862f642288dbb6a946d63ab2902584e0",
+      "reviewer_kind": "ai_assisted",
+      "human_review_performed": false,
+      "selected_warnings": [],
+      "review_reasons": [
+        "blank_candidate"
+      ],
+      "source_page_kind": "archival_typescript_with_marks",
+      "scope": "Initial short source readings compared with selected text. Mismatching readings were reopened against the source image; matching readings were not a full-page audit.",
+      "checks": [
+        {
+          "location": "upper body",
+          "kind": "visual_ambiguity",
+          "note": "Several specks are visible after Evidence. OCR turns one into a period; its status as source punctuation is uncertain.",
+          "reviewer_kind": "ai_assisted",
+          "model": "gpt-6-astra",
+          "selected_attempt_warning_present": false
+        }
+      ]
+    },
+    {
+      "source_key": "kharkov",
+      "page_number": 1,
+      "source_sha256": "f389bac53dbd4041a952cacf774c2d6d91ba1af9efa8dba88eee2570b061f2c6",
+      "source_image_sha256": "dd12073a91c1d1bc00c260c7a3b6b6480abb0cffb285aa923b31388f5e9bb622",
+      "selected_output_sha256": "9926cb37361d21f0c2872523dbb017ebddeeae067f5548906f17f67c180866d8",
+      "reviewer_kind": "ai_assisted",
+      "human_review_performed": false,
+      "selected_warnings": [
+        "low_confidence"
+      ],
+      "review_reasons": [
+        "blank_candidate",
+        "coverage_defect"
+      ],
+      "source_page_kind": "decorative_cover",
+      "scope": "Direct source-image and selected-output spot check; the reviewer could see both. The chosen example is not an unbiased accuracy sample.",
+      "checks": [
+        {
+          "location": "Lower central province title",
+          "kind": "output_error",
+          "note": "The printed title uses historical І; the selected output substitutes И.",
+          "source_excerpt_sha256": "0d3b41e4df189197794f54876a4375eafae231163d8149f37dc1f6cd1f8de583",
+          "source_excerpt": "ХАРЬКОВСКАЯ ГУБЕРНІЯ.",
+          "selected_excerpt_sha256": "6bea5aabf61ab0e1db10ba12ec424c364b28d91eb98b2a98f08e57e6c4538537",
+          "selected_excerpt": "ХАРЬКОВСКАЯ ГУБЕРНИЯ."
+        }
+      ]
+    },
+    {
+      "source_key": "kharkov",
+      "page_number": 2,
+      "source_sha256": "f389bac53dbd4041a952cacf774c2d6d91ba1af9efa8dba88eee2570b061f2c6",
+      "source_image_sha256": "d99769ba36082b0a79f43b3f97a43d3eaf729be7d4acb3efb70bb9c54fae2f5b",
+      "selected_output_sha256": null,
+      "reviewer_kind": "ai_assisted",
+      "human_review_performed": false,
+      "selected_warnings": [],
+      "review_reasons": [
+        "blank_candidate"
+      ],
+      "source_page_kind": "blank",
+      "scope": "Direct source-image and selected-output spot check; the reviewer could see both. The chosen example is not an unbiased accuracy sample.",
+      "checks": [
+        {
+          "location": "Whole page",
+          "kind": "blank",
+          "note": "No printed text is visible, and no output is selected.",
+          "source_excerpt_sha256": null,
+          "source_excerpt": null,
+          "selected_excerpt_sha256": null,
+          "selected_excerpt": null
+        }
+      ]
+    },
+    {
+      "source_key": "kharkov",
+      "page_number": 3,
+      "source_sha256": "f389bac53dbd4041a952cacf774c2d6d91ba1af9efa8dba88eee2570b061f2c6",
+      "source_image_sha256": "af21e644594ef2fae40c820208d70e7d8c99fe88cd3d300b807f4c384bdcac20",
+      "selected_output_sha256": "e621f325e1a305c386004742198e23f7d7442d93fbbf1c3b25d10ee59041dc6a",
+      "reviewer_kind": "ai_assisted",
+      "human_review_performed": false,
+      "selected_warnings": [
+        "historical_orthography",
+        "low_confidence"
+      ],
+      "review_reasons": [
+        "blank_candidate",
+        "coverage_defect"
+      ],
+      "source_page_kind": "title_page",
+      "scope": "Direct source-image and selected-output spot check; the reviewer could see both. The chosen example is not an unbiased accuracy sample.",
+      "checks": [
+        {
+          "location": "Publication year at bottom center",
+          "kind": "output_error",
+          "note": "The printed year is 1850; the selected output changes the second digit to 3.",
+          "source_excerpt_sha256": "e75ff737b0d793dd4234e3d5cdd2647ecb7374c8a4415e8f768178844698a849",
+          "source_excerpt": "1850.",
+          "selected_excerpt_sha256": "2f1541720254000927c24f8c7c2d975eba2cc1f4c1640850e53ab1f9c14f5c3f",
+          "selected_excerpt": "1350."
+        }
+      ]
+    },
+    {
+      "source_key": "kharkov",
+      "page_number": 4,
+      "source_sha256": "f389bac53dbd4041a952cacf774c2d6d91ba1af9efa8dba88eee2570b061f2c6",
+      "source_image_sha256": "fd93b016a2f0d1467e8f620b1b68c89c2fac5b44cb87b27232003a3c038945ed",
+      "selected_output_sha256": null,
+      "reviewer_kind": "ai_assisted",
+      "human_review_performed": false,
+      "selected_warnings": [],
+      "review_reasons": [
+        "blank_candidate"
+      ],
+      "source_page_kind": "blank",
+      "scope": "Direct source-image and selected-output spot check; the reviewer could see both. The chosen example is not an unbiased accuracy sample.",
+      "checks": [
+        {
+          "location": "Whole page",
+          "kind": "blank",
+          "note": "No printed text is visible, and no output is selected.",
+          "source_excerpt_sha256": null,
+          "source_excerpt": null,
+          "selected_excerpt_sha256": null,
+          "selected_excerpt": null
+        }
+      ]
+    },
+    {
+      "source_key": "kharkov",
+      "page_number": 5,
+      "source_sha256": "f389bac53dbd4041a952cacf774c2d6d91ba1af9efa8dba88eee2570b061f2c6",
+      "source_image_sha256": "2c91aa182e07d7f53ea68501dfe272d938bdc5d3ef270fb48eddd76f8af2cc61",
+      "selected_output_sha256": "28bd5da0697ff9ecac294d3f437dfc82c91ad1ef7826ebbb376f4462b1f05533",
+      "reviewer_kind": "ai_assisted",
+      "human_review_performed": false,
+      "selected_warnings": [
+        "low_confidence"
+      ],
+      "review_reasons": [
+        "blank_candidate",
+        "coverage_defect"
+      ],
+      "source_page_kind": "section_title_page",
+      "scope": "Direct source-image and selected-output spot check; the reviewer could see both. The chosen example is not an unbiased accuracy sample.",
+      "checks": [
+        {
+          "location": "Centered second heading",
+          "kind": "output_error",
+          "note": "The printed heading contains Ѣ and І; the selected output substitutes Ъ and Т.",
+          "source_excerpt_sha256": "1b149e2edfa85a123855b07f862207bfd7e946b8a028f2c0660c0270ae66c12d",
+          "source_excerpt": "ОБОЗРѢНІЕ",
+          "selected_excerpt_sha256": "b1306052957512d05ed1fd8fabd7c904c5bb782261a97d81ea1175d95531669e",
+          "selected_excerpt": "ОБОЗРЪНТЕ"
+        }
+      ]
+    },
+    {
+      "source_key": "kharkov",
+      "page_number": 6,
+      "source_sha256": "f389bac53dbd4041a952cacf774c2d6d91ba1af9efa8dba88eee2570b061f2c6",
+      "source_image_sha256": "77fe12a4933ed087e9a8f19d3b9dc21dfce443297852b374b2e172ebd818bd5d",
+      "selected_output_sha256": null,
+      "reviewer_kind": "ai_assisted",
+      "human_review_performed": false,
+      "selected_warnings": [],
+      "review_reasons": [
+        "blank_candidate"
+      ],
+      "source_page_kind": "blank",
+      "scope": "Direct source-image and selected-output spot check; the reviewer could see both. The chosen example is not an unbiased accuracy sample.",
+      "checks": [
+        {
+          "location": "Whole page",
+          "kind": "blank",
+          "note": "No printed text is visible, and no output is selected.",
+          "source_excerpt_sha256": null,
+          "source_excerpt": null,
+          "selected_excerpt_sha256": null,
+          "selected_excerpt": null
+        }
+      ]
+    },
+    {
+      "source_key": "kharkov",
+      "page_number": 7,
+      "source_sha256": "f389bac53dbd4041a952cacf774c2d6d91ba1af9efa8dba88eee2570b061f2c6",
+      "source_image_sha256": "6e8142376e3c342ffdc9bc0696b924705f3db575aa61e0402db6abc4901aae3d",
+      "selected_output_sha256": "13fbaa0326f76720d4d1bf9fd21b7863fcc87f68db41eedf7982635aede927dc",
+      "reviewer_kind": "ai_assisted",
+      "human_review_performed": false,
+      "selected_warnings": [
+        "historical_orthography",
+        "low_confidence"
+      ],
+      "review_reasons": [
+        "blank_candidate",
+        "coverage_defect"
+      ],
+      "source_page_kind": "table_of_contents",
+      "scope": "Direct source-image and selected-output spot check; the reviewer could see both. The chosen example is not an unbiased accuracy sample.",
+      "checks": [
+        {
+          "location": "Final contents row, rightmost page reference for description of towns",
+          "kind": "output_error",
+          "note": "The source prints page reference 193 beside the final contents entry; that reference is absent from the selected output.",
+          "source_excerpt_sha256": "192611438a3e0bc5b198ad2d73e65d45f19d734cf3267e989929c660187a8d7c",
+          "source_excerpt": "193.",
+          "selected_excerpt_sha256": null,
+          "selected_excerpt": null
+        }
+      ]
+    },
+    {
+      "source_key": "kharkov",
+      "page_number": 8,
+      "source_sha256": "f389bac53dbd4041a952cacf774c2d6d91ba1af9efa8dba88eee2570b061f2c6",
+      "source_image_sha256": "624dbb236223710297d3a9df8ecf1835984ad3252a47cc5b7b4d7b902004d798",
+      "selected_output_sha256": "9016fbc91d633044560740871b4e5319ab9c3e1bc5893a0a52dd2e5b84bf82dd",
+      "reviewer_kind": "ai_assisted",
+      "human_review_performed": false,
+      "selected_warnings": [
+        "historical_orthography",
+        "low_confidence"
+      ],
+      "review_reasons": [
+        "blank_candidate",
+        "coverage_defect"
+      ],
+      "source_page_kind": "table_of_contents",
+      "scope": "Direct source-image and selected-output spot check; the reviewer could see both. The chosen example is not an unbiased accuracy sample.",
+      "checks": [
+        {
+          "location": "Rightmost page reference on the row for troop assembly places",
+          "kind": "output_error",
+          "note": "The source page reference is 130; the output reads 180 on the corresponding row.",
+          "source_excerpt_sha256": "32c4d47d5ab455169a108773110cfb3544efd86db71553defb12d29c3ecb7c76",
+          "source_excerpt": "130.",
+          "selected_excerpt_sha256": "fd43bb135cdb31227c93075e1a0984c410afef34f9d4cc5702d29f9f7c32e527",
+          "selected_excerpt": "180."
+        }
+      ]
+    },
+    {
+      "source_key": "kharkov",
+      "page_number": 9,
+      "source_sha256": "f389bac53dbd4041a952cacf774c2d6d91ba1af9efa8dba88eee2570b061f2c6",
+      "source_image_sha256": "afec3a41f6d8ac55ab40b15aec02097529fba6b0c0157e0d6ae9662c8b9f9dd3",
+      "selected_output_sha256": "0cec3568c945edf03813acd01669946e894b892a9589195a2e825fff93e34abc",
+      "reviewer_kind": "ai_assisted",
+      "human_review_performed": false,
+      "selected_warnings": [
+        "historical_orthography",
+        "low_confidence"
+      ],
+      "review_reasons": [
+        "blank_candidate",
+        "coverage_defect"
+      ],
+      "source_page_kind": "prose_with_section_headings",
+      "scope": "Direct source-image and selected-output spot check; the reviewer could see both. The chosen example is not an unbiased accuracy sample.",
+      "checks": [
+        {
+          "location": "First prose paragraph, first latitude value, minutes following 48 degrees",
+          "kind": "output_error",
+          "note": "The first latitude has 20 minutes in print; the output gives 90 minutes.",
+          "source_excerpt_sha256": "f5ca38f748a1d6eaf726b8a42fb575c3c71f1864a8143301782de13da2d9202b",
+          "source_excerpt": "20",
+          "selected_excerpt_sha256": "69f59c273b6e669ac32a6dd5e1b2cb63333d8b004f9696447aee2d422ce63763",
+          "selected_excerpt": "90"
+        }
+      ]
+    },
+    {
+      "source_key": "kharkov",
+      "page_number": 10,
+      "source_sha256": "f389bac53dbd4041a952cacf774c2d6d91ba1af9efa8dba88eee2570b061f2c6",
+      "source_image_sha256": "a0d7d7efdd43f51519c634e1277a2ea99bbea103556770eab6edb02772d41bdf",
+      "selected_output_sha256": "c1546e604f29ae153a7b3a0c9d50cccda83a565ab98e8d60af8bccda1e1c3bba",
+      "reviewer_kind": "ai_assisted",
+      "human_review_performed": false,
+      "selected_warnings": [
+        "historical_orthography",
+        "low_confidence"
+      ],
+      "review_reasons": [
+        "blank_candidate",
+        "coverage_defect"
+      ],
+      "source_page_kind": "prose_with_section_headings_and_footnote",
+      "scope": "Direct source-image and selected-output spot check; the reviewer could see both. The chosen example is not an unbiased accuracy sample.",
+      "checks": [
+        {
+          "location": "Boundaries paragraph, distance along Kursk province border",
+          "kind": "output_error",
+          "note": "The source distance is 452 versts; the output changes its final digit to 9.",
+          "source_excerpt_sha256": "549a2fac47d713cc00f2db498ad6b5574fb03c9293aef6c7ad50a11b394c197d",
+          "source_excerpt": "452",
+          "selected_excerpt_sha256": "42f0bec3310ddd8a55e8d62817337ca49c55a898c14ab073d07c16dee24d73d4",
+          "selected_excerpt": "459"
+        }
+      ]
+    },
+    {
+      "source_key": "kharkov",
+      "page_number": 81,
+      "source_sha256": "f389bac53dbd4041a952cacf774c2d6d91ba1af9efa8dba88eee2570b061f2c6",
+      "source_image_sha256": "7020998d1715fb8b0df933a52158dacf7b5af94848f472cc92148fc48ea1591c",
+      "selected_output_sha256": "45f42956f5689f892e399a13fb774ea348ed91ecef3b056bdc592ace8f203178",
+      "reviewer_kind": "ai_assisted",
+      "human_review_performed": false,
+      "selected_warnings": [
+        "historical_orthography",
+        "low_confidence"
+      ],
+      "review_reasons": [
+        "blank_candidate",
+        "coverage_defect"
+      ],
+      "source_page_kind": "prose_with_footnote",
+      "scope": "Direct source-image and selected-output spot check; the reviewer could see both. The chosen example is not an unbiased accuracy sample.",
+      "checks": [
+        {
+          "location": "Bottom footnote, year of the decree dated 6 April",
+          "kind": "output_error",
+          "note": "The footnote prints 1817; the selected output substitutes an opening bracket for the third digit.",
+          "source_excerpt_sha256": "728edd27debc2046984906dbbb117313dab4a9f0e9b47c7f0411e236c175f3e2",
+          "source_excerpt": "1817",
+          "selected_excerpt_sha256": "141580795403cdb8c5920367be28a53535a4aa683432d1bff60a1d2e9dfd4876",
+          "selected_excerpt": "18[7"
+        }
+      ]
+    },
+    {
+      "source_key": "kharkov",
+      "page_number": 82,
+      "source_sha256": "f389bac53dbd4041a952cacf774c2d6d91ba1af9efa8dba88eee2570b061f2c6",
+      "source_image_sha256": "b4c19ee00e2db9ca1584fb1e1b26351aa5a2c00a6cb947bb6f1a9f8700068407",
+      "selected_output_sha256": "ade83ef450f66c7fef19a9ef1e4ab3b340b37fcc4d34ccfd69e88b38836ca482",
+      "reviewer_kind": "ai_assisted",
+      "human_review_performed": false,
+      "selected_warnings": [
+        "historical_orthography"
+      ],
+      "review_reasons": [
+        "blank_candidate"
+      ],
+      "source_page_kind": "prose_with_population_table",
+      "scope": "Direct source-image and selected-output spot check; the reviewer could see both. The chosen example is not an unbiased accuracy sample.",
+      "checks": [
+        {
+          "location": "Population table, military settlement row, total column",
+          "kind": "output_error",
+          "note": "The military settlement total is printed as 200,307; the output changes its leading digit to 9.",
+          "source_excerpt_sha256": "27a21eb914d7972d9391bd70510538659cd2eb98d0845cd7e3242fa61c40a79b",
+          "source_excerpt": "200,307",
+          "selected_excerpt_sha256": "b931432ba8c98ae9fba77b5165e246a684cfefd87e5542c8c9d6a04e88daafaa",
+          "selected_excerpt": "900,307"
+        }
+      ]
+    },
+    {
+      "source_key": "kharkov",
+      "page_number": 83,
+      "source_sha256": "f389bac53dbd4041a952cacf774c2d6d91ba1af9efa8dba88eee2570b061f2c6",
+      "source_image_sha256": "03b32c4059d8a48e98cb2ec5bdeb0eb1eb1b6555c4b9a221cfd78ea073f82427",
+      "selected_output_sha256": "d02583d49ef4b5b59b481e3f6ab2501ab00534f148837c826e467cb2310ecaec",
+      "reviewer_kind": "ai_assisted",
+      "human_review_performed": false,
+      "selected_warnings": [
+        "historical_orthography",
+        "low_confidence"
+      ],
+      "review_reasons": [
+        "blank_candidate",
+        "coverage_defect"
+      ],
+      "source_page_kind": "population_series_with_prose_and_footnotes",
+      "scope": "Direct source-image and selected-output spot check; the reviewer could see both. The chosen example is not an unbiased accuracy sample.",
+      "checks": [
+        {
+          "location": "Top population series, 1788 row, count of both sexes",
+          "kind": "output_error",
+          "note": "The 1788 row prints 796,808; its selected output reads 196,308, changing two digits.",
+          "source_excerpt_sha256": "b30db89cba21140441216c967cecfa96416d2a3b559644d41fdf996a220a6cd7",
+          "source_excerpt": "796,808",
+          "selected_excerpt_sha256": "5fe5e355c1bf90da89126fa632e56b2c0ee4463568bff78b3a87c2c12235315a",
+          "selected_excerpt": "196,308"
+        }
+      ]
+    },
+    {
+      "source_key": "kharkov",
+      "page_number": 84,
+      "source_sha256": "f389bac53dbd4041a952cacf774c2d6d91ba1af9efa8dba88eee2570b061f2c6",
+      "source_image_sha256": "449f885655eb5316b820283dc103510585ba44997250cf4e5d174b635795abbb",
+      "selected_output_sha256": "7c13463e85c51e4773cb376d308879fba90e9b381e5146b68db504570b294a18",
+      "reviewer_kind": "ai_assisted",
+      "human_review_performed": false,
+      "selected_warnings": [
+        "historical_orthography"
+      ],
+      "review_reasons": [
+        "blank_candidate"
+      ],
+      "source_page_kind": "prose_with_numeric_summaries_and_footnote",
+      "scope": "Direct source-image and selected-output spot check; the reviewer could see both. The chosen example is not an unbiased accuracy sample.",
+      "checks": [
+        {
+          "location": "Upper numerical summary, excess of female population",
+          "kind": "output_error",
+          "note": "The source summary prints 14,807; the output adds a period within the number and changes 8 to 3.",
+          "source_excerpt_sha256": "b64f2c9c7189bf9012267e6069b519ff26f2299a06a5237338e7cb1c86fccc5f",
+          "source_excerpt": "14,807.",
+          "selected_excerpt_sha256": "999b327d8b39f368ec769e526501305e1411a1e04b0d2e1a113a285b76f40245",
+          "selected_excerpt": "14.,307."
+        }
+      ]
+    },
+    {
+      "source_key": "kharkov",
+      "page_number": 85,
+      "source_sha256": "f389bac53dbd4041a952cacf774c2d6d91ba1af9efa8dba88eee2570b061f2c6",
+      "source_image_sha256": "e0065028411fb957ca4231f99bd022a942cd4e0e998665bebc48744e11563415",
+      "selected_output_sha256": "9e6697aba656e5e5bb08c875984447254c162fad4fc499776eacf7a20b524e21",
+      "reviewer_kind": "ai_assisted",
+      "human_review_performed": false,
+      "selected_warnings": [
+        "historical_orthography"
+      ],
+      "review_reasons": [
+        "blank_candidate"
+      ],
+      "source_page_kind": "prose_with_footnotes",
+      "scope": "Direct source-image and selected-output spot check; the reviewer could see both. The chosen example is not an unbiased accuracy sample.",
+      "checks": [
+        {
+          "location": "First paragraph, stated count of state peasants for 1845",
+          "kind": "output_error",
+          "note": "The printed count is 770,404; the selected output changes the leading digit to 1.",
+          "source_excerpt_sha256": "9cd6c3434c447ac022c8bf4cca016daf0cb7e0ef839575f1964feca34c8a5ba8",
+          "source_excerpt": "770,404",
+          "selected_excerpt_sha256": "613d71ffe35aa7f2dd3839f2ab68f37234cc826d4dcb58cbf414d0f57a3fabc0",
+          "selected_excerpt": "170,404"
+        }
+      ]
+    },
+    {
+      "source_key": "kharkov",
+      "page_number": 86,
+      "source_sha256": "f389bac53dbd4041a952cacf774c2d6d91ba1af9efa8dba88eee2570b061f2c6",
+      "source_image_sha256": "b1773d2392c3ce8b8ac71efcbc017ca4c2b1d7525297a169cea3a923057d8c6c",
+      "selected_output_sha256": "4b37b7b7fa47c5ada42afe2e89b78ed9f3e53284070be5ca95f62cb2f0695ff3",
+      "reviewer_kind": "ai_assisted",
+      "human_review_performed": false,
+      "selected_warnings": [
+        "historical_orthography"
+      ],
+      "review_reasons": [
+        "blank_candidate"
+      ],
+      "source_page_kind": "prose_with_comparative_table",
+      "scope": "Direct source-image and selected-output spot check; the reviewer could see both. The chosen example is not an unbiased accuracy sample.",
+      "checks": [
+        {
+          "location": "Bottom table, black clergy row, male column for 1836",
+          "kind": "output_error",
+          "note": "The source male count is 40; the output inserts a period between its digits.",
+          "source_excerpt_sha256": "d59eced1ded07f84c145592f65bdf854358e009c5cd705f5215bf18697fed103",
+          "source_excerpt": "40",
+          "selected_excerpt_sha256": "fbd04e1aae9ce0b11a8946e2c9ac2619f7428a64d32d01eff61d809dcb70ee8e",
+          "selected_excerpt": "4.0"
+        }
+      ]
+    },
+    {
+      "source_key": "kharkov",
+      "page_number": 87,
+      "source_sha256": "f389bac53dbd4041a952cacf774c2d6d91ba1af9efa8dba88eee2570b061f2c6",
+      "source_image_sha256": "59d67318b90e6f8af3c6f059e2071e583f00246cec796cce97e2fa2a4da0799b",
+      "selected_output_sha256": "d288bd4fa422ce0698ad1c98c86bf284faa9b7efc0e64762192ee5f0ec3327ee",
+      "reviewer_kind": "ai_assisted",
+      "human_review_performed": false,
+      "selected_warnings": [
+        "historical_orthography",
+        "low_confidence"
+      ],
+      "review_reasons": [
+        "blank_candidate",
+        "coverage_defect"
+      ],
+      "source_page_kind": "comparative_population_table_with_prose_and_footnote",
+      "scope": "Direct source-image and selected-output spot check; the reviewer could see both. The chosen example is not an unbiased accuracy sample.",
+      "checks": [
+        {
+          "location": "Lower table, bracketed domestic servants and landlord peasants group, male column",
+          "kind": "output_error",
+          "note": "The printed male count for the bracketed group is 226,009; the output changes the first two digits to 99.",
+          "source_excerpt_sha256": "04301314dd50c6673337c4376dcebde76def84c856be4b8ff4f429acc7092168",
+          "source_excerpt": "226,009",
+          "selected_excerpt_sha256": "620010fbbc9709a8373abb2f2221c6138e80e76d778e444c57d60948ff1a6255",
+          "selected_excerpt": "996,009"
+        }
+      ]
+    },
+    {
+      "source_key": "kharkov",
+      "page_number": 88,
+      "source_sha256": "f389bac53dbd4041a952cacf774c2d6d91ba1af9efa8dba88eee2570b061f2c6",
+      "source_image_sha256": "df88a1a2f0c74f3b78823e73b87ad90c100fff6cedbd594214c1d8d2c10a77eb",
+      "selected_output_sha256": "005a9840e8c3b54b6b1e8367908246b2ba1c9a37e1ed1dd643b9fde8127074cd",
+      "reviewer_kind": "ai_assisted",
+      "human_review_performed": false,
+      "selected_warnings": [
+        "historical_orthography"
+      ],
+      "review_reasons": [
+        "blank_candidate"
+      ],
+      "source_page_kind": "prose_with_section_heading",
+      "scope": "Direct source-image and selected-output spot check; the reviewer could see both. The chosen example is not an unbiased accuracy sample.",
+      "checks": [
+        {
+          "location": "Second paragraph, total urban population",
+          "kind": "output_error",
+          "note": "The urban population is printed as 147,160; the selected output reads 137,100.",
+          "source_excerpt_sha256": "a1d219e015935c6660d5bf9683b8d75312c5de42d4b23548c8d7011acce1afef",
+          "source_excerpt": "147,160",
+          "selected_excerpt_sha256": "dc7a57a092188800c88aeb14ebf74d00d74a336173ed15854d2932e1c8d5b50e",
+          "selected_excerpt": "137,100"
+        }
+      ]
+    },
+    {
+      "source_key": "kharkov",
+      "page_number": 89,
+      "source_sha256": "f389bac53dbd4041a952cacf774c2d6d91ba1af9efa8dba88eee2570b061f2c6",
+      "source_image_sha256": "971912057177325fe0bf0c895e75d313831e9cf015950a188998657358b74bf0",
+      "selected_output_sha256": "233256dfc66ad87cd4f6568b3906e29ff557a754ab8b3956e0d9de41919a0736",
+      "reviewer_kind": "ai_assisted",
+      "human_review_performed": false,
+      "selected_warnings": [
+        "historical_orthography"
+      ],
+      "review_reasons": [
+        "blank_candidate"
+      ],
+      "source_page_kind": "prose",
+      "scope": "Direct source-image and selected-output spot check; the reviewer could see both. The chosen example is not an unbiased accuracy sample.",
+      "checks": [
+        {
+          "location": "Opening of the second paragraph, sentence about men's hair",
+          "kind": "output_error",
+          "note": "This is a prose page about clothing and everyday practices, with no table. The selected sentence corrupts both Мужчины and волосы.",
+          "source_excerpt_sha256": "12f291b67ae08f98ae976e8c1312a694ada291c0249eec02f0e1ad6586c28626",
+          "source_excerpt": "Мужчины стригутъ волосы коротко",
+          "selected_excerpt_sha256": "f0f9440b4b301aa95e3c823fd9d8cb5bdedc94d488b15bcd928dc3a61524eb2b",
+          "selected_excerpt": "Муи:чины стригутъ волости коротко"
+        }
+      ]
+    },
+    {
+      "source_key": "kharkov",
+      "page_number": 90,
+      "source_sha256": "f389bac53dbd4041a952cacf774c2d6d91ba1af9efa8dba88eee2570b061f2c6",
+      "source_image_sha256": "6120f0587bd851e8502f7ece5014e3a2707d2e2fa77b9e15835a9c01fe957f86",
+      "selected_output_sha256": "967025e59f7dd0b3c5b15d88446978e8fd08df3f3646753b44e9797006d5d976",
+      "reviewer_kind": "ai_assisted",
+      "human_review_performed": false,
+      "selected_warnings": [
+        "historical_orthography"
+      ],
+      "review_reasons": [
+        "blank_candidate"
+      ],
+      "source_page_kind": "prose",
+      "scope": "Direct source-image and selected-output spot check; the reviewer could see both. The chosen example is not an unbiased accuracy sample.",
+      "checks": [
+        {
+          "location": "Second line, description of vareniki fillings",
+          "kind": "output_error",
+          "note": "The printed word вишнями is extracted as виншями, transposing ш and н.",
+          "source_excerpt_sha256": "25ea8d01541818a9aa284c91c4271c92f3d8ed5d8a1b63e7bcb9440befa89aae",
+          "source_excerpt": "съ творогомъ или вишнями",
+          "selected_excerpt_sha256": "0067911044aace39a9de94972777ab8fdf89e049829a4ac71eeb5806e4af865e",
+          "selected_excerpt": "съ творогомъ или виншями"
+        }
+      ]
+    },
+    {
+      "source_key": "census",
+      "page_number": 10,
+      "source_sha256": "bae86fa50e1c6114c761e7f73b5836bb0f0fae13f9fc7b63bb14048c0be74579",
+      "source_image_sha256": "6fb38535741f32c5363ec45ca93ee47ce1131465a6d4bd0e11f7d99421683a9c",
+      "selected_output_sha256": "0fcd5bd48eea3f35beb5236a1ccb1044a3769b8f72d95b1944bedfcda4c92c39",
+      "reviewer_kind": "ai_assisted",
+      "human_review_performed": false,
+      "selected_warnings": [],
+      "review_reasons": [
+        "blank_candidate"
+      ],
+      "source_page_kind": "two_page_prose_spread",
+      "scope": "Direct source-image and selected-output spot check; the reviewer could see both. The chosen example is not an unbiased accuracy sample.",
+      "checks": [
+        {
+          "location": "Left printed page 16, third paragraph, rural enumerator norm",
+          "kind": "output_error",
+          "note": "The rural enumerator norm is printed as 625 people; the corresponding output contains ь in place of the number.",
+          "source_excerpt_sha256": "ad723f42c7aba316d944f19f340ce47d8e0c6fb354d212736ec4782314a6824a",
+          "selected_excerpt_sha256": "b95d78565f154f82dbc62bca46dcd797ca915edcc94581c48cac5fbcd7824034"
+        }
+      ]
+    },
+    {
+      "source_key": "census",
+      "page_number": 11,
+      "source_sha256": "bae86fa50e1c6114c761e7f73b5836bb0f0fae13f9fc7b63bb14048c0be74579",
+      "source_image_sha256": "831093efc0038d4fb242706e95cf221a38f327563dbd589a9fcfb4de590b28a4",
+      "selected_output_sha256": "16e9069d15df2df7905513af17c4ecaade00365cdbe44d6cb15110dab61438b3",
+      "reviewer_kind": "ai_assisted",
+      "human_review_performed": false,
+      "selected_warnings": [],
+      "review_reasons": [
+        "blank_candidate"
+      ],
+      "source_page_kind": "prose_and_section_title_spread",
+      "scope": "Direct source-image and selected-output spot check; the reviewer could see both. The chosen example is not an unbiased accuracy sample.",
+      "checks": [
+        {
+          "location": "Left page, paragraph on coding bureaus, count following Было создано",
+          "kind": "output_error",
+          "note": "The source states 62 coding bureaus; the selected output reads 68.",
+          "source_excerpt_sha256": "81b8a03f97e8787c53fe1a86bda042b6f0de9b0ec9c09357e107c99ba4d6948a",
+          "selected_excerpt_sha256": "a21855da08cb102d1d217c53dc5824a3a795c1c1a44e971bf01ab9da3a2acbbf"
+        }
+      ]
+    },
+    {
+      "source_key": "census",
+      "page_number": 12,
+      "source_sha256": "bae86fa50e1c6114c761e7f73b5836bb0f0fae13f9fc7b63bb14048c0be74579",
+      "source_image_sha256": "082699753ff43506ec43f2318210df4124b80acf4f3932b5d41d398e985dfe58",
+      "selected_output_sha256": "8b4db4b499930eaaa9bdb93cac4f182910727e5713fee62461d285951c5a7e58",
+      "reviewer_kind": "ai_assisted",
+      "human_review_performed": false,
+      "selected_warnings": [
+        "low_confidence"
+      ],
+      "review_reasons": [
+        "blank_candidate",
+        "coverage_defect"
+      ],
+      "source_page_kind": "two_table_spread",
+      "scope": "Direct source-image and selected-output spot check; the reviewer could see both. The chosen example is not an unbiased accuracy sample.",
+      "checks": [
+        {
+          "location": "Upper Table 1, 1939 census row, women column; superscript footnote excluded",
+          "kind": "output_error",
+          "note": "The source female population count contains 862 in the middle group; the output changes it to 852.",
+          "source_excerpt_sha256": "22d938a7936ee9650885ca4a736e1e99fca0308fd27f5d7ce37cb759d52f6d55",
+          "selected_excerpt_sha256": "d3617b8d4b7fb1006f35c905df65d87494e2018e0d6530d387e4e8545465c09a"
+        }
+      ]
+    },
+    {
+      "source_key": "census",
+      "page_number": 13,
+      "source_sha256": "bae86fa50e1c6114c761e7f73b5836bb0f0fae13f9fc7b63bb14048c0be74579",
+      "source_image_sha256": "121ea163d0aca65e5c8ac9e22bca6cc727b6360e379ed48bee926eadc62c72ba",
+      "selected_output_sha256": "76c149da73627fc274f44c92315b409ad5a67af807994366afcc2ded285d09b1",
+      "reviewer_kind": "ai_assisted",
+      "human_review_performed": false,
+      "selected_warnings": [
+        "low_confidence"
+      ],
+      "review_reasons": [
+        "blank_candidate",
+        "coverage_defect"
+      ],
+      "source_page_kind": "two_table_spread",
+      "scope": "Direct source-image and selected-output spot check; the reviewer could see both. The chosen example is not an unbiased accuracy sample.",
+      "checks": [
+        {
+          "location": "Upper Table 3, USSR row, 1939 urban population column",
+          "kind": "output_error",
+          "note": "The printed urban count ends in 139; the selected output ends in 189.",
+          "source_excerpt_sha256": "3eb1063b72646a08557113ea5c73569b0f0239a386554a152d0139b64ce8b7c7",
+          "selected_excerpt_sha256": "b4da591ce0f6fcebb94e57562057509faeba61440b9803168e5511c65250a3b2"
+        }
+      ]
+    },
+    {
+      "source_key": "census",
+      "page_number": 14,
+      "source_sha256": "bae86fa50e1c6114c761e7f73b5836bb0f0fae13f9fc7b63bb14048c0be74579",
+      "source_image_sha256": "a98cc41ec7f266ee24831fc645d6f09ea95463482d0f057c6fc5e47935467bec",
+      "selected_output_sha256": "8f8106de9318ed48d1d7c49eb410fa8c2fcfa416985456371376044dad6ae3a1",
+      "reviewer_kind": "ai_assisted",
+      "human_review_performed": false,
+      "selected_warnings": [
+        "low_confidence"
+      ],
+      "review_reasons": [
+        "blank_candidate",
+        "coverage_defect"
+      ],
+      "source_page_kind": "two_page_table_continuation",
+      "scope": "Direct source-image and selected-output spot check; the reviewer could see both. The chosen example is not an unbiased accuracy sample.",
+      "checks": [
+        {
+          "location": "Upper Table 4 continuation, Moscow city row, total population column",
+          "kind": "matches",
+          "note": "The Moscow city total matches at the checked cell; this does not assess the surrounding row or other columns.",
+          "source_excerpt_sha256": "c587bcc3818c3bbf24b547675bdccb7c122bc396bb364609f1c89ebb909bda0d",
+          "selected_excerpt_sha256": "c587bcc3818c3bbf24b547675bdccb7c122bc396bb364609f1c89ebb909bda0d"
+        }
+      ]
+    },
+    {
+      "source_key": "census",
+      "page_number": 15,
+      "source_sha256": "bae86fa50e1c6114c761e7f73b5836bb0f0fae13f9fc7b63bb14048c0be74579",
+      "source_image_sha256": "3c744612811a18bb70334f969999308dbe5a34e255e6924b79a86145fd573e70",
+      "selected_output_sha256": "f1c9f89539c0537dd631ab1eee030d6ee496f562ef4508932db0be1f8e6b9aa4",
+      "reviewer_kind": "ai_assisted",
+      "human_review_performed": false,
+      "selected_warnings": [
+        "low_confidence"
+      ],
+      "review_reasons": [
+        "blank_candidate",
+        "coverage_defect"
+      ],
+      "source_page_kind": "two_page_table_continuation",
+      "scope": "Direct source-image and selected-output spot check; the reviewer could see both. The chosen example is not an unbiased accuracy sample.",
+      "checks": [
+        {
+          "location": "Upper Table 4 continuation, Baku city row, all-population women column",
+          "kind": "output_error",
+          "note": "The Baku female count begins with 411 in print; the output changes that group to 811.",
+          "source_excerpt_sha256": "29ff884af6e0df677f5fc8cc10c3d3bc6f350dd96bb67a332c9984954fca834f",
+          "selected_excerpt_sha256": "1c304160e92a34249b7bd32ba4150971d7f3fae827d9425aa2008c9f05294bf0"
+        }
+      ]
+    },
+    {
+      "source_key": "census",
+      "page_number": 16,
+      "source_sha256": "bae86fa50e1c6114c761e7f73b5836bb0f0fae13f9fc7b63bb14048c0be74579",
+      "source_image_sha256": "77724e78443731e4cc261c9c7906261f1449377dd597f446d5742c7b45e8ed3c",
+      "selected_output_sha256": "87b36cb521cba227a6a3817c8d260b252121c149f5f8bd87f28b12bcad721d40",
+      "reviewer_kind": "ai_assisted",
+      "human_review_performed": false,
+      "selected_warnings": [
+        "low_confidence"
+      ],
+      "review_reasons": [
+        "blank_candidate",
+        "coverage_defect"
+      ],
+      "source_page_kind": "three_table_spread",
+      "scope": "Direct source-image and selected-output spot check; the reviewer could see both. The chosen example is not an unbiased accuracy sample.",
+      "checks": [
+        {
+          "location": "Upper-right Table 6, under 7 years row, all-population women column",
+          "kind": "output_error",
+          "note": "The source count begins with 15; the output changes that first group to 16.",
+          "source_excerpt_sha256": "112d683928024bca86a1275cbb9329b86ea1ca674c45c7ded3121006fe3ab7bb",
+          "selected_excerpt_sha256": "e4736da2d209c4aa868d556e3ef9cd562ffbacf1681c530c2c30c78fa575ce65"
+        }
+      ]
+    },
+    {
+      "source_key": "census",
+      "page_number": 17,
+      "source_sha256": "bae86fa50e1c6114c761e7f73b5836bb0f0fae13f9fc7b63bb14048c0be74579",
+      "source_image_sha256": "91e1c24e20ed13068f268419569161e28d38f3b91fc833bfc2878142e9fa5f6d",
+      "selected_output_sha256": "85459bf63b4844bff0c3adf133206d1dc113cdd056ba0d2871d5e31684830f47",
+      "reviewer_kind": "ai_assisted",
+      "human_review_performed": false,
+      "selected_warnings": [
+        "fragmented_text",
+        "low_confidence"
+      ],
+      "review_reasons": [
+        "blank_candidate",
+        "coverage_defect"
+      ],
+      "source_page_kind": "two_page_age_table_continuation",
+      "scope": "Direct source-image and selected-output spot check; the reviewer could see both. The chosen example is not an unbiased accuracy sample.",
+      "checks": [
+        {
+          "location": "Lower printed page 31, Rostov region row, under 7 years column",
+          "kind": "output_error",
+          "note": "The printed count begins with 479; the output begins with 179.",
+          "source_excerpt_sha256": "5e2696a4a5d0c6ee75e18e1a4ee8234203fb905da90ebd3aac3ceeef590e2ef9",
+          "selected_excerpt_sha256": "494cb0e1abee06596c480556ffa66655f816e6956bd68cd9ac8dd3aa33a21c97"
+        }
+      ]
+    },
+    {
+      "source_key": "census",
+      "page_number": 18,
+      "source_sha256": "bae86fa50e1c6114c761e7f73b5836bb0f0fae13f9fc7b63bb14048c0be74579",
+      "source_image_sha256": "9c42b83701a0484b48fbd3fc00d89f14565243b64ad86b07ab2a301d5bd10558",
+      "selected_output_sha256": "5c211a6a27457652487d5aed631445f53beaae30d07800c7efea294b1dffd90e",
+      "reviewer_kind": "ai_assisted",
+      "human_review_performed": false,
+      "selected_warnings": [
+        "fragmented_text",
+        "low_confidence"
+      ],
+      "review_reasons": [
+        "blank_candidate",
+        "coverage_defect"
+      ],
+      "source_page_kind": "two_page_age_table_continuation",
+      "scope": "Direct source-image and selected-output spot check; the reviewer could see both. The chosen example is not an unbiased accuracy sample.",
+      "checks": [
+        {
+          "location": "Upper table, Tambov region row, ages 8–11 column",
+          "kind": "output_error",
+          "note": "The source count has 958 in the final group; the corresponding output reads 758 amid a heavily disrupted row.",
+          "source_excerpt_sha256": "5365349699d4672c392a332e39f5f68a41e65b0ffc4d4cc03b8bee2487032878",
+          "selected_excerpt_sha256": "6e1f866d18912b70043d0cc5b42a4a079e1290fde62d910005f8aa1486980a7a"
+        }
+      ]
+    },
+    {
+      "source_key": "census",
+      "page_number": 19,
+      "source_sha256": "bae86fa50e1c6114c761e7f73b5836bb0f0fae13f9fc7b63bb14048c0be74579",
+      "source_image_sha256": "8a7802997c92e19b6d1d88af79f6eeeac0eda8dfb49e663b356a6ee4ce55df5f",
+      "selected_output_sha256": "a3f97b2b607bfdd15f31dd6051d427e13be1049ab22dab7454d2a561431458c8",
+      "reviewer_kind": "ai_assisted",
+      "human_review_performed": false,
+      "selected_warnings": [
+        "fragmented_text",
+        "low_confidence"
+      ],
+      "review_reasons": [
+        "blank_candidate",
+        "coverage_defect"
+      ],
+      "source_page_kind": "two_page_age_table_continuation",
+      "scope": "Direct source-image and selected-output spot check; the reviewer could see both. The chosen example is not an unbiased accuracy sample.",
+      "checks": [
+        {
+          "location": "Lower table, Baku city row, under 7 years column",
+          "kind": "output_error",
+          "note": "The printed count begins with 136; the output changes that group to 196.",
+          "source_excerpt_sha256": "e92a9a7580b77038f01dec4105d159384b88147894482f3ef2e39092901fb39c",
+          "selected_excerpt_sha256": "0281a65fb46242dfa14d4fdae9229bf58d3e43b4a86c9a023d7e9b3a4874e00f"
+        }
+      ]
+    },
+    {
+      "source_key": "census",
+      "page_number": 20,
+      "source_sha256": "bae86fa50e1c6114c761e7f73b5836bb0f0fae13f9fc7b63bb14048c0be74579",
+      "source_image_sha256": "25badce13a7259cb2b0f42d60c1b5aaabb6d956c7d67340094ae4a77e2467db1",
+      "selected_output_sha256": "15d7bc48122e2be97a65cb9ddc2d46a1d3f0da8508fe0a6381596686aebc3789",
+      "reviewer_kind": "ai_assisted",
+      "human_review_performed": false,
+      "selected_warnings": [
+        "low_confidence"
+      ],
+      "review_reasons": [
+        "blank_candidate",
+        "coverage_defect"
+      ],
+      "source_page_kind": "two_page_age_table_continuation",
+      "scope": "Direct source-image and selected-output spot check; the reviewer could see both. The chosen example is not an unbiased accuracy sample.",
+      "checks": [
+        {
+          "location": "Upper table, Leninabad region row, far-right total column",
+          "kind": "output_error",
+          "note": "The source total ends in 744; the selected output changes that group to 784.",
+          "source_excerpt_sha256": "ffe9fa0a0ff10bfa01eb9e24b07f0770c1c46b6a6bc5ccd043f7aaf1b1695391",
+          "selected_excerpt_sha256": "4a8bfc7dc986f9c4b89aa17680cf0a9f1a739bce336d445ae89ce795ea3ed357"
+        }
+      ]
+    },
+    {
+      "source_key": "census",
+      "page_number": 21,
+      "source_sha256": "bae86fa50e1c6114c761e7f73b5836bb0f0fae13f9fc7b63bb14048c0be74579",
+      "source_image_sha256": "faa94fa6a0ff2fcc9cb68c0d73eeca4f89b136a3ccd19b722a04f1fda896a53a",
+      "selected_output_sha256": "413dbfdd6e6c0fe04f606bd9ce835c46cc71f9908baf0d1c5159b2345d37c0e7",
+      "reviewer_kind": "ai_assisted",
+      "human_review_performed": false,
+      "selected_warnings": [
+        "low_confidence"
+      ],
+      "review_reasons": [
+        "blank_candidate",
+        "coverage_defect"
+      ],
+      "source_page_kind": "age_table_and_literacy_table_spread",
+      "scope": "Direct source-image and selected-output spot check; the reviewer could see both. The chosen example is not an unbiased accuracy sample.",
+      "checks": [
+        {
+          "location": "Lower Table 8, urban population 1926 row, ages 9–49 total literacy percentage",
+          "kind": "output_error",
+          "note": "The source literacy percentage is 80,9; the selected output omits the zero.",
+          "source_excerpt_sha256": "b3b1ae7082c8b3c18a429901fad5c9be2b38286f57e5a17ea4c41205fd58c085",
+          "selected_excerpt_sha256": "188dc39f8dfce31448d5a65fbd62299120f30d06d8c0a68ae320b2de80599bf5"
+        }
+      ]
+    },
+    {
+      "source_key": "census",
+      "page_number": 22,
+      "source_sha256": "bae86fa50e1c6114c761e7f73b5836bb0f0fae13f9fc7b63bb14048c0be74579",
+      "source_image_sha256": "3d7fdbec5514108167dd5a359e91acfbfd0f1ec7f8b0b6b5a610bf2761bc7045",
+      "selected_output_sha256": "5b182334505a4bdb54d82499351d599ba24332cfa242007388b451937b933d1f",
+      "reviewer_kind": "ai_assisted",
+      "human_review_performed": false,
+      "selected_warnings": [
+        "low_confidence"
+      ],
+      "review_reasons": [
+        "blank_candidate",
+        "coverage_defect"
+      ],
+      "source_page_kind": "four_panel_literacy_table_spread",
+      "scope": "Direct source-image and selected-output spot check; the reviewer could see both. The chosen example is not an unbiased accuracy sample.",
+      "checks": [
+        {
+          "location": "Lower-left panel, Dnepropetrovsk row, ages 9–49 in 1939 column",
+          "kind": "output_error",
+          "note": "The source percentage uses a decimal comma; the output replaces it with an apostrophe.",
+          "source_excerpt_sha256": "3488de6cd60617ffe2e31cf6a65023c7c7fddf57a82ce4922d6ad4fa20f8e198",
+          "selected_excerpt_sha256": "285189cd486fcfe3d22dfee2ea0e22f73dc21706bbdb970855a9b1c9862c503e"
+        }
+      ]
+    },
+    {
+      "source_key": "census",
+      "page_number": 23,
+      "source_sha256": "bae86fa50e1c6114c761e7f73b5836bb0f0fae13f9fc7b63bb14048c0be74579",
+      "source_image_sha256": "04d72d6a575fe421c54ea1fabdc55df1e53ba33474d4ee3118aefc12be6977b7",
+      "selected_output_sha256": "851c54e5653e8e0d873925b46a92a73ced60699e515f414b1813ddb665605c3d",
+      "reviewer_kind": "ai_assisted",
+      "human_review_performed": false,
+      "selected_warnings": [
+        "suspicious_symbol_density",
+        "fragmented_text",
+        "low_confidence"
+      ],
+      "review_reasons": [
+        "blank_candidate",
+        "coverage_defect"
+      ],
+      "source_page_kind": "two_literacy_table_spread",
+      "scope": "Direct source-image and selected-output spot check; the reviewer could see both. The chosen example is not an unbiased accuracy sample.",
+      "checks": [
+        {
+          "location": "Upper Table 9 ending, Tashkent region row, ages 9 and older in 1926 column",
+          "kind": "output_error",
+          "note": "The source cell reads 32,0, but the selected output contains no corresponding readable row or this numeric fragment. The output is dominated by disconnected symbols, preventing reliable row/column association.",
+          "source_excerpt_sha256": "201dd94b00bcac29ad4c1cbb72fdb0905cb95b8576ad1b46b41f3c8c3e6a8850",
+          "selected_excerpt_sha256": null
+        }
+      ]
+    },
+    {
+      "source_key": "census",
+      "page_number": 24,
+      "source_sha256": "bae86fa50e1c6114c761e7f73b5836bb0f0fae13f9fc7b63bb14048c0be74579",
+      "source_image_sha256": "081e74ad609288b902d1da5a8a6b510b47c907727918953976b4f27a65df5421",
+      "selected_output_sha256": "f1fb8d1b998da3597f2ea1e7acc83b1f82c1942079d9c9d0b71f9a9f02438214",
+      "reviewer_kind": "ai_assisted",
+      "human_review_performed": false,
+      "selected_warnings": [
+        "suspicious_symbol_density",
+        "fragmented_text",
+        "low_confidence"
+      ],
+      "review_reasons": [
+        "blank_candidate",
+        "coverage_defect"
+      ],
+      "source_page_kind": "two_page_literacy_table_continuation",
+      "scope": "Direct source-image and selected-output spot check; the reviewer could see both. The chosen example is not an unbiased accuracy sample.",
+      "checks": [
+        {
+          "location": "Upper table, Kursk row, urban men in 1926 and 1939, adjacent cells",
+          "kind": "output_error",
+          "note": "These adjacent source percentages cannot be recovered as a readable Kursk row in the selected output. Most of the output consists of disconnected symbols, so table association is lost.",
+          "source_excerpt_sha256": "2ae0d3600e4f6e43c4b7ec76c9281efd35c2f11b1119dc06665420af9b0bda7d",
+          "selected_excerpt_sha256": null
+        }
+      ]
+    },
+    {
+      "source_key": "census",
+      "page_number": 25,
+      "source_sha256": "bae86fa50e1c6114c761e7f73b5836bb0f0fae13f9fc7b63bb14048c0be74579",
+      "source_image_sha256": "4ce1febfedc6fe89a0312bfc8408d89b8cc9d9ae3f4abd223cad51db50a657a4",
+      "selected_output_sha256": "8687268ffaaa6cc7a56c0b00e3bee6b1150ac197e26c616c894a18b6528a5522",
+      "reviewer_kind": "ai_assisted",
+      "human_review_performed": false,
+      "selected_warnings": [
+        "low_confidence"
+      ],
+      "review_reasons": [
+        "blank_candidate",
+        "coverage_defect"
+      ],
+      "source_page_kind": "two_page_literacy_table_continuation",
+      "scope": "Direct source-image and selected-output spot check; the reviewer could see both. The chosen example is not an unbiased accuracy sample.",
+      "checks": [
+        {
+          "location": "Lower table, Kirghiz SSR row, urban men in 1939 column",
+          "kind": "output_error",
+          "note": "The source percentage is 86,0; the selected output reads 85,0.",
+          "source_excerpt_sha256": "666e00aeb6c04941b85e7470131bdbc87e670ac16a266931314510473c885c56",
+          "selected_excerpt_sha256": "8c4366542267fddb7b10b21e2ca94211b596df34bb9e5de3fe5bc5d9fc02f815"
+        }
+      ]
+    },
+    {
+      "source_key": "census",
+      "page_number": 26,
+      "source_sha256": "bae86fa50e1c6114c761e7f73b5836bb0f0fae13f9fc7b63bb14048c0be74579",
+      "source_image_sha256": "53c58563ba4c8c9eef77aa5cb1900dcfb8639201473dd7ac3e4f2d6cb6feb7fd",
+      "selected_output_sha256": "33005b8e287352e431a57450707c3230208b122f023c92742582fdfb4874eb05",
+      "reviewer_kind": "ai_assisted",
+      "human_review_performed": false,
+      "selected_warnings": [
+        "low_confidence"
+      ],
+      "review_reasons": [
+        "blank_candidate",
+        "coverage_defect"
+      ],
+      "source_page_kind": "literacy_and_education_table_spread",
+      "scope": "Direct source-image and selected-output spot check; the reviewer could see both. The chosen example is not an unbiased accuracy sample.",
+      "checks": [
+        {
+          "location": "Lower Table 11, secondary education, under 19 years row, urban men column",
+          "kind": "output_error",
+          "note": "The source urban count contains 234; the output changes this middle group to 284.",
+          "source_excerpt_sha256": "6f3099dfc70a2d62be1b646276e74422954b63b8083cf0700c1707982db4dc42",
+          "selected_excerpt_sha256": "3c5ba622504978bf59427d766e4b6e656c7617b056ef73ded1b39eb6ae22f050"
+        }
+      ]
+    },
+    {
+      "source_key": "census",
+      "page_number": 27,
+      "source_sha256": "bae86fa50e1c6114c761e7f73b5836bb0f0fae13f9fc7b63bb14048c0be74579",
+      "source_image_sha256": "c59177c5e3d56b785baf644465df122bc26b92ca86997091e9ad281ec7b1e056",
+      "selected_output_sha256": "34933c53e9bf885e1be9295b0fd8a83c8cdf913eadea65a63742cc2fd343944b",
+      "reviewer_kind": "ai_assisted",
+      "human_review_performed": false,
+      "selected_warnings": [
+        "low_confidence"
+      ],
+      "review_reasons": [
+        "blank_candidate",
+        "coverage_defect"
+      ],
+      "source_page_kind": "two_page_education_table_spread",
+      "scope": "Direct source-image and selected-output spot check; the reviewer could see both. The chosen example is not an unbiased accuracy sample.",
+      "checks": [
+        {
+          "location": "Upper Table 12, Arkhangelsk region row, men with secondary education column",
+          "kind": "output_error",
+          "note": "The printed count starts with 54; the selected output changes it to 24.",
+          "source_excerpt_sha256": "6164f50692c933cdaeb2746a9ddce74b40fcca5aabf0c4bf2adcfdbf5ecaca98",
+          "selected_excerpt_sha256": "d91f6aa4da87a62a9b80103ed4e4507a3473adff3d1d342790c4c0d0083310c5"
+        }
+      ]
+    },
+    {
+      "source_key": "census",
+      "page_number": 28,
+      "source_sha256": "bae86fa50e1c6114c761e7f73b5836bb0f0fae13f9fc7b63bb14048c0be74579",
+      "source_image_sha256": "148674f13c6564bb877c7bc6672e40d48862816e22b24c676aa544a4728aefae",
+      "selected_output_sha256": "eac83c413f8912326b6ea762dcf3983896487f560f759e816b686c0af963dd3c",
+      "reviewer_kind": "ai_assisted",
+      "human_review_performed": false,
+      "selected_warnings": [
+        "low_confidence"
+      ],
+      "review_reasons": [
+        "blank_candidate",
+        "coverage_defect"
+      ],
+      "source_page_kind": "two_page_education_table_continuation",
+      "scope": "Direct source-image and selected-output spot check; the reviewer could see both. The chosen example is not an unbiased accuracy sample.",
+      "checks": [
+        {
+          "location": "Lower table, Nakhichevan ASSR row, secondary education total column",
+          "kind": "output_error",
+          "note": "The printed total is 5.979; the output changes the leading digit to 2.",
+          "source_excerpt_sha256": "2f1236216a962890a53c8e0f6724232894d8fcfcdeb2683a361751bf5c1875a6",
+          "selected_excerpt_sha256": "5de6d305d54d9ac16c56c334cd108d7ff8acf54c482bdccdd04cee93d59324ac"
+        }
+      ]
+    },
+    {
+      "source_key": "census",
+      "page_number": 29,
+      "source_sha256": "bae86fa50e1c6114c761e7f73b5836bb0f0fae13f9fc7b63bb14048c0be74579",
+      "source_image_sha256": "c26d1255c2ccad8084440bf0064e16acca6bf8d73ddd5b68859a15bcf360e185",
+      "selected_output_sha256": "abfa21b3fd8154e62f628471512a371393416f7b8cbe293dfc984900f5513fd2",
+      "reviewer_kind": "ai_assisted",
+      "human_review_performed": false,
+      "selected_warnings": [
+        "low_confidence"
+      ],
+      "review_reasons": [
+        "blank_candidate",
+        "coverage_defect"
+      ],
+      "source_page_kind": "education_and_student_table_spread",
+      "scope": "Direct source-image and selected-output spot check; the reviewer could see both. The chosen example is not an unbiased accuracy sample.",
+      "checks": [
+        {
+          "location": "Lower Table 13, technical schools and similar schools row, total students column",
+          "kind": "output_error",
+          "note": "The printed student total ends in 793; the selected output ends in 798.",
+          "source_excerpt_sha256": "3f690783a9101b51f2844c5308d5a4e73f628187d43f9c948a17d18eefe5f8c1",
+          "selected_excerpt_sha256": "4ee6ffcbe45119460ce3bd02e4fa6329cbbc2e211cee323d50f4d65c956e4ff9"
+        }
+      ]
+    }
+  ]
+}

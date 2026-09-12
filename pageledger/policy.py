@@ -31,9 +31,7 @@ def validate_policy_rules(value: Any, path: str) -> list[dict[str, Any]]:
             raise ValueError(f"{predicate_path} is not a known policy predicate")
         if predicate == "grade_below":
             if not isinstance(operand, str) or operand not in GRADES:
-                raise ValueError(
-                    f"{predicate_path} must be one of: {', '.join(GRADES)}"
-                )
+                raise ValueError(f"{predicate_path} must be one of: {', '.join(GRADES)}")
         elif predicate == "missing_required_columns":
             if operand is not True:
                 raise ValueError(f"{predicate_path} must be true")
@@ -61,15 +59,10 @@ def evaluate_policies(
         if predicate == "grade_below":
             matched = grade_is_below(grade, operand)
         elif predicate == "missing_required_columns":
-            matched = bool(
-                alignment
-                and alignment.get("columns", {}).get("missing_required")
-            )
+            matched = bool(alignment and alignment.get("columns", {}).get("missing_required"))
         else:
             pass_rate = (
-                alignment.get("metrics", {}).get("arithmetic_pass_rate")
-                if alignment
-                else None
+                alignment.get("metrics", {}).get("arithmetic_pass_rate") if alignment else None
             )
             matched = (
                 isinstance(pass_rate, (int, float))
@@ -118,46 +111,52 @@ def rebuild_policy_queues(
             "grade_basis": entry["grade_basis"],
         }
         if entry.get("warnings"):
-            review.append({
-                **queue_entry,
-                "action": "review",
-                "reason": "quality_warning",
-            })
+            review.append(
+                {
+                    **queue_entry,
+                    "action": "review",
+                    "reason": "quality_warning",
+                }
+            )
         if config.review_below_grade is not None and grade_is_below(
             entry["grade"], config.review_below_grade
         ):
-            review.append({
-                **queue_entry,
-                "action": "review",
-                "reason": "grade_below_threshold",
-            })
+            review.append(
+                {
+                    **queue_entry,
+                    "action": "review",
+                    "reason": "grade_below_threshold",
+                }
+            )
         alignment = alignments.get(entry["page_id"])
         for predicate in evaluate_policies(
             config.rerun_rules,
             grade=entry["grade"],
             alignment=alignment,
         ):
-            review.append({
-                **queue_entry,
-                "action": "review",
-                "reason": f"rerun_if:{predicate}",
-            })
+            review.append(
+                {
+                    **queue_entry,
+                    "action": "review",
+                    "reason": f"rerun_if:{predicate}",
+                }
+            )
         for predicate in evaluate_policies(
             config.quarantine_rules,
             grade=entry["grade"],
             alignment=alignment,
         ):
-            quarantine.append({
-                **queue_entry,
-                "action": "quarantine",
-                "reason": f"quarantine_if:{predicate}",
-            })
+            quarantine.append(
+                {
+                    **queue_entry,
+                    "action": "quarantine",
+                    "reason": f"quarantine_if:{predicate}",
+                }
+            )
     return review, quarantine
 
 
-def _refresh_grade(
-    item: dict[str, Any], grades: dict[str, dict[str, Any]]
-) -> dict[str, Any]:
+def _refresh_grade(item: dict[str, Any], grades: dict[str, dict[str, Any]]) -> dict[str, Any]:
     refreshed = dict(item)
     graded = grades.get(str(item.get("page_id")))
     if graded is not None and "grade" in item:

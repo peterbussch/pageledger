@@ -47,11 +47,7 @@ def compare_runs(run_dir_a: Path, run_dir_b: Path) -> dict[str, Any]:
         provenance_b = b["provenance"].get(page_id, {})
         raw_a = (provenance_a.get("result") or {}).get("raw_sha256")
         raw_b = (provenance_b.get("result") or {}).get("raw_sha256")
-        raw_equal = (
-            raw_a == raw_b
-            if isinstance(raw_a, str) and isinstance(raw_b, str)
-            else None
-        )
+        raw_equal = raw_a == raw_b if isinstance(raw_a, str) and isinstance(raw_b, str) else None
         if raw_equal is None:
             raw_missing_total += 1
         elif raw_equal:
@@ -105,12 +101,8 @@ def compare_runs(run_dir_a: Path, run_dir_b: Path) -> dict[str, Any]:
         grade_generator_b = _grade_generator_identity(b["manifest"])
         grade_config_identity_a = a["grade_config_identity"]
         grade_config_identity_b = b["grade_config_identity"]
-        grade_schema_identity_a = _grade_schema_identity(
-            a["schema_identity"], grade_basis_a
-        )
-        grade_schema_identity_b = _grade_schema_identity(
-            b["schema_identity"], grade_basis_b
-        )
+        grade_schema_identity_a = _grade_schema_identity(a["schema_identity"], grade_basis_a)
+        grade_schema_identity_b = _grade_schema_identity(b["schema_identity"], grade_basis_b)
         grade_comparability = _grade_comparability(
             comparability,
             grade_basis_a,
@@ -142,9 +134,7 @@ def compare_runs(run_dir_a: Path, run_dir_b: Path) -> dict[str, Any]:
                 "page_id": page_id,
                 "character_count_a": qa.get("character_count"),
                 "character_count_b": qb.get("character_count"),
-                "character_delta": _delta(
-                    qa.get("character_count"), qb.get("character_count")
-                ),
+                "character_delta": _delta(qa.get("character_count"), qb.get("character_count")),
                 "word_count_a": qa.get("word_count"),
                 "word_count_b": qb.get("word_count"),
                 "word_delta": _delta(qa.get("word_count"), qb.get("word_count")),
@@ -214,10 +204,8 @@ def render_comparison(report: dict[str, Any]) -> str:
     comparable_pages = report.get("pages_comparable_total", report["pages_compared"])
     grade_comparable_pages = report.get("grade_pages_comparable_total", 0)
     lines = [
-        f"Run A: {a['run_id']}  [{', '.join(a['adapters']) or 'no adapter'}]"
-        f"  ({a['run_dir']})",
-        f"Run B: {b['run_id']}  [{', '.join(b['adapters']) or 'no adapter'}]"
-        f"  ({b['run_dir']})",
+        f"Run A: {a['run_id']}  [{', '.join(a['adapters']) or 'no adapter'}]  ({a['run_dir']})",
+        f"Run B: {b['run_id']}  [{', '.join(b['adapters']) or 'no adapter'}]  ({b['run_dir']})",
         "",
         f"Pages compared: {report['pages_compared']}"
         + (
@@ -301,28 +289,18 @@ def _load_run(run_dir: Path, *, label: str) -> dict[str, Any]:
 
     quality_path = _contained_regular_file(out_dir, "quality.jsonl", label=label)
     assert quality_path is not None
-    quality = {
-        entry["page_id"]: entry for entry in read_jsonl(quality_path)
-    }
+    quality = {entry["page_id"]: entry for entry in read_jsonl(quality_path)}
 
     cost: dict[str, Any] = {}
-    cost_path = _contained_regular_file(
-        out_dir, "cost.json", label=label, required=False
-    )
+    cost_path = _contained_regular_file(out_dir, "cost.json", label=label, required=False)
     if cost_path is not None:
         cost = json.loads(cost_path.read_text(encoding="utf-8"))
 
-    provenance_path = _contained_regular_file(
-        out_dir, "provenance.jsonl", label=label
-    )
+    provenance_path = _contained_regular_file(out_dir, "provenance.jsonl", label=label)
     assert provenance_path is not None
-    provenance = {
-        entry["page_id"]: entry for entry in read_jsonl(provenance_path)
-    }
+    provenance = {entry["page_id"]: entry for entry in read_jsonl(provenance_path)}
     config = _load_config_snapshot(out_dir, manifest)
-    effective_schema, schema_known = _load_effective_grade_schema(
-        out_dir, manifest, config
-    )
+    effective_schema, schema_known = _load_effective_grade_schema(out_dir, manifest, config)
     schema_identity = (
         _canonical_mapping_hash(effective_schema)
         if schema_known and effective_schema is not None
@@ -455,9 +433,7 @@ def _effective_extractor_identity(
     normalized_lists: dict[str, list[str]] = {}
     for field in ("input_types", "output_types", "capabilities"):
         values = extractor[field]
-        if not isinstance(values, list) or any(
-            not isinstance(value, str) for value in values
-        ):
+        if not isinstance(values, list) or any(not isinstance(value, str) for value in values):
             return None
         normalized_lists[field] = sorted(values)
 
@@ -472,9 +448,7 @@ def _effective_extractor_identity(
     }
 
 
-def _manifest_extractor_options_hash(
-    manifest: Any, page_extractor: Any
-) -> str | None:
+def _manifest_extractor_options_hash(manifest: Any, page_extractor: Any) -> str | None:
     """Resolve page provenance to one non-secret manifest options identity."""
     if not isinstance(manifest, dict) or not isinstance(page_extractor, dict):
         return None
@@ -614,10 +588,7 @@ def _load_config_snapshot(out_dir: Path, manifest: dict[str, Any]) -> dict[str, 
     if path != out_dir and out_dir not in path.parents:
         return None
     expected_hash = manifest_config.get("sha256")
-    if (
-        not isinstance(expected_hash, str)
-        or not _file_hash_matches(path, expected_hash)
-    ):
+    if not isinstance(expected_hash, str) or not _file_hash_matches(path, expected_hash):
         return None
     try:
         loaded = yaml.safe_load(path.read_text(encoding="utf-8"))
@@ -647,11 +618,7 @@ def _load_effective_grade_schema(
         return None, False
     if source == "config_snapshot":
         manifest_config = manifest.get("config")
-        relative = (
-            manifest_config.get("path")
-            if isinstance(manifest_config, dict)
-            else None
-        )
+        relative = manifest_config.get("path") if isinstance(manifest_config, dict) else None
         if not isinstance(relative, str):
             return None, False
         config_path = _safe_resolve(out_dir / relative)

@@ -134,7 +134,8 @@ and allowed diagnostic codes.
 
 Successful response records preserve content, format, confidence, actual
 returned model, warnings, usage, optional confidence detail and optional image
-input evidence. Partial failure results are retained in the failure receipt,
+input evidence. Reported numeric usage values are finite and non-negative;
+unknown values remain null. Partial failure results are retained in the failure receipt,
 never counted as completed or eligible for automatic retry. Final
 provenance still contains one successful extraction record per page; recovery
 does not add duplicate page rows or count reused responses as new calls.

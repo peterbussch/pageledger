@@ -93,8 +93,7 @@ def _load_all_artifacts(out_dir: Path) -> dict[str, Any]:
             artifacts[relative] = json.loads(path.read_text(encoding="utf-8"))
         elif path.suffix == ".jsonl":
             artifacts[relative] = [
-                json.loads(line)
-                for line in path.read_text(encoding="utf-8").splitlines()
+                json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()
             ]
         elif path.suffix in {".yml", ".yaml"}:
             artifacts[relative] = yaml.safe_load(path.read_text(encoding="utf-8"))

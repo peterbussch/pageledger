@@ -43,11 +43,15 @@ def _run(inputs, config_text, tmp_path, *, dry_run=False):
 # Warning taxonomy: no false positives on clean text
 # =========================================================================
 
+
 def test_clean_text_produces_no_warnings(tmp_path):
     """Clean prose text produces no quality warnings."""
     source = tmp_path / "clean.txt"
-    source.write_text("The quick brown fox jumps over the lazy dog. "
-                      "This is a perfectly normal paragraph of text.", encoding="utf-8")
+    source.write_text(
+        "The quick brown fox jumps over the lazy dog. "
+        "This is a perfectly normal paragraph of text.",
+        encoding="utf-8",
+    )
     out_dir = _run(
         [source],
         textwrap.dedent("""\
@@ -87,22 +91,15 @@ def test_clean_text_produces_no_warnings(tmp_path):
 def test_clean_multiscript_prose_produces_no_shape_warnings(tmp_path):
     """Clean text in tested scripts is prose, not OCR garble."""
     samples = [
-        "भारत एक विशाल और विविध देश है जहाँ अनेक भाषाएँ बोली जाती हैं। "
-        "यह स्वच्छ हिंदी गद्य का एक उदाहरण है।",
-        "ভারত একটি বৃহৎ এবং বৈচিত্র্যময় দেশ যেখানে অনেক ভাষা বলা হয়। "
-        "এটি পরিষ্কার বাংলা গদ্যের একটি উদাহরণ।",
-        "ભારત એક વિશાળ અને વિવિધ દેશ છે જ્યાં ઘણી ભાષાઓ બોલાય છે. "
-        "આ સ્વચ્છ ગુજરાતી ગદ્યનું ઉદાહરણ છે.",
-        "ਭਾਰਤ ਇੱਕ ਵਿਸ਼ਾਲ ਅਤੇ ਵਿਭਿੰਨ ਦੇਸ਼ ਹੈ ਜਿੱਥੇ ਕਈ ਭਾਸ਼ਾਵਾਂ ਬੋਲੀਆਂ ਜਾਂਦੀਆਂ ਹਨ। "
-        "ਇਹ ਸਾਫ਼ ਪੰਜਾਬੀ ਗੱਦ ਦੀ ਉਦਾਹਰਨ ਹੈ।",
+        "भारत एक विशाल और विविध देश है जहाँ अनेक भाषाएँ बोली जाती हैं। यह स्वच्छ हिंदी गद्य का एक उदाहरण है।",
+        "ভারত একটি বৃহৎ এবং বৈচিত্র্যময় দেশ যেখানে অনেক ভাষা বলা হয়। এটি পরিষ্কার বাংলা গদ্যের একটি উদাহরণ।",
+        "ભારત એક વિશાળ અને વિવિધ દેશ છે જ્યાં ઘણી ભાષાઓ બોલાય છે. આ સ્વચ્છ ગુજરાતી ગદ્યનું ઉદાહરણ છે.",
+        "ਭਾਰਤ ਇੱਕ ਵਿਸ਼ਾਲ ਅਤੇ ਵਿਭਿੰਨ ਦੇਸ਼ ਹੈ ਜਿੱਥੇ ਕਈ ਭਾਸ਼ਾਵਾਂ ਬੋਲੀਆਂ ਜਾਂਦੀਆਂ ਹਨ। ਇਹ ਸਾਫ਼ ਪੰਜਾਬੀ ਗੱਦ ਦੀ ਉਦਾਹਰਨ ਹੈ।",
         "இந்தியா பல மொழிகள் பேசப்படும் ஒரு பெரிய மற்றும் பல்வகை நாடாகும். "
         "இது தெளிவான தமிழ் உரையின் ஒரு எடுத்துக்காட்டு.",
-        "భారతదేశం అనేక భాషలు మాట్లాడే విశాలమైన మరియు వైవిధ్యమైన దేశం. "
-        "ఇది స్పష్టమైన తెలుగు వచనానికి ఒక ఉదాహరణ.",
-        "ಭಾರತವು ಅನೇಕ ಭಾಷೆಗಳನ್ನು ಮಾತನಾಡುವ ವಿಶಾಲ ಮತ್ತು ವೈವಿಧ್ಯಮಯ ದೇಶವಾಗಿದೆ. "
-        "ಇದು ಸ್ಪಷ್ಟ ಕನ್ನಡ ಗದ್ಯದ ಒಂದು ಉದಾಹರಣೆ.",
-        "ഇന്ത്യ നിരവധി ഭാഷകൾ സംസാരിക്കുന്ന വിശാലവും വൈവിധ്യമാർന്നതുമായ രാജ്യമാണ്. "
-        "ഇത് വ്യക്തമായ മലയാള ഗദ്യത്തിന്റെ ഉദാഹരണമാണ്.",
+        "భారతదేశం అనేక భాషలు మాట్లాడే విశాలమైన మరియు వైవిధ్యమైన దేశం. ఇది స్పష్టమైన తెలుగు వచనానికి ఒక ఉదాహరణ.",
+        "ಭಾರತವು ಅನೇಕ ಭಾಷೆಗಳನ್ನು ಮಾತನಾಡುವ ವಿಶಾಲ ಮತ್ತು ವೈವಿಧ್ಯಮಯ ದೇಶವಾಗಿದೆ. ಇದು ಸ್ಪಷ್ಟ ಕನ್ನಡ ಗದ್ಯದ ಒಂದು ಉದಾಹರಣೆ.",
+        "ഇന്ത്യ നിരവധി ഭാഷകൾ സംസാരിക്കുന്ന വിശാലവും വൈവിധ്യമാർന്നതുമായ രാജ്യമാണ്. ഇത് വ്യക്തമായ മലയാള ഗദ്യത്തിന്റെ ഉദാഹരണമാണ്.",
         "هذا مثال على نص عربي واضح وسليم للاختبار في مشروع بحثي متعدد اللغات "
         "دون رموز غريبة أو تشويش.",
         "Қазақстан көп тілді және мәдениеті бай ел. Бұл зерттеу жобасына арналған "
@@ -145,6 +142,7 @@ def test_clean_multiscript_prose_produces_no_shape_warnings(tmp_path):
 # Empty text
 # =========================================================================
 
+
 def test_empty_page_produces_empty_text_warning(tmp_path):
     """Empty page produces empty_text warning, count and audit entry."""
     source = tmp_path / "empty.txt"
@@ -181,9 +179,7 @@ def test_empty_page_produces_empty_text_warning(tmp_path):
 
 
 @pytest.mark.parametrize("content", ["   \n", "·", "— …"])  # OCR specks are not text.
-def test_punctuation_or_whitespace_only_output_is_empty_meaningful_text(
-    tmp_path, content: str
-):
+def test_punctuation_or_whitespace_only_output_is_empty_meaningful_text(tmp_path, content: str):
     source = tmp_path / "noise-only.txt"
     source.write_text(content, encoding="utf-8")
     out_dir = _run(
@@ -208,6 +204,7 @@ def test_punctuation_or_whitespace_only_output_is_empty_meaningful_text(
 # =========================================================================
 # Short text (< 10 chars)
 # =========================================================================
+
 
 def test_short_text_produces_warning(tmp_path):
     """Very short text (< 10 chars) produces short_text warning."""
@@ -242,6 +239,7 @@ def test_short_text_produces_warning(tmp_path):
 # Replacement characters (\ufffd)
 # =========================================================================
 
+
 def test_replacement_characters_trigger_warning(tmp_path):
     """Unicode replacement characters trigger replacement_characters warning."""
     source = tmp_path / "repl.txt"
@@ -273,6 +271,7 @@ def test_replacement_characters_trigger_warning(tmp_path):
 # Control characters
 # =========================================================================
 
+
 def test_control_characters_trigger_warning(tmp_path):
     """Non-whitespace control characters trigger control_characters warning."""
     source = tmp_path / "ctrl.txt"
@@ -303,6 +302,7 @@ def test_control_characters_trigger_warning(tmp_path):
 # =========================================================================
 # Suspicious symbol density
 # =========================================================================
+
 
 def test_suspicious_symbol_density_triggers_warning(tmp_path):
     """Sufficient suspicious symbols trigger suspicious_symbol_density warning."""
@@ -336,12 +336,15 @@ def test_suspicious_symbol_density_triggers_warning(tmp_path):
 # Fragmented text (lexical shape)
 # =========================================================================
 
+
 def test_fragmented_text_triggers_warning(tmp_path):
     """OCR fragment noise (mean token length < 3) triggers fragmented_text."""
     source = tmp_path / "fragments.txt"
     # 30 alphabetic fragments, mean length ~1.3 — pdftoppm/tesseract line noise
-    source.write_text("l ll l lI ll I l li ll l Il ll i l ll lI l I li ll "
-                      "l ll I li l ll lI l li", encoding="utf-8")
+    source.write_text(
+        "l ll l lI ll I l li ll l Il ll i l ll lI l I li ll l ll I li l ll lI l li",
+        encoding="utf-8",
+    )
     out_dir = _run(
         [source],
         textwrap.dedent("""\
@@ -373,8 +376,9 @@ def test_fragmented_text_not_triggered_by_prose_or_few_tokens(tmp_path):
     source = tmp_path / "mixed.txt"
     # page 1: normal prose; page 2: fragment noise but only 5 tokens
     source.write_text(
-        "The quick brown fox jumps over the lazy dog near the riverbank today."
-        "\fl ll I li l", encoding="utf-8")
+        "The quick brown fox jumps over the lazy dog near the riverbank today.\fl ll I li l",
+        encoding="utf-8",
+    )
     out_dir = _run(
         [source],
         textwrap.dedent("""\
@@ -428,9 +432,7 @@ def test_joined_text_triggers_warning_and_caps_signals_grade(tmp_path):
 def test_joined_text_guard_does_not_flag_cjk_or_normal_prose(tmp_path):
     source = tmp_path / "guards.txt"
     source.write_text(
-        " ".join(["漢" * 100] * 25)
-        + "\f"
-        + " ".join(["ordinary"] * 30),
+        " ".join(["漢" * 100] * 25) + "\f" + " ".join(["ordinary"] * 30),
         encoding="utf-8",
     )
     out_dir = _run(
@@ -458,6 +460,7 @@ def test_joined_text_guard_does_not_flag_cjk_or_normal_prose(tmp_path):
 # =========================================================================
 # Multi-page: mixed quality signals, aggregate counts
 # =========================================================================
+
 
 def test_multi_page_mixed_quality_counts(tmp_path):
     """Multiple pages with mixed quality produce correct counts."""
@@ -507,13 +510,15 @@ def test_multi_page_mixed_quality_counts(tmp_path):
 # Custom adapter output gets quality diagnostics
 # =========================================================================
 
+
 def test_custom_adapter_output_quality_diagnostics(tmp_path):
     """Custom adapter output gets quality diagnostics and audit wiring."""
     import os
 
     # Write custom adapter module
     adapter_py = tmp_path / "custom_ocr.py"
-    adapter_py.write_text(textwrap.dedent("""\
+    adapter_py.write_text(
+        textwrap.dedent("""\
     from dataclasses import dataclass
     from pathlib import Path
     from pageledger.adapters import ExtractionResult
@@ -540,7 +545,8 @@ def test_custom_adapter_output_quality_diagnostics(tmp_path):
                 model="custom-model", warnings=["low_confidence"],
                 usage={"pages": 1, "tokens": None, "compute_seconds": None, "cost_usd": None},
             )
-    """))
+    """)
+    )
 
     source = tmp_path / "doc.txt"
     source.write_text("some text here\n", encoding="utf-8")
@@ -557,19 +563,44 @@ def test_custom_adapter_output_quality_diagnostics(tmp_path):
 
     env = {**os.environ, "PYTHONPATH": str(tmp_path)}
     import subprocess
+
     result = subprocess.run(
-        [sys.executable, "-m", "pageledger", "run", str(source),
-         "--config", str(tmp_path / "cfg.yml"), "--out", str(tmp_path / "out"), "--json"],
-        capture_output=True, text=True, cwd=str(tmp_path),
+        [
+            sys.executable,
+            "-m",
+            "pageledger",
+            "run",
+            str(source),
+            "--config",
+            str(tmp_path / "cfg.yml"),
+            "--out",
+            str(tmp_path / "out"),
+            "--json",
+        ],
+        capture_output=True,
+        text=True,
+        cwd=str(tmp_path),
         env=env,
         input=config_text,
     )
     # Write the config file since we passed input
     (tmp_path / "cfg.yml").write_text(config_text, encoding="utf-8")
     result = subprocess.run(
-        [sys.executable, "-m", "pageledger", "run", str(source),
-         "--config", str(tmp_path / "cfg.yml"), "--out", str(tmp_path / "out"), "--json"],
-        capture_output=True, text=True, cwd=str(tmp_path),
+        [
+            sys.executable,
+            "-m",
+            "pageledger",
+            "run",
+            str(source),
+            "--config",
+            str(tmp_path / "cfg.yml"),
+            "--out",
+            str(tmp_path / "out"),
+            "--json",
+        ],
+        capture_output=True,
+        text=True,
+        cwd=str(tmp_path),
         env=env,
     )
 
@@ -596,6 +627,7 @@ def test_custom_adapter_output_quality_diagnostics(tmp_path):
 # Dry-run: should NOT add quality-warning pages to review_queue
 # (only route-based review entries should appear)
 # =========================================================================
+
 
 def test_dry_run_review_queue_has_route_reasons_not_quality_warning(tmp_path):
     """Dry-run review queue uses route reasons (no_classifier_available), not quality_warning."""
@@ -630,14 +662,13 @@ def test_dry_run_review_queue_has_route_reasons_not_quality_warning(tmp_path):
 # All warnings in quality.jsonl appear in manifest.quality_warning_pages
 # =========================================================================
 
+
 def test_manifest_quality_warning_pages_matches_quality_jsonl(tmp_path):
     """manifest.summary.quality_warning_pages equals the actual warning count."""
     source = tmp_path / "multi.txt"
     # 3 pages: clean, short, empty
     source.write_text(
-        "clean page with enough text to avoid warnings here\n"
-        "\f"
-        "shorty",  # short
+        "clean page with enough text to avoid warnings here\n\fshorty",  # short
         encoding="utf-8",
     )
     out_dir = _run(
@@ -756,6 +787,7 @@ def test_english_text_reports_zero_orthography_metrics(tmp_path):
 # Cyrillic/European typography is not "suspicious symbols"
 # =========================================================================
 
+
 def test_guillemets_and_dashes_are_not_suspicious_symbols(tmp_path):
     """Standard Russian typography — «guillemets», em/en dashes, ellipsis,
     numero sign — must not count toward suspicious_symbol_density."""
@@ -776,6 +808,7 @@ def test_guillemets_and_dashes_are_not_suspicious_symbols(tmp_path):
 # Word-confidence evidence in quality lines + low_confidence warning
 # =========================================================================
 
+
 def _confidence_adapter_module(tmp_path, name, mean, below_ratio, word_count):
     """Write an importable custom adapter emitting fixed confidence detail.
 
@@ -783,7 +816,8 @@ def _confidence_adapter_module(tmp_path, name, mean, below_ratio, word_count):
     modules in sys.modules, so reusing one name would leak state between
     tests."""
     module = tmp_path / f"{name}.py"
-    module.write_text(textwrap.dedent(f"""\
+    module.write_text(
+        textwrap.dedent(f"""\
         from pageledger.adapters import ExtractionResult
 
         class ConfAdapter:
@@ -815,7 +849,9 @@ def _confidence_adapter_module(tmp_path, name, mean, below_ratio, word_count):
                         "below_60_ratio": {below_ratio},
                     }},
                 )
-        """), encoding="utf-8")
+        """),
+        encoding="utf-8",
+    )
     return module
 
 
@@ -824,7 +860,8 @@ def _run_conf_adapter(tmp_path, *, name, mean, below_ratio, word_count):
     source = tmp_path / "page.txt"
     source.write_text("one ordinary page", encoding="utf-8")
     config_path = tmp_path / "config.yml"
-    config_path.write_text(textwrap.dedent(f"""\
+    config_path.write_text(
+        textwrap.dedent(f"""\
         schema_version: "0.1"
         taxonomy:
           page_types:
@@ -832,7 +869,9 @@ def _run_conf_adapter(tmp_path, *, name, mean, below_ratio, word_count):
               default_action: transcribe_text
         run:
           adapter: {name}:ConfAdapter
-        """), encoding="utf-8")
+        """),
+        encoding="utf-8",
+    )
     from pageledger.runner import run
 
     out_dir = tmp_path / "out"
@@ -847,7 +886,9 @@ def _run_conf_adapter(tmp_path, *, name, mean, below_ratio, word_count):
 
 
 def test_quality_line_records_confidence_and_detail(tmp_path):
-    entry = _run_conf_adapter(tmp_path, name="conf_high", mean=91.0, below_ratio=0.05, word_count=200)
+    entry = _run_conf_adapter(
+        tmp_path, name="conf_high", mean=91.0, below_ratio=0.05, word_count=200
+    )
     assert entry["confidence"] == 0.91
     assert entry["confidence_detail"]["word_count"] == 200
     assert "low_confidence" not in entry["warnings"]
@@ -855,7 +896,9 @@ def test_quality_line_records_confidence_and_detail(tmp_path):
 
 def test_low_confidence_warning_fires_on_weak_tail(tmp_path):
     """A quarter of the words below 60 marks the page for review."""
-    entry = _run_conf_adapter(tmp_path, name="conf_tail", mean=71.0, below_ratio=0.3, word_count=120)
+    entry = _run_conf_adapter(
+        tmp_path, name="conf_tail", mean=71.0, below_ratio=0.3, word_count=120
+    )
     assert "low_confidence" in entry["warnings"]
 
 
@@ -868,8 +911,7 @@ def test_low_confidence_ignores_tiny_pages(tmp_path):
 def test_quality_line_confidence_null_without_detail(tmp_path):
     """Adapters that report nothing leave confidence null, no warning."""
     source = tmp_path / "page.txt"
-    source.write_text("an ordinary page of plain text with no confidence data",
-                      encoding="utf-8")
+    source.write_text("an ordinary page of plain text with no confidence data", encoding="utf-8")
     out_dir = _run([source], _TEXT_CONFIG, tmp_path)
     entry = _quality_entries(out_dir)[0]
     assert entry["confidence"] is None
@@ -930,8 +972,9 @@ def test_review_below_grade_queues_and_rerun_manifest_dedupes(tmp_path):
 
 def test_clean_page_gets_signals_only_a(tmp_path):
     source = tmp_path / "page.txt"
-    source.write_text("an ordinary page of clean prose text with no problems at all",
-                      encoding="utf-8")
+    source.write_text(
+        "an ordinary page of clean prose text with no problems at all", encoding="utf-8"
+    )
     out_dir = _run([source], _TEXT_CONFIG, tmp_path)
     entry = _quality_entries(out_dir)[0]
     assert entry["grade"] == "A"

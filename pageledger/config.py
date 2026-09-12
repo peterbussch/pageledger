@@ -19,35 +19,37 @@ from .policy import validate_policy_rules
 # Known top-level keys for v0.1.  Unknown keys trigger a warning so users
 # who try old flat-config patterns get a clear message.
 # ---------------------------------------------------------------------------
-_KNOWN_TOP_LEVEL = frozenset({
-    "schema_version",
-    "classify",
-    "dataset_citation",
-    "taxonomy",
-    "schema",
-    "run",
-    "processing",
-})
+_KNOWN_TOP_LEVEL = frozenset(
+    {
+        "schema_version",
+        "classify",
+        "dataset_citation",
+        "taxonomy",
+        "schema",
+        "run",
+        "processing",
+    }
+)
 
-_KNOWN_RUN_KEYS = frozenset({
-    "adapter",
-    "adapter_order",
-    "adapter_options",
-    "budget",
-    "grading",
-    "max_rerun_depth",
-    "max_consecutive_failures",
-    "on_page_error",
-    "pricing",
-    "quarantine_if",
-    "rerun_if",
-    "retry",
-})
+_KNOWN_RUN_KEYS = frozenset(
+    {
+        "adapter",
+        "adapter_order",
+        "adapter_options",
+        "budget",
+        "grading",
+        "max_rerun_depth",
+        "max_consecutive_failures",
+        "on_page_error",
+        "pricing",
+        "quarantine_if",
+        "rerun_if",
+        "retry",
+    }
+)
 
 _INTEGER_STRING = re.compile(r"-?(?:0|[1-9][0-9]*)\Z")
-_NUMBER_STRING = re.compile(
-    r"-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?\Z"
-)
+_NUMBER_STRING = re.compile(r"-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?\Z")
 
 
 @dataclass(frozen=True)
@@ -124,26 +126,20 @@ class PageLedgerConfig:
                 normalized.append({"adapter": entry, "adapter_options": {}})
                 continue
             if not isinstance(entry, dict):
-                raise ValueError(
-                    f"{path} must be an adapter string or a mapping"
-                )
+                raise ValueError(f"{path} must be an adapter string or a mapping")
             unknown = sorted(set(entry) - {"adapter", "adapter_options"})
             if unknown:
                 raise ValueError(f"{path}.{unknown[0]} is not supported")
             adapter = entry.get("adapter")
             if not isinstance(adapter, str) or not adapter:
                 raise ValueError(f"{path}.adapter must be a non-empty string")
-            if "adapter_options" in entry and not isinstance(
-                entry["adapter_options"], dict
-            ):
+            if "adapter_options" in entry and not isinstance(entry["adapter_options"], dict):
                 raise ValueError(f"{path}.adapter_options must be a mapping")
             options = _options_mapping(
                 entry.get("adapter_options"),
                 f"{path}.adapter_options",
             )
-            normalized.append(
-                {"adapter": adapter, "adapter_options": dict(options)}
-            )
+            normalized.append({"adapter": adapter, "adapter_options": dict(options)})
         return normalized
 
     @property
@@ -178,9 +174,7 @@ class PageLedgerConfig:
     def classify_thresholds(self) -> dict[str, int | float]:
         from .classifier import merge_classify_thresholds
 
-        return merge_classify_thresholds(
-            _walk(self.data, "classify", "thresholds")
-        )
+        return merge_classify_thresholds(_walk(self.data, "classify", "thresholds"))
 
     @property
     def classify_min_confidence(self) -> float:
@@ -334,9 +328,7 @@ class PageLedgerConfig:
             return None
         grade = str(value).upper()
         if grade not in GRADES:
-            raise ValueError(
-                f"run.grading.review_below_grade must be one of: {', '.join(GRADES)}"
-            )
+            raise ValueError(f"run.grading.review_below_grade must be one of: {', '.join(GRADES)}")
         return grade
 
     @property
@@ -387,9 +379,7 @@ def load_config(path: Path, *, validate_adapter: bool = True) -> PageLedgerConfi
 
     schema_version = str(loaded.get("schema_version", "0.1"))
     if schema_version != "0.1":
-        raise ValueError(
-            f"Unsupported schema_version '{schema_version}'; expected '0.1'"
-        )
+        raise ValueError(f"Unsupported schema_version '{schema_version}'; expected '0.1'")
     config = PageLedgerConfig(schema_version=schema_version, data=loaded)
     _validate_config(config, validate_adapter=validate_adapter)
     return config
@@ -515,9 +505,7 @@ def _warn_unknown_run_keys(config: PageLedgerConfig) -> None:
     run = _mapping_at(config.data, "run")
     for key in run:
         if key not in _KNOWN_RUN_KEYS:
-            config.warnings.append(
-                f"Unknown run key '{key}' — ignored by schema_version 0.1"
-            )
+            config.warnings.append(f"Unknown run key '{key}' — ignored by schema_version 0.1")
 
 
 def _warn_impossible_budget(config: PageLedgerConfig) -> None:

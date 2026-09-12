@@ -257,9 +257,7 @@ def _page_spec(category: str, ordinal: int, page_number: int) -> PageSpec:
         )
     if category == "noisy":
         return PageSpec(
-            content=(
-                f"Noisy OCR receipt {ordinal:05d}: � characters survived extraction."
-            ),
+            content=(f"Noisy OCR receipt {ordinal:05d}: � characters survived extraction."),
             format="text",
             confidence=0.42,
             warnings=("adapter_low_confidence",),
@@ -269,9 +267,7 @@ def _page_spec(category: str, ordinal: int, page_number: int) -> PageSpec:
         )
     if category == "historical-multiscript":
         return PageSpec(
-            content=(
-                f"Въ лѣто {ordinal:05d} года: мѣсяц مخطوطة — पाठ — 旧紀録."
-            ),
+            content=(f"Въ лѣто {ordinal:05d} года: мѣсяц مخطوطة — पाठ — 旧紀録."),
             format="markdown",
             confidence=0.91,
             warnings=(),
@@ -308,10 +304,13 @@ def _membership_entry(index: int, page: PageSpec) -> dict[str, Any]:
 
 
 def _source_text(membership: tuple[dict[str, Any], ...]) -> str:
-    return "\f".join(
-        f"[{page['category']}] deterministic source page {page['page_number']:05d}"
-        for page in membership
-    ) + "\n"
+    return (
+        "\f".join(
+            f"[{page['category']}] deterministic source page {page['page_number']:05d}"
+            for page in membership
+        )
+        + "\n"
+    )
 
 
 def _config_text() -> str:

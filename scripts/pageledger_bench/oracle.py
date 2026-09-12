@@ -130,9 +130,7 @@ def validate_run(run_dir: Path, workload: WorkloadSpec) -> ValidationReceipt:
     return ValidationReceipt(not errors, tuple(errors), report, canonical)
 
 
-def compare_runs(
-    control: Path, candidate: Path, workload: WorkloadSpec
-) -> EquivalenceReceipt:
+def compare_runs(control: Path, candidate: Path, workload: WorkloadSpec) -> EquivalenceReceipt:
     """Compare two independently validated runs under the frozen path rules."""
     left = validate_run(control, workload)
     right = validate_run(candidate, workload)
@@ -351,9 +349,7 @@ def _load_artifacts(
         if entries is not None:
             loaded[filename] = entries
             for index, entry in enumerate(entries, 1):
-                _schema_validate(
-                    entry, schemas.get(schema_name), f"{filename}:{index}", errors
-                )
+                _schema_validate(entry, schemas.get(schema_name), f"{filename}:{index}", errors)
     for filename in ("route-map.yml", "rerun-manifest.yml"):
         value = _read_yaml(root / filename, filename, errors)
         if value is not None:
@@ -407,7 +403,9 @@ def _validate_contract(
     cost = data["cost.json"]
     normalized = data["normalized"]
 
-    _validate_generation_zero_identity(manifest, route, provenance, audit, rerun, cost, data, errors)
+    _validate_generation_zero_identity(
+        manifest, route, provenance, audit, rerun, cost, data, errors
+    )
     _validate_path_and_timestamp_relationships(
         workload, manifest, route, provenance, rerun, data["run.log"], errors
     )
@@ -417,8 +415,7 @@ def _validate_contract(
     _validate_normalized(workload, normalized, provenance, errors)
     _validate_quality(workload, quality, errors)
     expected_quality = [
-        _expected_quality_record(page, index)
-        for index, page in enumerate(workload.page_specs, 1)
+        _expected_quality_record(page, index) for index, page in enumerate(workload.page_specs, 1)
     ]
     expected_audit = _expected_audit(manifest["run_id"], routes, workload)
     if audit != expected_audit:
@@ -429,7 +426,9 @@ def _validate_contract(
         _add(errors, "audit_markdown_unreadable", str(exc), "audit.md")
     else:
         if markdown != render_audit_markdown(audit):
-            _add(errors, "audit_markdown_mismatch", "audit.md is not the exact audit.json rendering")
+            _add(
+                errors, "audit_markdown_mismatch", "audit.md is not the exact audit.json rendering"
+            )
     route_source = route["documents"][0]["source"] if route.get("documents") else None
     _validate_rerun(rerun, expected_audit, route_source, expected_quality, errors)
     _validate_cost(cost, provenance, workload, errors)
@@ -449,7 +448,11 @@ def _validate_generation_zero_identity(
 ) -> None:
     run_id = manifest.get("run_id")
     if manifest.get("parent_run_id") is not None or manifest.get("run_depth") != 0:
-        _add(errors, "generation_zero_required", "benchmark runs must be profile-free generation zero")
+        _add(
+            errors,
+            "generation_zero_required",
+            "benchmark runs must be profile-free generation zero",
+        )
     if any("reproducibility_profile" in item for item in manifest.get("extractors", [])):
         _add(errors, "profile_forbidden", "generation-zero benchmark runs must remain profile-free")
     expected_extractor = {
@@ -473,18 +476,32 @@ def _validate_generation_zero_identity(
     )
     for artifact, value in checks:
         if value != run_id:
-            _add(errors, "run_id_relationship_mismatch", f"{artifact} does not link to manifest run_id")
+            _add(
+                errors,
+                "run_id_relationship_mismatch",
+                f"{artifact} does not link to manifest run_id",
+            )
     if rerun.get("run_id") != f"{run_id}-rerun":
-        _add(errors, "rerun_id_relationship_mismatch", "rerun run_id is not parent run_id plus -rerun")
+        _add(
+            errors,
+            "rerun_id_relationship_mismatch",
+            "rerun run_id is not parent run_id plus -rerun",
+        )
     for artifact in ("provenance.jsonl", "run.log"):
         if any(entry.get("run_id") != run_id for entry in data[artifact]):
-            _add(errors, "run_id_relationship_mismatch", f"{artifact} contains foreign run identity")
+            _add(
+                errors, "run_id_relationship_mismatch", f"{artifact} contains foreign run identity"
+            )
     if any(entry.get("run_id") != run_id for _, entry in data["normalized"]):
-        _add(errors, "run_id_relationship_mismatch", "normalized files contain foreign run identity")
+        _add(
+            errors, "run_id_relationship_mismatch", "normalized files contain foreign run identity"
+        )
     started = manifest.get("started_at")
     completed = manifest.get("completed_at")
     if not isinstance(started, str) or not isinstance(completed, str) or started > completed:
-        _add(errors, "timestamp_relationship_mismatch", "manifest timestamps are invalid or reversed")
+        _add(
+            errors, "timestamp_relationship_mismatch", "manifest timestamps are invalid or reversed"
+        )
 
 
 def _validate_path_and_timestamp_relationships(
@@ -560,12 +577,12 @@ def _validate_path_and_timestamp_relationships(
             and prov_time is not None
             and not started <= prov_time <= completed
         ):
-            _add(errors, "timestamp_relationship_mismatch", "extraction timestamp outside run window")
+            _add(
+                errors, "timestamp_relationship_mismatch", "extraction timestamp outside run window"
+            )
 
 
-def _resolve_consumed_file(
-    value: Any, code: str, errors: list[OracleError]
-) -> Path | None:
+def _resolve_consumed_file(value: Any, code: str, errors: list[OracleError]) -> Path | None:
     if not isinstance(value, str) or not value:
         _add(errors, code, "path is not a non-empty string")
         return None
@@ -628,7 +645,14 @@ def _validate_config_and_source(
 def _validate_route(
     route: dict[str, Any], workload: WorkloadSpec, errors: list[OracleError]
 ) -> list[dict[str, Any]]:
-    required = {"schema_version", "pageledger_version", "run_id", "generated_at", "classifier", "documents"}
+    required = {
+        "schema_version",
+        "pageledger_version",
+        "run_id",
+        "generated_at",
+        "classifier",
+        "documents",
+    }
     if set(route) != required or route.get("schema_version") != "0.1":
         _add(errors, "route_yaml_contract_invalid", "route-map top-level contract differs")
         return []
@@ -643,12 +667,20 @@ def _validate_route(
     actual_ids = [page.get("page_id") for page in pages if isinstance(page, dict)]
     actual_numbers = [page.get("page_number") for page in pages if isinstance(page, dict)]
     if actual_ids != expected_ids or actual_numbers != list(range(1, len(expected_ids) + 1)):
-        _add(errors, "route_membership_mismatch", "route pages do not preserve frozen membership order")
+        _add(
+            errors,
+            "route_membership_mismatch",
+            "route pages do not preserve frozen membership order",
+        )
     for page in pages:
         if set(page) != {"page_id", "page_number", "type", "confidence", "action", "reason"}:
             _add(errors, "route_yaml_contract_invalid", "route page fields differ")
             break
-        if page["type"] != "prose" or page["action"] != "transcribe_text" or page["reason"] != "configured_adapter":
+        if (
+            page["type"] != "prose"
+            or page["action"] != "transcribe_text"
+            or page["reason"] != "configured_adapter"
+        ):
             _add(errors, "route_membership_mismatch", "route semantics differ from frozen config")
             break
     return pages
@@ -701,10 +733,21 @@ def _validate_provenance(
             _add(errors, "provenance_timing_mismatch", f"invalid extraction timing for {page_id}")
         if result.get("warnings") != list(page.warnings):
             _add(errors, "provenance_warning_mismatch", f"adapter warnings differ for {page_id}")
-        expected_result = (page.format, page.confidence, f"raw/{page_id}.{_RAW_EXTENSIONS[page.format]}")
-        if (result.get("format"), result.get("confidence"), result.get("raw_artifact")) != expected_result:
+        expected_result = (
+            page.format,
+            page.confidence,
+            f"raw/{page_id}.{_RAW_EXTENSIONS[page.format]}",
+        )
+        if (
+            result.get("format"),
+            result.get("confidence"),
+            result.get("raw_artifact"),
+        ) != expected_result:
             _add(errors, "provenance_result_mismatch", f"result differs for {page_id}")
-        if entry.get("source", {}).get("page_number") != index or entry.get("source", {}).get("sha256") != source_hash:
+        if (
+            entry.get("source", {}).get("page_number") != index
+            or entry.get("source", {}).get("sha256") != source_hash
+        ):
             _add(errors, "provenance_source_mismatch", f"source evidence differs for {page_id}")
         if index <= len(routes):
             expected_route = {
@@ -808,7 +851,9 @@ def _validate_normalized(
         page_id = entry.get("page_id")
         records += len(entry.get("records", []))
         prov = provenance_by_page.get(page_id, {})
-        if filename != f"{page_id}.json" or entry.get("raw_artifact") != prov.get("result", {}).get("raw_artifact"):
+        if filename != f"{page_id}.json" or entry.get("raw_artifact") != prov.get("result", {}).get(
+            "raw_artifact"
+        ):
             _add(errors, "normalized_linkage_mismatch", f"normalized linkage differs for {page_id}")
         metrics = entry.get("metrics", {})
         if metrics.get("row_count") != len(entry.get("records", [])):
@@ -816,7 +861,9 @@ def _validate_normalized(
         if metrics.get("coercion_error_count") != len(entry.get("coercion_errors", [])):
             _add(errors, "normalized_count_mismatch", f"coercion count differs for {page_id}")
         for check in entry.get("checks", []):
-            if check.get("rows_checked") != check.get("rows_passed", 0) + check.get("rows_failed", 0):
+            if check.get("rows_checked") != check.get("rows_passed", 0) + check.get(
+                "rows_failed", 0
+            ):
                 _add(errors, "normalized_count_mismatch", f"check counts differ for {page_id}")
     if records != workload.expected["normalized"]["records_normalized"]:
         _add(errors, "normalized_count_mismatch", "normalized record total differs")
@@ -837,7 +884,9 @@ def _validate_quality(
         page_id = _page_id(index)
         expected = _expected_quality_record(page, index)
         if entry != expected:
-            _add(errors, "quality_record_mismatch", f"complete quality record differs for {page_id}")
+            _add(
+                errors, "quality_record_mismatch", f"complete quality record differs for {page_id}"
+            )
             if entry.get("warnings") != expected["warnings"]:
                 _add(errors, "quality_warning_mismatch", f"quality warnings differ for {page_id}")
             if (
@@ -886,9 +935,7 @@ def _expected_quality_record(page: Any, index: int) -> dict[str, Any]:
     }
 
 
-def _expected_grade_detail(
-    page: Any, warnings: list[str]
-) -> tuple[str, str, dict[str, Any]]:
+def _expected_grade_detail(page: Any, warnings: list[str]) -> tuple[str, str, dict[str, Any]]:
     confidence = page.confidence
     if confidence >= 0.90:
         confidence_band = "A"
@@ -926,15 +973,19 @@ def _expected_grade_detail(
             reasons.append("arithmetic_pass_rate 0.00 in D band")
     basis = "schema_aware" if schema_grade is not None else "signals_only"
     grade = _worst_grade(signals_grade, schema_grade) if schema_grade else signals_grade
-    return grade, basis, {
-        "signals_grade": signals_grade,
-        "schema_grade": schema_grade,
-        "confidence_band": confidence_band,
-        "warning_count": warning_count,
-        "required_column_coverage": coverage,
-        "arithmetic_pass_rate": pass_rate,
-        "reasons": reasons,
-    }
+    return (
+        grade,
+        basis,
+        {
+            "signals_grade": signals_grade,
+            "schema_grade": schema_grade,
+            "confidence_band": confidence_band,
+            "warning_count": warning_count,
+            "required_column_coverage": coverage,
+            "arithmetic_pass_rate": pass_rate,
+            "reasons": reasons,
+        },
+    )
 
 
 def _letter_token_lengths(text: str) -> list[int]:
@@ -959,8 +1010,7 @@ def _expected_text_metrics(text: str, token_lengths: list[int]) -> dict[str, Any
     suspicious = sum(_suspicious_symbol(character) for character in text)
     letter_count = sum(unicodedata.category(char).startswith("L") for char in text)
     latin_count = sum(
-        unicodedata.category(char).startswith("L")
-        and "LATIN" in unicodedata.name(char, "")
+        unicodedata.category(char).startswith("L") and "LATIN" in unicodedata.name(char, "")
         for char in text
     )
     token_count = len(token_lengths)
@@ -972,7 +1022,9 @@ def _expected_text_metrics(text: str, token_lengths: list[int]) -> dict[str, Any
         "suspicious_symbol_count": suspicious,
         "suspicious_symbol_ratio": 0.0 if not text else round(suspicious / character_count, 4),
         "alpha_token_count": token_count,
-        "mean_token_length": None if not token_count else round(sum(token_lengths) / token_count, 2),
+        "mean_token_length": None
+        if not token_count
+        else round(sum(token_lengths) / token_count, 2),
         "max_token_length": max(token_lengths, default=0),
         "short_token_ratio": (
             None
@@ -1011,9 +1063,7 @@ def _expected_audit(
     workload: WorkloadSpec,
 ) -> dict[str, Any]:
     review: list[dict[str, Any]] = []
-    for index, (route, page) in enumerate(
-        zip(routes, workload.page_specs, strict=False), 1
-    ):
+    for index, (route, page) in enumerate(zip(routes, workload.page_specs, strict=False), 1):
         entry = _expected_quality_record(page, index)
         base = {
             "page_id": entry["page_id"],
@@ -1031,7 +1081,12 @@ def _expected_audit(
             review.append(
                 {**base, "action": "review", "reason": "rerun_if:arithmetic_failure_rate_above"}
             )
-    return {"schema_version": "0.1", "run_id": run_id, "review_queue": review, "quarantine_queue": []}
+    return {
+        "schema_version": "0.1",
+        "run_id": run_id,
+        "review_queue": review,
+        "quarantine_queue": [],
+    }
 
 
 def _validate_rerun(
@@ -1042,8 +1097,17 @@ def _validate_rerun(
     errors: list[OracleError],
 ) -> None:
     required = {
-        "schema_version", "run_id", "parent_run_id", "parent_manifest", "rerun_depth",
-        "max_rerun_depth", "created_at", "reason", "rerun_executable", "rerun_status", "items",
+        "schema_version",
+        "run_id",
+        "parent_run_id",
+        "parent_manifest",
+        "rerun_depth",
+        "max_rerun_depth",
+        "created_at",
+        "reason",
+        "rerun_executable",
+        "rerun_status",
+        "items",
     }
     if set(rerun) != required:
         _add(errors, "rerun_yaml_contract_invalid", "rerun manifest fields differ")
@@ -1104,7 +1168,10 @@ def _validate_cost(
     }
     if cost.get("usage") != expected_rollup:
         _add(errors, "cost_usage_mismatch", "cost usage does not roll up provenance")
-    if cost.get("cost_usd") != expected_cost or cost.get("cost_usd") != workload.expected["cost"]["cost_usd"]:
+    if (
+        cost.get("cost_usd") != expected_cost
+        or cost.get("cost_usd") != workload.expected["cost"]["cost_usd"]
+    ):
         _add(errors, "cost_total_mismatch", "cost total does not roll up page costs")
     if (
         cost.get("cost_basis") != "adapter_reported"
@@ -1120,7 +1187,9 @@ def _validate_cost(
         "cost_usd": expected_cost,
         "cost_known": True,
     }
-    if cost.get("by_adapter") != {"zero-work": rollup} or cost.get("by_page_type") != {"prose": rollup}:
+    if cost.get("by_adapter") != {"zero-work": rollup} or cost.get("by_page_type") != {
+        "prose": rollup
+    }:
         _add(errors, "cost_rollup_mismatch", "cost adapter/page-type rollups differ")
     expected_report = {
         "schema_version": "0.1",
@@ -1166,7 +1235,9 @@ def _validate_summaries(
     }
     if summary != wanted:
         _add(errors, "manifest_summary_mismatch", "manifest summary does not re-derive")
-    if Counter(item["reason"] for item in audit["review_queue"]) != Counter(expected["audit"]["review_queue_by_reason"]):
+    if Counter(item["reason"] for item in audit["review_queue"]) != Counter(
+        expected["audit"]["review_queue_by_reason"]
+    ):
         _add(errors, "audit_count_mismatch", "audit reason counts differ from frozen receipt")
 
 
@@ -1274,9 +1345,9 @@ def _normalized_hash(entries: list[tuple[str, dict[str, Any]]]) -> str:
     for _, entry in entries:
         copied = dict(entry)
         copied["run_id"] = "<run-id>"
-        payload += json.dumps(
-            copied, ensure_ascii=False, sort_keys=True, separators=(",", ":")
-        ) + "\n"
+        payload += (
+            json.dumps(copied, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n"
+        )
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
@@ -1314,7 +1385,9 @@ def _read_json(path: Path, artifact: str, errors: list[OracleError]) -> dict[str
     return value
 
 
-def _read_jsonl(path: Path, artifact: str, errors: list[OracleError]) -> list[dict[str, Any]] | None:
+def _read_jsonl(
+    path: Path, artifact: str, errors: list[OracleError]
+) -> list[dict[str, Any]] | None:
     try:
         lines = path.read_text(encoding="utf-8").splitlines()
         entries = [json.loads(line) for line in lines if line.strip()]
@@ -1348,7 +1421,9 @@ def _schema_validate(
     if schema is None:
         _add(errors, "schema_unavailable", "frozen schema unavailable", artifact)
         return
-    failures = sorted(Draft202012Validator(schema).iter_errors(value), key=lambda exc: list(exc.path))
+    failures = sorted(
+        Draft202012Validator(schema).iter_errors(value), key=lambda exc: list(exc.path)
+    )
     if failures:
         _add(errors, "schema_validation_failed", failures[0].message, artifact)
 
@@ -1361,9 +1436,7 @@ def _sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
-def _add(
-    errors: list[OracleError], code: str, message: str, artifact: str | None = None
-) -> None:
+def _add(errors: list[OracleError], code: str, message: str, artifact: str | None = None) -> None:
     errors.append(OracleError(code, message, artifact))
 
 

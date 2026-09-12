@@ -69,6 +69,8 @@ timeout: 120
 renderer: pdftoppm
 dpi: 150
 allowed_models: [gemini-your-explicit-model]
+max_image_bytes: 3145728
+max_image_dimension: 4096
 ```
 
 The model's final slash-separated component must begin with `gemini-`,
@@ -90,6 +92,15 @@ ceiling. Pillow converts to RGB and encodes the retained JPEG. The renderer
 version, arguments, Pillow version, JPEG quality, subsampling, and optimization
 settings are recorded. The complete serialized JSON request is capped at
 4 MiB, including the base64 image and prompts. Responses are bounded at 8 MiB.
+`max_image_bytes` can lower the JPEG ceiling from its default of 3 MiB.
+For a gateway that accepts at most 1 MiB per image, set it to `1048576`.
+The adapter tries JPEG quality levels 90, 80, 70, then 60. It stops before
+submission if none fits. Compression can reduce legibility, so review the
+retained image as well as the returned text. The chosen quality and byte limit
+are recorded in the image evidence.
+`max_image_dimension` sets the longest image edge in pixels, from 1 to 4096.
+Lower it explicitly if compression alone cannot meet the gateway's byte limit.
+The chosen size is recorded as `scale_to`, alongside the actual dimensions.
 `system_prompt` is an optional separate string; the user prompt remains exactly
 the string supplied by the runner (empty when null).
 

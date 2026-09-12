@@ -144,14 +144,17 @@ def test_evaluate_policies(
     [(0.2999, ["arithmetic_failure_rate_above"]), (0.3, []), (0.3001, [])],
 )
 def test_arithmetic_failure_threshold_is_strict_at_decimal_boundary(pass_rate, matches):
-    assert evaluate_policies(
-        [{"arithmetic_failure_rate_above": 0.7}],
-        grade="A",
-        alignment={"metrics": {"arithmetic_pass_rate": pass_rate}},
-    ) == matches
+    assert (
+        evaluate_policies(
+            [{"arithmetic_failure_rate_above": 0.7}],
+            grade="A",
+            alignment={"metrics": {"arithmetic_pass_rate": pass_rate}},
+        )
+        == matches
+    )
 
 
-_TABLE_ADAPTER = '''\
+_TABLE_ADAPTER = """\
 from pageledger.adapters import ExtractionResult
 
 
@@ -181,7 +184,7 @@ class TableAdapter:
                 "cost_usd": None,
             },
         )
-'''
+"""
 
 _POLICY_CONFIG = """\
 schema_version: "0.1"
@@ -221,9 +224,7 @@ def test_run_policies_populate_queues_and_quarantine_beats_rerun(
     good = "| place | total | male | female |\n| - | - | - | - |\n| A | 10 | 4 | 6 |\n"
     missing = "| place | male | female |\n| - | - | - |\n| B | 4 | 6 |\n"
     arithmetic_failure = (
-        "| place | total | male | female |\n"
-        "| - | - | - | - |\n"
-        "| C | 99 | 4 | 6 |\n"
+        "| place | total | male | female |\n| - | - | - | - |\n| C | 99 | 4 | 6 |\n"
     )
     source = tmp_path / "tables.txt"
     source.write_text(
@@ -249,20 +250,14 @@ def test_run_policies_populate_queues_and_quarantine_beats_rerun(
     assert quarantined[0]["reason"] == "quarantine_if:missing_required_columns"
     assert quarantined[0]["action"] == "quarantine"
 
-    review_reasons = {
-        item["reason"]
-        for item in audit["review_queue"]
-        if item["page_number"] == 2
-    }
+    review_reasons = {item["reason"] for item in audit["review_queue"] if item["page_number"] == 2}
     assert {
         "grade_below_threshold",
         "rerun_if:grade_below",
         "rerun_if:missing_required_columns",
     } <= review_reasons
 
-    rerun = yaml.safe_load(
-        (out_dir / "rerun-manifest.yml").read_text(encoding="utf-8")
-    )
+    rerun = yaml.safe_load((out_dir / "rerun-manifest.yml").read_text(encoding="utf-8"))
     assert {item["page_number"] for item in rerun["items"]} == {3}
     assert "rerun_if:arithmetic_failure_rate_above" in rerun["items"][0]["reason"]
 
@@ -312,10 +307,10 @@ columns:
     after = json.loads((out_dir / "audit.json").read_text(encoding="utf-8"))
     assert after["quarantine_queue"] == []
     assert not any(
-        item["reason"] == "rerun_if:missing_required_columns"
-        for item in after["review_queue"]
+        item["reason"] == "rerun_if:missing_required_columns" for item in after["review_queue"]
     )
     manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
     assert manifest["summary"]["pages_quarantined"] == 0
     from pageledger.verify import verify_run
+
     assert verify_run(out_dir)["status"] == "pass"

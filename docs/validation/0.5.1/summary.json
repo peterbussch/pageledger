@@ -1,0 +1,475 @@
+{
+  "title": "PageLedger 0.5.1: 60-page source trial",
+  "date": "2026-09-12",
+  "package_version": "0.5.1",
+  "execution_environment": "local release working tree",
+  "source_pdf_pages": 60,
+  "attempt_pages": 120,
+  "selected_outputs": 57,
+  "human_reviewed_pages": 0,
+  "source_check_kind": "ai_assisted",
+  "source_check_method": "Short source-image spot checks, followed by image/output comparisons. Initial reading-note errors were retained and checked separately. No initial phrase-match score is published.",
+  "not_measured": [
+    "full-page transcription accuracy",
+    "false-positive or false-negative rate",
+    "human review time",
+    "human reader task completion"
+  ],
+  "render_dpi_for_inspection": 150,
+  "ocr_dpi": 300,
+  "timing_scope": "Single process-command wall time; includes job output; excludes separate verify-job. Other machine work was concurrent.",
+  "documents": [
+    {
+      "source_key": "nara",
+      "title": "HSCA record 180-10147-10163",
+      "source_url": "https://www.archives.gov/files/research/jfk/releases/2018/180-10147-10163.pdf",
+      "source_sha256": "8ef0c35cbb61bd57683a1b62cce80896d410672326a4c9836c009f970a5f3e34",
+      "source_page_count": 107,
+      "selected_pages": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        21,
+        22,
+        23,
+        24,
+        25,
+        51,
+        52,
+        53,
+        54,
+        55,
+        101,
+        102,
+        103,
+        104,
+        105
+      ],
+      "job_id": "job_a0966f8ef7784cb8a4f80d0b2776ac51",
+      "config_file": "nara.yml",
+      "config_sha256": "70f35de9ac543db99e2cf431c5599667a2ff8a4ae6c2c47d80c906aa0b5a0b3e",
+      "document_json_sha256": "bae478a20f1ec848b4395dc7b47610f655f8680fc4aef6237eb8bd9af9c25fa8",
+      "transcript_sha256": "2639de4b1b5791e2785745c5ea8754d79457aa08cb83d02a802b8d9a483e6cb1",
+      "processing_started_at": "2026-09-12T12:55:12.865116+00:00",
+      "processing_wall_seconds": 30.82,
+      "job_status": "completed",
+      "verification_status": "pass",
+      "counts": {
+        "source_pages": 107,
+        "selected_pages": 20,
+        "processed_pages": 20,
+        "selected_outputs": 20,
+        "unresolved_pages": 20
+      },
+      "usage": {
+        "attempt_pages": 40,
+        "image_calls": 0,
+        "tokens": 0,
+        "tokens_known": false,
+        "cost_usd": null,
+        "known_cost_usd": 0,
+        "cost_known": false,
+        "paid_cost_known": true,
+        "paid_tokens_known": true
+      },
+      "selected_warning_pages": 0,
+      "selected_warning_page_counts": {},
+      "reproducibility_profiles": [
+        {
+          "adapter": {
+            "code_sha256": "9e0ecc73850127a71f881833e699608e66064707c8908221e282af40aefc6002",
+            "module": "pageledger.adapters",
+            "name": "pdf_text",
+            "version": "0.1"
+          },
+          "materials": [
+            {
+              "kind": "package",
+              "name": "pypdf",
+              "sha256": "37f97b4eac6e09be3b7bb93d78e42520ea1d2bace257273fc3c842b48a355051",
+              "version": "6.13.3"
+            }
+          ],
+          "pageledger": {
+            "code_sha256": "420927d3b3a7474b823b7e54fd3885fe84b25b48e4383ab21e3617bbbee76dec",
+            "version": "0.5.1"
+          },
+          "profile_sha256": "bced0c1de32cb65a2e40861824f9877cbd2c1d766c3bbe4d370431362e343c17",
+          "profile_version": "0.1",
+          "runtime": {
+            "filesystem_encoding": "utf-8",
+            "machine": "arm64",
+            "preferred_encoding": "UTF-8",
+            "python_implementation": "CPython",
+            "python_version": "3.13.13",
+            "release": "27.0.0",
+            "system": "Darwin"
+          }
+        },
+        {
+          "adapter": {
+            "code_sha256": "9e0ecc73850127a71f881833e699608e66064707c8908221e282af40aefc6002",
+            "module": "pageledger.adapters",
+            "name": "pdf_ocr",
+            "version": "0.1"
+          },
+          "materials": [
+            {
+              "kind": "binary",
+              "name": "pdftoppm",
+              "sha256": "5f6cd68663831be2f615bba3d587229b15f155f06df6ee87358320742a243354",
+              "version": "pdftoppm version 26.05.0"
+            },
+            {
+              "kind": "binary",
+              "name": "tesseract",
+              "sha256": "0f2e7e84f66217be76a28db3fac623271560facd3db5cee24147666b25e47b80",
+              "version": "tesseract 5.5.2"
+            },
+            {
+              "kind": "model",
+              "name": "tesseract:eng.traineddata",
+              "sha256": "7d4322bd2a7749724879683fc3912cb542f19906c83bcc1a52132556427170b2",
+              "version": "sha256:7d4322bd2a7749724879683fc3912cb542f19906c83bcc1a52132556427170b2"
+            }
+          ],
+          "pageledger": {
+            "code_sha256": "420927d3b3a7474b823b7e54fd3885fe84b25b48e4383ab21e3617bbbee76dec",
+            "version": "0.5.1"
+          },
+          "profile_sha256": "4ef3f771b89032c29c6f50d2ffdda890dd9e0e23a3fccab11a823452d8d26efe",
+          "profile_version": "0.1",
+          "runtime": {
+            "filesystem_encoding": "utf-8",
+            "machine": "arm64",
+            "preferred_encoding": "UTF-8",
+            "python_implementation": "CPython",
+            "python_version": "3.13.13",
+            "release": "27.0.0",
+            "system": "Darwin"
+          }
+        }
+      ]
+    },
+    {
+      "source_key": "kharkov",
+      "title": "Военно-статистическое обозрѣніе Харьковской губерніи (1850)",
+      "source_url": null,
+      "source_sha256": "f389bac53dbd4041a952cacf774c2d6d91ba1af9efa8dba88eee2570b061f2c6",
+      "source_page_count": 178,
+      "selected_pages": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        81,
+        82,
+        83,
+        84,
+        85,
+        86,
+        87,
+        88,
+        89,
+        90
+      ],
+      "job_id": "job_e118a68e6866461ca3144fb43a0afe77",
+      "config_file": "cyrillic.yml",
+      "config_sha256": "dce57a8c7edab0346829167e1e43d0952a6b5679b906b246b8c605fa527e0641",
+      "document_json_sha256": "f98e4a991ce97cc29deac09b70465a192eeae2f42ad9eaa00713c2e9dc4dda31",
+      "transcript_sha256": "763c9cabe82824017f056d05bd4393809e8ee20e5893e7113250e343678610b2",
+      "processing_started_at": "2026-09-12T12:55:45.100376+00:00",
+      "processing_wall_seconds": 136.01,
+      "job_status": "completed",
+      "verification_status": "pass",
+      "counts": {
+        "source_pages": 178,
+        "selected_pages": 20,
+        "processed_pages": 20,
+        "selected_outputs": 17,
+        "unresolved_pages": 20
+      },
+      "usage": {
+        "attempt_pages": 40,
+        "image_calls": 0,
+        "tokens": 0,
+        "tokens_known": false,
+        "cost_usd": null,
+        "known_cost_usd": 0,
+        "cost_known": false,
+        "paid_cost_known": true,
+        "paid_tokens_known": true
+      },
+      "selected_warning_pages": 17,
+      "selected_warning_page_counts": {
+        "low_confidence": 10,
+        "historical_orthography": 15
+      },
+      "reproducibility_profiles": [
+        {
+          "adapter": {
+            "code_sha256": "9e0ecc73850127a71f881833e699608e66064707c8908221e282af40aefc6002",
+            "module": "pageledger.adapters",
+            "name": "pdf_text",
+            "version": "0.1"
+          },
+          "materials": [
+            {
+              "kind": "package",
+              "name": "pypdf",
+              "sha256": "37f97b4eac6e09be3b7bb93d78e42520ea1d2bace257273fc3c842b48a355051",
+              "version": "6.13.3"
+            }
+          ],
+          "pageledger": {
+            "code_sha256": "420927d3b3a7474b823b7e54fd3885fe84b25b48e4383ab21e3617bbbee76dec",
+            "version": "0.5.1"
+          },
+          "profile_sha256": "bced0c1de32cb65a2e40861824f9877cbd2c1d766c3bbe4d370431362e343c17",
+          "profile_version": "0.1",
+          "runtime": {
+            "filesystem_encoding": "utf-8",
+            "machine": "arm64",
+            "preferred_encoding": "UTF-8",
+            "python_implementation": "CPython",
+            "python_version": "3.13.13",
+            "release": "27.0.0",
+            "system": "Darwin"
+          }
+        },
+        {
+          "adapter": {
+            "code_sha256": "9e0ecc73850127a71f881833e699608e66064707c8908221e282af40aefc6002",
+            "module": "pageledger.adapters",
+            "name": "pdf_ocr",
+            "version": "0.1"
+          },
+          "materials": [
+            {
+              "kind": "binary",
+              "name": "pdftoppm",
+              "sha256": "5f6cd68663831be2f615bba3d587229b15f155f06df6ee87358320742a243354",
+              "version": "pdftoppm version 26.05.0"
+            },
+            {
+              "kind": "binary",
+              "name": "tesseract",
+              "sha256": "0f2e7e84f66217be76a28db3fac623271560facd3db5cee24147666b25e47b80",
+              "version": "tesseract 5.5.2"
+            },
+            {
+              "kind": "model",
+              "name": "tesseract:rus.traineddata",
+              "sha256": "e16e5e036cce1d9ec2b00063cf8b54472625b9e14d893a169e2b0dedeb4df225",
+              "version": "sha256:e16e5e036cce1d9ec2b00063cf8b54472625b9e14d893a169e2b0dedeb4df225"
+            }
+          ],
+          "pageledger": {
+            "code_sha256": "420927d3b3a7474b823b7e54fd3885fe84b25b48e4383ab21e3617bbbee76dec",
+            "version": "0.5.1"
+          },
+          "profile_sha256": "30651aaee6e570bd9de7fb9d65a278dd6592ed4512ea0eefc2661fd0edaf9cf9",
+          "profile_version": "0.1",
+          "runtime": {
+            "filesystem_encoding": "utf-8",
+            "machine": "arm64",
+            "preferred_encoding": "UTF-8",
+            "python_implementation": "CPython",
+            "python_version": "3.13.13",
+            "release": "27.0.0",
+            "system": "Darwin"
+          }
+        }
+      ]
+    },
+    {
+      "source_key": "census",
+      "title": "Всесоюзная перепись населения 1939 года: основные итоги",
+      "source_url": null,
+      "source_sha256": "bae86fa50e1c6114c761e7f73b5836bb0f0fae13f9fc7b63bb14048c0be74579",
+      "source_page_count": 130,
+      "selected_pages": [
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23,
+        24,
+        25,
+        26,
+        27,
+        28,
+        29
+      ],
+      "job_id": "job_537e3dee77464b24a920eb28353006ec",
+      "config_file": "cyrillic.yml",
+      "config_sha256": "dce57a8c7edab0346829167e1e43d0952a6b5679b906b246b8c605fa527e0641",
+      "document_json_sha256": "90542f5fd9150615514f96c6753c67500be2945e37533e81c46988662e667275",
+      "transcript_sha256": "6f3cbad2a11fa9fdc9fcf5e267acf9fe17783c69c304e40397d4eb46134beed5",
+      "processing_started_at": "2026-09-12T12:58:02.782586+00:00",
+      "processing_wall_seconds": 388.51,
+      "job_status": "completed",
+      "verification_status": "pass",
+      "counts": {
+        "source_pages": 130,
+        "selected_pages": 20,
+        "processed_pages": 20,
+        "selected_outputs": 20,
+        "unresolved_pages": 20
+      },
+      "usage": {
+        "attempt_pages": 40,
+        "image_calls": 0,
+        "tokens": 0,
+        "tokens_known": false,
+        "cost_usd": null,
+        "known_cost_usd": 0,
+        "cost_known": false,
+        "paid_cost_known": true,
+        "paid_tokens_known": true
+      },
+      "selected_warning_pages": 18,
+      "selected_warning_page_counts": {
+        "low_confidence": 18,
+        "fragmented_text": 5,
+        "suspicious_symbol_density": 2
+      },
+      "reproducibility_profiles": [
+        {
+          "adapter": {
+            "code_sha256": "9e0ecc73850127a71f881833e699608e66064707c8908221e282af40aefc6002",
+            "module": "pageledger.adapters",
+            "name": "pdf_text",
+            "version": "0.1"
+          },
+          "materials": [
+            {
+              "kind": "package",
+              "name": "pypdf",
+              "sha256": "37f97b4eac6e09be3b7bb93d78e42520ea1d2bace257273fc3c842b48a355051",
+              "version": "6.13.3"
+            }
+          ],
+          "pageledger": {
+            "code_sha256": "420927d3b3a7474b823b7e54fd3885fe84b25b48e4383ab21e3617bbbee76dec",
+            "version": "0.5.1"
+          },
+          "profile_sha256": "bced0c1de32cb65a2e40861824f9877cbd2c1d766c3bbe4d370431362e343c17",
+          "profile_version": "0.1",
+          "runtime": {
+            "filesystem_encoding": "utf-8",
+            "machine": "arm64",
+            "preferred_encoding": "UTF-8",
+            "python_implementation": "CPython",
+            "python_version": "3.13.13",
+            "release": "27.0.0",
+            "system": "Darwin"
+          }
+        },
+        {
+          "adapter": {
+            "code_sha256": "9e0ecc73850127a71f881833e699608e66064707c8908221e282af40aefc6002",
+            "module": "pageledger.adapters",
+            "name": "pdf_ocr",
+            "version": "0.1"
+          },
+          "materials": [
+            {
+              "kind": "binary",
+              "name": "pdftoppm",
+              "sha256": "5f6cd68663831be2f615bba3d587229b15f155f06df6ee87358320742a243354",
+              "version": "pdftoppm version 26.05.0"
+            },
+            {
+              "kind": "binary",
+              "name": "tesseract",
+              "sha256": "0f2e7e84f66217be76a28db3fac623271560facd3db5cee24147666b25e47b80",
+              "version": "tesseract 5.5.2"
+            },
+            {
+              "kind": "model",
+              "name": "tesseract:rus.traineddata",
+              "sha256": "e16e5e036cce1d9ec2b00063cf8b54472625b9e14d893a169e2b0dedeb4df225",
+              "version": "sha256:e16e5e036cce1d9ec2b00063cf8b54472625b9e14d893a169e2b0dedeb4df225"
+            }
+          ],
+          "pageledger": {
+            "code_sha256": "420927d3b3a7474b823b7e54fd3885fe84b25b48e4383ab21e3617bbbee76dec",
+            "version": "0.5.1"
+          },
+          "profile_sha256": "30651aaee6e570bd9de7fb9d65a278dd6592ed4512ea0eefc2661fd0edaf9cf9",
+          "profile_version": "0.1",
+          "runtime": {
+            "filesystem_encoding": "utf-8",
+            "machine": "arm64",
+            "preferred_encoding": "UTF-8",
+            "python_implementation": "CPython",
+            "python_version": "3.13.13",
+            "release": "27.0.0",
+            "system": "Darwin"
+          }
+        },
+        {
+          "adapter": {
+            "code_sha256": "9e0ecc73850127a71f881833e699608e66064707c8908221e282af40aefc6002",
+            "module": "pageledger.adapters",
+            "name": "pdf_ocr",
+            "version": "0.1"
+          },
+          "materials": [
+            {
+              "kind": "binary",
+              "name": "pdftoppm",
+              "sha256": "5f6cd68663831be2f615bba3d587229b15f155f06df6ee87358320742a243354",
+              "version": "pdftoppm version 26.05.0"
+            },
+            {
+              "kind": "binary",
+              "name": "tesseract",
+              "sha256": "0f2e7e84f66217be76a28db3fac623271560facd3db5cee24147666b25e47b80",
+              "version": "tesseract 5.5.2"
+            },
+            {
+              "kind": "model",
+              "name": "tesseract:rus.traineddata",
+              "sha256": "e16e5e036cce1d9ec2b00063cf8b54472625b9e14d893a169e2b0dedeb4df225",
+              "version": "sha256:e16e5e036cce1d9ec2b00063cf8b54472625b9e14d893a169e2b0dedeb4df225"
+            }
+          ],
+          "pageledger": {
+            "code_sha256": "b552b5b465912f561494489324722e9aeca7dc3eb02ee19353cd4f7fb06a32f0",
+            "version": "0.5.1"
+          },
+          "profile_sha256": "ffd3296911eb64f89a5743569f2c245d46b52dfa99faa74c89b4c5fb66cb4992",
+          "profile_version": "0.1",
+          "runtime": {
+            "filesystem_encoding": "utf-8",
+            "machine": "arm64",
+            "preferred_encoding": "UTF-8",
+            "python_implementation": "CPython",
+            "python_version": "3.13.13",
+            "release": "27.0.0",
+            "system": "Darwin"
+          }
+        }
+      ]
+    }
+  ]
+}

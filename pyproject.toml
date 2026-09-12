@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pageledger"
-version = "0.5.0"
+version = "0.5.1"
 description = "Auditable page-level run ledger for OCR and document extraction"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -87,7 +87,7 @@ target-version = "py310"
 # E/F: pycodestyle + pyflakes. I: import order. B: bugbear. UP: modernize.
 select = ["E", "F", "I", "B", "UP"]
 ignore = [
-  "E501",  # long lines in docstrings/messages; formatter not enforced
+  "E501",  # Ruff formats code; long messages and URLs may remain unbroken.
 ]
 
 [tool.pytest.ini_options]

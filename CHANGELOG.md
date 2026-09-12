@@ -2,6 +2,39 @@
 
 Release changes follow the [artifact compatibility policy](docs/run-manifest-spec.md#compatibility-policy).
 
+## 0.5.1 - 2026-09-12
+
+### Changed
+
+- Document reports distinguish the selected extraction from retained review
+  evidence, so an empty initial text layer does not obscure a later OCR result.
+  Review holds and decisions tied to source pages keep their original meaning.
+  Existing 0.5.0 reports still verify without being rewritten.
+- Added a maintained document-job tutorial and installed-package verification
+  of processing, interrupted recovery, inspection and review. Both the wheel
+  and source distribution run both maintained tutorials outside the checkout.
+- Added a 60-page source validation report with per-page evidence, observed
+  OCR errors, and clear limits. A reader-trial form records the human checks
+  still needed; no participant results or accuracy rates are claimed.
+- The optional image adapter now accepts explicit JPEG byte and dimension
+  limits for gateways with smaller inputs. A separate live VLM test records
+  provider failures and retained evidence; it did not produce a transcription.
+
+### Fixed
+
+- Ordinary runs stop before another adapter call when recorded token or cost
+  usage has reached its cap. Negative adapter usage is rejected.
+- Replay bundles cannot add a page selection that was absent from the original
+  run. Malformed review receipts, route fields and schema column types produce
+  validation errors with useful context.
+- Malformed parent routes are rejected before classification writes new output.
+
+### Maintenance
+
+- Shared package checks replace duplicated workflow code. The locked CI and
+  release checks enforce consistent Python formatting across source, tests,
+  examples and scripts.
+
 ## 0.5.0 - 2026-09-11
 
 ### Added

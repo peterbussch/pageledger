@@ -43,11 +43,17 @@ def inspect_run(run_dir: Path) -> dict[str, Any]:
     if failed_page_count is None:
         failed_page_count = 0
 
-    # Determine which artifacts are present
     expected_artifacts = [
-        "manifest.json", "config-snapshot.yml", "route-map.yml",
-        "audit.json", "audit.md", "provenance.jsonl", "quality.jsonl",
-        "cost.json", "run.log", "rerun-manifest.yml",
+        "manifest.json",
+        "config-snapshot.yml",
+        "route-map.yml",
+        "audit.json",
+        "audit.md",
+        "provenance.jsonl",
+        "quality.jsonl",
+        "cost.json",
+        "run.log",
+        "rerun-manifest.yml",
     ]
     artifacts_present: list[str] = []
     artifacts_missing: list[str] = []
@@ -57,7 +63,6 @@ def inspect_run(run_dir: Path) -> dict[str, Any]:
         else:
             artifacts_missing.append(name)
 
-    # Cost info
     cost_known = False
     estimated_cost_usd = None
     cost_path = out_dir / "cost.json"
@@ -66,7 +71,6 @@ def inspect_run(run_dir: Path) -> dict[str, Any]:
         cost_known = cost.get("cost_known", False)
         estimated_cost_usd = cost.get("cost_usd")
 
-    # Review queue count
     review_queue_count = 0
     audit_path = out_dir / "audit.json"
     if audit_path.is_file():
@@ -131,8 +135,16 @@ def run_pages_csv(run_dir: Path) -> str:
                 provenance[entry["page_id"]] = entry
 
     columns = [
-        "page_id", "page_number", "adapter", "character_count", "word_count",
-        "confidence", "warnings", "grade", "grade_basis", "cost_usd",
+        "page_id",
+        "page_number",
+        "adapter",
+        "character_count",
+        "word_count",
+        "confidence",
+        "warnings",
+        "grade",
+        "grade_basis",
+        "cost_usd",
         "extraction_seconds",
     ]
     buffer = io.StringIO()
@@ -149,17 +161,19 @@ def run_pages_csv(run_dir: Path) -> str:
             if isinstance(cost, dict)
             else page_provenance.get("usage", {}).get("cost_usd")
         )
-        writer.writerow({
-            "page_id": quality["page_id"],
-            "page_number": quality["page_number"],
-            "adapter": quality["adapter"],
-            "character_count": quality["character_count"],
-            "word_count": quality["word_count"],
-            "confidence": quality.get("confidence"),
-            "warnings": ";".join(quality["warnings"]),
-            "grade": quality.get("grade"),
-            "grade_basis": quality.get("grade_basis"),
-            "cost_usd": page_cost,
-            "extraction_seconds": page_provenance.get("extraction_seconds"),
-        })
+        writer.writerow(
+            {
+                "page_id": quality["page_id"],
+                "page_number": quality["page_number"],
+                "adapter": quality["adapter"],
+                "character_count": quality["character_count"],
+                "word_count": quality["word_count"],
+                "confidence": quality.get("confidence"),
+                "warnings": ";".join(quality["warnings"]),
+                "grade": quality.get("grade"),
+                "grade_basis": quality.get("grade_basis"),
+                "cost_usd": page_cost,
+                "extraction_seconds": page_provenance.get("extraction_seconds"),
+            }
+        )
     return buffer.getvalue()

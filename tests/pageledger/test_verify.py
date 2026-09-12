@@ -36,6 +36,27 @@ def _codes(report: dict, kind: str) -> set[str]:
     return {issue["code"] for issue in report[kind]}
 
 
+@pytest.mark.parametrize("artifact", ["route-map.yml", "run.log"])
+def test_verify_run_reports_malformed_action_or_log_status(tmp_path, artifact):
+    from pageledger.verify import verify_run
+
+    out_dir, _ = _run(tmp_path)
+    path = out_dir / artifact
+    if artifact == "route-map.yml":
+        route = yaml.safe_load(path.read_text())
+        route["documents"][0]["pages"][0]["action"] = []
+        path.write_text(yaml.safe_dump(route))
+    else:
+        entries = [json.loads(line) for line in path.read_text().splitlines()]
+        entries[0]["status"] = []
+        path.write_text("".join(json.dumps(entry) + "\n" for entry in entries))
+
+    report = verify_run(out_dir)
+
+    assert report["status"] == "fail"
+    assert "artifact_structure_invalid" in _codes(report, "errors")
+
+
 def test_verify_run_accepts_coherent_ledger(tmp_path):
     from pageledger.verify import verify_run
 
@@ -92,7 +113,8 @@ def test_verify_run_rejects_invalid_manifest_reproducibility_profile(
 
     assert report["status"] == "fail"
     assert {item["code"] for item in report["errors"]} & {
-        "profile_invalid", "profile_hash_mismatch"
+        "profile_invalid",
+        "profile_hash_mismatch",
     }
 
 
@@ -253,7 +275,13 @@ def test_verify_run_accepts_routed_review_only_empty_provenance(tmp_path: Path) 
 
 @pytest.mark.parametrize(
     "field",
-    ["baseline_run_id", "replay_run_id", "bundle_manifest_sha256", "outcome", "replay_schema_version"],
+    [
+        "baseline_run_id",
+        "replay_run_id",
+        "bundle_manifest_sha256",
+        "outcome",
+        "replay_schema_version",
+    ],
 )
 def test_verify_run_rejects_changed_replay_linkage(tmp_path: Path, field: str) -> None:
     from pageledger.replay import bundle_run, replay_bundle
@@ -351,7 +379,9 @@ def test_verify_run_binds_replay_comparison_to_current_pages(tmp_path: Path, mut
         manifest["outcome"] = "deterministic_mismatch"
         manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
     else:
-        replay["comparison"]["pages"] = replay["comparison"]["pages"][:1] if mutation == "omit_one" else []
+        replay["comparison"]["pages"] = (
+            replay["comparison"]["pages"][:1] if mutation == "omit_one" else []
+        )
         replay["raw"]["equal"] = len(replay["comparison"]["pages"])
     replay_path.write_text(json.dumps(replay), encoding="utf-8")
 
@@ -722,9 +752,7 @@ def test_verify_run_requires_external_alignment_schema_snapshot(tmp_path):
     assert "alignment_schema_snapshot_missing" in _codes(report, "errors")
 
 
-def test_verify_run_does_not_follow_external_alignment_schema_symlink(
-    tmp_path, monkeypatch
-):
+def test_verify_run_does_not_follow_external_alignment_schema_symlink(tmp_path, monkeypatch):
     import pageledger.verify as verify_module
 
     out_dir, _ = _run(tmp_path)
@@ -851,9 +879,7 @@ def test_verify_run_reports_source_hash_and_raw_page_identity_mismatches(tmp_pat
     report = verify_run(out_dir)
 
     assert report["status"] == "fail"
-    assert {"source_identity_mismatch", "page_identity_mismatch"} <= _codes(
-        report, "errors"
-    )
+    assert {"source_identity_mismatch", "page_identity_mismatch"} <= _codes(report, "errors")
 
 
 def test_verify_run_checks_route_page_and_quality_totals(tmp_path):
@@ -862,9 +888,7 @@ def test_verify_run_checks_route_page_and_quality_totals(tmp_path):
     out_dir, _ = _run(tmp_path)
     route_path = out_dir / "route-map.yml"
     route = yaml.safe_load(route_path.read_text())
-    route["documents"][0]["pages"][1]["page_id"] = route["documents"][0]["pages"][0][
-        "page_id"
-    ]
+    route["documents"][0]["pages"][1]["page_id"] = route["documents"][0]["pages"][0]["page_id"]
     route_path.write_text(yaml.safe_dump(route), encoding="utf-8")
     manifest_path = out_dir / "manifest.json"
     manifest = json.loads(manifest_path.read_text())
@@ -873,9 +897,7 @@ def test_verify_run_checks_route_page_and_quality_totals(tmp_path):
 
     report = verify_run(out_dir)
 
-    assert {"duplicate_route_page_id", "quality_warning_count_mismatch"} <= _codes(
-        report, "errors"
-    )
+    assert {"duplicate_route_page_id", "quality_warning_count_mismatch"} <= _codes(report, "errors")
 
 
 def test_verify_run_enforces_route_action_accounting(tmp_path):
@@ -956,9 +978,7 @@ def test_verify_run_detects_modified_raw_artifact(tmp_path):
     assert "raw_artifact_hash_mismatch" in _codes(report, "errors")
 
 
-def test_verify_run_does_not_read_raw_artifact_outside_declared_directory(
-    tmp_path, monkeypatch
-):
+def test_verify_run_does_not_read_raw_artifact_outside_declared_directory(tmp_path, monkeypatch):
     import pageledger.verify as verify_module
 
     out_dir, _ = _run(tmp_path)
@@ -966,8 +986,7 @@ def test_verify_run_does_not_read_raw_artifact_outside_declared_directory(
     outside.write_text("must not be read as run evidence", encoding="utf-8")
     provenance_path = out_dir / "provenance.jsonl"
     entries = [
-        json.loads(line)
-        for line in provenance_path.read_text(encoding="utf-8").splitlines()
+        json.loads(line) for line in provenance_path.read_text(encoding="utf-8").splitlines()
     ]
     entries[0]["result"]["raw_artifact"] = "../outside.txt"
     provenance_path.write_text(
@@ -989,9 +1008,7 @@ def test_verify_run_does_not_read_raw_artifact_outside_declared_directory(
     assert "raw_artifact_path_invalid" in _codes(report, "errors")
 
 
-def test_verify_run_does_not_read_outside_raw_when_declaration_is_missing(
-    tmp_path, monkeypatch
-):
+def test_verify_run_does_not_read_outside_raw_when_declaration_is_missing(tmp_path, monkeypatch):
     import pageledger.verify as verify_module
 
     out_dir, _ = _run(tmp_path)
@@ -1003,8 +1020,7 @@ def test_verify_run_does_not_read_outside_raw_when_declaration_is_missing(
     manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
     provenance_path = out_dir / "provenance.jsonl"
     entries = [
-        json.loads(line)
-        for line in provenance_path.read_text(encoding="utf-8").splitlines()
+        json.loads(line) for line in provenance_path.read_text(encoding="utf-8").splitlines()
     ]
     entries[0]["result"]["raw_artifact"] = "../outside.txt"
     provenance_path.write_text(
@@ -1086,9 +1102,7 @@ def test_verify_run_rejects_missing_raw_hash_from_new_run(tmp_path):
 
     out_dir, _ = _run(tmp_path)
     provenance_path = out_dir / "provenance.jsonl"
-    provenance = [
-        json.loads(line) for line in provenance_path.read_text().splitlines()
-    ]
+    provenance = [json.loads(line) for line in provenance_path.read_text().splitlines()]
     provenance[0]["result"].pop("raw_sha256")
     provenance_path.write_text(
         "".join(json.dumps(entry) + "\n" for entry in provenance),
@@ -1110,9 +1124,7 @@ def test_verify_run_fails_closed_for_legacy_provenance_without_raw_hash(tmp_path
     del manifest["pageledger_version"]
     manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
     provenance_path = out_dir / "provenance.jsonl"
-    provenance = [
-        json.loads(line) for line in provenance_path.read_text().splitlines()
-    ]
+    provenance = [json.loads(line) for line in provenance_path.read_text().splitlines()]
     for entry in provenance:
         entry["result"].pop("raw_sha256")
     provenance_path.write_text(
@@ -1217,7 +1229,9 @@ def test_verify_run_rejects_edited_rerun_plan(tmp_path):
 
 
 @pytest.mark.parametrize("depth", ["2", '"2"', "null"])
-def test_verify_run_checks_rerun_plan_for_all_valid_depth_spellings(tmp_path: Path, depth: str) -> None:
+def test_verify_run_checks_rerun_plan_for_all_valid_depth_spellings(
+    tmp_path: Path, depth: str
+) -> None:
     from pageledger.verify import verify_run
 
     out_dir, _ = _run(tmp_path, config_text=MINIMAL + f"  max_rerun_depth: {depth}\n")
@@ -1327,9 +1341,7 @@ def test_portable_baseline_verification_skips_external_source_and_rerun_semantic
     assert report["status"] == "pass"
 
 
-def test_verify_run_uses_routed_absolute_path_for_relative_input(
-    tmp_path, monkeypatch
-):
+def test_verify_run_uses_routed_absolute_path_for_relative_input(tmp_path, monkeypatch):
     from pageledger.runner import run
     from pageledger.verify import verify_run
 

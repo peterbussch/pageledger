@@ -28,10 +28,13 @@ run:
   adapter: text
 """
 
-PRICED = BASE + """\
+PRICED = (
+    BASE
+    + """\
   pricing:
     cost_per_page: 0.002
 """
+)
 
 
 class _CostReportingAdapter:
@@ -96,6 +99,7 @@ def test_cost_basis_configured_rate(tmp_path):
     assert cost["cost_usd"] == 0.002
     assert cost["cost_known"] is True
     from pageledger.reports import run_pages_csv
+
     row = next(csv.DictReader(io.StringIO(run_pages_csv(out_dir))))
     assert row["cost_usd"] == "0.002"
 
@@ -155,13 +159,14 @@ def test_backoff_exponential_sleeps_between_retries(tmp_path, monkeypatch):
     sleeps: list[float] = []
     monkeypatch.setattr(runner_module.time, "sleep", lambda s: sleeps.append(s))
 
-    config = BASE.replace(
-        "adapter: text", "adapter: test_cost_basis:ALWAYS_FAILS"
-    ) + """\
+    config = (
+        BASE.replace("adapter: text", "adapter: test_cost_basis:ALWAYS_FAILS")
+        + """\
   retry:
     max_retries: 3
     backoff: exponential
 """
+    )
     source = tmp_path / "doc.txt"
     source.write_text("some page text\n", encoding="utf-8")
     config_path = tmp_path / "config.yml"
@@ -183,12 +188,13 @@ def test_backoff_default_none_does_not_sleep(tmp_path, monkeypatch):
     sleeps: list[float] = []
     monkeypatch.setattr(runner_module.time, "sleep", lambda s: sleeps.append(s))
 
-    config = BASE.replace(
-        "adapter: text", "adapter: test_cost_basis:ALWAYS_FAILS"
-    ) + """\
+    config = (
+        BASE.replace("adapter: text", "adapter: test_cost_basis:ALWAYS_FAILS")
+        + """\
   retry:
     max_retries: 2
 """
+    )
     source = tmp_path / "doc.txt"
     source.write_text("some page text\n", encoding="utf-8")
     config_path = tmp_path / "config.yml"
@@ -206,11 +212,14 @@ def test_backoff_default_none_does_not_sleep(tmp_path, monkeypatch):
 def test_backoff_invalid_value_rejected(tmp_path):
     from pageledger.config import load_config
 
-    config = BASE + """\
+    config = (
+        BASE
+        + """\
   retry:
     max_retries: 1
     backoff: fibonacci
 """
+    )
     config_path = tmp_path / "config.yml"
     config_path.write_text(config, encoding="utf-8")
     with pytest.raises(ValueError, match="backoff"):

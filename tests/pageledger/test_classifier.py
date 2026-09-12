@@ -115,14 +115,10 @@ def test_low_word_confidence_reduces_fixed_confidence() -> None:
         " ".join(["ordinary"] * 26),
         detail={"below_60_ratio": 0.25},
     )
-    assert result == ClassificationResult(
-        "prose", 0.5, "prose_text+low_word_confidence"
-    )
+    assert result == ClassificationResult("prose", 0.5, "prose_text+low_word_confidence")
 
     with pytest.raises(ValueError, match="below_60_ratio must be between 0 and 1"):
-        structural_signals(
-            "text", result_format="text", confidence_detail={"below_60_ratio": 1.5}
-        )
+        structural_signals("text", result_format="text", confidence_detail={"below_60_ratio": 1.5})
 
 
 def test_threshold_overrides_are_merged_and_validated() -> None:

@@ -1,0 +1,12 @@
+schema_version: '0.1'
+run:
+  adapter: pdf_text
+processing:
+  local_ocr:
+    adapter: pdf_ocr
+    adapter_options:
+      lang: eng
+      dpi: 300
+  limits:
+    max_attempt_pages: 40
+    max_image_pages: 0

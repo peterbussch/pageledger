@@ -103,6 +103,8 @@ def test_spec_parses_columns_checks_quality():
         ({"name": "x", "columns": []}, "schema.columns must be a non-empty list"),
         ({"name": "", "columns": [{"name": "a"}]}, "schema.name"),
         ({"name": "x", "columns": [{"name": "a", "type": "float"}]}, r"columns\[0\].type"),
+        ({"name": "x", "columns": [{"name": "a", "type": []}]}, r"columns\[0\].type"),
+        ({"name": "x", "columns": [{"name": "a", "type": {}}]}, r"columns\[0\].type"),
         ({"name": "x", "columns": [{"name": "a", "required": "yes"}]}, r"columns\[0\].required"),
         ({"name": "x", "columns": [{"name": "a", "aliases": [1]}]}, r"columns\[0\].aliases"),
         (
@@ -317,7 +319,11 @@ def test_integer_coercion_preserves_values_above_float_precision(fmt):
     result = _align(content, fmt, spec)
 
     assert [record["value"] for record in result["records"]] == [
-        9007199254740993, -9007199254740993, 9007199254740993, None, 9007199254740993
+        9007199254740993,
+        -9007199254740993,
+        9007199254740993,
+        None,
+        9007199254740993,
     ]
     assert result["coercion_errors"] == [
         {"row": 4, "column": "value", "raw": "9007199254740993.1", "error": "not_integer"}
@@ -730,9 +736,7 @@ def test_align_run_dry_run_previews_without_writes(tmp_path):
     assert report["after"]["grade_distribution_by_basis"] == {
         "schema_aware": {"A": 1, "B": 0, "C": 0, "D": 0, "F": 0}
     }
-    assert report["grade_distribution_by_basis"] == report["after"][
-        "grade_distribution_by_basis"
-    ]
+    assert report["grade_distribution_by_basis"] == report["after"]["grade_distribution_by_basis"]
     assert _tree_contents(out) == before
     assert not (out / "align-schema-snapshot.yml").exists()
 

@@ -4,10 +4,14 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
+from tarfile import TarInfo
+from tarfile import open as open_tar
 from zipfile import ZipFile
 
+import pytest
 import yaml
 
+from scripts.check_distributions import REQUIRED_SDIST_FILES, check_distributions
 from scripts.check_release import check_release
 
 REPO = Path(__file__).resolve().parents[2]
@@ -19,9 +23,7 @@ def _write_release_fixture(root: Path, *, citation_version: str = "1.2.3") -> No
         '[project]\nname = "pageledger"\nversion = "1.2.3"\n',
         encoding="utf-8",
     )
-    (root / "pageledger" / "_version.py").write_text(
-        '__version__ = "1.2.3"\n', encoding="utf-8"
-    )
+    (root / "pageledger" / "_version.py").write_text('__version__ = "1.2.3"\n', encoding="utf-8")
     (root / "CITATION.cff").write_text(
         f'version: "{citation_version}"\ndate-released: "2026-08-16"\n',
         encoding="utf-8",
@@ -31,13 +33,11 @@ def _write_release_fixture(root: Path, *, citation_version: str = "1.2.3") -> No
         'source = { editable = "." }\n',
         encoding="utf-8",
     )
-    (root / "CHANGELOG.md").write_text(
-        "# Changelog\n\n## 1.2.3 - 2026-08-16\n", encoding="utf-8"
-    )
+    (root / "CHANGELOG.md").write_text("# Changelog\n\n## 1.2.3 - 2026-08-16\n", encoding="utf-8")
 
 
 def test_release_metadata_agrees_for_current_version() -> None:
-    assert check_release(REPO, "v0.5.0") == []
+    assert check_release(REPO, "v0.5.1") == []
 
 
 def test_release_check_rejects_tag_and_metadata_mismatches(tmp_path: Path) -> None:
@@ -99,9 +99,7 @@ def test_publish_is_manual_tag_only_and_verifies_before_upload() -> None:
 
 
 def test_package_workflows_run_shared_reader_journey_outside_checkout() -> None:
-    ci = yaml.safe_load(
-        (REPO / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
-    )
+    ci = yaml.safe_load((REPO / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8"))
     publish = yaml.safe_load(
         (REPO / ".github" / "workflows" / "publish.yml").read_text(encoding="utf-8")
     )
@@ -114,20 +112,24 @@ def test_package_workflows_run_shared_reader_journey_outside_checkout() -> None:
             "Smoke-test the exact wheel",
             "/tmp/pageledger-release-wheel/bin/python",
         ),
+        (
+            publish,
+            "Smoke-test the exact sdist",
+            "/tmp/pageledger-release-sdist/bin/python",
+        ),
     ]
     for workflow, step_name, isolated_python in cases:
         step = next(
-            step
-            for step in workflow["jobs"]["build"]["steps"]
-            if step.get("name") == step_name
+            step for step in workflow["jobs"]["build"]["steps"] if step.get("name") == step_name
         )
         command = step["run"]
         assert step["env"]["PYTHONPATH"] == ""
         assert f"{isolated_python} examples/run_first_run.py" in command
-        assert '--document "$GITHUB_WORKSPACE/docs/first-run.md"' in command
-        assert '--work-dir "$WORK_ROOT/first-run"' in command
+        for tutorial in ("first-run", "document-first-run"):
+            assert f'--document "$GITHUB_WORKSPACE/docs/{tutorial}.md"' in command
+            assert f'--work-dir "$WORK_ROOT/{tutorial}"' in command
         assert f"--python {isolated_python}" in command
-        assert "--expected-version 0.5.0" in command
+        assert "--expected-version 0.5.1" in command
         assert '--forbid-import-root "$GITHUB_WORKSPACE"' in command
         assert "--source-root" not in command
 
@@ -139,16 +141,39 @@ def test_package_workflows_validate_schema_and_document_inventories() -> None:
     ]
 
     for workflow in workflows:
-        assert 'Path("schemas").glob("*.schema.json")' in workflow
-        for packaged_path in (
-            "docs/first-run.md",
-            "docs/performance.md",
-            "docs/releasing.md",
-            "examples/run_first_run.py",
-        ):
-            assert packaged_path in workflow
-        for excluded in ("docs/superpowers/", "docs/proposals/", "docs/reports/"):
-            assert excluded in workflow
+        assert "python scripts/check_distributions.py dist" in workflow
+
+
+@pytest.mark.parametrize("defect", [None, "schema", "document", "validation", "private"])
+def test_distribution_check_reads_archives_and_rejects_missing_or_private_files(
+    tmp_path: Path,
+    defect: str | None,
+) -> None:
+    schemas = tmp_path / "schemas"
+    schemas.mkdir()
+    (schemas / "manifest.schema.json").write_text("{}")
+    dist = tmp_path / "dist"
+    dist.mkdir()
+    with ZipFile(dist / "pageledger-1.2.3-py3-none-any.whl", "w") as archive:
+        if defect != "schema":
+            archive.writestr(
+                "pageledger-1.2.3.data/data/share/pageledger/schemas/manifest.schema.json", "{}"
+            )
+    omitted = {
+        "document": "docs/document-first-run.md",
+        "validation": "docs/validation/0.5.1/vlm-results.json",
+    }.get(defect)
+    with open_tar(dist / "pageledger-1.2.3.tar.gz", "w:gz") as archive:
+        for path in REQUIRED_SDIST_FILES:
+            if path != omitted:
+                archive.addfile(TarInfo("pageledger-1.2.3/" + path))
+        if defect == "private":
+            archive.addfile(TarInfo("pageledger-1.2.3/.planning/private.json"))
+    if defect is None:
+        check_distributions(tmp_path, dist)
+    else:
+        with pytest.raises(ValueError, match="missing|local-only"):
+            check_distributions(tmp_path, dist)
 
 
 def test_all_github_actions_are_pinned_and_ci_has_a_frozen_lane() -> None:

@@ -76,6 +76,7 @@ run:
 # Rerun status semantics
 # =========================================================================
 
+
 def test_rerun_manifest_empty_queue_not_executable(tmp_path):
     source = tmp_path / "doc.txt"
     source.write_text("hello world\n", encoding="utf-8")
@@ -90,12 +91,15 @@ def test_quarantine_excludes_page_from_rerun_but_preserves_review_evidence(
 ):
     source = tmp_path / "doc.txt"
     source.write_text("short", encoding="utf-8")
-    config = MINIMAL + """\
+    config = (
+        MINIMAL
+        + """\
   rerun_if:
     - grade_below: A
   quarantine_if:
     - grade_below: A
 """
+    )
     out_dir = _run([source], config, tmp_path)
 
     audit = json.loads((out_dir / "audit.json").read_text(encoding="utf-8"))
@@ -103,9 +107,7 @@ def test_quarantine_excludes_page_from_rerun_but_preserves_review_evidence(
         "quality_warning",
         "rerun_if:grade_below",
     }
-    assert [item["reason"] for item in audit["quarantine_queue"]] == [
-        "quarantine_if:grade_below"
-    ]
+    assert [item["reason"] for item in audit["quarantine_queue"]] == ["quarantine_if:grade_below"]
     assert _load_rerun(out_dir)["items"] == []
     manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
     assert manifest["summary"]["pages_quarantined"] == 1
@@ -124,6 +126,7 @@ def test_rerun_manifest_dry_run_is_executable(tmp_path):
 # =========================================================================
 # max_rerun_depth guard
 # =========================================================================
+
 
 def test_max_rerun_depth_zero_produces_empty_items(tmp_path):
     source = tmp_path / "doc.txt"
@@ -162,6 +165,7 @@ def test_max_rerun_depth_positive_produces_items(tmp_path):
 # Dry-run review queue semantics
 # =========================================================================
 
+
 def test_dry_run_rerun_reason_is_dry_run(tmp_path):
     source = tmp_path / "doc.txt"
     source.write_text("hello world\n", encoding="utf-8")
@@ -196,6 +200,7 @@ def test_dry_run_configured_review_appears_in_rerun(tmp_path):
 # =========================================================================
 # Execute review queue semantics
 # =========================================================================
+
 
 def test_execute_rerun_reason_is_audit_policy(tmp_path):
     source = tmp_path / "doc.txt"
@@ -238,6 +243,7 @@ def test_execute_clean_text_no_review_empty_rerun(tmp_path):
 # Parent linkage
 # =========================================================================
 
+
 def test_rerun_parent_run_id_matches_manifest(tmp_path):
     source = tmp_path / "doc.txt"
     source.write_text("hello world\n", encoding="utf-8")
@@ -270,6 +276,7 @@ def test_rerun_run_id_differs_from_parent(tmp_path):
 # Per-item field stability
 # =========================================================================
 
+
 def test_rerun_item_fields_are_stable(tmp_path):
     source = tmp_path / "doc.txt"
     source.write_text("hello world\n", encoding="utf-8")
@@ -287,6 +294,7 @@ def test_rerun_item_fields_are_stable(tmp_path):
 # =========================================================================
 # max_rerun_depth config inheritance
 # =========================================================================
+
 
 def test_max_rerun_depth_default_is_2(tmp_path):
     source = tmp_path / "doc.txt"
@@ -319,12 +327,11 @@ run:
 # Rerun execution
 # =========================================================================
 
+
 def _parent_with_flagged_page(tmp_path):
     """Parent run over two pages where page 1 gets a short_text warning."""
     source = tmp_path / "doc.txt"
-    source.write_text(
-        "short\fclean second page with plenty of ordinary text\n", encoding="utf-8"
-    )
+    source.write_text("short\fclean second page with plenty of ordinary text\n", encoding="utf-8")
     out_dir = _run([source], MINIMAL, tmp_path)
     return source, out_dir
 
@@ -439,7 +446,9 @@ def test_rerun_refuses_changed_source_before_creating_child(tmp_path):
     import pytest
 
     source, parent_out = _parent_with_flagged_page(tmp_path)
-    source.write_text("short\fmodified second page content since the parent run\n", encoding="utf-8")
+    source.write_text(
+        "short\fmodified second page content since the parent run\n", encoding="utf-8"
+    )
     with pytest.raises(ValueError, match="Source changed since parent run"):
         _do_rerun(parent_out, tmp_path)
     assert not (tmp_path / "rerun-out").exists()

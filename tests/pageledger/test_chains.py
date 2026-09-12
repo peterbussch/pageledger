@@ -81,11 +81,7 @@ def _write_config(
         yaml.safe_dump(
             {
                 "schema_version": "0.1",
-                "taxonomy": {
-                    "page_types": {
-                        "prose": {"default_action": "transcribe_text"}
-                    }
-                },
+                "taxonomy": {"page_types": {"prose": {"default_action": "transcribe_text"}}},
                 "run": run_config,
             },
             sort_keys=False,
@@ -112,9 +108,7 @@ def _parent_run(tmp_path: Path, *, order: list[object] | None = None):
     (tmp_path / "chain_adapter.py").write_text(MARKER_ADAPTER, encoding="utf-8")
     source = tmp_path / "source.txt"
     source.write_text("source page", encoding="utf-8")
-    config = _write_config(
-        tmp_path / "parent.yml", adapter_order=order or _chain()
-    )
+    config = _write_config(tmp_path / "parent.yml", adapter_order=order or _chain())
     out = tmp_path / "parent"
     result = run(
         inputs=[source],
@@ -127,9 +121,7 @@ def _parent_run(tmp_path: Path, *, order: list[object] | None = None):
 
 
 def _raw_text(out_dir: Path) -> str:
-    return (out_dir / "raw" / "doc_0001_page_0001.txt").read_text(
-        encoding="utf-8"
-    )
+    return (out_dir / "raw" / "doc_0001_page_0001.txt").read_text(encoding="utf-8")
 
 
 def test_adapter_order_normalizes_entries_and_preserves_step_zero_accessors(
@@ -153,8 +145,7 @@ max_rerun_depth: 0
     assert config.adapter_name == "weak:Adapter"
     assert config.adapter_options == {"mode": "fast"}
     assert any(
-        "unreachable" in warning and "max_rerun_depth=0" in warning
-        for warning in config.warnings
+        "unreachable" in warning and "max_rerun_depth=0" in warning for warning in config.warnings
     )
 
 
@@ -197,12 +188,8 @@ def test_generations_select_their_configured_adapter_and_record_escalation(
         ],
         "step": 0,
     }
-    parent_rerun = yaml.safe_load(
-        (parent / "rerun-manifest.yml").read_text(encoding="utf-8")
-    )
-    assert parent_rerun["escalation"]["next_adapter"] == (
-        "chain_adapter:MarkerAdapter"
-    )
+    parent_rerun = yaml.safe_load((parent / "rerun-manifest.yml").read_text(encoding="utf-8"))
+    assert parent_rerun["escalation"]["next_adapter"] == ("chain_adapter:MarkerAdapter")
 
     child = tmp_path / "child"
     child_result = rerun(
@@ -214,14 +201,10 @@ def test_generations_select_their_configured_adapter_and_record_escalation(
     assert _raw_text(child) == "gen-1"
     assert child_result["escalation"]["step"] == 1
     assert "escalation_warnings" not in child_result
-    child_manifest = json.loads(
-        (child / "manifest.json").read_text(encoding="utf-8")
-    )
+    child_manifest = json.loads((child / "manifest.json").read_text(encoding="utf-8"))
     assert child_manifest["parent_run_id"] == parent_result["run_id"]
     assert child_manifest["escalation"]["step"] == 1
-    provenance = json.loads(
-        (child / "provenance.jsonl").read_text(encoding="utf-8")
-    )
+    provenance = json.loads((child / "provenance.jsonl").read_text(encoding="utf-8"))
     assert provenance["extractor"]["adapter"] == "marker"
     assert provenance["extractor"]["adapter_version"] == "1.0"
 
@@ -236,9 +219,7 @@ def test_chain_exhaustion_clears_items_before_the_depth_cap(tmp_path: Path) -> N
         adapter_path=tmp_path,
     )
 
-    child_rerun = yaml.safe_load(
-        (child / "rerun-manifest.yml").read_text(encoding="utf-8")
-    )
+    child_rerun = yaml.safe_load((child / "rerun-manifest.yml").read_text(encoding="utf-8"))
     assert child_rerun["max_rerun_depth"] == 5
     assert child_rerun["rerun_status"] == "chain_exhausted"
     assert child_rerun["rerun_executable"] is False
@@ -339,14 +320,10 @@ def test_depth_cap_is_independent_of_a_longer_adapter_chain(tmp_path: Path) -> N
         out_dir=child,
         adapter_path=tmp_path,
     )
-    child_rerun = yaml.safe_load(
-        (child / "rerun-manifest.yml").read_text(encoding="utf-8")
-    )
+    child_rerun = yaml.safe_load((child / "rerun-manifest.yml").read_text(encoding="utf-8"))
     assert child_rerun["rerun_status"] == "no_further_generations"
     assert child_rerun["items"] == []
-    assert child_rerun["escalation"]["next_adapter"] == (
-        "chain_adapter:AlternateAdapter"
-    )
+    assert child_rerun["escalation"]["next_adapter"] == ("chain_adapter:AlternateAdapter")
 
     with pytest.raises(ValueError, match="Max rerun depth"):
         rerun(
