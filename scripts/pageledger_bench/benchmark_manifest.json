@@ -39,7 +39,7 @@
     "tests/pageledger/test_benchmark_workloads.py"
   ],
   "recipe_sha256": {
-    "scripts/pageledger_bench/workloads.py": "74dfc035ef87be6e3101e98b5bc2b7dc6eace0f938393ca5af1509ac3890a118"
+    "scripts/pageledger_bench/workloads.py": "77a9d27136b529addcdeed156a4f2e07389af7dbe9c40309a7fbdd268c20531b"
   },
   "schema_sha256": {
     "audit.schema.json": "4f18182140c5aee9eb4d40e0fd7d49df25e5dfdd5c3c426041c1fed520521848",
