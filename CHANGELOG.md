@@ -2,6 +2,18 @@
 
 Release changes follow the [artifact compatibility policy](docs/run-manifest-spec.md#compatibility-policy).
 
+## 0.5.2 - 2026-09-12
+
+### Fixed
+
+- `classify --from-run` rejects truncated, duplicate, out-of-range, and
+  misidentified page inventories against the original run manifest.
+
+### Maintenance
+
+- Release preparation now reads and accounts for Copilot review guidance before
+  merge and publication.
+
 ## 0.5.1 - 2026-09-12
 
 ### Changed

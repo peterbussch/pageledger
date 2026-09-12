@@ -6,12 +6,12 @@ scratch directory after installing PageLedger. You will inspect the raw text
 and audit, export CSV, and verify the run before trying selective reruns and
 optional bundle replay.
 
-Install 0.5.1 in a virtual environment:
+Install 0.5.2 in a virtual environment:
 
 ```bash
-python -m venv /tmp/pageledger-0.5.1
-. /tmp/pageledger-0.5.1/bin/activate
-python -m pip install pageledger==0.5.1
+python -m venv /tmp/pageledger-0.5.2
+. /tmp/pageledger-0.5.2/bin/activate
+python -m pip install pageledger==0.5.2
 pageledger --version
 mkdir /tmp/pageledger-reader-tutorial
 cd /tmp/pageledger-reader-tutorial
@@ -212,7 +212,7 @@ PYTHONPATH= /path/to/wheel-venv/bin/python /path/to/checkout/examples/run_first_
   --document /path/to/checkout/docs/first-run.md \
   --work-dir /tmp/pageledger-first-run \
   --python /path/to/wheel-venv/bin/python \
-  --expected-version 0.5.1 \
+  --expected-version 0.5.2 \
   --forbid-import-root /path/to/checkout
 ```
 

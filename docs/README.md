@@ -1,6 +1,6 @@
 # PageLedger documentation
 
-PageLedger 0.5.1 records extraction attempts, source identity, cost, and review
+PageLedger 0.5.2 records extraction attempts, source identity, cost, and review
 work as plain files. Choose an entry point below.
 
 ## Getting started
@@ -40,7 +40,7 @@ work as plain files. Choose an entry point below.
 - [Page image input evidence](image-evidence-spec.md)
 
 The [JSON Schemas](../schemas/) define the machine-readable artifact contract.
-Package 0.5.1 retains artifact `schema_version: "0.1"`.
+Package 0.5.2 retains artifact `schema_version: "0.1"`.
 
 ## Scope and maintenance
 

@@ -27,14 +27,14 @@ source and reconstruct how it was produced.
 
 ## Install
 
-PageLedger 0.5.1 requires Python 3.10 or later:
+PageLedger 0.5.2 requires Python 3.10 or later:
 
 ```bash
-pip install pageledger==0.5.1
+pip install pageledger==0.5.2
 pageledger --version
 ```
 
-For PDFs, install `"pageledger[pdf]==0.5.1"`. Scanned PDFs also need Poppler and
+For PDFs, install `"pageledger[pdf]==0.5.2"`. Scanned PDFs also need Poppler and
 Tesseract installed separately. `pageledger doctor` checks the available tools.
 
 ## First run

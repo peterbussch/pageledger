@@ -1,4 +1,4 @@
-# Capabilities and limits (PageLedger 0.5.1)
+# Capabilities and limits (PageLedger 0.5.2)
 
 This page lists the supported workflows, the adapters you supply, and the
 limits of the recorded evidence. Artifact schemas remain at version 0.1.
@@ -301,7 +301,7 @@ PageLedger has been exercised locally on:
   the default, not a general benchmark.
 
 These historical checks describe the tested documents and workloads. They
-are not benchmarks of every 0.5.1 workflow; see [performance](performance.md)
+are not benchmarks of every 0.5.2 workflow; see [performance](performance.md)
 for the measured serialization improvement and its limits. Stress
 tests are marked `@pytest.mark.stress` and skipped in default CI:
 
