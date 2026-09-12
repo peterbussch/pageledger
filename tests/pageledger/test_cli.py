@@ -24,29 +24,38 @@ MINIMAL_CONFIG = textwrap.dedent("""\
     """)
 
 
-@pytest.mark.parametrize('operation,argv', [
-    ('run', ['run', 'source.txt', '--adapter', 'text', '--out', 'out', '--json']),
-    ('classify', ['classify', 'source.txt', '--config', 'config.yml', '--out', 'routes.yml', '--json']),
-    ('build_doctor_report', ['doctor', '--json']),
-])
+@pytest.mark.parametrize(
+    "operation,argv",
+    [
+        ("run", ["run", "source.txt", "--adapter", "text", "--out", "out", "--json"]),
+        (
+            "classify",
+            ["classify", "source.txt", "--config", "config.yml", "--out", "routes.yml", "--json"],
+        ),
+        ("build_doctor_report", ["doctor", "--json"]),
+    ],
+)
 def test_cli_reports_filesystem_errors_consistently(monkeypatch, capsys, operation, argv):
     from pageledger import cli
+
     def denied(*args, **kwargs):
-        raise PermissionError('Synthetic permission failure')
+        raise PermissionError("Synthetic permission failure")
+
     monkeypatch.setattr(cli, operation, denied)
     assert cli.main(argv) == 1
     output = capsys.readouterr()
-    assert json.loads(output.out) == {'status': 'error', 'error': 'Synthetic permission failure'}
-    assert output.err == 'pageledger: error: Synthetic permission failure\n'
+    assert json.loads(output.out) == {"status": "error", "error": "Synthetic permission failure"}
+    assert output.err == "pageledger: error: Synthetic permission failure\n"
 
 
 def test_init_config_missing_parent_returns_cli_error(tmp_path, capsys):
     from pageledger.cli import main
-    target = tmp_path / 'missing' / 'config.yml'
-    assert main(['init-config', '--out', str(target)]) == 1
+
+    target = tmp_path / "missing" / "config.yml"
+    assert main(["init-config", "--out", str(target)]) == 1
     output = capsys.readouterr()
-    assert output.out == ''
-    assert 'pageledger: error:' in output.err
+    assert output.out == ""
+    assert "pageledger: error:" in output.err
     assert not target.exists()
 
 
@@ -56,7 +65,9 @@ def _run_cli(args: list[str], *, cwd: Path | None = None) -> tuple[int, str, str
 
     result = subprocess.run(
         [sys.executable, "-m", "pageledger", *args],
-        capture_output=True, text=True, cwd=str(cwd) if cwd else None,
+        capture_output=True,
+        text=True,
+        cwd=str(cwd) if cwd else None,
     )
     return result.returncode, result.stdout, result.stderr
 
@@ -67,9 +78,10 @@ def test_bundle_and_replay_cli_surface(tmp_path: Path) -> None:
     config = tmp_path / "config.yml"
     config.write_text(MINIMAL_CONFIG, encoding="utf-8")
     run_dir = tmp_path / "run"
-    assert _run_cli(
-        ["run", str(source), "--config", str(config), "--out", str(run_dir), "--json"]
-    )[0] == 0
+    assert (
+        _run_cli(["run", str(source), "--config", str(config), "--out", str(run_dir), "--json"])[0]
+        == 0
+    )
 
     bundle_dir = tmp_path / "bundle"
     code, stdout, _ = _run_cli(["bundle", str(run_dir), "--out", str(bundle_dir), "--json"])
@@ -93,17 +105,14 @@ def test_replay_human_exact_output(tmp_path: Path) -> None:
     config = tmp_path / "config.yml"
     config.write_text(MINIMAL_CONFIG, encoding="utf-8")
     run_dir = tmp_path / "run"
-    assert _run_cli(
-        ["run", str(source), "--config", str(config), "--out", str(run_dir)]
-    )[0] == 0
+    assert _run_cli(["run", str(source), "--config", str(config), "--out", str(run_dir)])[0] == 0
     bundle_dir = tmp_path / "bundle"
     assert _run_cli(["bundle", str(run_dir), "--out", str(bundle_dir)])[0] == 0
 
     code, stdout, _ = _run_cli(["replay", str(bundle_dir), "--out", str(tmp_path / "replayed")])
     assert code == 0
     assert stdout == (
-        "Verified replay outcome: exact\n"
-        "Raw comparison: 1 equal / 0 different / 0 missing\n"
+        "Verified replay outcome: exact\nRaw comparison: 1 equal / 0 different / 0 missing\n"
     )
 
 
@@ -113,9 +122,7 @@ def test_replay_human_review_only_raw_output(tmp_path: Path) -> None:
     config = tmp_path / "config.yml"
     config.write_text(MINIMAL_CONFIG, encoding="utf-8")
     run_dir = tmp_path / "run"
-    assert _run_cli(
-        ["run", str(source), "--config", str(config), "--out", str(run_dir)]
-    )[0] == 0
+    assert _run_cli(["run", str(source), "--config", str(config), "--out", str(run_dir)])[0] == 0
 
     route_map = yaml.safe_load((run_dir / "route-map.yml").read_text(encoding="utf-8"))
     page = route_map["documents"][0]["pages"][0]
@@ -125,28 +132,28 @@ def test_replay_human_review_only_raw_output(tmp_path: Path) -> None:
     routes.write_text(yaml.safe_dump(route_map, sort_keys=False), encoding="utf-8")
 
     routed_dir = tmp_path / "routed"
-    assert _run_cli(
-        [
-            "run",
-            str(source),
-            "--config",
-            str(config),
-            "--routes",
-            str(routes),
-            "--out",
-            str(routed_dir),
-        ]
-    )[0] == 0
+    assert (
+        _run_cli(
+            [
+                "run",
+                str(source),
+                "--config",
+                str(config),
+                "--routes",
+                str(routes),
+                "--out",
+                str(routed_dir),
+            ]
+        )[0]
+        == 0
+    )
     bundle_dir = tmp_path / "bundle"
     assert _run_cli(["bundle", str(routed_dir), "--out", str(bundle_dir)])[0] == 0
 
-    code, stdout, _ = _run_cli(
-        ["replay", str(bundle_dir), "--out", str(tmp_path / "replayed")]
-    )
+    code, stdout, _ = _run_cli(["replay", str(bundle_dir), "--out", str(tmp_path / "replayed")])
     assert code == 0
     assert stdout == (
-        "Verified replay outcome: exact\n"
-        "Raw comparison: 0 equal / 0 different / 0 missing\n"
+        "Verified replay outcome: exact\nRaw comparison: 0 equal / 0 different / 0 missing\n"
     )
 
 
@@ -211,6 +218,7 @@ def test_bundle_cli_accepts_exact_out_flag() -> None:
 # init-config
 # =========================================================================
 
+
 def test_init_config_writes_to_stdout(tmp_path: Path) -> None:
     """init-config writes minimal valid config to stdout."""
     exit_code, stdout, stderr = _run_cli(["init-config"])
@@ -258,11 +266,13 @@ def test_init_config_pdf_ocr_adapter(tmp_path: Path) -> None:
 # adapter_options and --adapter-path
 # =========================================================================
 
+
 def test_config_adapter_options_must_be_mapping(tmp_path: Path) -> None:
     source = tmp_path / "sample.txt"
     source.write_text("page\n", encoding="utf-8")
     config = tmp_path / "config.yml"
-    config.write_text(textwrap.dedent("""\
+    config.write_text(
+        textwrap.dedent("""\
         schema_version: "0.1"
         taxonomy:
           page_types:
@@ -271,10 +281,11 @@ def test_config_adapter_options_must_be_mapping(tmp_path: Path) -> None:
         run:
           adapter: text
           adapter_options: not-a-mapping
-        """), encoding="utf-8")
+        """),
+        encoding="utf-8",
+    )
     exit_code, stdout, stderr = _run_cli(
-        ["run", str(source), "--config", str(config),
-         "--out", str(tmp_path / "out"), "--json"],
+        ["run", str(source), "--config", str(config), "--out", str(tmp_path / "out"), "--json"],
     )
     assert exit_code == 1
     assert "run.adapter_options must be a mapping" in json.loads(stdout)["error"]
@@ -284,7 +295,8 @@ def test_config_adapter_options_rejected_by_text_adapter(tmp_path: Path) -> None
     source = tmp_path / "sample.txt"
     source.write_text("page\n", encoding="utf-8")
     config = tmp_path / "config.yml"
-    config.write_text(textwrap.dedent("""\
+    config.write_text(
+        textwrap.dedent("""\
         schema_version: "0.1"
         taxonomy:
           page_types:
@@ -294,10 +306,11 @@ def test_config_adapter_options_rejected_by_text_adapter(tmp_path: Path) -> None
           adapter: text
           adapter_options:
             dpi: 300
-        """), encoding="utf-8")
+        """),
+        encoding="utf-8",
+    )
     exit_code, stdout, stderr = _run_cli(
-        ["run", str(source), "--config", str(config),
-         "--out", str(tmp_path / "out"), "--json"],
+        ["run", str(source), "--config", str(config), "--out", str(tmp_path / "out"), "--json"],
     )
     assert exit_code == 1
     assert "adapter_options" in json.loads(stdout)["error"]
@@ -431,17 +444,13 @@ def _write_cost_fixture(
     if pricing is not None:
         run_config["pricing"] = {"cost_per_page": pricing}
     elif partial_basis is not None:
-        run_config["pricing"] = {
-            "cost_per_1k_tokens": 0.1 if partial_basis == "mixed" else 0.25
-        }
+        run_config["pricing"] = {"cost_per_1k_tokens": 0.1 if partial_basis == "mixed" else 0.25}
     config = tmp_path / "cost-config.yml"
     config.write_text(
         yaml.safe_dump(
             {
                 "schema_version": "0.1",
-                "taxonomy": {
-                    "page_types": {"prose": {"default_action": "transcribe_text"}}
-                },
+                "taxonomy": {"page_types": {"prose": {"default_action": "transcribe_text"}}},
                 "run": run_config,
             },
             sort_keys=False,
@@ -469,20 +478,35 @@ def _run_cost_command(
     if command == "run":
         out_dir = tmp_path / "run"
         args = [
-            "run", str(source), "--config", str(config), "--out", str(out_dir),
+            "run",
+            str(source),
+            "--config",
+            str(config),
+            "--out",
+            str(out_dir),
             *adapter_args,
         ]
     else:
         parent_dir = tmp_path / "parent"
         parent_args = [
-            "run", str(source), "--config", str(config), "--out", str(parent_dir),
+            "run",
+            str(source),
+            "--config",
+            str(config),
+            "--out",
+            str(parent_dir),
             *adapter_args,
         ]
         code, stdout, stderr = _run_cli(parent_args)
         assert code == 0, f"stdout={stdout}\nstderr={stderr}"
         out_dir = tmp_path / "rerun"
         args = [
-            "rerun", str(parent_dir), "--config", str(config), "--out", str(out_dir),
+            "rerun",
+            str(parent_dir),
+            "--config",
+            str(config),
+            "--out",
+            str(out_dir),
             *adapter_args,
         ]
     if dry_run:
@@ -492,9 +516,7 @@ def _run_cost_command(
 
 
 @pytest.mark.parametrize("command", ["run", "rerun"])
-def test_human_cost_summary_distinguishes_unknown_from_zero(
-    tmp_path: Path, command: str
-) -> None:
+def test_human_cost_summary_distinguishes_unknown_from_zero(tmp_path: Path, command: str) -> None:
     code, stdout, stderr, out_dir = _run_cost_command(tmp_path, command=command)
     assert code == 0, stderr
     assert "Cost USD: unknown" in stdout
@@ -505,12 +527,8 @@ def test_human_cost_summary_distinguishes_unknown_from_zero(
 
 
 @pytest.mark.parametrize("command", ["run", "rerun"])
-def test_human_cost_summary_preserves_explicit_known_zero(
-    tmp_path: Path, command: str
-) -> None:
-    code, stdout, stderr, out_dir = _run_cost_command(
-        tmp_path, command=command, pricing=0.0
-    )
+def test_human_cost_summary_preserves_explicit_known_zero(tmp_path: Path, command: str) -> None:
+    code, stdout, stderr, out_dir = _run_cost_command(tmp_path, command=command, pricing=0.0)
     assert code == 0, stderr
     assert "Estimated cost USD: 0.0 (configured rate; not a provider charge)" in stdout
     assert "unknown" not in stdout
@@ -520,12 +538,8 @@ def test_human_cost_summary_preserves_explicit_known_zero(
 
 
 @pytest.mark.parametrize("command", ["run", "rerun"])
-def test_human_cost_summary_reports_known_nonzero_total(
-    tmp_path: Path, command: str
-) -> None:
-    code, stdout, stderr, out_dir = _run_cost_command(
-        tmp_path, command=command, pricing=0.25
-    )
+def test_human_cost_summary_reports_known_nonzero_total(tmp_path: Path, command: str) -> None:
+    code, stdout, stderr, out_dir = _run_cost_command(tmp_path, command=command, pricing=0.25)
     assert code == 0, stderr
     expected = "Estimated cost USD: 0.5 (configured rate; not a provider charge)"
     assert expected in stdout
@@ -541,14 +555,9 @@ def test_human_cost_summary_reports_known_nonzero_total(
 def test_human_cost_summary_qualifies_known_subtotal_with_unknown_pages(
     tmp_path: Path, command: str
 ) -> None:
-    code, stdout, stderr, out_dir = _run_cost_command(
-        tmp_path, command=command, mixed_adapter=True
-    )
+    code, stdout, stderr, out_dir = _run_cost_command(tmp_path, command=command, mixed_adapter=True)
     assert code == 0, stderr
-    expected = (
-        "Adapter-reported cost USD: at least 0.25 "
-        "(partial; some page costs unknown)"
-    )
+    expected = "Adapter-reported cost USD: at least 0.25 (partial; some page costs unknown)"
     assert expected in stdout
     assert "Estimated cost" not in stdout
     inspect_code, inspect_stdout, inspect_stderr = _run_cli(["inspect-run", str(out_dir)])
@@ -601,8 +610,7 @@ def test_human_cost_summary_reports_known_mixed_basis_total(tmp_path: Path) -> N
     )
     assert code == 0, stderr
     assert (
-        "Cost evidence USD: 0.35 "
-        "(mixed adapter-reported and configured-rate evidence)"
+        "Cost evidence USD: 0.35 (mixed adapter-reported and configured-rate evidence)"
     ) in stdout
     assert "partial" not in stdout
     cost = json.loads((out_dir / "cost.json").read_text(encoding="utf-8"))
@@ -615,9 +623,7 @@ def test_human_cost_summary_reports_known_mixed_basis_total(tmp_path: Path) -> N
 def test_human_dry_run_cost_does_not_imply_an_incurred_estimate(
     tmp_path: Path, command: str
 ) -> None:
-    code, stdout, stderr, out_dir = _run_cost_command(
-        tmp_path, command=command, dry_run=True
-    )
+    code, stdout, stderr, out_dir = _run_cost_command(tmp_path, command=command, dry_run=True)
     assert code == 0, stderr
     assert "Cost USD: 0.0 (dry run; no extraction performed)" in stdout
     assert "Estimated cost" not in stdout
@@ -629,17 +635,23 @@ def test_human_dry_run_cost_does_not_imply_an_incurred_estimate(
 def test_run_json_mapping_keeps_unknown_cost_contract(tmp_path: Path) -> None:
     source, config, adapter_args = _write_cost_fixture(tmp_path)
     out_dir = tmp_path / "json-run"
-    code, stdout, stderr = _run_cli([
-        "run", str(source), "--config", str(config), "--out", str(out_dir),
-        *adapter_args, "--json",
-    ])
+    code, stdout, stderr = _run_cli(
+        [
+            "run",
+            str(source),
+            "--config",
+            str(config),
+            "--out",
+            str(out_dir),
+            *adapter_args,
+            "--json",
+        ]
+    )
     assert code == 0, stderr
     result = json.loads(stdout)
     assert result["summary"]["estimated_cost_usd"] == 0.0
     assert "cost_known" not in result["summary"]
-    assert json.loads((out_dir / "cost.json").read_text(encoding="utf-8"))[
-        "cost_usd"
-    ] is None
+    assert json.loads((out_dir / "cost.json").read_text(encoding="utf-8"))["cost_usd"] is None
 
 
 def test_adapter_path_loads_custom_adapter_without_pythonpath(tmp_path: Path) -> None:
@@ -649,7 +661,8 @@ def test_adapter_path_loads_custom_adapter_without_pythonpath(tmp_path: Path) ->
     source = tmp_path / "sample.txt"
     source.write_text("hello\n", encoding="utf-8")
     config = tmp_path / "config.yml"
-    config.write_text(textwrap.dedent("""\
+    config.write_text(
+        textwrap.dedent("""\
         schema_version: "0.1"
         taxonomy:
           page_types:
@@ -659,11 +672,22 @@ def test_adapter_path_loads_custom_adapter_without_pythonpath(tmp_path: Path) ->
           adapter: upper_adapter:UppercaseAdapter
           adapter_options:
             suffix: "!"
-        """), encoding="utf-8")
+        """),
+        encoding="utf-8",
+    )
     out_dir = tmp_path / "out"
     exit_code, stdout, stderr = _run_cli(
-        ["run", str(source), "--config", str(config), "--out", str(out_dir),
-         "--adapter-path", str(adapter_dir), "--json"],
+        [
+            "run",
+            str(source),
+            "--config",
+            str(config),
+            "--out",
+            str(out_dir),
+            "--adapter-path",
+            str(adapter_dir),
+            "--json",
+        ],
     )
     assert exit_code == 0, f"stdout={stdout}\nstderr={stderr}"
     result = json.loads(stdout)
@@ -678,9 +702,17 @@ def test_adapter_path_missing_directory_errors(tmp_path: Path) -> None:
     config = tmp_path / "config.yml"
     config.write_text(MINIMAL_CONFIG, encoding="utf-8")
     exit_code, stdout, stderr = _run_cli(
-        ["run", str(source), "--config", str(config),
-         "--out", str(tmp_path / "out"),
-         "--adapter-path", str(tmp_path / "nope"), "--json"],
+        [
+            "run",
+            str(source),
+            "--config",
+            str(config),
+            "--out",
+            str(tmp_path / "out"),
+            "--adapter-path",
+            str(tmp_path / "nope"),
+            "--json",
+        ],
     )
     assert exit_code == 1
     assert "adapter-path" in json.loads(stdout)["error"]
@@ -689,6 +721,7 @@ def test_adapter_path_missing_directory_errors(tmp_path: Path) -> None:
 # =========================================================================
 # inspect-run
 # =========================================================================
+
 
 def test_inspect_run_human_output(tmp_path: Path) -> None:
     """inspect-run prints a human-readable summary."""
@@ -749,6 +782,7 @@ def test_inspect_run_dry_run(tmp_path: Path) -> None:
 # --json error output
 # =========================================================================
 
+
 def test_json_error_on_run_failure(tmp_path: Path) -> None:
     """--json on a failed run produces parseable error JSON."""
     source = tmp_path / "sample.txt"
@@ -759,7 +793,9 @@ def test_json_error_on_run_failure(tmp_path: Path) -> None:
     # First run succeeds
     _run_cli(["run", str(source), "--config", str(config), "--out", str(out_dir)])
     # Second run fails (non-empty output dir)
-    exit_code, stdout, stderr = _run_cli(["run", str(source), "--config", str(config), "--out", str(out_dir), "--json"])
+    exit_code, stdout, stderr = _run_cli(
+        ["run", str(source), "--config", str(config), "--out", str(out_dir), "--json"]
+    )
     assert exit_code == 1
     error_json = json.loads(stdout)
     assert error_json["status"] == "error"
@@ -772,7 +808,9 @@ def test_json_error_on_invalid_config(tmp_path: Path) -> None:
     source.write_text("test\n", encoding="utf-8")
     config = tmp_path / "config.yml"
     config.write_text("{invalid yaml!!! : ::}", encoding="utf-8")
-    exit_code, stdout, stderr = _run_cli(["run", str(source), "--config", str(config), "--out", str(tmp_path / "out"), "--json"])
+    exit_code, stdout, stderr = _run_cli(
+        ["run", str(source), "--config", str(config), "--out", str(tmp_path / "out"), "--json"]
+    )
     assert exit_code == 1
     error_json = json.loads(stdout)
     assert error_json["status"] == "error"
@@ -780,7 +818,17 @@ def test_json_error_on_invalid_config(tmp_path: Path) -> None:
 
 def test_json_error_on_missing_config(tmp_path: Path) -> None:
     """--json on missing config path emits error JSON."""
-    exit_code, stdout, stderr = _run_cli(["run", str(tmp_path / "t.txt"), "--config", str(tmp_path / "nonexistent.yml"), "--out", str(tmp_path / "out"), "--json"])
+    exit_code, stdout, stderr = _run_cli(
+        [
+            "run",
+            str(tmp_path / "t.txt"),
+            "--config",
+            str(tmp_path / "nonexistent.yml"),
+            "--out",
+            str(tmp_path / "out"),
+            "--json",
+        ]
+    )
     assert exit_code == 1
     error_json = json.loads(stdout)
     assert error_json["status"] == "error"
@@ -790,24 +838,32 @@ def test_json_error_on_missing_config(tmp_path: Path) -> None:
 # Config warnings (suspicious but valid configs)
 # =========================================================================
 
+
 def test_config_empty_page_types_prints_warning(tmp_path: Path) -> None:
     """Empty taxonomy.page_types triggers a config warning."""
     source = tmp_path / "sample.txt"
     source.write_text("test\n", encoding="utf-8")
     config = tmp_path / "config.yml"
-    config.write_text(textwrap.dedent("""\
+    config.write_text(
+        textwrap.dedent("""\
         schema_version: "0.1"
         taxonomy:
           page_types: {}
         run:
           adapter: text
-        """), encoding="utf-8")
+        """),
+        encoding="utf-8",
+    )
     out_dir = tmp_path / "out"
-    exit_code, stdout, stderr = _run_cli(["run", str(source), "--config", str(config), "--out", str(out_dir)])
+    exit_code, stdout, stderr = _run_cli(
+        ["run", str(source), "--config", str(config), "--out", str(out_dir)]
+    )
     assert exit_code == 0
     assert "Config warnings" in stdout or True  # warning surfaces in human output
 
-    exit_code2, stdout2, stderr2 = _run_cli(["run", str(source), "--config", str(config), "--out", str(tmp_path / "out2"), "--json"])
+    exit_code2, stdout2, stderr2 = _run_cli(
+        ["run", str(source), "--config", str(config), "--out", str(tmp_path / "out2"), "--json"]
+    )
     assert exit_code2 == 0
     result = json.loads(stdout2)
     config_warnings = result.get("config_warnings", [])
@@ -819,7 +875,8 @@ def test_config_unknown_top_level_key_triggers_warning(tmp_path: Path) -> None:
     source = tmp_path / "sample.txt"
     source.write_text("test\n", encoding="utf-8")
     config = tmp_path / "config.yml"
-    config.write_text(textwrap.dedent("""\
+    config.write_text(
+        textwrap.dedent("""\
         schema_version: "0.1"
         old_page_types: {prose: {default_action: transcribe_text}}
         taxonomy:
@@ -828,9 +885,13 @@ def test_config_unknown_top_level_key_triggers_warning(tmp_path: Path) -> None:
               default_action: transcribe_text
         run:
           adapter: text
-        """), encoding="utf-8")
+        """),
+        encoding="utf-8",
+    )
     out_dir = tmp_path / "out"
-    exit_code, stdout, stderr = _run_cli(["run", str(source), "--config", str(config), "--out", str(out_dir), "--json"])
+    exit_code, stdout, stderr = _run_cli(
+        ["run", str(source), "--config", str(config), "--out", str(out_dir), "--json"]
+    )
     assert exit_code == 0
     result = json.loads(stdout)
     config_warnings = result.get("config_warnings", [])
@@ -842,7 +903,8 @@ def test_config_impossible_budget_warn_at_100_triggers_warning(tmp_path: Path) -
     source = tmp_path / "sample.txt"
     source.write_text("test\n", encoding="utf-8")
     config = tmp_path / "config.yml"
-    config.write_text(textwrap.dedent("""\
+    config.write_text(
+        textwrap.dedent("""\
         schema_version: "0.1"
         taxonomy:
           page_types:
@@ -853,9 +915,13 @@ def test_config_impossible_budget_warn_at_100_triggers_warning(tmp_path: Path) -
           budget:
             max_pages: 100
             warn_at_percent: 100
-        """), encoding="utf-8")
+        """),
+        encoding="utf-8",
+    )
     out_dir = tmp_path / "out"
-    exit_code, stdout, stderr = _run_cli(["run", str(source), "--config", str(config), "--out", str(out_dir), "--json"])
+    exit_code, stdout, stderr = _run_cli(
+        ["run", str(source), "--config", str(config), "--out", str(out_dir), "--json"]
+    )
     assert exit_code == 0
     result = json.loads(stdout)
     config_warnings = result.get("config_warnings", [])
@@ -867,7 +933,8 @@ def test_config_impossible_budget_zero_usd_warns(tmp_path: Path) -> None:
     source = tmp_path / "sample.txt"
     source.write_text("test\n", encoding="utf-8")
     config = tmp_path / "config.yml"
-    config.write_text(textwrap.dedent("""\
+    config.write_text(
+        textwrap.dedent("""\
         schema_version: "0.1"
         taxonomy:
           page_types:
@@ -877,9 +944,13 @@ def test_config_impossible_budget_zero_usd_warns(tmp_path: Path) -> None:
           adapter: text
           budget:
             max_usd: 0
-        """), encoding="utf-8")
+        """),
+        encoding="utf-8",
+    )
     out_dir = tmp_path / "out"
-    exit_code, stdout, stderr = _run_cli(["run", str(source), "--config", str(config), "--out", str(out_dir), "--json"])
+    exit_code, stdout, stderr = _run_cli(
+        ["run", str(source), "--config", str(config), "--out", str(out_dir), "--json"]
+    )
     # max_usd=0 will likely cause budget failure
     if exit_code == 0:
         result = json.loads(stdout)
@@ -891,6 +962,7 @@ def test_config_impossible_budget_zero_usd_warns(tmp_path: Path) -> None:
 # =========================================================================
 # Edge-case file inputs
 # =========================================================================
+
 
 def test_directory_input_with_mixed_file_types(tmp_path: Path) -> None:
     """Directory input containing text files and non-text files."""
@@ -905,7 +977,9 @@ def test_directory_input_with_mixed_file_types(tmp_path: Path) -> None:
     config = tmp_path / "config.yml"
     config.write_text(MINIMAL_CONFIG, encoding="utf-8")
     out_dir = tmp_path / "out"
-    exit_code, stdout, stderr = _run_cli(["run", str(indir), "--config", str(config), "--out", str(out_dir), "--json"])
+    exit_code, stdout, stderr = _run_cli(
+        ["run", str(indir), "--config", str(config), "--out", str(out_dir), "--json"]
+    )
     # Should process text files, skip or fail on PNG depending on adapter validation
     if exit_code == 0:
         result = json.loads(stdout)
@@ -922,7 +996,9 @@ def test_input_file_unreadable(tmp_path: Path) -> None:
         config = tmp_path / "config.yml"
         config.write_text(MINIMAL_CONFIG, encoding="utf-8")
         out_dir = tmp_path / "out"
-        exit_code, stdout, stderr = _run_cli(["run", str(source), "--config", str(config), "--out", str(out_dir), "--json"])
+        exit_code, stdout, stderr = _run_cli(
+            ["run", str(source), "--config", str(config), "--out", str(out_dir), "--json"]
+        )
         assert exit_code == 1
         # The error is now caught as RuntimeError; verify stdout has JSON error
         if stdout.strip():
@@ -939,7 +1015,17 @@ def test_input_file_nonexistent(tmp_path: Path) -> None:
     """Nonexistent input file produces error."""
     config = tmp_path / "config.yml"
     config.write_text(MINIMAL_CONFIG, encoding="utf-8")
-    exit_code, stdout, stderr = _run_cli(["run", str(tmp_path / "nonexistent.txt"), "--config", str(config), "--out", str(tmp_path / "out"), "--json"])
+    exit_code, stdout, stderr = _run_cli(
+        [
+            "run",
+            str(tmp_path / "nonexistent.txt"),
+            "--config",
+            str(config),
+            "--out",
+            str(tmp_path / "out"),
+            "--json",
+        ]
+    )
     assert exit_code == 1
     error_json = json.loads(stdout)
     assert error_json["status"] == "error"
@@ -954,7 +1040,9 @@ def test_input_symlink_to_text_file(tmp_path: Path) -> None:
     config = tmp_path / "config.yml"
     config.write_text(MINIMAL_CONFIG, encoding="utf-8")
     out_dir = tmp_path / "out"
-    exit_code, stdout, stderr = _run_cli(["run", str(link), "--config", str(config), "--out", str(out_dir), "--json"])
+    exit_code, stdout, stderr = _run_cli(
+        ["run", str(link), "--config", str(config), "--out", str(out_dir), "--json"]
+    )
     assert exit_code == 0
     result = json.loads(stdout)
     assert result["summary"]["pages_total"] == 2
@@ -972,7 +1060,9 @@ def test_input_symlink_to_directory(tmp_path: Path) -> None:
     config = tmp_path / "config.yml"
     config.write_text(MINIMAL_CONFIG, encoding="utf-8")
     out_dir = tmp_path / "out"
-    exit_code, stdout, stderr = _run_cli(["run", str(link), "--config", str(config), "--out", str(out_dir), "--json"])
+    exit_code, stdout, stderr = _run_cli(
+        ["run", str(link), "--config", str(config), "--out", str(out_dir), "--json"]
+    )
     assert exit_code == 0
     result = json.loads(stdout)
     assert result["summary"]["pages_total"] >= 2
@@ -983,15 +1073,20 @@ def test_config_validation_flat_page_types_rejected(tmp_path: Path) -> None:
     source = tmp_path / "sample.txt"
     source.write_text("test\n", encoding="utf-8")
     config = tmp_path / "config.yml"
-    config.write_text(textwrap.dedent("""\
+    config.write_text(
+        textwrap.dedent("""\
         schema_version: "0.1"
         page_types:
           prose:
             default_action: transcribe_text
         run:
           adapter: text
-        """), encoding="utf-8")
-    exit_code, stdout, stderr = _run_cli(["run", str(source), "--config", str(config), "--out", str(tmp_path / "out"), "--json"])
+        """),
+        encoding="utf-8",
+    )
+    exit_code, stdout, stderr = _run_cli(
+        ["run", str(source), "--config", str(config), "--out", str(tmp_path / "out"), "--json"]
+    )
     assert exit_code == 1
     error_json = json.loads(stdout)
     assert "taxonomy.page_types" in error_json["error"]
@@ -1002,15 +1097,20 @@ def test_config_validation_flat_adapter_rejected(tmp_path: Path) -> None:
     source = tmp_path / "sample.txt"
     source.write_text("test\n", encoding="utf-8")
     config = tmp_path / "config.yml"
-    config.write_text(textwrap.dedent("""\
+    config.write_text(
+        textwrap.dedent("""\
         schema_version: "0.1"
         taxonomy:
           page_types:
             prose:
               default_action: transcribe_text
         adapter: text
-        """), encoding="utf-8")
-    exit_code, stdout, stderr = _run_cli(["run", str(source), "--config", str(config), "--out", str(tmp_path / "out"), "--json"])
+        """),
+        encoding="utf-8",
+    )
+    exit_code, stdout, stderr = _run_cli(
+        ["run", str(source), "--config", str(config), "--out", str(tmp_path / "out"), "--json"]
+    )
     assert exit_code == 1
     error_json = json.loads(stdout)
     assert "run.adapter" in error_json["error"]
@@ -1021,7 +1121,8 @@ def test_config_validation_budget_max_pages_non_integer(tmp_path: Path) -> None:
     source = tmp_path / "sample.txt"
     source.write_text("test\n", encoding="utf-8")
     config = tmp_path / "config.yml"
-    config.write_text(textwrap.dedent("""\
+    config.write_text(
+        textwrap.dedent("""\
         schema_version: "0.1"
         taxonomy:
           page_types:
@@ -1031,8 +1132,12 @@ def test_config_validation_budget_max_pages_non_integer(tmp_path: Path) -> None:
           adapter: text
           budget:
             max_pages: "fifty"
-        """), encoding="utf-8")
-    exit_code, stdout, stderr = _run_cli(["run", str(source), "--config", str(config), "--out", str(tmp_path / "out"), "--json"])
+        """),
+        encoding="utf-8",
+    )
+    exit_code, stdout, stderr = _run_cli(
+        ["run", str(source), "--config", str(config), "--out", str(tmp_path / "out"), "--json"]
+    )
     assert exit_code == 1
     error_json = json.loads(stdout)
     assert "run.budget.max_pages" in error_json["error"]
@@ -1043,7 +1148,8 @@ def test_config_validation_negative_max_usd_rejected(tmp_path: Path) -> None:
     source = tmp_path / "sample.txt"
     source.write_text("test\n", encoding="utf-8")
     config = tmp_path / "config.yml"
-    config.write_text(textwrap.dedent("""\
+    config.write_text(
+        textwrap.dedent("""\
         schema_version: "0.1"
         taxonomy:
           page_types:
@@ -1053,8 +1159,12 @@ def test_config_validation_negative_max_usd_rejected(tmp_path: Path) -> None:
           adapter: text
           budget:
             max_usd: -1
-        """), encoding="utf-8")
-    exit_code, stdout, stderr = _run_cli(["run", str(source), "--config", str(config), "--out", str(tmp_path / "out"), "--json"])
+        """),
+        encoding="utf-8",
+    )
+    exit_code, stdout, stderr = _run_cli(
+        ["run", str(source), "--config", str(config), "--out", str(tmp_path / "out"), "--json"]
+    )
     assert exit_code == 1
     error_json = json.loads(stdout)
     assert "non-negative" in error_json["error"].lower()
@@ -1065,7 +1175,8 @@ def test_config_validation_warn_at_percent_out_of_range(tmp_path: Path) -> None:
     source = tmp_path / "sample.txt"
     source.write_text("test\n", encoding="utf-8")
     config = tmp_path / "config.yml"
-    config.write_text(textwrap.dedent("""\
+    config.write_text(
+        textwrap.dedent("""\
         schema_version: "0.1"
         taxonomy:
           page_types:
@@ -1076,8 +1187,12 @@ def test_config_validation_warn_at_percent_out_of_range(tmp_path: Path) -> None:
           budget:
             max_pages: 100
             warn_at_percent: 150
-        """), encoding="utf-8")
-    exit_code, stdout, stderr = _run_cli(["run", str(source), "--config", str(config), "--out", str(tmp_path / "out"), "--json"])
+        """),
+        encoding="utf-8",
+    )
+    exit_code, stdout, stderr = _run_cli(
+        ["run", str(source), "--config", str(config), "--out", str(tmp_path / "out"), "--json"]
+    )
     assert exit_code == 1
     error_json = json.loads(stdout)
     assert "between 0 and 100" in error_json["error"]
@@ -1088,7 +1203,8 @@ def test_config_validation_non_integer_max_retries_rejected(tmp_path: Path) -> N
     source = tmp_path / "sample.txt"
     source.write_text("test\n", encoding="utf-8")
     config = tmp_path / "config.yml"
-    config.write_text(textwrap.dedent("""\
+    config.write_text(
+        textwrap.dedent("""\
         schema_version: "0.1"
         taxonomy:
           page_types:
@@ -1098,8 +1214,12 @@ def test_config_validation_non_integer_max_retries_rejected(tmp_path: Path) -> N
           adapter: text
           retry:
             max_retries: "many"
-        """), encoding="utf-8")
-    exit_code, stdout, stderr = _run_cli(["run", str(source), "--config", str(config), "--out", str(tmp_path / "out"), "--json"])
+        """),
+        encoding="utf-8",
+    )
+    exit_code, stdout, stderr = _run_cli(
+        ["run", str(source), "--config", str(config), "--out", str(tmp_path / "out"), "--json"]
+    )
     assert exit_code == 1
     error_json = json.loads(stdout)
     assert "run.retry.max_retries" in error_json["error"]
@@ -1110,13 +1230,18 @@ def test_config_taxonomy_not_a_mapping(tmp_path: Path) -> None:
     source = tmp_path / "sample.txt"
     source.write_text("test\n", encoding="utf-8")
     config = tmp_path / "config.yml"
-    config.write_text(textwrap.dedent("""\
+    config.write_text(
+        textwrap.dedent("""\
         schema_version: "0.1"
         taxonomy: [1, 2, 3]
         run:
           adapter: text
-        """), encoding="utf-8")
-    exit_code, stdout, stderr = _run_cli(["run", str(source), "--config", str(config), "--out", str(tmp_path / "out"), "--json"])
+        """),
+        encoding="utf-8",
+    )
+    exit_code, stdout, stderr = _run_cli(
+        ["run", str(source), "--config", str(config), "--out", str(tmp_path / "out"), "--json"]
+    )
     assert exit_code == 1
     error_json = json.loads(stdout)
     assert "taxonomy" in error_json["error"].lower() and "mapping" in error_json["error"].lower()
@@ -1127,14 +1252,19 @@ def test_config_page_types_not_a_mapping(tmp_path: Path) -> None:
     source = tmp_path / "sample.txt"
     source.write_text("test\n", encoding="utf-8")
     config = tmp_path / "config.yml"
-    config.write_text(textwrap.dedent("""\
+    config.write_text(
+        textwrap.dedent("""\
         schema_version: "0.1"
         taxonomy:
           page_types: [prose, table]
         run:
           adapter: text
-        """), encoding="utf-8")
-    exit_code, stdout, stderr = _run_cli(["run", str(source), "--config", str(config), "--out", str(tmp_path / "out"), "--json"])
+        """),
+        encoding="utf-8",
+    )
+    exit_code, stdout, stderr = _run_cli(
+        ["run", str(source), "--config", str(config), "--out", str(tmp_path / "out"), "--json"]
+    )
     assert exit_code == 1
     error_json = json.loads(stdout)
     assert "taxonomy.page_types" in error_json["error"] and "mapping" in error_json["error"].lower()
@@ -1144,6 +1274,7 @@ def test_config_page_types_not_a_mapping(tmp_path: Path) -> None:
 # Edge-case: empty text file
 # =========================================================================
 
+
 def test_empty_text_input(tmp_path: Path) -> None:
     """Empty text file produces 1 page, no text."""
     source = tmp_path / "empty.txt"
@@ -1151,7 +1282,9 @@ def test_empty_text_input(tmp_path: Path) -> None:
     config = tmp_path / "config.yml"
     config.write_text(MINIMAL_CONFIG, encoding="utf-8")
     out_dir = tmp_path / "out"
-    exit_code, stdout, stderr = _run_cli(["run", str(source), "--config", str(config), "--out", str(out_dir), "--json"])
+    exit_code, stdout, stderr = _run_cli(
+        ["run", str(source), "--config", str(config), "--out", str(out_dir), "--json"]
+    )
     assert exit_code == 0
     result = json.loads(stdout)
     assert result["summary"]["pages_total"] == 1
@@ -1164,7 +1297,9 @@ def test_text_only_newlines(tmp_path: Path) -> None:
     config = tmp_path / "config.yml"
     config.write_text(MINIMAL_CONFIG, encoding="utf-8")
     out_dir = tmp_path / "out"
-    exit_code, stdout, stderr = _run_cli(["run", str(source), "--config", str(config), "--out", str(out_dir), "--json"])
+    exit_code, stdout, stderr = _run_cli(
+        ["run", str(source), "--config", str(config), "--out", str(out_dir), "--json"]
+    )
     assert exit_code == 0
 
 
@@ -1172,15 +1307,23 @@ def test_text_only_newlines(tmp_path: Path) -> None:
 # inspect-run --csv
 # =========================================================================
 
+
 def _make_run(tmp_path: Path) -> Path:
     source = tmp_path / "pages.txt"
     source.write_text("a page of ordinary text\fshorty", encoding="utf-8")
     config = tmp_path / "config.yml"
     config.write_text(MINIMAL_CONFIG, encoding="utf-8")
     out_dir = tmp_path / "run"
-    exit_code, _, stderr = _run_cli([
-        "run", str(source), "--config", str(config), "--out", str(out_dir),
-    ])
+    exit_code, _, stderr = _run_cli(
+        [
+            "run",
+            str(source),
+            "--config",
+            str(config),
+            "--out",
+            str(out_dir),
+        ]
+    )
     assert exit_code == 0, stderr
     return out_dir
 
@@ -1217,13 +1360,21 @@ def test_inspect_run_csv_rejects_combination_with_json(tmp_path: Path) -> None:
 # run without a config file (--adapter)
 # =========================================================================
 
+
 def test_run_with_adapter_flag_needs_no_config(tmp_path: Path) -> None:
     source = tmp_path / "pages.txt"
     source.write_text("first page\fsecond page", encoding="utf-8")
     out_dir = tmp_path / "run"
-    exit_code, stdout, stderr = _run_cli([
-        "run", str(source), "--adapter", "text", "--out", str(out_dir),
-    ])
+    exit_code, stdout, stderr = _run_cli(
+        [
+            "run",
+            str(source),
+            "--adapter",
+            "text",
+            "--out",
+            str(out_dir),
+        ]
+    )
     assert exit_code == 0, stderr
     manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
     assert manifest["summary"]["pages_extracted"] == 2
@@ -1236,10 +1387,18 @@ def test_run_rejects_config_and_adapter_together(tmp_path: Path) -> None:
     source.write_text("page", encoding="utf-8")
     config = tmp_path / "config.yml"
     config.write_text(MINIMAL_CONFIG, encoding="utf-8")
-    exit_code, _, stderr = _run_cli([
-        "run", str(source), "--config", str(config),
-        "--adapter", "text", "--out", str(tmp_path / "run"),
-    ])
+    exit_code, _, stderr = _run_cli(
+        [
+            "run",
+            str(source),
+            "--config",
+            str(config),
+            "--adapter",
+            "text",
+            "--out",
+            str(tmp_path / "run"),
+        ]
+    )
     assert exit_code == 2
     assert "not allowed" in stderr
 
@@ -1247,9 +1406,14 @@ def test_run_rejects_config_and_adapter_together(tmp_path: Path) -> None:
 def test_run_requires_config_or_adapter(tmp_path: Path) -> None:
     source = tmp_path / "pages.txt"
     source.write_text("page", encoding="utf-8")
-    exit_code, _, stderr = _run_cli([
-        "run", str(source), "--out", str(tmp_path / "run"),
-    ])
+    exit_code, _, stderr = _run_cli(
+        [
+            "run",
+            str(source),
+            "--out",
+            str(tmp_path / "run"),
+        ]
+    )
     assert exit_code == 2
     assert "--config" in stderr and "--adapter" in stderr
 
@@ -1268,6 +1432,7 @@ def test_run_adapter_flag_snapshot_documents_pdf_ocr_options(tmp_path: Path) -> 
 # page selection (--pages)
 # =========================================================================
 
+
 def _three_page_source(tmp_path: Path) -> Path:
     source = tmp_path / "pages.txt"
     source.write_text("page one text\fpage two text\fpage three text", encoding="utf-8")
@@ -1277,10 +1442,18 @@ def _three_page_source(tmp_path: Path) -> Path:
 def test_run_pages_selects_subset_preserving_page_identity(tmp_path: Path) -> None:
     source = _three_page_source(tmp_path)
     out_dir = tmp_path / "run"
-    exit_code, _, stderr = _run_cli([
-        "run", str(source), "--adapter", "text", "--out", str(out_dir),
-        "--pages", "2-3",
-    ])
+    exit_code, _, stderr = _run_cli(
+        [
+            "run",
+            str(source),
+            "--adapter",
+            "text",
+            "--out",
+            str(out_dir),
+            "--pages",
+            "2-3",
+        ]
+    )
     assert exit_code == 0, stderr
     manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
     assert manifest["summary"]["pages_total"] == 2
@@ -1290,15 +1463,24 @@ def test_run_pages_selects_subset_preserving_page_identity(tmp_path: Path) -> No
     raw = sorted(p.name for p in (out_dir / "raw").iterdir())
     assert raw == ["doc_0001_page_0002.txt", "doc_0001_page_0003.txt"]
     assert (out_dir / "raw" / "doc_0001_page_0002.txt").read_text(
-        encoding="utf-8") == "page two text"
+        encoding="utf-8"
+    ) == "page two text"
 
 
 def test_run_pages_rejects_out_of_range(tmp_path: Path) -> None:
     source = _three_page_source(tmp_path)
-    exit_code, _, stderr = _run_cli([
-        "run", str(source), "--adapter", "text", "--out", str(tmp_path / "run"),
-        "--pages", "7",
-    ])
+    exit_code, _, stderr = _run_cli(
+        [
+            "run",
+            str(source),
+            "--adapter",
+            "text",
+            "--out",
+            str(tmp_path / "run"),
+            "--pages",
+            "7",
+        ]
+    )
     assert exit_code == 1
     assert "3 pages" in stderr
 
@@ -1306,10 +1488,18 @@ def test_run_pages_rejects_out_of_range(tmp_path: Path) -> None:
 def test_run_pages_rejects_malformed_expressions(tmp_path: Path) -> None:
     source = _three_page_source(tmp_path)
     for bad in ("abc", "0", "5-2", "1,,2", "-3"):
-        exit_code, _, stderr = _run_cli([
-            "run", str(source), "--adapter", "text",
-            "--out", str(tmp_path / f"run-{bad}"), "--pages", bad,
-        ])
+        exit_code, _, stderr = _run_cli(
+            [
+                "run",
+                str(source),
+                "--adapter",
+                "text",
+                "--out",
+                str(tmp_path / f"run-{bad}"),
+                "--pages",
+                bad,
+            ]
+        )
         assert exit_code == 1, bad
         assert "--pages" in stderr
 
@@ -1319,10 +1509,19 @@ def test_run_pages_rejects_multiple_inputs(tmp_path: Path) -> None:
     b = tmp_path / "b.txt"
     a.write_text("page", encoding="utf-8")
     b.write_text("page", encoding="utf-8")
-    exit_code, _, stderr = _run_cli([
-        "run", str(a), str(b), "--adapter", "text",
-        "--out", str(tmp_path / "run"), "--pages", "1",
-    ])
+    exit_code, _, stderr = _run_cli(
+        [
+            "run",
+            str(a),
+            str(b),
+            "--adapter",
+            "text",
+            "--out",
+            str(tmp_path / "run"),
+            "--pages",
+            "1",
+        ]
+    )
     assert exit_code == 1
     assert "single input" in stderr
 
@@ -1331,7 +1530,7 @@ def test_run_pages_rejects_multiple_inputs(tmp_path: Path) -> None:
 # align (0.1.3)
 # =========================================================================
 
-_TABLE_ADAPTER_SRC = '''\
+_TABLE_ADAPTER_SRC = """\
 from pageledger.adapters import ExtractionResult
 
 
@@ -1356,7 +1555,7 @@ class TableAdapter:
             warnings=[],
             usage={"pages": 1, "tokens": None, "compute_seconds": None, "cost_usd": None},
         )
-'''
+"""
 
 _SCHEMA_CONFIG = textwrap.dedent("""\
     schema_version: "0.1"
@@ -1394,10 +1593,18 @@ def _make_structured_run(tmp_path: Path) -> Path:
     config = tmp_path / "config.yml"
     config.write_text(_SCHEMA_CONFIG, encoding="utf-8")
     out_dir = tmp_path / "run-a"
-    exit_code, stdout, stderr = _run_cli([
-        "run", str(source), "--config", str(config), "--out", str(out_dir),
-        "--adapter-path", str(tmp_path),
-    ])
+    exit_code, stdout, stderr = _run_cli(
+        [
+            "run",
+            str(source),
+            "--config",
+            str(config),
+            "--out",
+            str(out_dir),
+            "--adapter-path",
+            str(tmp_path),
+        ]
+    )
     assert exit_code == 0, stderr
     return out_dir
 
@@ -1430,9 +1637,15 @@ def test_align_with_schema_override_improves_grades(tmp_path: Path) -> None:
     out_dir = _make_structured_run(tmp_path)
     schema_v2 = tmp_path / "schema-v2.yml"
     schema_v2.write_text(_SCHEMA_V2, encoding="utf-8")
-    exit_code, stdout, stderr = _run_cli([
-        "align", str(out_dir), "--schema", str(schema_v2), "--json",
-    ])
+    exit_code, stdout, stderr = _run_cli(
+        [
+            "align",
+            str(out_dir),
+            "--schema",
+            str(schema_v2),
+            "--json",
+        ]
+    )
     assert exit_code == 0, stderr
     report = json.loads(stdout)
     assert report["schema_name"] == "demo_v2"
@@ -1479,9 +1692,16 @@ def test_align_without_any_schema_errors(tmp_path: Path) -> None:
     config = tmp_path / "config.yml"
     config.write_text(MINIMAL_CONFIG, encoding="utf-8")
     out_dir = tmp_path / "run-plain"
-    exit_code, _, stderr = _run_cli([
-        "run", str(source), "--config", str(config), "--out", str(out_dir),
-    ])
+    exit_code, _, stderr = _run_cli(
+        [
+            "run",
+            str(source),
+            "--config",
+            str(config),
+            "--out",
+            str(out_dir),
+        ]
+    )
     assert exit_code == 0, stderr
     exit_code, _, stderr = _run_cli(["align", str(out_dir)])
     assert exit_code == 1

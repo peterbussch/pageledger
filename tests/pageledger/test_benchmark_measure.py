@@ -64,9 +64,7 @@ def _approved_freeze(tmp_path: Path):
         benchmark_manifest_sha256=sha256_path(
             Path(measure_module.__file__).with_name("benchmark_manifest.json")
         ),
-        protected_paths_sha256={
-            path: "a" * 64 for path in measure_module.REQUIRED_FREEZE_PATHS
-        },
+        protected_paths_sha256={path: "a" * 64 for path in measure_module.REQUIRED_FREEZE_PATHS},
         free_space_floor_bytes=0,
         lock_path=(tmp_path / "pageledger-benchmark.lock").resolve(),
         receipt_path=receipt_path.resolve(),
@@ -93,7 +91,9 @@ def _small_workload(tmp_path: Path, pages: int = 20) -> WorkloadSpec:
     source = root / "source.txt"
     config = root / "pageledger.yml"
     membership = root / "membership.json"
-    source.write_text("\f".join(f"source {number}" for number in range(1, pages + 1)), encoding="utf-8")
+    source.write_text(
+        "\f".join(f"source {number}" for number in range(1, pages + 1)), encoding="utf-8"
+    )
     config.write_text(
         """\
 schema_version: "0.1"
@@ -120,8 +120,7 @@ run:
         for index, page in enumerate(page_specs, 1)
     )
     membership.write_text(
-        json.dumps({"generator_version": "test", "workload": "smoke", "pages": members})
-        + "\n",
+        json.dumps({"generator_version": "test", "workload": "smoke", "pages": members}) + "\n",
         encoding="utf-8",
     )
     return WorkloadSpec(
@@ -184,9 +183,7 @@ def test_measure_small_smoke_records_complete_receipt_and_external_evidence(
         return _smoke_validator(run_dir, prepared)
 
     def record_runner_controls(**kwargs: object):
-        runner_controls.append(
-            (Path(kwargs["out_dir"]), kwargs.get("_phase_observer") is not None)
-        )
+        runner_controls.append((Path(kwargs["out_dir"]), kwargs.get("_phase_observer") is not None))
         return real_runner(**kwargs)
 
     monkeypatch.setattr(measure_module.resource, "getrusage", getrusage)
@@ -258,10 +255,7 @@ def test_measure_small_smoke_records_complete_receipt_and_external_evidence(
     assert timing["adapter"]["phase"] == "adapter_call"
     assert timing["adapter"]["count"] == 20
     assert EXPECTED_LEDGER_PHASES == set(timing["ledger"]["phases"])
-    assert all(
-        set(span) == {"count", "total_ns"}
-        for span in timing["ledger"]["phases"].values()
-    )
+    assert all(set(span) == {"count", "total_ns"} for span in timing["ledger"]["phases"].values())
     assert timing["observer_total_ns"] == (
         timing["adapter"]["total_ns"] + timing["ledger"]["total_ns"]
     )
@@ -271,12 +265,8 @@ def test_measure_small_smoke_records_complete_receipt_and_external_evidence(
     assert timing["unaccounted_ratio"] == pytest.approx(
         timing["unaccounted_ns"] / timing["total_wall_ns"]
     )
-    assert timing["pages_per_second"] == pytest.approx(
-        20 * 1_000_000_000 / timing["total_wall_ns"]
-    )
-    assert timing["ledger"]["ns_per_page"] == pytest.approx(
-        timing["ledger"]["total_ns"] / 20
-    )
+    assert timing["pages_per_second"] == pytest.approx(20 * 1_000_000_000 / timing["total_wall_ns"])
+    assert timing["ledger"]["ns_per_page"] == pytest.approx(timing["ledger"]["total_ns"] / 20)
 
     assert receipt["resources"]["peak_rss_bytes"] > 0
     assert evidence_order == ["rss", "oracle", "oracle"]
@@ -294,14 +284,13 @@ def test_measure_small_smoke_records_complete_receipt_and_external_evidence(
         1 for path in (out / "control-run").rglob("*") if path.is_file()
     )
     assert receipt["output"]["logical_bytes"] == sum(
-        path.stat().st_size
-        for path in (out / "control-run").rglob("*")
-        if path.is_file()
+        path.stat().st_size for path in (out / "control-run").rglob("*") if path.is_file()
     )
     assert receipt["output"]["logical_bytes"] <= receipt["output"]["cap_bytes"]
     assert receipt["output"]["free_space_floor_bytes"] == 0
-    assert receipt["output"]["workspace_pre_receipt"]["logical_bytes"] <= (
-        receipt["output"]["cap_bytes"]
+    assert (
+        receipt["output"]["workspace_pre_receipt"]["logical_bytes"]
+        <= (receipt["output"]["cap_bytes"])
     )
     assert receipt["output"]["workspace_pre_receipt"]["regular_file_count"] >= (
         receipt["output"]["regular_file_count"] + 2
@@ -343,19 +332,13 @@ def test_measure_small_smoke_records_complete_receipt_and_external_evidence(
     assert runner_entries[0][:2] == (1, 1)
     assert not any(function == "measure_run" for _filename, _line, function in stats.stats)
     assert not any(
-        function in {"_audit", "_record", "_completed"}
-        or "MutationTrace" in function
+        function in {"_audit", "_record", "_completed"} or "MutationTrace" in function
         for _filename, _line, function in stats.stats
     )
-    assert not any(
-        path.name.startswith("measurement")
-        for path in (out / "control-run").rglob("*")
-    )
+    assert not any(path.name.startswith("measurement") for path in (out / "control-run").rglob("*"))
     assert not (out / "control-run" / "profile.pstats").exists()
     assert (out / "control-run" / "manifest.json").stat().st_mtime_ns == max(
-        path.stat().st_mtime_ns
-        for path in (out / "control-run").rglob("*")
-        if path.is_file()
+        path.stat().st_mtime_ns for path in (out / "control-run").rglob("*") if path.is_file()
     )
 
     receipt_path = out / "measurement.json"
@@ -407,18 +390,14 @@ def test_refuses_existing_output_and_output_symlink(tmp_path: Path) -> None:
     existing = tmp_path / "existing"
     existing.mkdir()
     with pytest.raises(BenchmarkError, match="does not already exist"):
-        measure_run(
-            "primary", existing, approved_freeze=approval, warmup_state="none"
-        )
+        measure_run("primary", existing, approved_freeze=approval, warmup_state="none")
 
     target = tmp_path / "target"
     target.mkdir()
     link = tmp_path / "link"
     link.symlink_to(target, target_is_directory=True)
     with pytest.raises(BenchmarkError, match="symlink"):
-        measure_run(
-            "primary", link / "child", approved_freeze=approval, warmup_state="none"
-        )
+        measure_run("primary", link / "child", approved_freeze=approval, warmup_state="none")
 
 
 def test_refuses_projected_low_disk_and_actual_cap(tmp_path: Path) -> None:
@@ -519,9 +498,7 @@ def test_timing_contract_requires_exact_counts_order_and_unaccounted_ceiling() -
     expected = measure_module._expected_phase_names(2)
     complete = [(name, 1) for name in expected]
     timing = measure_module._summarize_timing(complete, total_wall_ns=len(complete), pages=2)
-    measure_module._require_timing_contract(
-        complete, timing, pages=2, max_unaccounted_ratio=0.05
-    )
+    measure_module._require_timing_contract(complete, timing, pages=2, max_unaccounted_ratio=0.05)
 
     wrong_per_page = complete.copy()
     wrong_per_page.pop(wrong_per_page.index(("quality", 1)))
@@ -578,10 +555,7 @@ def test_approved_freeze_refuses_manifest_harness_and_dirty_drift(
         lambda sha, path: b"manifest\n" if path == "manifest.json" else b"frozen\n",
     )
     monkeypatch.setattr(measure_module, "_git_status_porcelain", lambda: "")
-    assert (
-        measure_module._validate_approved_freeze(approval, candidate_head="2" * 40)
-        is approval
-    )
+    assert measure_module._validate_approved_freeze(approval, candidate_head="2" * 40) is approval
 
     manifest.write_bytes(b"drift\n")
     with pytest.raises(BenchmarkError, match="approved benchmark manifest"):
@@ -614,9 +588,7 @@ def test_candidate_boundary_requires_approved_ancestry(
         "_git_fingerprint",
         lambda: {"sha": "e" * 40, "branch": "candidate", "tracked_dirty": False},
     )
-    monkeypatch.setattr(
-        measure_module, "_validate_approved_freeze", lambda value, **_kwargs: value
-    )
+    monkeypatch.setattr(measure_module, "_validate_approved_freeze", lambda value, **_kwargs: value)
     monkeypatch.setattr(measure_module, "_git_is_ancestor", lambda ancestor, head: False)
 
     with pytest.raises(BenchmarkError, match="not an ancestor"):
@@ -824,6 +796,7 @@ def test_manifest_last_uses_mutation_trace_not_mtime(
     out = tmp_path / "measurement"
     approval = _approved_freeze(tmp_path)
     real_runner = measure_module.DEFAULT_RUNNER
+
     def adversary(**kwargs: object):
         result = real_runner(**kwargs)
         run_dir = Path(kwargs["out_dir"])
@@ -857,9 +830,7 @@ def test_completed_trace_rejects_preopened_descriptor_at_manifest_boundary(
     trace = measure_module._CompletedMutationTrace(run_dir)
     handle = None
 
-    with pytest.raises(
-        BenchmarkError, match=r"live descriptor alias.*raw\.txt"
-    ) as exc_info:
+    with pytest.raises(BenchmarkError, match=r"live descriptor alias.*raw\.txt") as exc_info:
         try:
             with trace:
                 run_dir.mkdir()
@@ -887,9 +858,7 @@ def test_completed_trace_rejects_writable_mmap_created_before_manifest(
     handle = None
     mapping = None
 
-    with pytest.raises(
-        BenchmarkError, match=r"live descriptor alias.*artifact\.bin"
-    ) as exc_info:
+    with pytest.raises(BenchmarkError, match=r"live descriptor alias.*artifact\.bin") as exc_info:
         try:
             with trace:
                 run_dir.mkdir()
@@ -924,9 +893,7 @@ def test_completed_trace_rejects_direct_os_dup_alias_at_manifest_boundary(
     handle = None
     duplicate = None
 
-    with pytest.raises(
-        BenchmarkError, match=r"live descriptor alias.*artifact\.bin"
-    ) as exc_info:
+    with pytest.raises(BenchmarkError, match=r"live descriptor alias.*artifact\.bin") as exc_info:
         try:
             with trace:
                 assert os.dup is original_dup
@@ -970,9 +937,7 @@ def test_completed_trace_rejects_alias_backed_mmap_after_descriptor_cleanup(
     duplicate = None
     mapping = None
 
-    with pytest.raises(
-        BenchmarkError, match=r"mmap\.__new__:artifact\.bin"
-    ) as exc_info:
+    with pytest.raises(BenchmarkError, match=r"mmap\.__new__:artifact\.bin") as exc_info:
         try:
             with trace:
                 run_dir.mkdir()
@@ -980,9 +945,7 @@ def test_completed_trace_rejects_alias_backed_mmap_after_descriptor_cleanup(
                 handle.write(b"before")
                 handle.flush()
                 duplicate = duplicate_descriptor(handle.fileno())
-                mapping = mmap.mmap(
-                    duplicate, 6, access=mmap.ACCESS_WRITE, trackfd=False
-                )
+                mapping = mmap.mmap(duplicate, 6, access=mmap.ACCESS_WRITE, trackfd=False)
                 os.close(duplicate)
                 duplicate = None
                 handle.close()
@@ -1023,9 +986,7 @@ def test_completed_trace_rejects_live_alias_before_post_manifest_raw_write(
     handle = None
     duplicate = None
 
-    with pytest.raises(
-        BenchmarkError, match=r"live descriptor alias.*artifact\.bin"
-    ) as exc_info:
+    with pytest.raises(BenchmarkError, match=r"live descriptor alias.*artifact\.bin") as exc_info:
         try:
             with trace:
                 run_dir.mkdir()
@@ -1070,9 +1031,7 @@ def test_completed_trace_rejects_inbound_preopened_file_alias_after_move(
     handle = external.open("r+b")
     duplicate = None
 
-    with pytest.raises(
-        BenchmarkError, match=r"live descriptor alias.*artifact\.bin"
-    ) as exc_info:
+    with pytest.raises(BenchmarkError, match=r"live descriptor alias.*artifact\.bin") as exc_info:
         try:
             with trace:
                 run_dir.mkdir()
@@ -1345,9 +1304,7 @@ def test_completed_trace_scans_inbound_directory_in_deterministic_path_order(
     os.link(last, first)
     trace = measure_module._CompletedMutationTrace(run_dir)
 
-    with pytest.raises(
-        BenchmarkError, match=r"imported/a\.bin and imported/z\.bin"
-    ) as exc_info:
+    with pytest.raises(BenchmarkError, match=r"imported/a\.bin and imported/z\.bin") as exc_info:
         with trace:
             run_dir.mkdir()
             external.rename(run_dir / "imported")
@@ -1434,9 +1391,7 @@ def test_completed_trace_retains_departed_identity_for_live_alias(
     trace = measure_module._CompletedMutationTrace(run_dir)
     duplicate = None
 
-    with pytest.raises(
-        BenchmarkError, match=r"live descriptor alias.*artifact\.bin"
-    ) as exc_info:
+    with pytest.raises(BenchmarkError, match=r"live descriptor alias.*artifact\.bin") as exc_info:
         try:
             with trace:
                 run_dir.mkdir()
@@ -1483,10 +1438,7 @@ def test_completed_trace_preserves_dup2_keyword_signature_for_unrelated_fds(
     try:
         with measure_module._CompletedMutationTrace(run_dir):
             run_dir.mkdir()
-            assert (
-                os.dup2(fd=source, fd2=destination, inheritable=False)
-                == destination
-            )
+            assert os.dup2(fd=source, fd2=destination, inheritable=False) == destination
             os.fstat(destination)
             (run_dir / "manifest.json").write_text("{}\n", encoding="utf-8")
     finally:
@@ -1506,9 +1458,7 @@ def test_completed_trace_resolves_descriptor_replacement_alias_by_identity(
     destination = os.open(os.devnull, os.O_RDWR)
 
     try:
-        with pytest.raises(
-            BenchmarkError, match=r"live descriptor alias.*source\.bin"
-        ) as exc_info:
+        with pytest.raises(BenchmarkError, match=r"live descriptor alias.*source\.bin") as exc_info:
             with trace:
                 run_dir.mkdir()
                 with (run_dir / "source.bin").open("w+b") as source_handle:

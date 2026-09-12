@@ -29,7 +29,9 @@ SCHEMAS = REPO / "schemas"
 
 _manifest_schema = json.loads((SCHEMAS / "manifest.schema.json").read_text(encoding="utf-8"))
 _audit_schema = json.loads((SCHEMAS / "audit.schema.json").read_text(encoding="utf-8"))
-_provenance_schema = json.loads((SCHEMAS / "provenance-line.schema.json").read_text(encoding="utf-8"))
+_provenance_schema = json.loads(
+    (SCHEMAS / "provenance-line.schema.json").read_text(encoding="utf-8")
+)
 _quality_schema = json.loads((SCHEMAS / "quality-line.schema.json").read_text(encoding="utf-8"))
 _cost_schema = json.loads((SCHEMAS / "cost.schema.json").read_text(encoding="utf-8"))
 _run_log_schema = json.loads((SCHEMAS / "run-log-line.schema.json").read_text(encoding="utf-8"))
@@ -41,6 +43,7 @@ _replay_schema = json.loads((SCHEMAS / "replay.schema.json").read_text(encoding=
 
 
 # --- Helpers --------------------------------------------------------------
+
 
 def _validate(schema: dict, instance: dict, label: str) -> None:
     """Raise jsonschema.ValidationError if *instance* does not conform."""
@@ -120,10 +123,15 @@ def _run_pageledger(
     import subprocess
 
     cmd = [
-        sys.executable, "-m", "pageledger", "run",
+        sys.executable,
+        "-m",
+        "pageledger",
+        "run",
         *inputs,
-        "--config", str(config_path),
-        "--out", str(out_dir),
+        "--config",
+        str(config_path),
+        "--out",
+        str(out_dir),
         *args,
     ]
     result = subprocess.run(cmd, capture_output=True, text=True, cwd=str(tmp_path))
@@ -209,11 +217,14 @@ run:
 
 # --- manifest.json validation across scenarios ---------------------------
 
+
 def test_manifest_dry_run(tmp_path: Path) -> None:
     """Dry-run manifest validates against the manifest schema."""
     source = tmp_path / "sample.txt"
     source.write_text("first page\fsecond page\n", encoding="utf-8")
-    out_dir = _run_pageledger(tmp_path, config_yaml=MINIMAL_CONFIG, inputs=[str(source)], extra_args=["--dry-run"])
+    out_dir = _run_pageledger(
+        tmp_path, config_yaml=MINIMAL_CONFIG, inputs=[str(source)], extra_args=["--dry-run"]
+    )
     manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
     _validate(_manifest_schema, manifest, "manifest.json (dry_run)")
     # Status must be 'partial' for dry runs
@@ -269,9 +280,7 @@ def test_manifest_records_adapter_options(tmp_path: Path) -> None:
     source.write_text("page one\n", encoding="utf-8")
     config = MINIMAL_CONFIG.replace(
         "  adapter: text",
-        "  adapter: suffix_adapter:SuffixAdapter\n"
-        "  adapter_options:\n"
-        "    suffix: '!'",
+        "  adapter: suffix_adapter:SuffixAdapter\n  adapter_options:\n    suffix: '!'",
     )
     out_dir = _run_pageledger(
         tmp_path,
@@ -315,8 +324,20 @@ def test_manifest_budget_failure(tmp_path: Path) -> None:
     import subprocess
 
     result = subprocess.run(
-        [sys.executable, "-m", "pageledger", "run", str(source), "--config", str(config_path), "--out", str(out_dir)],
-        capture_output=True, text=True, cwd=str(tmp_path),
+        [
+            sys.executable,
+            "-m",
+            "pageledger",
+            "run",
+            str(source),
+            "--config",
+            str(config_path),
+            "--out",
+            str(out_dir),
+        ],
+        capture_output=True,
+        text=True,
+        cwd=str(tmp_path),
     )
     # Budget failure is expected
     assert result.returncode != 0
@@ -336,8 +357,20 @@ def test_manifest_adapter_failure(tmp_path: Path) -> None:
     import subprocess
 
     subprocess.run(
-        [sys.executable, "-m", "pageledger", "run", str(source), "--config", str(config_path), "--out", str(out_dir)],
-        capture_output=True, text=True, cwd=str(tmp_path),
+        [
+            sys.executable,
+            "-m",
+            "pageledger",
+            "run",
+            str(source),
+            "--config",
+            str(config_path),
+            "--out",
+            str(out_dir),
+        ],
+        capture_output=True,
+        text=True,
+        cwd=str(tmp_path),
     )
     # The text adapter should succeed on any text, so this won't fail.
     # Skip: the text adapter is too robust. We rely on the test_adapter_failure
@@ -352,7 +385,9 @@ def test_manifest_empty_review(tmp_path: Path) -> None:
     """Empty review queue: manifest is valid with zero pages_extracted."""
     source = tmp_path / "sample.txt"
     source.write_text("hello world\n", encoding="utf-8")
-    out_dir = _run_pageledger(tmp_path, config_yaml=MINIMAL_CONFIG, inputs=[str(source)], extra_args=["--dry-run"])
+    out_dir = _run_pageledger(
+        tmp_path, config_yaml=MINIMAL_CONFIG, inputs=[str(source)], extra_args=["--dry-run"]
+    )
     manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
     _validate(_manifest_schema, manifest, "manifest.json (empty review)")
     assert manifest["summary"]["pages_extracted"] == 0
@@ -360,11 +395,14 @@ def test_manifest_empty_review(tmp_path: Path) -> None:
 
 # --- audit.json validation ------------------------------------------------
 
+
 def test_audit_dry_run(tmp_path: Path) -> None:
     """Audit from dry-run has review_queue entries and validates."""
     source = tmp_path / "sample.txt"
     source.write_text("first page\fsecond page\n", encoding="utf-8")
-    out_dir = _run_pageledger(tmp_path, config_yaml=MINIMAL_CONFIG, inputs=[str(source)], extra_args=["--dry-run"])
+    out_dir = _run_pageledger(
+        tmp_path, config_yaml=MINIMAL_CONFIG, inputs=[str(source)], extra_args=["--dry-run"]
+    )
     audit = json.loads((out_dir / "audit.json").read_text(encoding="utf-8"))
     _validate(_audit_schema, audit, "audit.json")
     assert len(audit["review_queue"]) == 2
@@ -384,6 +422,7 @@ def test_audit_execute_success(tmp_path: Path) -> None:
 
 # --- provenance.jsonl validation ------------------------------------------
 
+
 def test_provenance_execute_success(tmp_path: Path) -> None:
     """Provenance lines validate and counts match manifest."""
     source = tmp_path / "sample.txt"
@@ -400,7 +439,9 @@ def test_provenance_dry_run_empty(tmp_path: Path) -> None:
     """Dry-run provenance is empty (no extraction happens)."""
     source = tmp_path / "sample.txt"
     source.write_text("first page\n", encoding="utf-8")
-    out_dir = _run_pageledger(tmp_path, config_yaml=MINIMAL_CONFIG, inputs=[str(source)], extra_args=["--dry-run"])
+    out_dir = _run_pageledger(
+        tmp_path, config_yaml=MINIMAL_CONFIG, inputs=[str(source)], extra_args=["--dry-run"]
+    )
     # Dry runs produce no provenance lines — file exists but is empty or absent
     provenance_file = out_dir / "provenance.jsonl"
     if provenance_file.exists():
@@ -433,10 +474,13 @@ def test_usage_schemas_reject_negative_values(tmp_path: Path) -> None:
 
 # --- quality.jsonl validation ---------------------------------------------
 
+
 def test_quality_execute_success(tmp_path: Path) -> None:
     """Quality lines validate and warn on short/empty text."""
     source = tmp_path / "sample.txt"
-    source.write_text("page one text here\f", encoding="utf-8")  # page 2 is empty (trailing form feed)
+    source.write_text(
+        "page one text here\f", encoding="utf-8"
+    )  # page 2 is empty (trailing form feed)
     out_dir = _run_pageledger(tmp_path, config_yaml=MINIMAL_CONFIG, inputs=[str(source)])
     entries = _validate_jsonl(out_dir / "quality.jsonl", _quality_schema, "quality")
     # Both pages extracted (page 1 has text, page 2 is empty string)
@@ -451,6 +495,7 @@ def test_quality_execute_success(tmp_path: Path) -> None:
 
 
 # --- cost.json validation ------------------------------------------------
+
 
 def test_cost_execute_success(tmp_path: Path) -> None:
     """Cost report validates against schema."""
@@ -471,12 +516,15 @@ def test_cost_execute_success(tmp_path: Path) -> None:
 def test_cost_schema_accepts_absolute_alerts(tmp_path: Path) -> None:
     source = tmp_path / "sample.txt"
     source.write_text("first page\fsecond page\n", encoding="utf-8")
-    config = MINIMAL_CONFIG + """\
+    config = (
+        MINIMAL_CONFIG
+        + """\
   pricing:
     cost_per_page: 0.5
   budget:
     warn_usd: 0.75
 """
+    )
     out_dir = _run_pageledger(tmp_path, config_yaml=config, inputs=[str(source)])
 
     cost = json.loads((out_dir / "cost.json").read_text(encoding="utf-8"))
@@ -497,7 +545,9 @@ def test_cost_dry_run(tmp_path: Path) -> None:
     """Dry-run cost report has zero pages extracted."""
     source = tmp_path / "sample.txt"
     source.write_text("first page\n", encoding="utf-8")
-    out_dir = _run_pageledger(tmp_path, config_yaml=CONFIG_WITH_BUDGET_USD, inputs=[str(source)], extra_args=["--dry-run"])
+    out_dir = _run_pageledger(
+        tmp_path, config_yaml=CONFIG_WITH_BUDGET_USD, inputs=[str(source)], extra_args=["--dry-run"]
+    )
     cost = json.loads((out_dir / "cost.json").read_text(encoding="utf-8"))
     _validate(_cost_schema, cost, "cost.json")
     assert cost["pages_extracted"] == 0
@@ -506,6 +556,7 @@ def test_cost_dry_run(tmp_path: Path) -> None:
 
 
 # --- run.log validation --------------------------------------------------
+
 
 def test_run_log_execute_success(tmp_path: Path) -> None:
     """Run log lines validate after successful extraction."""
@@ -527,7 +578,9 @@ def test_run_log_dry_run(tmp_path: Path) -> None:
     """Dry-run log entry validates."""
     source = tmp_path / "sample.txt"
     source.write_text("first page\n", encoding="utf-8")
-    out_dir = _run_pageledger(tmp_path, config_yaml=MINIMAL_CONFIG, inputs=[str(source)], extra_args=["--dry-run"])
+    out_dir = _run_pageledger(
+        tmp_path, config_yaml=MINIMAL_CONFIG, inputs=[str(source)], extra_args=["--dry-run"]
+    )
     entries = _validate_jsonl(out_dir / "run.log", _run_log_schema, "run.log")
     assert len(entries) == 1
     assert entries[0]["status"] == "dry_run_complete"
@@ -535,11 +588,14 @@ def test_run_log_dry_run(tmp_path: Path) -> None:
 
 # --- route-map.yml validation (manual — YAML) ----------------------------
 
+
 def test_route_map_dry_run(tmp_path: Path) -> None:
     """Route map has required top-level keys and page fields."""
     source = tmp_path / "sample.txt"
     source.write_text("first page\fsecond page\n", encoding="utf-8")
-    out_dir = _run_pageledger(tmp_path, config_yaml=MINIMAL_CONFIG, inputs=[str(source)], extra_args=["--dry-run"])
+    out_dir = _run_pageledger(
+        tmp_path, config_yaml=MINIMAL_CONFIG, inputs=[str(source)], extra_args=["--dry-run"]
+    )
     route_map = yaml.safe_load((out_dir / "route-map.yml").read_text(encoding="utf-8"))
     # Top-level
     assert route_map["schema_version"] == "0.1"
@@ -549,7 +605,9 @@ def test_route_map_dry_run(tmp_path: Path) -> None:
     assert "run_id" in route_map
     assert "generated_at" in route_map
     assert route_map["classifier"] == {
-        "adapter": None, "model": None, "prompt_hash": None,
+        "adapter": None,
+        "model": None,
+        "prompt_hash": None,
     }
     assert "documents" in route_map
     # Page fields
@@ -578,15 +636,28 @@ def test_route_map_execute(tmp_path: Path) -> None:
 
 # --- rerun-manifest.yml validation ----------------------------------------
 
+
 def test_rerun_manifest_dry_run(tmp_path: Path) -> None:
     """Rerun manifest has required fields and links to parent."""
     source = tmp_path / "sample.txt"
     source.write_text("first page\fsecond page\n", encoding="utf-8")
-    out_dir = _run_pageledger(tmp_path, config_yaml=MINIMAL_CONFIG, inputs=[str(source)], extra_args=["--dry-run"])
+    out_dir = _run_pageledger(
+        tmp_path, config_yaml=MINIMAL_CONFIG, inputs=[str(source)], extra_args=["--dry-run"]
+    )
     rerun = yaml.safe_load((out_dir / "rerun-manifest.yml").read_text(encoding="utf-8"))
-    required_top = {"schema_version", "run_id", "parent_run_id", "parent_manifest",
-                     "rerun_depth", "max_rerun_depth", "created_at", "reason",
-                     "rerun_executable", "rerun_status", "items"}
+    required_top = {
+        "schema_version",
+        "run_id",
+        "parent_run_id",
+        "parent_manifest",
+        "rerun_depth",
+        "max_rerun_depth",
+        "created_at",
+        "reason",
+        "rerun_executable",
+        "rerun_status",
+        "items",
+    }
     assert required_top <= set(rerun.keys())
     assert rerun["schema_version"] == "0.1"
     assert rerun["reason"] == "dry_run"
@@ -612,11 +683,14 @@ def test_rerun_manifest_execute_empty_review(tmp_path: Path) -> None:
 
 # --- Schema consistency: audit.md derived from audit.json -----------------
 
+
 def test_audit_md_derived_from_audit_json(tmp_path: Path) -> None:
     """audit.md renders the same review_queue count as audit.json."""
     source = tmp_path / "sample.txt"
     source.write_text("first page\fsecond page\fthird page\n", encoding="utf-8")
-    out_dir = _run_pageledger(tmp_path, config_yaml=MINIMAL_CONFIG, inputs=[str(source)], extra_args=["--dry-run"])
+    out_dir = _run_pageledger(
+        tmp_path, config_yaml=MINIMAL_CONFIG, inputs=[str(source)], extra_args=["--dry-run"]
+    )
     audit_json = json.loads((out_dir / "audit.json").read_text(encoding="utf-8"))
     audit_md = (out_dir / "audit.md").read_text(encoding="utf-8")
     assert str(len(audit_json["review_queue"])) in audit_md
@@ -624,6 +698,7 @@ def test_audit_md_derived_from_audit_json(tmp_path: Path) -> None:
 
 
 # --- Compatibility policy: schema_version -------------------------------------------------
+
 
 def test_all_artifacts_present_schema_version(tmp_path: Path) -> None:
     """Every JSON/JSONL artifact carries schema_version: '0.1'."""
@@ -641,7 +716,9 @@ def test_all_artifacts_present_schema_version(tmp_path: Path) -> None:
             for line in path.read_text(encoding="utf-8").splitlines():
                 if line.strip():
                     entry = json.loads(line)
-                    assert entry.get("schema_version") == "0.1", f"{name} line missing schema_version"
+                    assert entry.get("schema_version") == "0.1", (
+                        f"{name} line missing schema_version"
+                    )
     # YAML artifacts
     for name in ["route-map.yml", "rerun-manifest.yml"]:
         data = yaml.safe_load((out_dir / name).read_text(encoding="utf-8"))
@@ -649,6 +726,7 @@ def test_all_artifacts_present_schema_version(tmp_path: Path) -> None:
 
 
 # --- Field renames are prevented: check all required keys are present -----
+
 
 def test_manifest_summary_keys(tmp_path: Path) -> None:
     """All required manifest summary keys are present."""
@@ -660,10 +738,16 @@ def test_manifest_summary_keys(tmp_path: Path) -> None:
 
     assert manifest["pageledger_version"] == pageledger.__version__
     assert manifest["run_depth"] == 0
-    required_summary = {"pages_total", "pages_extracted", "pages_skipped",
-                        "pages_routed_review",
-                        "pages_quarantined", "records_normalized", "estimated_cost_usd",
-                        "quality_warning_pages"}
+    required_summary = {
+        "pages_total",
+        "pages_extracted",
+        "pages_skipped",
+        "pages_routed_review",
+        "pages_quarantined",
+        "records_normalized",
+        "estimated_cost_usd",
+        "quality_warning_pages",
+    }
     assert required_summary <= set(manifest["summary"].keys())
 
 
@@ -673,9 +757,19 @@ def test_cost_keys_present(tmp_path: Path) -> None:
     source.write_text("first page\fsecond page\n", encoding="utf-8")
     out_dir = _run_pageledger(tmp_path, config_yaml=CONFIG_WITH_BUDGET_USD, inputs=[str(source)])
     cost = json.loads((out_dir / "cost.json").read_text(encoding="utf-8"))
-    required = {"schema_version", "run_id", "execution_mode", "currency",
-                "canonical_unit", "pages_extracted", "tokens_total",
-                "pricing", "usage", "cost_usd", "cost_known"}
+    required = {
+        "schema_version",
+        "run_id",
+        "execution_mode",
+        "currency",
+        "canonical_unit",
+        "pages_extracted",
+        "tokens_total",
+        "pricing",
+        "usage",
+        "cost_usd",
+        "cost_known",
+    }
     assert required <= set(cost.keys())
 
 
@@ -687,8 +781,18 @@ def test_provenance_line_keys(tmp_path: Path) -> None:
     entries = _validate_jsonl(out_dir / "provenance.jsonl", _provenance_schema, "provenance")
     assert len(entries) == 2
     for entry in entries:
-        required = {"schema_version", "run_id", "page_id", "source", "route",
-                    "extractor", "result", "usage", "metrics", "timestamp"}
+        required = {
+            "schema_version",
+            "run_id",
+            "page_id",
+            "source",
+            "route",
+            "extractor",
+            "result",
+            "usage",
+            "metrics",
+            "timestamp",
+        }
         assert required <= set(entry.keys())
         # usage.pages must be present and >= 1
         assert entry["usage"]["pages"] >= 1
@@ -701,7 +805,7 @@ _normalized_schema = json.loads(
     (SCHEMAS / "normalized-page.schema.json").read_text(encoding="utf-8")
 )
 
-_TABLE_ADAPTER = '''\
+_TABLE_ADAPTER = """\
 from pageledger.adapters import ExtractionResult
 
 
@@ -726,7 +830,7 @@ class TableAdapter:
             warnings=[],
             usage={"pages": 1, "tokens": None, "compute_seconds": None, "cost_usd": None},
         )
-'''
+"""
 
 CONFIG_WITH_SCHEMA = """\
 schema_version: "0.1"
@@ -782,10 +886,14 @@ def test_normalized_pages_validate_and_grades_flow_through(tmp_path: Path) -> No
         by_page[record["page_number"]] = record
 
     good = by_page[1]
-    assert good["records"] == [{
-        "place_name": "Moscow", "population_total": 4137000,
-        "population_male": 2001000, "population_female": 2136000,
-    }]
+    assert good["records"] == [
+        {
+            "place_name": "Moscow",
+            "population_total": 4137000,
+            "population_male": 2001000,
+            "population_female": 2136000,
+        }
+    ]
     assert good["metrics"]["parse_error"] is None
     bad = by_page[2]
     assert bad["metrics"]["parse_error"] == "no_markdown_table_found"
@@ -803,8 +911,7 @@ def test_normalized_pages_validate_and_grades_flow_through(tmp_path: Path) -> No
 
     audit = json.loads((out_dir / "audit.json").read_text(encoding="utf-8"))
     _validate(_audit_schema, audit, "audit.json (schema run)")
-    below = [item for item in audit["review_queue"]
-             if item["reason"] == "grade_below_threshold"]
+    below = [item for item in audit["review_queue"] if item["reason"] == "grade_below_threshold"]
     assert [item["grade"] for item in below] == ["F"]
 
     rerun = yaml.safe_load((out_dir / "rerun-manifest.yml").read_text(encoding="utf-8"))
@@ -821,7 +928,7 @@ def test_normalized_pages_validate_and_grades_flow_through(tmp_path: Path) -> No
 
 def test_dict_content_raw_artifact_is_valid_json(tmp_path: Path) -> None:
     """Raw artifacts for dict/list content are JSON, not Python repr."""
-    adapter = '''\
+    adapter = """\
 from pageledger.adapters import ExtractionResult
 
 
@@ -845,17 +952,17 @@ class JsonAdapter:
             warnings=[],
             usage={"pages": 1, "tokens": None, "compute_seconds": None, "cost_usd": None},
         )
-'''
+"""
     (tmp_path / "json_adapter.py").write_text(adapter, encoding="utf-8")
     source = tmp_path / "page.txt"
     source.write_text("one page", encoding="utf-8")
     config = MINIMAL_CONFIG.replace("adapter: text", "adapter: json_adapter:JsonAdapter")
     out_dir = _run_pageledger(
-        tmp_path, config_yaml=config, inputs=[str(source)],
+        tmp_path,
+        config_yaml=config,
+        inputs=[str(source)],
         extra_args=["--adapter-path", str(tmp_path)],
     )
     raw_files = list((out_dir / "raw").glob("*.json"))
     assert len(raw_files) == 1
-    assert json.loads(raw_files[0].read_text(encoding="utf-8")) == [
-        {"place": "Baku", "total": 500}
-    ]
+    assert json.loads(raw_files[0].read_text(encoding="utf-8")) == [{"place": "Baku", "total": 500}]

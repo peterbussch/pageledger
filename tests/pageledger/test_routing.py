@@ -177,17 +177,19 @@ def test_cli_accepts_routes_with_config(tmp_path: Path, capsys: pytest.CaptureFi
     from pageledger.cli import main
 
     source, config, routes = _write_inputs(tmp_path)
-    exit_code = main([
-        "run",
-        str(source),
-        "--config",
-        str(config),
-        "--routes",
-        str(routes),
-        "--out",
-        str(tmp_path / "run"),
-        "--json",
-    ])
+    exit_code = main(
+        [
+            "run",
+            str(source),
+            "--config",
+            str(config),
+            "--routes",
+            str(routes),
+            "--out",
+            str(tmp_path / "run"),
+            "--json",
+        ]
+    )
 
     assert exit_code == 0
     assert json.loads(capsys.readouterr().out)["summary"]["pages_extracted"] == 1

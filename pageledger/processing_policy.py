@@ -3,6 +3,7 @@
 Signals identify reasons to inspect a page; they cannot certify its accuracy.
 Neither extraction grades nor model confidence participate in this policy.
 """
+
 from __future__ import annotations
 
 import csv
@@ -16,24 +17,52 @@ from typing import Any
 
 from .processing_config import STAGES
 
-REVIEW_DISPOSITIONS = frozenset({
-    "reviewed_text", "reviewed_blank", "illustration", "handwriting", "unreadable", "source_defect",
-})
-_HOLD_ORDER = ("source_defect", "numeric_column_conflict", "coverage_defect",
-               "handwriting", "unreadable", "illustration", "blank_candidate")
+REVIEW_DISPOSITIONS = frozenset(
+    {
+        "reviewed_text",
+        "reviewed_blank",
+        "illustration",
+        "handwriting",
+        "unreadable",
+        "source_defect",
+    }
+)
+_HOLD_ORDER = (
+    "source_defect",
+    "numeric_column_conflict",
+    "coverage_defect",
+    "handwriting",
+    "unreadable",
+    "illustration",
+    "blank_candidate",
+)
 _WARNING_HOLDS = {
-    "coverage_defect": "coverage_defect", "clipped_text": "coverage_defect",
-    "truncated_text": "coverage_defect", "output_truncated": "coverage_defect",
-    "missing_required_columns": "coverage_defect", "missing_content": "coverage_defect",
-    "suspicious_embedded_text_delta": "coverage_defect", "fragmented_text": "coverage_defect",
-    "numeric_column_conflict": "numeric_column_conflict", "column_conflict": "numeric_column_conflict",
-    "source_defect": "source_defect", "empty_text": "blank_candidate",
-    "blank": "blank_candidate", "blank_candidate": "blank_candidate",
-    "illustration": "illustration", "handwriting": "handwriting", "unreadable": "unreadable",
-    "sparse": "coverage_defect", "fragmented": "coverage_defect", "joined": "coverage_defect",
-    "unknown": "coverage_defect", "joined_text": "coverage_defect",
-    "replacement_characters": "coverage_defect", "control_characters": "coverage_defect",
-    "suspicious_symbol_density": "coverage_defect", "low_confidence": "coverage_defect",
+    "coverage_defect": "coverage_defect",
+    "clipped_text": "coverage_defect",
+    "truncated_text": "coverage_defect",
+    "output_truncated": "coverage_defect",
+    "missing_required_columns": "coverage_defect",
+    "missing_content": "coverage_defect",
+    "suspicious_embedded_text_delta": "coverage_defect",
+    "fragmented_text": "coverage_defect",
+    "numeric_column_conflict": "numeric_column_conflict",
+    "column_conflict": "numeric_column_conflict",
+    "source_defect": "source_defect",
+    "empty_text": "blank_candidate",
+    "blank": "blank_candidate",
+    "blank_candidate": "blank_candidate",
+    "illustration": "illustration",
+    "handwriting": "handwriting",
+    "unreadable": "unreadable",
+    "sparse": "coverage_defect",
+    "fragmented": "coverage_defect",
+    "joined": "coverage_defect",
+    "unknown": "coverage_defect",
+    "joined_text": "coverage_defect",
+    "replacement_characters": "coverage_defect",
+    "control_characters": "coverage_defect",
+    "suspicious_symbol_density": "coverage_defect",
+    "low_confidence": "coverage_defect",
     "instruction_echo": "coverage_defect",
 }
 _HASH = re.compile(r"[0-9a-f]{64}\Z")
@@ -41,25 +70,44 @@ _HASH = re.compile(r"[0-9a-f]{64}\Z")
 
 def validate_review(review: dict, page: dict) -> None:
     """Reject receipts that do not bind an exact source, page, and completed output."""
-    if (not isinstance(review, dict) or review.get("schema_version") != "0.1"
-            or not isinstance(review.get("source_sha256"), str)
-            or not _HASH.fullmatch(review["source_sha256"])
-            or review["source_sha256"] != page.get("source_sha256")
-            or not isinstance(review.get("decisions"), list)):
+    if (
+        not isinstance(review, dict)
+        or review.get("schema_version") != "0.1"
+        or not isinstance(review.get("source_sha256"), str)
+        or not _HASH.fullmatch(review["source_sha256"])
+        or review["source_sha256"] != page.get("source_sha256")
+        or not isinstance(review.get("decisions"), list)
+    ):
         raise ValueError("Review source binding is invalid")
-    matches = [item for item in review["decisions"]
-               if isinstance(item, dict) and item.get("page_id") == page.get("page_id")]
+    matches = [
+        item
+        for item in review["decisions"]
+        if isinstance(item, dict) and item.get("page_id") == page.get("page_id")
+    ]
     if len(matches) != 1:
         raise ValueError("Review must contain exactly one decision for this page")
     decision = matches[0]
-    required = {"page_id", "page_number", "disposition", "selected_attempt", "output_sha256",
-                "reason", "reviewer", "reviewed_at"}
-    if (set(decision) != required or decision["page_number"] != page.get("page_number")
-            or type(decision["page_number"]) is not int
-            or not isinstance(decision["disposition"], str)
-            or decision["disposition"] not in REVIEW_DISPOSITIONS
-            or any(not isinstance(decision[key], str) or not decision[key].strip()
-                   for key in ("reason", "reviewer", "reviewed_at"))):
+    required = {
+        "page_id",
+        "page_number",
+        "disposition",
+        "selected_attempt",
+        "output_sha256",
+        "reason",
+        "reviewer",
+        "reviewed_at",
+    }
+    if (
+        set(decision) != required
+        or decision["page_number"] != page.get("page_number")
+        or type(decision["page_number"]) is not int
+        or not isinstance(decision["disposition"], str)
+        or decision["disposition"] not in REVIEW_DISPOSITIONS
+        or any(
+            not isinstance(decision[key], str) or not decision[key].strip()
+            for key in ("reason", "reviewer", "reviewed_at")
+        )
+    ):
         raise ValueError("Review decision or page binding is invalid")
     try:
         reviewed_at = datetime.fromisoformat(decision["reviewed_at"].replace("Z", "+00:00"))
@@ -73,11 +121,14 @@ def validate_review(review: dict, page: dict) -> None:
             raise ValueError("Reviewed text requires an exact completed output")
         return
     matches = [item for item in page.get("attempts", []) if item.get("attempt_id") == selected]
-    if (len(matches) != 1 or matches[0].get("outcome") != "completed"
-            or not matches[0].get("raw_artifact")
-            or not isinstance(decision["output_sha256"], str)
-            or not _HASH.fullmatch(decision["output_sha256"])
-            or matches[0].get("raw_sha256") != decision["output_sha256"]):
+    if (
+        len(matches) != 1
+        or matches[0].get("outcome") != "completed"
+        or not matches[0].get("raw_artifact")
+        or not isinstance(decision["output_sha256"], str)
+        or not _HASH.fullmatch(decision["output_sha256"])
+        or matches[0].get("raw_sha256") != decision["output_sha256"]
+    ):
         raise ValueError("Review output binding is invalid")
 
 
@@ -95,18 +146,28 @@ def _attempt_holds(attempt: dict) -> list[str]:
             holds.append(_WARNING_HOLDS[classification])
     alignment = attempt.get("alignment") or {}
     metrics = alignment.get("metrics") or {}
-    if ((alignment.get("columns") or {}).get("missing_required")
-            or alignment.get("structure_issues") or metrics.get("parse_error")
-            or metrics.get("structure_issue_count", 0) > 0
-            or (metrics.get("required_column_coverage") is not None
-                and metrics["required_column_coverage"] < 1)):
+    if (
+        (alignment.get("columns") or {}).get("missing_required")
+        or alignment.get("structure_issues")
+        or metrics.get("parse_error")
+        or metrics.get("structure_issue_count", 0) > 0
+        or (
+            metrics.get("required_column_coverage") is not None
+            and metrics["required_column_coverage"] < 1
+        )
+    ):
         holds.append("coverage_defect")
-    if (alignment.get("coercion_errors") or metrics.get("coercion_error_count", 0) > 0
-            or (metrics.get("arithmetic_pass_rate") is not None
-                and metrics["arithmetic_pass_rate"] < 1)
-            or any(check.get("passed") is False or check.get("rows_failed", 0) > 0
-                   or check.get("rows_unchecked", 0) > 0
-                   for check in alignment.get("checks", []))):
+    if (
+        alignment.get("coercion_errors")
+        or metrics.get("coercion_error_count", 0) > 0
+        or (metrics.get("arithmetic_pass_rate") is not None and metrics["arithmetic_pass_rate"] < 1)
+        or any(
+            check.get("passed") is False
+            or check.get("rows_failed", 0) > 0
+            or check.get("rows_unchecked", 0) > 0
+            for check in alignment.get("checks", [])
+        )
+    ):
         holds.append("numeric_column_conflict")
     if attempt.get("outcome") == "completed" and "text" in attempt and not attempt["text"].strip():
         holds.append("blank_candidate")
@@ -138,16 +199,21 @@ def _records(attempt: dict) -> list[dict[str, Any]] | None:
                 return None
             headers, rows = parsed[0], parsed[1:]
         elif fmt in {"markdown_table", "markdown"}:
-            parsed = [line.strip().strip("|").split("|") for line in text.splitlines() if "|" in line]
+            parsed = [
+                line.strip().strip("|").split("|") for line in text.splitlines() if "|" in line
+            ]
             if len(parsed) < 3 or not all(re.fullmatch(r"\s*:?-+:?\s*", c) for c in parsed[1]):
                 return None
             headers, rows = [header.strip() for header in parsed[0]], parsed[2:]
             rows = [[cell.strip() for cell in row] for row in rows]
         else:
             return None
-        if (not headers or any(not isinstance(header, str) or not header.strip() for header in headers)
-                or len(set(headers)) != len(headers)
-                or not all(isinstance(row, list) and len(row) == len(headers) for row in rows)):
+        if (
+            not headers
+            or any(not isinstance(header, str) or not header.strip() for header in headers)
+            or len(set(headers)) != len(headers)
+            or not all(isinstance(row, list) and len(row) == len(headers) for row in rows)
+        ):
             return None
         return [dict(zip(headers, row, strict=True)) for row in rows]
     except (ValueError, TypeError):
@@ -171,14 +237,18 @@ def _numeric_conflict(left: dict, right: dict) -> bool:
     columns = set(a[0])
     if not columns or any(set(row) != columns for row in [*a, *b]):
         return False
-    numeric = sorted(key for key in columns if all(_number(row[key]) is not None for row in [*a, *b]))
+    numeric = sorted(
+        key for key in columns if all(_number(row[key]) is not None for row in [*a, *b])
+    )
     if not numeric:
         return False
     labels = sorted(columns - set(numeric))
     if labels:
+
         def keyed(rows):
             keys = [tuple(str(row[key]) for key in labels) for row in rows]
             return dict(zip(keys, rows, strict=True)) if len(set(keys)) == len(keys) else None
+
         keyed_a, keyed_b = keyed(a), keyed(b)
         if keyed_a is None or keyed_b is None or set(keyed_a) != set(keyed_b):
             return False
@@ -187,7 +257,9 @@ def _numeric_conflict(left: dict, right: dict) -> bool:
         if len(a) != len(b):
             return False
         pairs = list(zip(a, b, strict=True))
-    return any(_number(row_a[key]) != _number(row_b[key]) for row_a, row_b in pairs for key in numeric)
+    return any(
+        _number(row_a[key]) != _number(row_b[key]) for row_a, row_b in pairs for key in numeric
+    )
 
 
 def assess_page(page: dict, review: dict | None = None) -> dict:
@@ -201,8 +273,13 @@ def assess_page(page: dict, review: dict | None = None) -> dict:
     numeric_conflict = any(_numeric_conflict(a, b) for a, b in combinations(completed, 2))
     if numeric_conflict and "numeric_column_conflict" not in reasons:
         reasons.append("numeric_column_conflict")
-    usable = [item for item in completed if item.get("raw_artifact") and item.get("raw_sha256")
-              and ("text" not in item or bool(item["text"].strip()))]
+    usable = [
+        item
+        for item in completed
+        if item.get("raw_artifact")
+        and item.get("raw_sha256")
+        and ("text" not in item or bool(item["text"].strip()))
+    ]
     clean = [item for item in usable if not holds_by_id[item["attempt_id"]]]
     selected = (clean or usable or [None])[0]
     disposition = next((hold for hold in _HOLD_ORDER if hold in reasons), None)
@@ -216,12 +293,21 @@ def assess_page(page: dict, review: dict | None = None) -> dict:
         else:
             disposition = "pending"
     if attempts and attempts[-1].get("outcome") in {"failed", "outcome_unknown", "response"}:
-        disposition = "provider_failure" if attempts[-1]["outcome"] == "failed" else "outcome_unknown"
+        disposition = (
+            "provider_failure" if attempts[-1]["outcome"] == "failed" else "outcome_unknown"
+        )
         if disposition not in reasons:
             reasons.append(disposition)
-    stage_index = max((STAGES.index(item["stage"]) for item in attempts if item.get("stage") in STAGES), default=-1)
-    if (clean or numeric_conflict or disposition in {"source_defect", "outcome_unknown", "provider_failure", "illustration"}
-            or stage_index == len(STAGES) - 1):
+    stage_index = max(
+        (STAGES.index(item["stage"]) for item in attempts if item.get("stage") in STAGES),
+        default=-1,
+    )
+    if (
+        clean
+        or numeric_conflict
+        or disposition in {"source_defect", "outcome_unknown", "provider_failure", "illustration"}
+        or stage_index == len(STAGES) - 1
+    ):
         next_action = "review"
     else:
         next_action = STAGES[stage_index + 1]
@@ -230,6 +316,14 @@ def assess_page(page: dict, review: dict | None = None) -> dict:
     if receipt is not None:
         validate_review(receipt, page)
         decision = next(item for item in receipt["decisions"] if item["page_id"] == page["page_id"])
-        disposition, selected_id, next_action = decision["disposition"], decision["selected_attempt"], "none"
-    return {"selected_attempt": selected_id, "disposition": disposition,
-            "review_reasons": reasons, "next_action": next_action}
+        disposition, selected_id, next_action = (
+            decision["disposition"],
+            decision["selected_attempt"],
+            "none",
+        )
+    return {
+        "selected_attempt": selected_id,
+        "disposition": disposition,
+        "review_reasons": reasons,
+        "next_action": next_action,
+    }

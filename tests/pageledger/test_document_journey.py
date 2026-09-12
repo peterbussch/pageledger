@@ -1,4 +1,5 @@
 """Regression coverage for the maintained newcomer document-job journey."""
+
 from __future__ import annotations
 
 import json
@@ -41,13 +42,9 @@ def test_document_first_run_journey_records_recovery_and_bounded_review(
         text=True,
         capture_output=True,
     )
-    assert result.returncode == 0, (
-        f"stdout:\n{result.stdout}\n\nstderr:\n{result.stderr}"
-    )
+    assert result.returncode == 0, f"stdout:\n{result.stdout}\n\nstderr:\n{result.stderr}"
 
-    complete = json.loads(
-        (work_dir / "jobs" / "complete" / "document.json").read_text()
-    )
+    complete = json.loads((work_dir / "jobs" / "complete" / "document.json").read_text())
     assert complete["status"] == "completed"
     assert complete["counts"]["selected_pages"] == 3
     assert complete["usage"]["cost_known"] is False
@@ -58,8 +55,7 @@ def test_document_first_run_journey_records_recovery_and_bounded_review(
     assert recovery_document["status"] == "completed"
     assert all(len(page["attempts"]) == 1 for page in recovery_document["pages"])
     calls = [
-        json.loads(line)
-        for line in (work_dir / "calls-interrupted.jsonl").read_text().splitlines()
+        json.loads(line) for line in (work_dir / "calls-interrupted.jsonl").read_text().splitlines()
     ]
     assert [call["page_number"] for call in calls] == [1, 2, 3]
     assert "DOCUMENT_JOURNEY_RECOVERY_OK" in result.stdout
@@ -94,16 +90,18 @@ def test_stale_review_record_is_rejected_without_extraction_or_artifact_changes(
     stale = {
         "schema_version": "0.1",
         "source_sha256": "0" * 64,
-        "decisions": [{
-            "page_id": page["page_id"],
-            "page_number": page["page_number"],
-            "disposition": "reviewed_text",
-            "selected_attempt": None,
-            "output_sha256": None,
-            "reason": "stale review record",
-            "reviewer": "synthetic test reviewer",
-            "reviewed_at": "2026-09-12T12:00:00Z",
-        }],
+        "decisions": [
+            {
+                "page_id": page["page_id"],
+                "page_number": page["page_number"],
+                "disposition": "reviewed_text",
+                "selected_attempt": None,
+                "output_sha256": None,
+                "reason": "stale review record",
+                "reviewer": "synthetic test reviewer",
+                "reviewed_at": "2026-09-12T12:00:00Z",
+            }
+        ],
     }
     review_path = tmp_path / "stale-review.json"
     review_path.write_text(json.dumps(stale), encoding="utf-8")

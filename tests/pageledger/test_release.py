@@ -23,9 +23,7 @@ def _write_release_fixture(root: Path, *, citation_version: str = "1.2.3") -> No
         '[project]\nname = "pageledger"\nversion = "1.2.3"\n',
         encoding="utf-8",
     )
-    (root / "pageledger" / "_version.py").write_text(
-        '__version__ = "1.2.3"\n', encoding="utf-8"
-    )
+    (root / "pageledger" / "_version.py").write_text('__version__ = "1.2.3"\n', encoding="utf-8")
     (root / "CITATION.cff").write_text(
         f'version: "{citation_version}"\ndate-released: "2026-08-16"\n',
         encoding="utf-8",
@@ -35,9 +33,7 @@ def _write_release_fixture(root: Path, *, citation_version: str = "1.2.3") -> No
         'source = { editable = "." }\n',
         encoding="utf-8",
     )
-    (root / "CHANGELOG.md").write_text(
-        "# Changelog\n\n## 1.2.3 - 2026-08-16\n", encoding="utf-8"
-    )
+    (root / "CHANGELOG.md").write_text("# Changelog\n\n## 1.2.3 - 2026-08-16\n", encoding="utf-8")
 
 
 def test_release_metadata_agrees_for_current_version() -> None:
@@ -103,9 +99,7 @@ def test_publish_is_manual_tag_only_and_verifies_before_upload() -> None:
 
 
 def test_package_workflows_run_shared_reader_journey_outside_checkout() -> None:
-    ci = yaml.safe_load(
-        (REPO / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
-    )
+    ci = yaml.safe_load((REPO / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8"))
     publish = yaml.safe_load(
         (REPO / ".github" / "workflows" / "publish.yml").read_text(encoding="utf-8")
     )
@@ -126,9 +120,7 @@ def test_package_workflows_run_shared_reader_journey_outside_checkout() -> None:
     ]
     for workflow, step_name, isolated_python in cases:
         step = next(
-            step
-            for step in workflow["jobs"]["build"]["steps"]
-            if step.get("name") == step_name
+            step for step in workflow["jobs"]["build"]["steps"] if step.get("name") == step_name
         )
         command = step["run"]
         assert step["env"]["PYTHONPATH"] == ""
@@ -154,7 +146,8 @@ def test_package_workflows_validate_schema_and_document_inventories() -> None:
 
 @pytest.mark.parametrize("defect", [None, "schema", "document", "validation", "private"])
 def test_distribution_check_reads_archives_and_rejects_missing_or_private_files(
-    tmp_path: Path, defect: str | None,
+    tmp_path: Path,
+    defect: str | None,
 ) -> None:
     schemas = tmp_path / "schemas"
     schemas.mkdir()
@@ -163,7 +156,9 @@ def test_distribution_check_reads_archives_and_rejects_missing_or_private_files(
     dist.mkdir()
     with ZipFile(dist / "pageledger-1.2.3-py3-none-any.whl", "w") as archive:
         if defect != "schema":
-            archive.writestr("pageledger-1.2.3.data/data/share/pageledger/schemas/manifest.schema.json", "{}")
+            archive.writestr(
+                "pageledger-1.2.3.data/data/share/pageledger/schemas/manifest.schema.json", "{}"
+            )
     omitted = {
         "document": "docs/document-first-run.md",
         "validation": "docs/validation/0.5.1/vlm-results.json",

@@ -89,9 +89,12 @@ class TesseractTsvTableAdapter:
             subprocess.run(
                 [
                     "pdftoppm",
-                    "-f", str(page_number),
-                    "-l", str(page_number),
-                    "-r", str(self.dpi),
+                    "-f",
+                    str(page_number),
+                    "-l",
+                    str(page_number),
+                    "-r",
+                    str(self.dpi),
                     "-png",
                     str(source),
                     str(prefix),
@@ -167,9 +170,7 @@ def _parse_tsv_words(tsv: str) -> list[dict]:
     }
     missing = required - index.keys()
     if missing:
-        raise ValueError(
-            f"Tesseract TSV is missing columns: {', '.join(sorted(missing))}"
-        )
+        raise ValueError(f"Tesseract TSV is missing columns: {', '.join(sorted(missing))}")
     for line in lines[1:]:
         fields = line.split("\t")
         if len(fields) != len(header) or fields[index["level"]] != "5":
@@ -178,24 +179,24 @@ def _parse_tsv_words(tsv: str) -> list[dict]:
         conf = float(fields[index["conf"]])
         if not text or not math.isfinite(conf) or conf < 0:
             continue
-        words.append({
-            "row_key": (
-                int(fields[index["block_num"]]),
-                int(fields[index["par_num"]]),
-                int(fields[index["line_num"]]),
-            ),
-            "top": int(fields[index["top"]]),
-            "left": int(fields[index["left"]]),
-            "right": int(fields[index["left"]]) + int(fields[index["width"]]),
-            "text": text,
-            "conf": conf,
-        })
+        words.append(
+            {
+                "row_key": (
+                    int(fields[index["block_num"]]),
+                    int(fields[index["par_num"]]),
+                    int(fields[index["line_num"]]),
+                ),
+                "top": int(fields[index["top"]]),
+                "left": int(fields[index["left"]]),
+                "right": int(fields[index["left"]]) + int(fields[index["width"]]),
+                "text": text,
+                "conf": conf,
+            }
+        )
     return words
 
 
-def _cluster_table(
-    words: list[dict], *, column_gap_px: int = COLUMN_GAP_PX_AT_300_DPI
-) -> str:
+def _cluster_table(words: list[dict], *, column_gap_px: int = COLUMN_GAP_PX_AT_300_DPI) -> str:
     """Render OCR words as a markdown table: TSV lines are rows, gaps are columns."""
     rows_by_key: dict[tuple, list[dict]] = {}
     for word in words:

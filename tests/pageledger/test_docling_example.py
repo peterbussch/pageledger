@@ -141,7 +141,10 @@ def test_docling_adapter_passes_conformance(docling_module) -> None:  # noqa: AN
     ],
 )
 def test_docling_actions_and_capabilities_are_pipeline_aware(
-    docling_module, pipeline: str, action: str, supported: bool  # noqa: ANN001
+    docling_module,
+    pipeline: str,
+    action: str,
+    supported: bool,  # noqa: ANN001
 ) -> None:
     adapter = docling_module.DoclingAdapter(pipeline=pipeline)
     assert adapter.supports(action) is supported
@@ -149,7 +152,8 @@ def test_docling_actions_and_capabilities_are_pipeline_aware(
 
 
 def test_docling_adapter_rejects_prompts_it_cannot_apply(
-    tmp_path: Path, docling_module  # noqa: ANN001
+    tmp_path: Path,
+    docling_module,  # noqa: ANN001
 ) -> None:
     source = tmp_path / "sample.pdf"
     source.write_bytes(b"%PDF-fake")
@@ -165,7 +169,8 @@ def test_docling_adapter_rejects_prompts_it_cannot_apply(
 
 
 def test_docling_standard_pipeline_rejects_vlm_action(
-    tmp_path: Path, docling_module  # noqa: ANN001
+    tmp_path: Path,
+    docling_module,  # noqa: ANN001
 ) -> None:
     source = tmp_path / "sample.pdf"
     source.write_bytes(b"%PDF-fake")
@@ -190,14 +195,18 @@ def test_docling_standard_pipeline_rejects_vlm_action(
     ],
 )
 def test_docling_adapter_rejects_unsafe_or_invalid_options(
-    docling_module, options: dict, message: str  # noqa: ANN001
+    docling_module,
+    options: dict,
+    message: str,  # noqa: ANN001
 ) -> None:
     with pytest.raises(ValueError, match=message):
         docling_module.DoclingAdapter(**options)
 
 
 def test_docling_adapter_batches_once_and_emits_page_markdown(
-    tmp_path: Path, monkeypatch, docling_module  # noqa: ANN001
+    tmp_path: Path,
+    monkeypatch,
+    docling_module,  # noqa: ANN001
 ) -> None:
     calls = _install_fake_docling(monkeypatch, docling_module, _docling_document())
     source = tmp_path / "sample.pdf"
@@ -219,16 +228,11 @@ def test_docling_adapter_batches_once_and_emits_page_markdown(
 
     assert first.format == "markdown"
     assert first.content == (
-        "# First Page\n\n"
-        "*Table 1 caption*\n\n"
-        "| Year | Value |\n"
-        "| --- | --- |\n"
-        "| 2024 | 1 \\| 2 |"
+        "# First Page\n\n*Table 1 caption*\n\n| Year | Value |\n| --- | --- |\n| 2024 | 1 \\| 2 |"
     )
     assert second.content == "Second page paragraph."
     assert first.model == (
-        "docling 2.120.1; pipeline=standard; ocr=auto; "
-        "tables=accurate; batch=document"
+        "docling 2.120.1; pipeline=standard; ocr=auto; tables=accurate; batch=document"
     )
     assert first.confidence is None
     assert first.usage["pages"] == second.usage["pages"] == 1
@@ -248,7 +252,9 @@ def test_docling_adapter_batches_once_and_emits_page_markdown(
 
 
 def test_docling_vlm_mode_records_preset_and_keeps_services_local(
-    tmp_path: Path, monkeypatch, docling_module  # noqa: ANN001
+    tmp_path: Path,
+    monkeypatch,
+    docling_module,  # noqa: ANN001
 ) -> None:
     calls = _install_fake_docling(monkeypatch, docling_module, _docling_document())
     source = tmp_path / "sample.pdf"
@@ -262,9 +268,7 @@ def test_docling_vlm_mode_records_preset_and_keeps_services_local(
         action="vlm_table",
     )
 
-    assert result.model == (
-        "docling 2.120.1; pipeline=vlm; vlm_model=smoldocling; batch=page"
-    )
+    assert result.model == ("docling 2.120.1; pipeline=vlm; vlm_model=smoldocling; batch=page")
     assert result.content == "VLM page output"
     assert result.warnings == ["docling_vlm_uncalibrated"]
     conversion = calls[1]
@@ -277,7 +281,9 @@ def test_docling_vlm_mode_records_preset_and_keeps_services_local(
 
 
 def test_docling_adapter_rejects_missing_executable(
-    tmp_path: Path, monkeypatch, docling_module  # noqa: ANN001
+    tmp_path: Path,
+    monkeypatch,
+    docling_module,  # noqa: ANN001
 ) -> None:
     monkeypatch.setattr(docling_module.shutil, "which", lambda name: None)
     adapter = docling_module.DoclingAdapter()
@@ -293,7 +299,9 @@ def test_docling_adapter_rejects_missing_executable(
 
 
 def test_docling_adapter_rejects_malformed_document_output(
-    tmp_path: Path, monkeypatch, docling_module  # noqa: ANN001
+    tmp_path: Path,
+    monkeypatch,
+    docling_module,  # noqa: ANN001
 ) -> None:
     malformed = _docling_document()
     malformed.pop("pages")
@@ -311,12 +319,12 @@ def test_docling_adapter_rejects_malformed_document_output(
 
 
 def test_docling_adapter_warns_on_untranscribed_visual_regions(
-    tmp_path: Path, monkeypatch, docling_module  # noqa: ANN001
+    tmp_path: Path,
+    monkeypatch,
+    docling_module,  # noqa: ANN001
 ) -> None:
     document = _docling_document()
-    document["body"]["children"].extend(
-        [{"$ref": "#/pictures/0"}, {"$ref": "#/tables/1"}]
-    )
+    document["body"]["children"].extend([{"$ref": "#/pictures/0"}, {"$ref": "#/tables/1"}])
     document["pictures"] = [
         {
             "self_ref": "#/pictures/0",

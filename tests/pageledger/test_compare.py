@@ -431,9 +431,7 @@ def test_compare_same_adapter_different_model_is_unranked(tmp_path):
     out_b = _run([source], tmp_path, "b")
 
     provenance_path = out_b / "provenance.jsonl"
-    provenance = [
-        json.loads(line) for line in provenance_path.read_text().splitlines()
-    ]
+    provenance = [json.loads(line) for line in provenance_path.read_text().splitlines()]
     provenance[0]["extractor"]["model"] = "alternate-model"
     provenance_path.write_text(json.dumps(provenance[0]) + "\n", encoding="utf-8")
     manifest_path = out_b / "manifest.json"
@@ -546,9 +544,7 @@ def test_compare_does_not_rank_schema_grades_from_different_schemas(tmp_path):
     assert report["grades_improved_total"] == 0
 
 
-def test_compare_does_not_follow_external_alignment_schema_symlink(
-    tmp_path, monkeypatch
-):
+def test_compare_does_not_follow_external_alignment_schema_symlink(tmp_path, monkeypatch):
     import pageledger.compare as compare_module
 
     source = tmp_path / "doc.txt"
@@ -782,9 +778,7 @@ def test_compare_missing_extractor_identity_evidence_is_unknown(tmp_path):
     out_b = _run([source], tmp_path, "b")
 
     provenance_path = out_a / "provenance.jsonl"
-    provenance = [
-        json.loads(line) for line in provenance_path.read_text().splitlines()
-    ]
+    provenance = [json.loads(line) for line in provenance_path.read_text().splitlines()]
     del provenance[0]["extractor"]["model"]
     provenance_path.write_text(json.dumps(provenance[0]) + "\n", encoding="utf-8")
 

@@ -25,39 +25,66 @@ FIXTURES = Path(__file__).resolve().parent.parent / "fixtures"
 # Checked-in fixture verification
 # =========================================================================
 
+
 def test_fixture_clean_single(tmp_path: Path) -> None:
     """Clean single-page fixture: no warnings, full artifact chain."""
-    _run_fixture(tmp_path, FIXTURES / "clean-single.txt",
-                 expected_pages=1, expected_extracted=1, expected_warnings=0)
+    _run_fixture(
+        tmp_path,
+        FIXTURES / "clean-single.txt",
+        expected_pages=1,
+        expected_extracted=1,
+        expected_warnings=0,
+    )
 
 
 def test_fixture_multipage_clean(tmp_path: Path) -> None:
     """Multipage clean fixture: 3 pages, 3 extracted, 0 warnings."""
-    _run_fixture(tmp_path, FIXTURES / "multipage-clean.txt",
-                 expected_pages=3, expected_extracted=3, expected_warnings=0)
+    _run_fixture(
+        tmp_path,
+        FIXTURES / "multipage-clean.txt",
+        expected_pages=3,
+        expected_extracted=3,
+        expected_warnings=0,
+    )
 
 
 def test_fixture_noisy_ocr(tmp_path: Path) -> None:
     """Noisy OCR fixture: replacement + control chars trigger warnings."""
-    _run_fixture(tmp_path, FIXTURES / "noisy-ocr.txt",
-                 expected_pages=1, expected_extracted=1, expected_warnings=1)
+    _run_fixture(
+        tmp_path,
+        FIXTURES / "noisy-ocr.txt",
+        expected_pages=1,
+        expected_extracted=1,
+        expected_warnings=1,
+    )
 
 
 def test_fixture_blank(tmp_path: Path) -> None:
     """Blank fixture: empty_text warning, 1 page, audit entry."""
-    _run_fixture(tmp_path, FIXTURES / "blank.txt",
-                 expected_pages=1, expected_extracted=1, expected_warnings=1)
+    _run_fixture(
+        tmp_path,
+        FIXTURES / "blank.txt",
+        expected_pages=1,
+        expected_extracted=1,
+        expected_warnings=1,
+    )
 
 
 def test_fixture_short(tmp_path: Path) -> None:
     """Short fixture: short_text warning, 1 page."""
-    _run_fixture(tmp_path, FIXTURES / "short.txt",
-                 expected_pages=1, expected_extracted=1, expected_warnings=1)
+    _run_fixture(
+        tmp_path,
+        FIXTURES / "short.txt",
+        expected_pages=1,
+        expected_extracted=1,
+        expected_warnings=1,
+    )
 
 
 # =========================================================================
 # Artifact-count consistency (checked-in fixtures + generated)
 # =========================================================================
+
 
 def test_artifact_counts_consistent_checked_in(tmp_path: Path) -> None:
     """raw file count == provenance lines == quality lines == pages_extracted."""
@@ -73,13 +100,17 @@ def test_artifact_counts_consistent_checked_in(tmp_path: Path) -> None:
 
     assert raw_count == pages_extracted, f"raw={raw_count} != manifest={pages_extracted}"
     assert prov_count == pages_extracted, f"provenance={prov_count} != manifest={pages_extracted}"
-    assert quality_count == pages_extracted, f"quality={quality_count} != manifest={pages_extracted}"
+    assert quality_count == pages_extracted, (
+        f"quality={quality_count} != manifest={pages_extracted}"
+    )
 
 
 def test_artifact_counts_consistent_synthetic(tmp_path: Path) -> None:
     """Synthetic 20-page run: all artifact counts match."""
     source = tmp_path / "synth.txt"
-    source.write_text(("\f".join(f"page {i} content here for testing" for i in range(1, 21))), encoding="utf-8")
+    source.write_text(
+        ("\f".join(f"page {i} content here for testing" for i in range(1, 21))), encoding="utf-8"
+    )
 
     out_dir = _run_pageledger(tmp_path, [source])
     manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
@@ -125,6 +156,7 @@ def test_stress_5000_pages(tmp_path: Path) -> None:
 # Run-id uniqueness
 # =========================================================================
 
+
 def test_run_ids_are_unique_across_runs(tmp_path: Path) -> None:
     """Two rapid successive runs produce distinct run_ids."""
     source = tmp_path / "s.txt"
@@ -133,6 +165,7 @@ def test_run_ids_are_unique_across_runs(tmp_path: Path) -> None:
     id1 = _run_and_get_id(tmp_path, source, tmp_path / "r1")
     # brief sleep to ensure timestamp changes
     import time
+
     time.sleep(0.002)
     id2 = _run_and_get_id(tmp_path, source, tmp_path / "r2")
 
@@ -142,6 +175,7 @@ def test_run_ids_are_unique_across_runs(tmp_path: Path) -> None:
 # =========================================================================
 # Helpers
 # =========================================================================
+
 
 def _run_fixture(
     tmp_path: Path,
@@ -175,7 +209,8 @@ def _run_pageledger(tmp_path: Path, inputs: list[Path]) -> Path:
     from pageledger.runner import run
 
     config = tmp_path / "config.yml"
-    config.write_text(textwrap.dedent("""\
+    config.write_text(
+        textwrap.dedent("""\
         schema_version: "0.1"
         taxonomy:
           page_types:
@@ -183,7 +218,9 @@ def _run_pageledger(tmp_path: Path, inputs: list[Path]) -> Path:
               default_action: transcribe_text
         run:
           adapter: text
-        """), encoding="utf-8")
+        """),
+        encoding="utf-8",
+    )
     out_dir = tmp_path / "out"
     run(inputs=inputs, config_path=config, out_dir=out_dir, dry_run=False)
     return out_dir
@@ -199,7 +236,8 @@ def _run_and_get_id(tmp_path: Path, source: Path, out_dir: Path) -> str:
     from pageledger.runner import run
 
     config = tmp_path / "config.yml"
-    config.write_text(textwrap.dedent("""\
+    config.write_text(
+        textwrap.dedent("""\
         schema_version: "0.1"
         taxonomy:
           page_types:
@@ -207,7 +245,9 @@ def _run_and_get_id(tmp_path: Path, source: Path, out_dir: Path) -> str:
               default_action: transcribe_text
         run:
           adapter: text
-        """), encoding="utf-8")
+        """),
+        encoding="utf-8",
+    )
     run(inputs=[source], config_path=config, out_dir=out_dir, dry_run=False)
     manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
     return manifest["run_id"]
@@ -216,8 +256,10 @@ def _run_and_get_id(tmp_path: Path, source: Path, out_dir: Path) -> str:
 def _stress_run(tmp_path: Path, page_count: int) -> None:
     """Generate a synthetic text of *page_count* pages, run, and assert correctness."""
     source = tmp_path / "stress.txt"
-    lines = [f"page {i}: this is synthetic test content for PageLedger stress test.\n"
-             for i in range(1, page_count + 1)]
+    lines = [
+        f"page {i}: this is synthetic test content for PageLedger stress test.\n"
+        for i in range(1, page_count + 1)
+    ]
     source.write_text("\f".join(lines), encoding="utf-8")
 
     t0 = time.monotonic()

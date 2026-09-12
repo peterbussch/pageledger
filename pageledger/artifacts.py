@@ -77,9 +77,7 @@ def read_jsonl(path: Path) -> list[dict[str, Any]]:
     if not path.is_file():
         return []
     return [
-        json.loads(line)
-        for line in path.read_text(encoding="utf-8").splitlines()
-        if line.strip()
+        json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()
     ]
 
 
@@ -91,9 +89,7 @@ def _can_use_c_safe_dumper(data: dict[str, Any]) -> bool:
         value = pending.pop()
         if isinstance(value, str):
             if any(
-                ord(character) > 0xFFFF
-                or not character.isprintable()
-                or character.isspace()
+                ord(character) > 0xFFFF or not character.isprintable() or character.isspace()
                 for character in value
             ):
                 return False
@@ -154,7 +150,8 @@ def build_route_map(
         "pageledger_version": __version__,
         "run_id": run_id,
         "generated_at": generated_at,
-        "classifier": classifier or {
+        "classifier": classifier
+        or {
             "adapter": None,
             "model": None,
             "prompt_hash": None,
@@ -286,9 +283,7 @@ def build_rerun_manifest(
         for page in document["pages"]
     }
     quarantined = set(quarantined_page_ids or ())
-    quarantined.update(
-        item["page_id"] for item in audit.get("quarantine_queue", [])
-    )
+    quarantined.update(item["page_id"] for item in audit.get("quarantine_queue", []))
     # A page can sit in the review queue once per reason (e.g. both
     # quality_warning and grade_below_threshold); candidate construction is
     # independent of the depth/chain gates so exhaustion remains observable.

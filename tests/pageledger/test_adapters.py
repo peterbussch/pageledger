@@ -29,6 +29,7 @@ from pageledger.adapters import (
 # Adapter conformance helper — built-in adapters
 # =========================================================================
 
+
 def test_builtin_text_adapter_passes_conformance() -> None:
     issues = adapter_conformance_check(TextAdapter())
     assert issues == []
@@ -187,9 +188,7 @@ def test_builtin_adapter_identity_is_immutable(adapter) -> None:  # noqa: ANN001
         ("pdf_ocr", {"capabilities": ("renamed",)}),
     ],
 )
-def test_builtin_adapter_metadata_is_not_constructor_configurable(
-    name: str, options: dict
-) -> None:
+def test_builtin_adapter_metadata_is_not_constructor_configurable(name: str, options: dict) -> None:
     with pytest.raises(ValueError, match="run.adapter_options"):
         load_adapter(name, options)
 
@@ -203,6 +202,7 @@ def test_pdf_alias_is_preserved() -> None:
 # =========================================================================
 # Adapter conformance — malformed adapters
 # =========================================================================
+
 
 def test_conformance_reports_missing_name() -> None:
     @dataclass
@@ -218,8 +218,12 @@ def test_conformance_reports_missing_name() -> None:
 
         def extract(self, **kw):  # noqa: ANN003
             return ExtractionResult(
-                content="test", format="text", confidence=None,
-                model=None, warnings=[], usage={"pages": 1},
+                content="test",
+                format="text",
+                confidence=None,
+                model=None,
+                warnings=[],
+                usage={"pages": 1},
             )
 
     issues = adapter_conformance_check(BadAdapter())
@@ -241,8 +245,12 @@ def test_conformance_reports_non_string_capability() -> None:
 
         def extract(self, **kw):  # noqa: ANN003
             return ExtractionResult(
-                content="test", format="text", confidence=None,
-                model=None, warnings=[], usage={"pages": 1},
+                content="test",
+                format="text",
+                confidence=None,
+                model=None,
+                warnings=[],
+                usage={"pages": 1},
             )
 
     issues = adapter_conformance_check(BadCapAdapter())
@@ -261,8 +269,12 @@ def test_conformance_reports_missing_supports() -> None:
 
         def extract(self, **kw):  # noqa: ANN003
             return ExtractionResult(
-                content="test", format="text", confidence=None,
-                model=None, warnings=[], usage={"pages": 1},
+                content="test",
+                format="text",
+                confidence=None,
+                model=None,
+                warnings=[],
+                usage={"pages": 1},
             )
 
     issues = adapter_conformance_check(NoSupportsAdapter())
@@ -303,17 +315,19 @@ def test_conformance_and_loading_reject_noncallable_page_count(
 
         def extract(self, **kw):  # noqa: ANN003
             return ExtractionResult(
-                content="test", format="text", confidence=None,
-                model=None, warnings=[], usage={"pages": 1},
+                content="test",
+                format="text",
+                confidence=None,
+                model=None,
+                warnings=[],
+                usage={"pages": 1},
             )
 
     module = types.ModuleType("bad_page_count_adapter")
     module.ADAPTER = BadPageCountAdapter()
     monkeypatch.setitem(sys.modules, module.__name__, module)
 
-    assert any(
-        "page_count" in issue for issue in adapter_conformance_check(module.ADAPTER)
-    )
+    assert any("page_count" in issue for issue in adapter_conformance_check(module.ADAPTER))
     with pytest.raises(ValueError, match="page_count"):
         load_adapter(f"{module.__name__}:ADAPTER")
 
@@ -333,8 +347,12 @@ def test_conformance_reports_noncallable_reproducibility_profile() -> None:
 
         def extract(self, **kw):  # noqa: ANN003
             return ExtractionResult(
-                content="test", format="text", confidence=None,
-                model=None, warnings=[], usage={"pages": 1},
+                content="test",
+                format="text",
+                confidence=None,
+                model=None,
+                warnings=[],
+                usage={"pages": 1},
             )
 
     issues = adapter_conformance_check(BadProfileAdapter())
@@ -350,8 +368,12 @@ def test_custom_adapter_missing_metadata_is_not_filled_in(
 
         def extract(self, **kw):  # noqa: ANN003
             return ExtractionResult(
-                content="test", format="text", confidence=None,
-                model=None, warnings=[], usage={"pages": 1},
+                content="test",
+                format="text",
+                confidence=None,
+                model=None,
+                warnings=[],
+                usage={"pages": 1},
             )
 
     module = types.ModuleType("under_specified_adapter")
@@ -379,8 +401,12 @@ def test_custom_factory_is_constructed_once(monkeypatch: pytest.MonkeyPatch) -> 
 
         def extract(self, **kw):  # noqa: ANN003
             return ExtractionResult(
-                content="test", format="text", confidence=None,
-                model=None, warnings=[], usage={"pages": 1},
+                content="test",
+                format="text",
+                confidence=None,
+                model=None,
+                warnings=[],
+                usage={"pages": 1},
             )
 
     def build_adapter() -> FactoryAdapter:
@@ -416,8 +442,12 @@ def test_conformance_clean_adapter_empty_issues() -> None:
 
         def extract(self, **kw):  # noqa: ANN003
             return ExtractionResult(
-                content="test", format="text", confidence=0.9,
-                model="test-model", warnings=[], usage={"pages": 1},
+                content="test",
+                format="text",
+                confidence=0.9,
+                model="test-model",
+                warnings=[],
+                usage={"pages": 1},
             )
 
     issues = adapter_conformance_check(CleanAdapter())
@@ -428,8 +458,12 @@ def test_conformance_clean_adapter_empty_issues() -> None:
 # Metadata validation — load_adapter rejects bad types
 # =========================================================================
 
+
 def test_load_adapter_rejects_non_bool_deterministic(tmp_path: Path) -> None:
-    _write_adapter_module(tmp_path, "nonbool", """\
+    _write_adapter_module(
+        tmp_path,
+        "nonbool",
+        """\
 from dataclasses import dataclass
 from pageledger.adapters import ExtractionResult
 
@@ -450,7 +484,8 @@ class BadDeterministicAdapter:
             content="test", format="text", confidence=None,
             model=None, warnings=[], usage={"pages": 1},
         )
-""")
+""",
+    )
     sys.path.insert(0, str(tmp_path))
     try:
         with pytest.raises(ValueError, match="deterministic"):
@@ -460,7 +495,10 @@ class BadDeterministicAdapter:
 
 
 def test_load_adapter_rejects_non_sequence_capabilities(tmp_path: Path) -> None:
-    _write_adapter_module(tmp_path, "badseq", """\
+    _write_adapter_module(
+        tmp_path,
+        "badseq",
+        """\
 from dataclasses import dataclass
 from pageledger.adapters import ExtractionResult
 
@@ -481,7 +519,8 @@ class BadSeqAdapter:
             content="test", format="text", confidence=None,
             model=None, warnings=[], usage={"pages": 1},
         )
-""")
+""",
+    )
     sys.path.insert(0, str(tmp_path))
     try:
         with pytest.raises(ValueError, match="capabilities"):
@@ -494,8 +533,12 @@ class BadSeqAdapter:
 # usage.pages must be exactly 1 at extraction time
 # =========================================================================
 
+
 def test_runner_rejects_usage_pages_not_one(tmp_path: Path) -> None:
-    _write_adapter_module(tmp_path, "misreport", """\
+    _write_adapter_module(
+        tmp_path,
+        "misreport",
+        """\
 from dataclasses import dataclass
 from pathlib import Path
 from pageledger.adapters import ExtractionResult
@@ -517,7 +560,8 @@ class MisreportingAdapter:
             content="test", format="text", confidence=None,
             model=None, warnings=[], usage={"pages": 2},
         )
-""")
+""",
+    )
     _run_and_assert_error(
         tmp_path,
         "misreport:MisreportingAdapter",
@@ -526,7 +570,10 @@ class MisreportingAdapter:
 
 
 def test_runner_rejects_usage_pages_zero(tmp_path: Path) -> None:
-    _write_adapter_module(tmp_path, "zeropg", """\
+    _write_adapter_module(
+        tmp_path,
+        "zeropg",
+        """\
 from dataclasses import dataclass
 from pathlib import Path
 from pageledger.adapters import ExtractionResult
@@ -548,7 +595,8 @@ class ZeroPageAdapter:
             content="test", format="text", confidence=None,
             model=None, warnings=[], usage={"pages": 0},
         )
-""")
+""",
+    )
     _run_and_assert_error(
         tmp_path,
         "zeropg:ZeroPageAdapter",
@@ -587,8 +635,12 @@ def test_runner_rejects_negative_usage_values(field: str) -> None:
 # Custom adapter: no-arg import string still works
 # =========================================================================
 
+
 def test_custom_adapter_no_arg_class(tmp_path: Path) -> None:
-    _write_adapter_module(tmp_path, "myocr", """\
+    _write_adapter_module(
+        tmp_path,
+        "myocr",
+        """\
 from dataclasses import dataclass
 from pathlib import Path
 from pageledger.adapters import ExtractionResult
@@ -616,12 +668,16 @@ class MyOcrAdapter:
             model="my-model", warnings=[],
             usage={"pages": 1, "tokens": None, "compute_seconds": None, "cost_usd": None},
         )
-""")
+""",
+    )
     _run_and_assert_success(tmp_path, "myocr:MyOcrAdapter", pages_total=2, pages_extracted=2)
 
 
 def test_custom_adapter_page_count_invalid_raises(tmp_path: Path) -> None:
-    _write_adapter_module(tmp_path, "badpc", """\
+    _write_adapter_module(
+        tmp_path,
+        "badpc",
+        """\
 from dataclasses import dataclass
 from pathlib import Path
 from pageledger.adapters import ExtractionResult
@@ -646,13 +702,15 @@ class BadPageCountAdapter:
             content="test", format="text", confidence=None,
             model=None, warnings=[], usage={"pages": 1},
         )
-""")
+""",
+    )
     _run_and_assert_error(tmp_path, "badpc:BadPageCountAdapter", "page_count")
 
 
 # =========================================================================
 # Built-in pdf_ocr adapter
 # =========================================================================
+
 
 def test_pdf_ocr_adapter_passes_conformance() -> None:
     issues = adapter_conformance_check(PdfOcrAdapter())
@@ -728,9 +786,7 @@ def test_pdf_ocr_extract_with_mocked_binaries(tmp_path: Path, monkeypatch) -> No
     )
 
     assert result.content == "OCR TEXT\n"
-    assert result.model == (
-        "tesseract 5.5.2; pdftoppm version 26.05.0; dpi=400; lang=eng+deu"
-    )
+    assert result.model == ("tesseract 5.5.2; pdftoppm version 26.05.0; dpi=400; lang=eng+deu")
     assert result.format == "text"
     assert result.usage["pages"] == 1
     assert result.usage["compute_seconds"] is not None
@@ -810,7 +866,10 @@ def test_pdf_ocr_real_binaries_smoke(tmp_path: Path) -> None:
     pdf.write_bytes(_MINIMAL_PDF)
     adapter = PdfOcrAdapter(dpi=100)
     result = adapter.extract(
-        pdf, page_id="doc_0001_page_0001", page_number=1, action="transcribe_text",
+        pdf,
+        page_id="doc_0001_page_0001",
+        page_number=1,
+        action="transcribe_text",
     )
     assert result.usage["pages"] == 1
     assert isinstance(result.content, str)
@@ -820,7 +879,8 @@ def test_pdf_ocr_real_binaries_smoke(tmp_path: Path) -> None:
 def test_ocr_pdf_page_count_error_names_both_installs(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setattr(adapters_module.shutil, "which", lambda name: None)
     monkeypatch.setattr(
-        adapters_module, "_pdf_page_count",
+        adapters_module,
+        "_pdf_page_count",
         lambda source: (_ for _ in ()).throw(ValueError("pypdf missing")),
     )
     with pytest.raises(ValueError, match="poppler"):
@@ -831,10 +891,12 @@ def test_ocr_pdf_page_count_error_names_both_installs(tmp_path: Path, monkeypatc
 # Example adapters compile and pass conformance
 # =========================================================================
 
+
 def test_tesseract_example_passes_conformance() -> None:
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "examples"))
     try:
         from tesseract_pdftoppm_adapter import TesseractPdftoppmAdapter
+
         issues = adapter_conformance_check(TesseractPdftoppmAdapter())
         assert issues == []
     finally:
@@ -848,6 +910,7 @@ def test_cloud_vlm_example_passes_conformance() -> None:
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "examples"))
     try:
         from cloud_vlm_adapter_skeleton import CloudVlmAdapter
+
         issues = adapter_conformance_check(CloudVlmAdapter())
         assert issues == []
     finally:
@@ -860,6 +923,7 @@ def test_cloud_vlm_example_passes_conformance() -> None:
 # =========================================================================
 # Helpers
 # =========================================================================
+
 
 def _write_adapter_module(tmp_path: Path, module_name: str, source: str) -> Path:
     """Write a custom adapter module as a .py file, return the module path."""
@@ -878,7 +942,8 @@ def _run_and_assert_success(
     source = tmp_path / "sample.txt"
     source.write_text("first page\fsecond page\n", encoding="utf-8")
     config = tmp_path / "config.yml"
-    config.write_text(textwrap.dedent(f"""\
+    config.write_text(
+        textwrap.dedent(f"""\
         schema_version: "0.1"
         taxonomy:
           page_types:
@@ -886,13 +951,28 @@ def _run_and_assert_success(
               default_action: transcribe_text
         run:
           adapter: {adapter_spec}
-        """), encoding="utf-8")
+        """),
+        encoding="utf-8",
+    )
     out_dir = tmp_path / "out"
     env = {**os.environ, "PYTHONPATH": str(tmp_path)}
     result = subprocess.run(
-        [sys.executable, "-m", "pageledger", "run", str(source),
-         "--config", str(config), "--out", str(out_dir), "--json"],
-        capture_output=True, text=True, cwd=str(tmp_path), env=env,
+        [
+            sys.executable,
+            "-m",
+            "pageledger",
+            "run",
+            str(source),
+            "--config",
+            str(config),
+            "--out",
+            str(out_dir),
+            "--json",
+        ],
+        capture_output=True,
+        text=True,
+        cwd=str(tmp_path),
+        env=env,
     )
     assert result.returncode == 0, f"Failed:\nstdout={result.stdout}\nstderr={result.stderr}"
     r = json.loads(result.stdout)
@@ -908,7 +988,8 @@ def _run_and_assert_error(
     source = tmp_path / "sample.txt"
     source.write_text("test\n", encoding="utf-8")
     config = tmp_path / "config.yml"
-    config.write_text(textwrap.dedent(f"""\
+    config.write_text(
+        textwrap.dedent(f"""\
         schema_version: "0.1"
         taxonomy:
           page_types:
@@ -916,15 +997,32 @@ def _run_and_assert_error(
               default_action: transcribe_text
         run:
           adapter: {adapter_spec}
-        """), encoding="utf-8")
+        """),
+        encoding="utf-8",
+    )
     out_dir = tmp_path / "out"
     env = {**os.environ, "PYTHONPATH": str(tmp_path)}
     result = subprocess.run(
-        [sys.executable, "-m", "pageledger", "run", str(source),
-         "--config", str(config), "--out", str(out_dir), "--json"],
-        capture_output=True, text=True, cwd=str(tmp_path), env=env,
+        [
+            sys.executable,
+            "-m",
+            "pageledger",
+            "run",
+            str(source),
+            "--config",
+            str(config),
+            "--out",
+            str(out_dir),
+            "--json",
+        ],
+        capture_output=True,
+        text=True,
+        cwd=str(tmp_path),
+        env=env,
     )
-    assert result.returncode == 1, f"Expected exit 1, got {result.returncode}\nstdout={result.stdout}\nstderr={result.stderr}"
+    assert result.returncode == 1, (
+        f"Expected exit 1, got {result.returncode}\nstdout={result.stdout}\nstderr={result.stderr}"
+    )
     error_json = json.loads(result.stdout)
     assert expected_in_error in error_json["error"], (
         f"Expected '{expected_in_error}' in error, got: {error_json['error']}"
@@ -1028,6 +1126,7 @@ def test_pdf_ocr_confidence_survives_malformed_tsv(tmp_path: Path, monkeypatch) 
 # pdf_ocr language preflight
 # ---------------------------------------------------------------------------
 
+
 def _fake_binaries_with_langs(monkeypatch, langs: list[str]):
     def fake_run(argv, **kwargs):  # noqa: ANN001, ANN003
         binary = Path(argv[0]).name
@@ -1072,6 +1171,7 @@ def test_pdf_ocr_accepts_installed_language_pack(tmp_path: Path, monkeypatch) ->
 
 def test_pdf_ocr_skips_lang_check_when_listing_fails(tmp_path: Path, monkeypatch) -> None:
     """An unparseable --list-langs must not block extraction."""
+
     def fake_run(argv, **kwargs):  # noqa: ANN001, ANN003
         binary = Path(argv[0]).name
         if "--version" in argv:
@@ -1098,11 +1198,13 @@ def test_pdf_ocr_skips_lang_check_when_listing_fails(tmp_path: Path, monkeypatch
 # examples/prereform_normalizer_adapter.py
 # ---------------------------------------------------------------------------
 
+
 def _load_prereform_example():
     examples_dir = Path(__file__).resolve().parents[2] / "examples"
     sys.path.insert(0, str(examples_dir))
     try:
         import prereform_normalizer_adapter
+
         return prereform_normalizer_adapter
     finally:
         sys.path.pop(0)
@@ -1111,14 +1213,14 @@ def _load_prereform_example():
 def test_prereform_normalization_rules() -> None:
     module = _load_prereform_example()
     cases = {
-        "съѣздъ": "съезд",      # keep morphological ъ, drop final, ѣ→е
-        "городъ.": "город.",    # final ъ before punctuation
-        "подъёмъ": "подъём",    # medial ъ before vowel kept
+        "съѣздъ": "съезд",  # keep morphological ъ, drop final, ѣ→е
+        "городъ.": "город.",  # final ъ before punctuation
+        "подъёмъ": "подъём",  # medial ъ before vowel kept
         "объектъ": "объект",
         "уѣздъ": "уезд",
         "ѳита и ѵжица": "фита и ижица",
         "Бѣлгородъ": "Белгород",
-        "мир": "мир",           # modern text untouched
+        "мир": "мир",  # modern text untouched
     }
     for original, expected in cases.items():
         normalized, _ = module.normalize_orthography(original)
@@ -1149,6 +1251,7 @@ def test_tesseract_tsv_table_example_passes_conformance() -> None:
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "examples"))
     try:
         from tesseract_tsv_table_adapter import TesseractTsvTableAdapter
+
         issues = adapter_conformance_check(TesseractTsvTableAdapter())
         assert issues == []
     finally:

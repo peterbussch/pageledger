@@ -64,19 +64,25 @@ def build_parser() -> argparse.ArgumentParser:
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     process_parser = subparsers.add_parser(
-        "process", help="Process one document through local text, OCR and bounded image stages")
+        "process", help="Process one document through local text, OCR and bounded image stages"
+    )
     process_parser.add_argument("source", type=Path)
     process_parser.add_argument("--config", type=Path, required=True)
     process_parser.add_argument("--out", type=Path, required=True)
     process_parser.add_argument("--pages", default=None)
     process_parser.add_argument("--adapter-path", type=Path, default=None)
-    process_parser.add_argument("--review", type=Path, default=None,
-                                help="Source-bound review receipts, including known blank or damaged pages")
+    process_parser.add_argument(
+        "--review",
+        type=Path,
+        default=None,
+        help="Source-bound review receipts, including known blank or damaged pages",
+    )
     process_parser.add_argument("--json", action="store_true", dest="json_output")
     for command, help_text in (
-            ("inspect-job", "Show a document report"),
-            ("verify-job", "Verify document source, attempts, selection and report"),
-            ("review-job", "Apply source/output-bound human review without extraction")):
+        ("inspect-job", "Show a document report"),
+        ("verify-job", "Verify document source, attempts, selection and report"),
+        ("review-job", "Apply source/output-bound human review without extraction"),
+    ):
         job_parser = subparsers.add_parser(command, help=help_text)
         job_parser.add_argument("job_dir", type=Path)
         job_parser.add_argument("--json", action="store_true", dest="json_output")
@@ -112,8 +118,11 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Execute a complete reviewed route-map.yml (requires --config)",
     )
-    run_parser.add_argument("--resumable", action="store_true",
-                            help="Retain durable responses and resume interrupted work in place")
+    run_parser.add_argument(
+        "--resumable",
+        action="store_true",
+        help="Retain durable responses and resume interrupted work in place",
+    )
     run_parser.add_argument("--dry-run", action="store_true")
     run_parser.add_argument("--json", action="store_true", dest="json_output")
     run_parser.add_argument(
@@ -325,6 +334,7 @@ def main(argv: list[str] | None = None) -> int:
 
 # -- init-config --------------------------------------------------------------
 
+
 def _cmd_init_config(args: argparse.Namespace) -> int:
     config_text = _config_template(args.adapter)
     if args.out:
@@ -336,6 +346,7 @@ def _cmd_init_config(args: argparse.Namespace) -> int:
 
 
 # -- inspect-run --------------------------------------------------------------
+
 
 def _cmd_inspect_run(args: argparse.Namespace) -> int:
     if args.csv_output:
@@ -357,10 +368,12 @@ def _print_inspect_report(report: dict, *, cost_basis: str | None = None) -> Non
     print(f"Run: {report['run_id']}")
     print(f"Status: {report['status']}")
     print(f"Execution mode: {report['execution_mode']}")
-    print(f"Pages: {report['pages_total']} total / "
-          f"{report['pages_extracted']} extracted / "
-          f"{report['pages_skipped']} skipped / "
-          f"{report['pages_routed_review']} routed to review")
+    print(
+        f"Pages: {report['pages_total']} total / "
+        f"{report['pages_extracted']} extracted / "
+        f"{report['pages_skipped']} skipped / "
+        f"{report['pages_routed_review']} routed to review"
+    )
     print(f"Quality warnings: {report['quality_warning_pages']}")
     print(f"Failed pages: {report['failed_page_count']}")
     if report["pages_not_attempted"]:
@@ -389,6 +402,7 @@ def _print_inspect_report(report: dict, *, cost_basis: str | None = None) -> Non
 
 # -- align ---------------------------------------------------------------------
 
+
 def _cmd_align(args: argparse.Namespace) -> int:
     report = align_run(args.run_dir, schema_path=args.schema, dry_run=args.dry_run)
     if args.json_output:
@@ -410,6 +424,7 @@ def _cmd_align(args: argparse.Namespace) -> int:
 
 # -- verify-run ---------------------------------------------------------------
 
+
 def _cmd_verify_run(args: argparse.Namespace) -> int:
     report = verify_run(args.run_dir)
     if args.json_output:
@@ -421,6 +436,7 @@ def _cmd_verify_run(args: argparse.Namespace) -> int:
 
 # -- bundle ------------------------------------------------------------------
 
+
 def _cmd_bundle(args: argparse.Namespace) -> int:
     result = bundle_run(args.run_dir, args.out)
     if args.json_output:
@@ -431,6 +447,7 @@ def _cmd_bundle(args: argparse.Namespace) -> int:
 
 
 # -- replay ------------------------------------------------------------------
+
 
 def _cmd_replay(args: argparse.Namespace) -> int:
     result = replay_bundle(args.bundle_dir, args.out, adapter_path=args.adapter_path)
@@ -449,6 +466,7 @@ def _cmd_replay(args: argparse.Namespace) -> int:
 
 # -- compare-runs --------------------------------------------------------------
 
+
 def _cmd_compare_runs(args: argparse.Namespace) -> int:
     report = compare_runs(args.run_a, args.run_b)
     if args.json_output:
@@ -459,6 +477,7 @@ def _cmd_compare_runs(args: argparse.Namespace) -> int:
 
 
 # -- run ---------------------------------------------------------------------
+
 
 def _read_cost_report(out_dir: Path) -> dict | None:
     try:
@@ -508,11 +527,10 @@ def _print_human_cost(
         label = "Adapter-reported cost USD"
     elif cost_basis == "mixed":
         label = "Cost evidence USD"
-        qualifications.append(
-            "mixed adapter-reported and configured-rate evidence"
-        )
+        qualifications.append("mixed adapter-reported and configured-rate evidence")
     suffix = f" ({'; '.join(qualifications)})" if qualifications else ""
     print(f"{label}: {amount}{suffix}")
+
 
 def _cmd_run(args: argparse.Namespace) -> int:
     if args.routes is not None and args.config is None:
@@ -551,10 +569,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
     else:
         print(f"PageLedger run {result['run_id']} wrote {result['out_dir']}")
         summary = result["summary"]
-        print(
-            "Pages: "
-            f"{summary['pages_extracted']} extracted / {summary['pages_total']} total"
-        )
+        print(f"Pages: {summary['pages_extracted']} extracted / {summary['pages_total']} total")
         print(f"Raw artifacts: {result['raw_artifact_count']}")
         print(f"Quality warning pages: {result['quality_warning_pages']}")
         _print_run_cost(args.out, dry_run=result["dry_run"])
@@ -570,13 +585,12 @@ def _cmd_run(args: argparse.Namespace) -> int:
             for w in config_warnings:
                 print(f"  - {w}")
     summary = result["summary"]
-    execution_failed = bool(
-        summary.get("pages_failed") or summary.get("pages_not_attempted")
-    )
+    execution_failed = bool(summary.get("pages_failed") or summary.get("pages_not_attempted"))
     return 1 if result["status"] == "partial" and execution_failed else 0
 
 
 # -- classify -----------------------------------------------------------------
+
 
 def _cmd_classify(args: argparse.Namespace) -> int:
     result = classify(
@@ -601,6 +615,7 @@ def _cmd_classify(args: argparse.Namespace) -> int:
 def _cmd_resume(args: argparse.Namespace) -> int:
     if (args.run_dir / "job.json").exists():
         from .processing import resume_job
+
         result = resume_job(args.run_dir, adapter_path=args.adapter_path)
     else:
         result = resume(args.run_dir, adapter_path=args.adapter_path)
@@ -609,14 +624,21 @@ def _cmd_resume(args: argparse.Namespace) -> int:
     else:
         print(f"PageLedger {result.get('job_id', result.get('run_id'))} wrote {result['out_dir']}")
         print(f"Status: {result['status']}")
-    return 1 if result['status'] in {'failed', 'halted'} else 0
+    return 1 if result["status"] in {"failed", "halted"} else 0
 
 
 def _cmd_job(args: argparse.Namespace) -> int:
     from .processing import process, review_job, verify_job
+
     if args.command == "process":
-        result = process(source=args.source, config_path=args.config, out_dir=args.out,
-                         pages=args.pages, adapter_path=args.adapter_path, review_path=args.review)
+        result = process(
+            source=args.source,
+            config_path=args.config,
+            out_dir=args.out,
+            pages=args.pages,
+            adapter_path=args.adapter_path,
+            review_path=args.review,
+        )
     elif args.command == "review-job":
         result = review_job(args.job_dir, args.review)
     elif args.command == "verify-job":
@@ -641,6 +663,7 @@ def _cmd_job(args: argparse.Namespace) -> int:
 
 # -- rerun ---------------------------------------------------------------------
 
+
 def _cmd_rerun(args: argparse.Namespace) -> int:
     cost_existed = (args.out / "cost.json").exists()
     try:
@@ -662,10 +685,7 @@ def _cmd_rerun(args: argparse.Namespace) -> int:
         print(f"PageLedger rerun {result['run_id']} wrote {result['out_dir']}")
         print(f"Parent run: {result['parent_run_id']} (generation {result['rerun_depth']})")
         summary = result["summary"]
-        print(
-            "Pages: "
-            f"{summary['pages_extracted']} extracted / {summary['pages_total']} total"
-        )
+        print(f"Pages: {summary['pages_extracted']} extracted / {summary['pages_total']} total")
         print(f"Quality warning pages: {result['quality_warning_pages']}")
         _print_run_cost(args.out, dry_run=result["dry_run"])
         escalation = result.get("escalation")
@@ -700,6 +720,7 @@ def _print_persisted_budget_alerts(out_dir: Path) -> None:
 
 
 # -- doctor -------------------------------------------------------------------
+
 
 def _cmd_doctor(args: argparse.Namespace) -> int:
     report = build_doctor_report()

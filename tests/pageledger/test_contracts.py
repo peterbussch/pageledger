@@ -21,9 +21,7 @@ def test_schema_version_defaults_to_0_1_when_omitted(tmp_path: Path) -> None:
 
 
 @pytest.mark.parametrize("version", ["0.2", "1", "latest"])
-def test_explicit_unsupported_schema_version_is_rejected(
-    tmp_path: Path, version: str
-) -> None:
+def test_explicit_unsupported_schema_version_is_rejected(tmp_path: Path, version: str) -> None:
     with pytest.raises(ValueError, match="Unsupported schema_version"):
         _load(tmp_path, f"schema_version: '{version}'\n")
 
@@ -40,9 +38,7 @@ def test_explicit_unsupported_schema_version_is_rejected(
         ("schema: []\n", "schema"),
     ],
 )
-def test_owned_config_sections_must_be_mappings(
-    tmp_path: Path, yaml_text: str, path: str
-) -> None:
+def test_owned_config_sections_must_be_mappings(tmp_path: Path, yaml_text: str, path: str) -> None:
     with pytest.raises(ValueError, match=rf"{path} must be a mapping"):
         _load(tmp_path, yaml_text)
 
@@ -60,9 +56,7 @@ run:
 """,
     )
 
-    assert config.adapter_options == {
-        "provider_private": {"any_shape": ["is", "allowed"]}
-    }
+    assert config.adapter_options == {"provider_private": {"any_shape": ["is", "allowed"]}}
     assert any("Unknown run key 'future_switch'" in item for item in config.warnings)
     assert any("Unknown run key 'future_policy'" in item for item in config.warnings)
     assert not any("provider_private" in item for item in config.warnings)
@@ -140,9 +134,7 @@ def test_bool_fractional_integer_and_nonfinite_numbers_are_rejected(
         "run: {pricing: {cost_per_page: 'NaN'}}\n",
     ],
 )
-def test_noncanonical_numeric_strings_are_rejected(
-    tmp_path: Path, yaml_text: str
-) -> None:
+def test_noncanonical_numeric_strings_are_rejected(tmp_path: Path, yaml_text: str) -> None:
     with pytest.raises(ValueError, match="must be"):
         _load(tmp_path, yaml_text)
 

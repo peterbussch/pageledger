@@ -123,9 +123,7 @@ def structural_signals(
         candidate = confidence_detail.get("below_60_ratio")
         if isinstance(candidate, (int, float)) and not isinstance(candidate, bool):
             if not math.isfinite(candidate) or not 0 <= candidate <= 1:
-                raise ValueError(
-                    "confidence_detail.below_60_ratio must be between 0 and 1"
-                )
+                raise ValueError("confidence_detail.below_60_ratio must be between 0 and 1")
             below_60_ratio = float(candidate)
     return {
         "result_format": result_format,
@@ -172,18 +170,14 @@ def classify_signals(
             result = ClassificationResult("blank", 0.95, "blank_text")
     elif signals.get("result_format") in STRUCTURED_RESULT_FORMATS:
         result_format = signals["result_format"]
-        result = ClassificationResult(
-            "table_likely", 0.85, f"structured_payload:{result_format}"
-        )
+        result = ClassificationResult("table_likely", 0.85, f"structured_payload:{result_format}")
     elif (
         signals["mean_token_length"] is not None
         and signals["mean_token_length"] >= thresholds["joined_mean_token_length"]
         and signals["max_token_length"] >= thresholds["joined_max_token_length"]
         and signals["alpha_token_count"] >= thresholds["joined_min_alpha_tokens"]
-        and signals["whitespace_character_ratio"]
-        <= thresholds["joined_max_whitespace_ratio"]
-        and signals["latin_letter_ratio"]
-        >= thresholds["joined_min_latin_letter_ratio"]
+        and signals["whitespace_character_ratio"] <= thresholds["joined_max_whitespace_ratio"]
+        and signals["latin_letter_ratio"] >= thresholds["joined_min_latin_letter_ratio"]
     ):
         result = ClassificationResult("unknown", None, "joined_text")
     elif (
@@ -369,8 +363,10 @@ def _classify_inputs(
     evidence: list[dict[str, Any]] = []
     identities: set[str] = set()
     for document_index, source in enumerate(inputs, start=1):
-        adapter_spec = probe_adapter or config.classify_adapter or (
-            "pdf_text" if source.suffix.lower() == ".pdf" else "text"
+        adapter_spec = (
+            probe_adapter
+            or config.classify_adapter
+            or ("pdf_text" if source.suffix.lower() == ".pdf" else "text")
         )
         options = {} if probe_adapter is not None else config.classify_adapter_options
         adapter = load_adapter(adapter_spec, options)
@@ -396,9 +392,7 @@ def _classify_inputs(
                 )
                 _validate_extraction_result(adapter.name, result)
             except Exception as exc:
-                signals = structural_signals(
-                    "", result_format=None, confidence_detail=None
-                )
+                signals = structural_signals("", result_format=None, confidence_detail=None)
                 decision = ClassificationResult(
                     "unknown", None, f"probe_failed:{type(exc).__name__}"
                 )
@@ -540,9 +534,7 @@ def _classify_from_run(
                         )
                     raw_path = candidate_raw
             if provenance is None or raw_path is None or not raw_path.is_file():
-                signals = structural_signals(
-                    "", result_format=None, confidence_detail=None
-                )
+                signals = structural_signals("", result_format=None, confidence_detail=None)
                 decision = ClassificationResult("unknown", None, "no_parent_evidence")
                 adapter_name = None
                 adapter_version = None
@@ -595,14 +587,10 @@ def _classify_from_run(
                     source=source,
                     signals=signals,
                     adapter=adapter_name if isinstance(adapter_name, str) else None,
-                    adapter_version=(
-                        adapter_version if isinstance(adapter_version, str) else None
-                    ),
+                    adapter_version=(adapter_version if isinstance(adapter_version, str) else None),
                     model=model if isinstance(model, str) else None,
                     decision=routed,
-                    result_format=(
-                        result_format if isinstance(result_format, str) else None
-                    ),
+                    result_format=(result_format if isinstance(result_format, str) else None),
                 )
             )
         documents.append(
@@ -648,8 +636,7 @@ def _apply_hook(
 def _validate_hook_result(hook: Any, result: Any, page_id: str) -> ClassificationResult:
     if not isinstance(result, ClassificationResult):
         raise ValueError(
-            f"Classifier hook returned invalid output for {page_id}: "
-            "expected ClassificationResult"
+            f"Classifier hook returned invalid output for {page_id}: expected ClassificationResult"
         )
     if result.type not in set(hook.page_types):
         raise ValueError(
@@ -670,9 +657,7 @@ def _validate_hook_result(hook: Any, result: Any, page_id: str) -> Classificatio
     for field_name in ("action", "prompt"):
         value = getattr(result, field_name)
         if value is not None and not isinstance(value, str):
-            raise ValueError(
-                f"Classifier hook {field_name} for {page_id} must be a string or null"
-            )
+            raise ValueError(f"Classifier hook {field_name} for {page_id} must be a string or null")
     if result.action == "":
         raise ValueError(f"Classifier hook action for {page_id} must be non-empty or null")
     return result
@@ -681,7 +666,7 @@ def _validate_hook_result(hook: Any, result: Any, page_id: str) -> Classificatio
 def _route_decision(
     config: PageLedgerConfig, decision: ClassificationResult
 ) -> ClassificationResult:
-    page_types = ((config.data.get("taxonomy") or {}).get("page_types") or {})
+    page_types = (config.data.get("taxonomy") or {}).get("page_types") or {}
     page_config = page_types.get(decision.type)
     action = decision.action
     prompt = decision.prompt
@@ -706,9 +691,7 @@ def _route_decision(
     )
 
 
-def _page_route(
-    page_id: str, page_number: int, decision: ClassificationResult
-) -> dict[str, Any]:
+def _page_route(page_id: str, page_number: int, decision: ClassificationResult) -> dict[str, Any]:
     page = {
         "page_id": page_id,
         "page_number": page_number,
@@ -790,8 +773,7 @@ def _validate_taxonomy_gate(config: PageLedgerConfig, emittable_types: set[str])
     missing = sorted(emittable_types - set(page_types))
     if missing:
         raise ValueError(
-            "taxonomy.page_types is missing classifier-emittable types: "
-            + ", ".join(missing)
+            "taxonomy.page_types is missing classifier-emittable types: " + ", ".join(missing)
         )
 
 

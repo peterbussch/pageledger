@@ -198,7 +198,9 @@ def load_approved_freeze(path: Path) -> ApprovedFreeze:
     try:
         payload = json.loads(receipt_path.read_text(encoding="utf-8"))
     except (OSError, UnicodeError, json.JSONDecodeError) as exc:
-        raise BenchmarkError("freeze_receipt_invalid", "Approved freeze receipt is unreadable") from exc
+        raise BenchmarkError(
+            "freeze_receipt_invalid", "Approved freeze receipt is unreadable"
+        ) from exc
     required = {
         "harness_sha",
         "benchmark_manifest_sha256",
@@ -272,9 +274,7 @@ def _validate_approved_freeze(
             f"Refusing tracked-dirty benchmark execution: {dirty.splitlines()[0]}",
         )
     if set(approval.protected_paths_sha256) != REQUIRED_FREEZE_PATHS:
-        raise BenchmarkError(
-            "approved_freeze_mismatch", "Approved protected path set is not exact"
-        )
+        raise BenchmarkError("approved_freeze_mismatch", "Approved protected path set is not exact")
     current_manifest_sha = sha256_path(_MANIFEST_PATH)
     if current_manifest_sha != approval.benchmark_manifest_sha256:
         raise BenchmarkError(
@@ -300,9 +300,7 @@ def _validate_approved_freeze(
                 "approved_harness_drift",
                 f"Current protected harness bytes differ from approval: {relative}",
             )
-        approved = hashlib.sha256(
-            _git_blob_bytes_at(approval.harness_sha, relative)
-        ).hexdigest()
+        approved = hashlib.sha256(_git_blob_bytes_at(approval.harness_sha, relative)).hexdigest()
         if approved != expected:
             raise BenchmarkError(
                 "approved_harness_drift",
@@ -467,14 +465,10 @@ def measure_run(
                 dry_run=False,
                 _loaded_adapter=trace_adapter,
                 _reproducibility_profile=None,
-                _phase_observer=lambda name, duration: trace_events.append(
-                    (name, duration)
-                ),
+                _phase_observer=lambda name, duration: trace_events.append((name, duration)),
             )
         _require_manifest_last(mutation_trace.events)
-        trace_phase_sequence = _require_phase_sequence(
-            trace_events, len(workload.page_specs)
-        )
+        trace_phase_sequence = _require_phase_sequence(trace_events, len(workload.page_specs))
         final_boundary = boundary_validator(approved_freeze)
         _require_clean_boundary(final_boundary)
         _require_same_candidate_boundary(
@@ -717,9 +711,7 @@ def _require_timing_contract(
         )
 
 
-def _require_phase_sequence(
-    events: list[tuple[str, int]], pages: int
-) -> dict[str, Any]:
+def _require_phase_sequence(events: list[tuple[str, int]], pages: int) -> dict[str, Any]:
     """Validate observer control flow without treating replay spans as performance data."""
     names = [name for name, _duration in events]
     expected = _expected_phase_names(pages)
@@ -782,7 +774,9 @@ def _refuse_output_path(path: Path) -> None:
     current = path
     while True:
         if current.is_symlink():
-            raise BenchmarkError("output_symlink", f"Benchmark output path contains symlink: {current}")
+            raise BenchmarkError(
+                "output_symlink", f"Benchmark output path contains symlink: {current}"
+            )
         if current.parent == current:
             break
         current = current.parent
@@ -988,9 +982,7 @@ class _CompletedMutationTrace:
 
         def tracked_copyfile(source: Any, destination: Any, *args: Any, **kwargs: Any) -> Any:
             target = Path(destination).absolute()
-            with trace._authorize(
-                target, {"shutil.copyfile", "open"}
-            ) as authorization:
+            with trace._authorize(target, {"shutil.copyfile", "open"}) as authorization:
                 result = trace._original_copyfile(source, destination, *args, **kwargs)
             if trace._inside(target):
                 trace._require_observed(authorization, {"shutil.copyfile", "open"})
@@ -1069,8 +1061,7 @@ class _CompletedMutationTrace:
         elif event in _TRACE_MUTATION_PATH_SPECS:
             mutation = self._audit_known_mutation(event, args)
         elif (
-            event in _TRACE_READ_ONLY_FILESYSTEM_EVENTS
-            or event in _TRACE_NON_FILESYSTEM_OS_EVENTS
+            event in _TRACE_READ_ONLY_FILESYSTEM_EVENTS or event in _TRACE_NON_FILESYSTEM_OS_EVENTS
         ):
             return
         else:
@@ -1142,9 +1133,7 @@ class _CompletedMutationTrace:
                 continue
             if not isinstance(value, (str, bytes, os.PathLike)):
                 continue
-            path, _unresolved = self._resolve_audit_path(
-                value, dir_fd=None, supports_fd=False
-            )
+            path, _unresolved = self._resolve_audit_path(value, dir_fd=None, supports_fd=False)
             if path is not None:
                 paths.append(path)
         return paths
@@ -1212,9 +1201,7 @@ class _CompletedMutationTrace:
             return str(path.absolute())
 
     @staticmethod
-    def _require_observed(
-        authorization: dict[str, Any], expected: set[str]
-    ) -> None:
+    def _require_observed(authorization: dict[str, Any], expected: set[str]) -> None:
         missing = expected - authorization["observed"]
         if missing:
             raise BenchmarkError(
@@ -1265,8 +1252,7 @@ class _CompletedMutationTrace:
         if not hasattr(os, "O_DIRECTORY") or not hasattr(os, "O_NOFOLLOW"):
             raise BenchmarkError(
                 "trace_artifact_tree_scan_failed",
-                "Trace cannot scan accepted artifact trees without no-follow "
-                "directory descriptors",
+                "Trace cannot scan accepted artifact trees without no-follow directory descriptors",
             )
         directory_flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
         if hasattr(os, "O_CLOEXEC"):
@@ -1315,14 +1301,11 @@ class _CompletedMutationTrace:
         except (OSError, OverflowError, TypeError, ValueError) as exc:
             raise BenchmarkError(
                 "trace_artifact_tree_scan_failed",
-                "Trace could not scan accepted artifact tree: "
-                f"{self._relative(root)}",
+                f"Trace could not scan accepted artifact tree: {self._relative(root)}",
             ) from exc
         return tuple(snapshot)
 
-    def _refresh_completed_artifact_identity(
-        self, operation: str, path: Path
-    ) -> None:
+    def _refresh_completed_artifact_identity(self, operation: str, path: Path) -> None:
         absolute = path.absolute()
         if not self._inside(absolute):
             return
@@ -1343,9 +1326,7 @@ class _CompletedMutationTrace:
                 f"mutation: {self._relative(absolute)}",
             ) from exc
         if stat.S_ISREG(metadata.st_mode):
-            self._retain_file_identity(
-                (metadata.st_dev, metadata.st_ino), absolute
-            )
+            self._retain_file_identity((metadata.st_dev, metadata.st_ino), absolute)
             return
         if not stat.S_ISDIR(metadata.st_mode):
             raise BenchmarkError(
@@ -1411,9 +1392,7 @@ class _CompletedMutationTrace:
                                 "trace_descriptor_scan_failed",
                                 "Trace descriptor enumeration changed during its live snapshot",
                             ) from exc
-                        path = self._tracked_identities.get(
-                            (metadata.st_dev, metadata.st_ino)
-                        )
+                        path = self._tracked_identities.get((metadata.st_dev, metadata.st_ino))
                         if path is not None:
                             aliases.append((descriptor, path))
                 if sentinel_descriptor not in observed:
@@ -1475,7 +1454,9 @@ def _benchmark_lock(path: Path) -> Iterator[dict[str, Any]]:
     try:
         descriptor = os.open(lock_path, flags, 0o600)
     except OSError as exc:
-        raise BenchmarkError("benchmark_lock_failed", f"Cannot open benchmark lock: {lock_path}") from exc
+        raise BenchmarkError(
+            "benchmark_lock_failed", f"Cannot open benchmark lock: {lock_path}"
+        ) from exc
     try:
         try:
             fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -1555,16 +1536,12 @@ def _git_commit_exists(sha: str) -> bool:
 
 
 def _git_is_ancestor(ancestor: str, head: str) -> bool:
-    completed = _git_command(
-        ["git", "merge-base", "--is-ancestor", ancestor, head], text=False
-    )
+    completed = _git_command(["git", "merge-base", "--is-ancestor", ancestor, head], text=False)
     if completed.returncode == 0:
         return True
     if completed.returncode == 1:
         return False
-    raise BenchmarkError(
-        "git_unavailable", "git merge-base --is-ancestor failed"
-    )
+    raise BenchmarkError("git_unavailable", "git merge-base --is-ancestor failed")
 
 
 def _git_blob_bytes_at(sha: str, relative: str) -> bytes:
@@ -1758,9 +1735,7 @@ def _background_load() -> dict[str, Any]:
         load_average: list[float] | None = list(os.getloadavg())
     except OSError:
         load_average = None
-    process = _optional_command(
-        ["ps", "-axo", "pid=,ppid=,state=,%cpu=,%mem=,comm="]
-    )
+    process = _optional_command(["ps", "-axo", "pid=,ppid=,state=,%cpu=,%mem=,comm="])
     if not process["available"]:
         return {
             "load_average": load_average,
@@ -1898,9 +1873,7 @@ def _validation_evidence(validation: ValidationReceipt) -> dict[str, Any]:
         "errors": [_oracle_error(error) for error in validation.errors],
         "verifier_report": validation.verifier_report,
         "canonical_sha256": (
-            canonical_sha256(validation.canonical)
-            if validation.canonical is not None
-            else None
+            canonical_sha256(validation.canonical) if validation.canonical is not None else None
         ),
     }
 

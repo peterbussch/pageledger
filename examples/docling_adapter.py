@@ -90,8 +90,7 @@ class DoclingAdapter:
             raise ValueError("run.adapter_options.pipeline must be 'standard' or 'vlm'")
         if self.pipeline == "vlm" and self.vlm_model not in _LOCAL_VLM_PRESETS:
             raise ValueError(
-                "run.adapter_options.vlm_model must be the dogfooded local VLM "
-                "preset: smoldocling"
+                "run.adapter_options.vlm_model must be the dogfooded local VLM preset: smoldocling"
             )
         if (
             not isinstance(self.timeout_seconds, int)
@@ -106,9 +105,7 @@ class DoclingAdapter:
             or isinstance(self.num_threads, bool)
             or not 1 <= self.num_threads <= 64
         ):
-            raise ValueError(
-                "run.adapter_options.num_threads must be an integer between 1 and 64"
-            )
+            raise ValueError("run.adapter_options.num_threads must be an integer between 1 and 64")
         if not isinstance(self.executable, str) or not self.executable.strip():
             raise ValueError("run.adapter_options.executable must be a non-empty string")
         self.capabilities = (
@@ -181,14 +178,11 @@ class DoclingAdapter:
             },
         )
 
-    def _convert_document(
-        self, source: Path, *, page_number: int | None
-    ) -> _DocumentBatch:
+    def _convert_document(self, source: Path, *, page_number: int | None) -> _DocumentBatch:
         executable = shutil.which(self.executable)
         if executable is None:
             raise RuntimeError(
-                "Docling is not on PATH; install the machine tool with "
-                "'uv tool install docling'"
+                "Docling is not on PATH; install the machine tool with 'uv tool install docling'"
             )
         docling_version = self._docling_version(executable)
         started = time.perf_counter()
@@ -257,8 +251,7 @@ class DoclingAdapter:
                 outputs = sorted(output_dir.glob("*.md"))
                 if len(outputs) != 1:
                     raise RuntimeError(
-                        "Docling must emit exactly one Markdown page; "
-                        f"found {len(outputs)}"
+                        f"Docling must emit exactly one Markdown page; found {len(outputs)}"
                     )
                 try:
                     content = outputs[0].read_text(encoding="utf-8")
@@ -272,8 +265,7 @@ class DoclingAdapter:
                 outputs = sorted(output_dir.glob("*.json"))
                 if len(outputs) != 1:
                     raise RuntimeError(
-                        "Docling must emit exactly one JSON document; "
-                        f"found {len(outputs)}"
+                        f"Docling must emit exactly one JSON document; found {len(outputs)}"
                     )
                 try:
                     document = json.loads(outputs[0].read_text(encoding="utf-8"))
@@ -332,12 +324,8 @@ def _render_document_pages(document: Any) -> tuple[dict[int, str], dict[int, lis
         blocks: list[str] = []
         warnings: list[str] = []
         for child in body["children"]:
-            blocks.extend(
-                _render_reference(document, child, page_number, emitted, warnings)
-            )
-        rendered[page_number] = "\n\n".join(
-            block.strip() for block in blocks if block.strip()
-        )
+            blocks.extend(_render_reference(document, child, page_number, emitted, warnings))
+        rendered[page_number] = "\n\n".join(block.strip() for block in blocks if block.strip())
         warnings_by_page[page_number] = list(dict.fromkeys(warnings))
     return rendered, warnings_by_page
 
@@ -360,18 +348,14 @@ def _render_reference(
 
     if ref.startswith("#/tables/") and _belongs_to_page(item, page_number):
         for caption in item.get("captions", []):
-            blocks.extend(
-                _render_reference(document, caption, page_number, emitted, warnings)
-            )
+            blocks.extend(_render_reference(document, caption, page_number, emitted, warnings))
         table = _render_table(item)
         if table == "*[Table without cells]*":
             warnings.append("docling_table_without_cells")
         blocks.append(table)
     elif ref.startswith("#/pictures/") and _belongs_to_page(item, page_number):
         for caption in item.get("captions", []):
-            blocks.extend(
-                _render_reference(document, caption, page_number, emitted, warnings)
-            )
+            blocks.extend(_render_reference(document, caption, page_number, emitted, warnings))
         warnings.append("docling_picture_not_transcribed")
         blocks.append("*[Picture not transcribed]*")
     elif isinstance(item.get("text"), str) and _belongs_to_page(item, page_number):
@@ -380,9 +364,7 @@ def _render_reference(
     children = item.get("children", [])
     if isinstance(children, list):
         for child in children:
-            blocks.extend(
-                _render_reference(document, child, page_number, emitted, warnings)
-            )
+            blocks.extend(_render_reference(document, child, page_number, emitted, warnings))
     return blocks
 
 
@@ -404,8 +386,7 @@ def _resolve_reference(document: dict[str, Any], ref: str) -> dict[str, Any]:
 def _belongs_to_page(item: dict[str, Any], page_number: int) -> bool:
     provenance = item.get("prov")
     return isinstance(provenance, list) and any(
-        isinstance(entry, dict) and entry.get("page_no") == page_number
-        for entry in provenance
+        isinstance(entry, dict) and entry.get("page_no") == page_number for entry in provenance
     )
 
 

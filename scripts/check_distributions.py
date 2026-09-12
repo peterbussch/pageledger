@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Check the wheel schemas and source-distribution documentation before release."""
+
 from __future__ import annotations
 
 import argparse
@@ -29,16 +30,17 @@ REQUIRED_SDIST_FILES = (
 
 
 def check_distributions(root: Path, dist: Path) -> None:
-    wheel, = dist.glob("pageledger-*.whl")
-    sdist, = dist.glob("pageledger-*.tar.gz")
+    (wheel,) = dist.glob("pageledger-*.whl")
+    (sdist,) = dist.glob("pageledger-*.tar.gz")
     schemas = sorted(path.name for path in (root / "schemas").glob("*.schema.json"))
     if not schemas:
         raise ValueError("No source schemas found")
     with ZipFile(wheel) as archive:
         wheel_names = archive.namelist()
     for schema in schemas:
-        if not any(name.endswith(".data/data/share/pageledger/schemas/" + schema)
-                   for name in wheel_names):
+        if not any(
+            name.endswith(".data/data/share/pageledger/schemas/" + schema) for name in wheel_names
+        ):
             raise ValueError(f"Wheel is missing schema: {schema}")
 
     with open_tar(sdist, "r:gz") as archive:
@@ -48,10 +50,18 @@ def check_distributions(root: Path, dist: Path) -> None:
         if prefix + path not in sdist_names:
             raise ValueError(f"Source distribution is missing: {path}")
     for name in sdist_names:
-        if any(part in name for part in (
-            "/docs/superpowers/", "/docs/proposals/", "/docs/reports/",
-            "/.planning/", "/.superpowers/", "/runs/", "/.venv/",
-        )):
+        if any(
+            part in name
+            for part in (
+                "/docs/superpowers/",
+                "/docs/proposals/",
+                "/docs/reports/",
+                "/.planning/",
+                "/.superpowers/",
+                "/runs/",
+                "/.venv/",
+            )
+        ):
             raise ValueError(f"Source distribution contains local-only material: {name}")
     print("wheel schema and sdist documentation inventories verified")
 

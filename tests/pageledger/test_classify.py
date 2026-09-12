@@ -42,9 +42,7 @@ def test_classify_round_trip_executes_and_verifies(tmp_path: Path) -> None:
     config = _write_config(tmp_path)
     route_path = tmp_path / "rm.yml"
 
-    result = classify(
-        inputs=[source], config_path=config, out_path=route_path
-    )
+    result = classify(inputs=[source], config_path=config, out_path=route_path)
     route_map = yaml.safe_load(route_path.read_text(encoding="utf-8"))
 
     assert result["pages"] == 3
@@ -246,9 +244,7 @@ def test_from_run_rejects_dry_rerun_and_partial_parents(tmp_path: Path) -> None:
     dry_parent = tmp_path / "dry"
     run(inputs=[source], config_path=config, out_dir=dry_parent, dry_run=True)
     with pytest.raises(ValueError, match="dry-run parent"):
-        classify(
-            inputs=[], config_path=config, out_path=tmp_path / "dry.yml", from_run=dry_parent
-        )
+        classify(inputs=[], config_path=config, out_path=tmp_path / "dry.yml", from_run=dry_parent)
 
     partial_parent = tmp_path / "partial"
     run(
@@ -291,9 +287,7 @@ def test_from_run_missing_raw_is_unknown_and_changed_source_warns(tmp_path: Path
     source.write_text("changed bytes", encoding="utf-8")
 
     route_path = tmp_path / "from-run.yml"
-    result = classify(
-        inputs=[], config_path=config, out_path=route_path, from_run=parent
-    )
+    result = classify(inputs=[], config_path=config, out_path=route_path, from_run=parent)
     page = yaml.safe_load(route_path.read_text(encoding="utf-8"))["documents"][0]["pages"][0]
     assert page["type"] == "unknown"
     assert page["reason"] == "no_parent_evidence"
@@ -301,9 +295,7 @@ def test_from_run_missing_raw_is_unknown_and_changed_source_warns(tmp_path: Path
 
 
 @pytest.mark.parametrize("mutation", ["missing_pages", "boolean_page_number"])
-def test_from_run_rejects_malformed_route_pages(
-    tmp_path: Path, mutation: str
-) -> None:
+def test_from_run_rejects_malformed_route_pages(tmp_path: Path, mutation: str) -> None:
     source = tmp_path / "fixture.txt"
     source.write_text("short page", encoding="utf-8")
     config = _write_config(tmp_path)
@@ -335,9 +327,7 @@ def test_cli_json_success_and_source_mode_error(
 
     source = tmp_path / "fixture.txt"
     source.write_text("short page", encoding="utf-8")
-    exit_code = main(
-        ["classify", str(source), "--out", str(tmp_path / "rm.yml"), "--json"]
-    )
+    exit_code = main(["classify", str(source), "--out", str(tmp_path / "rm.yml"), "--json"])
     assert exit_code == 0
     assert json.loads(capsys.readouterr().out)["pages"] == 1
 
@@ -358,17 +348,20 @@ def test_generated_config_is_ready_for_classify(
     source = tmp_path / "fixture.txt"
     source.write_text("short page", encoding="utf-8")
 
-    assert main(
-        [
-            "classify",
-            str(source),
-            "--config",
-            str(config),
-            "--out",
-            str(tmp_path / "rm.yml"),
-            "--json",
-        ]
-    ) == 0
+    assert (
+        main(
+            [
+                "classify",
+                str(source),
+                "--config",
+                str(config),
+                "--out",
+                str(tmp_path / "rm.yml"),
+                "--json",
+            ]
+        )
+        == 0
+    )
     assert json.loads(capsys.readouterr().out)["pages"] == 1
 
 

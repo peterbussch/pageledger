@@ -277,8 +277,7 @@ def test_human_cli_prints_persisted_alert_before_terminal_budget_error(
     captured = capsys.readouterr()
     assert exit_code == 1
     assert (
-        "WARNING: Budget alert at doc_0001_page_0002: "
-        "usd=0.8 reached absolute threshold 0.5"
+        "WARNING: Budget alert at doc_0001_page_0002: usd=0.8 reached absolute threshold 0.5"
     ) in captured.out
     assert "Budget exceeded after doc_0001_page_0003" in captured.err
 

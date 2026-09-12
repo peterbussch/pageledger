@@ -204,9 +204,7 @@ def _validate_materials(supplied: object) -> list[dict[str, str]]:
     if not isinstance(supplied, Mapping):
         raise ValueError("adapter reproducibility_profile must be a mapping")
     if set(supplied) != {"materials"}:
-        raise ValueError(
-            "adapter reproducibility_profile must contain exactly the 'materials' key"
-        )
+        raise ValueError("adapter reproducibility_profile must contain exactly the 'materials' key")
     materials = supplied["materials"]
     if not isinstance(materials, list):
         raise ValueError("adapter reproducibility_profile materials must be a list")
@@ -215,9 +213,7 @@ def _validate_materials(supplied: object) -> list[dict[str, str]]:
     seen: set[tuple[str, str]] = set()
     for index, material in enumerate(materials):
         if not isinstance(material, Mapping):
-            raise ValueError(
-                f"adapter reproducibility_profile material {index} must be a mapping"
-            )
+            raise ValueError(f"adapter reproducibility_profile material {index} must be a mapping")
         if set(material) != {"kind", "name", "version", "sha256"}:
             raise ValueError(
                 "adapter reproducibility_profile materials must contain exactly "
@@ -228,13 +224,9 @@ def _validate_materials(supplied: object) -> list[dict[str, str]]:
         version = material["version"]
         digest = material["sha256"]
         if not all(isinstance(value, str) for value in (kind, name, version, digest)):
-            raise ValueError(
-                "adapter reproducibility_profile material fields must be strings"
-            )
+            raise ValueError("adapter reproducibility_profile material fields must be strings")
         if kind not in _MATERIAL_KINDS:
-            raise ValueError(
-                f"adapter reproducibility_profile material kind is invalid: {kind!r}"
-            )
+            raise ValueError(f"adapter reproducibility_profile material kind is invalid: {kind!r}")
         if not name or not version:
             raise ValueError(
                 "adapter reproducibility_profile material name and version must be non-empty"
@@ -257,9 +249,7 @@ def _validate_materials(supplied: object) -> list[dict[str, str]]:
                 "adapter reproducibility_profile materials must have unique kind/name pairs"
             )
         seen.add(identity)
-        validated.append(
-            {"kind": kind, "name": name, "version": version, "sha256": digest}
-        )
+        validated.append({"kind": kind, "name": name, "version": version, "sha256": digest})
 
     try:
         json.dumps(supplied, ensure_ascii=False, allow_nan=False)
@@ -404,7 +394,9 @@ def bundle_run(run_dir: Path, out_dir: Path) -> dict[str, Any]:
         for source_record, source in zip(source_records, source_paths, strict=True):
             suffix = source.suffix.lower()
             destination = temporary / source_record["path"]
-            destination = destination.with_name(destination.name + suffix) if suffix else destination
+            destination = (
+                destination.with_name(destination.name + suffix) if suffix else destination
+            )
             source_record["path"] = destination.relative_to(temporary).as_posix()
             shutil.copyfile(source, destination)
 
@@ -432,7 +424,8 @@ def bundle_run(run_dir: Path, out_dir: Path) -> dict[str, Any]:
             "files": files,
         }
         (temporary / "bundle.json").write_text(
-            json.dumps(bundle, ensure_ascii=False, indent=2, sort_keys=True, allow_nan=False) + "\n",
+            json.dumps(bundle, ensure_ascii=False, indent=2, sort_keys=True, allow_nan=False)
+            + "\n",
             encoding="utf-8",
         )
         validate_bundle(temporary)
@@ -452,7 +445,9 @@ def validate_bundle(bundle_dir: Path) -> dict[str, Any]:
     bundle_path = root / "bundle.json"
     _require_regular(bundle_path, "bundle.json")
     bundle = _read_json_object(bundle_path, "bundle")
-    _exact_keys(bundle, {"bundle_schema_version", "baseline", "replay", "sources", "files"}, "bundle")
+    _exact_keys(
+        bundle, {"bundle_schema_version", "baseline", "replay", "sources", "files"}, "bundle"
+    )
     if bundle["bundle_schema_version"] != _BUNDLE_VERSION:
         _fail("bundle_schema_version_invalid", "Unsupported bundle schema version")
     baseline = bundle["baseline"]
@@ -467,11 +462,18 @@ def validate_bundle(bundle_dir: Path) -> dict[str, Any]:
     _exact_keys(replay, {"config", "route_map"}, "bundle replay")
     if baseline["manifest"] != "baseline/manifest.json":
         _fail("bundle_path_invalid", "Bundle baseline manifest path is not canonical")
-    if replay["config"] != "baseline/config-snapshot.yml" or replay["route_map"] != "replay-route-map.yml":
+    if (
+        replay["config"] != "baseline/config-snapshot.yml"
+        or replay["route_map"] != "replay-route-map.yml"
+    ):
         _fail("bundle_path_invalid", "Bundle replay paths are not canonical")
     if not isinstance(baseline["run_id"], str) or not baseline["run_id"]:
         _fail("bundle_structure_invalid", "Bundle baseline run_id must be a non-empty string")
-    if baseline["execution_mode"] != "execute" or type(baseline["run_depth"]) is not int or baseline["run_depth"] != 0:
+    if (
+        baseline["execution_mode"] != "execute"
+        or type(baseline["run_depth"]) is not int
+        or baseline["run_depth"] != 0
+    ):
         _fail("bundle_ineligible", "Bundle baseline is not an execute generation-zero run")
     if not _is_sha256(baseline["manifest_sha256"]):
         _fail("bundle_hash_invalid", "Bundle baseline manifest hash is invalid")
@@ -538,11 +540,7 @@ def replay_bundle(
     trusted_path = None
     if adapter_path is not None:
         trusted_path = Path(adapter_path).expanduser().resolve()
-        if (
-            trusted_path == root
-            or trusted_path in root.parents
-            or root in trusted_path.parents
-        ):
+        if trusted_path == root or trusted_path in root.parents or root in trusted_path.parents:
             raise ReplayError(
                 "adapter_path_inside_bundle",
                 "Trusted adapter path must not be equal to, inside, or above the bundle",
@@ -551,7 +549,11 @@ def replay_bundle(
     roots: list[str] = []
     for candidate in (
         Path(__file__).resolve().parent.parent,
-        *(Path(value).resolve() for key, value in sysconfig.get_paths().items() if key in {"purelib", "platlib"}),
+        *(
+            Path(value).resolve()
+            for key, value in sysconfig.get_paths().items()
+            if key in {"purelib", "platlib"}
+        ),
     ):
         resolved = str(candidate)
         if resolved not in roots:
@@ -612,11 +614,7 @@ def _replay_bundle_in_process(
         raise ReplayError("replay_output_exists", f"Replay output already exists: {requested_out}")
     if adapter_path is not None:
         trusted_path = Path(adapter_path).expanduser().resolve()
-        if (
-            trusted_path == root
-            or trusted_path in root.parents
-            or root in trusted_path.parents
-        ):
+        if trusted_path == root or trusted_path in root.parents or root in trusted_path.parents:
             raise ReplayError(
                 "adapter_path_inside_bundle",
                 "Trusted adapter path must not be equal to, inside, or above the bundle",
@@ -698,7 +696,9 @@ def _replay_bundle_in_process(
         route = _read_yaml_mapping(replay_route, "portable route map")
         documents = route.get("documents")
         if not isinstance(documents, list) or len(documents) != len(source_paths):
-            raise ReplayError("route_map_invalid", "Portable route map does not match bundle sources")
+            raise ReplayError(
+                "route_map_invalid", "Portable route map does not match bundle sources"
+            )
         for document, source in zip(documents, source_paths, strict=True):
             if not isinstance(document, dict):
                 raise ReplayError("route_map_invalid", "Portable route map document is invalid")
@@ -722,14 +722,8 @@ def _replay_bundle_in_process(
         raise ReplayError("replay_verification_failed", "Replay run did not pass verification")
     comparison = compare_runs(root / "baseline", requested_out)
     pages = comparison.get("pages", [])
-    different_page_ids = [
-        page["page_id"] for page in pages
-        if page.get("raw_equal") is False
-    ]
-    missing_page_ids = [
-        page["page_id"] for page in pages
-        if page.get("raw_equal") is None
-    ]
+    different_page_ids = [page["page_id"] for page in pages if page.get("raw_equal") is False]
+    missing_page_ids = [page["page_id"] for page in pages if page.get("raw_equal") is None]
     missing_page_ids.extend(comparison.get("pages_only_in_a", []))
     missing_page_ids.extend(comparison.get("pages_only_in_b", []))
     raw = {
@@ -812,8 +806,20 @@ def _replay_extractor_identity(identity: dict[str, Any]) -> dict[str, Any]:
     profile = identity.get("reproducibility_profile")
     return {
         key: identity[key]
-        for key in ("adapter", "version", "deterministic", "input_types", "output_types", "capabilities", "options")
-    } | {"reproducibility_profile_sha256": profile.get("profile_sha256") if isinstance(profile, dict) else None}
+        for key in (
+            "adapter",
+            "version",
+            "deterministic",
+            "input_types",
+            "output_types",
+            "capabilities",
+            "options",
+        )
+    } | {
+        "reproducibility_profile_sha256": profile.get("profile_sha256")
+        if isinstance(profile, dict)
+        else None
+    }
 
 
 def _read_worker_response(
@@ -825,6 +831,7 @@ def _read_worker_response(
     expected_out: Path,
 ) -> dict[str, Any]:
     """Validate one untrusted worker response and return its public result."""
+
     def invalid() -> ReplayError:
         return ReplayError(_WORKER_GENERIC_CODE, _WORKER_GENERIC_MESSAGE)
 
@@ -836,8 +843,10 @@ def _read_worker_response(
             raise invalid()
         if metadata.st_size > _WORKER_MAX_RESULT_BYTES:
             raise invalid()
+
         def reject_constant(value: str) -> object:
             raise ValueError(value)
+
         def reject_duplicate(pairs: list[tuple[str, object]]) -> dict[str, object]:
             result: dict[str, object] = {}
             for key, value in pairs:
@@ -845,6 +854,7 @@ def _read_worker_response(
                     raise ValueError("duplicate JSON object key")
                 result[key] = value
             return result
+
         payload = json.loads(
             path.read_text(encoding="utf-8"),
             object_pairs_hook=reject_duplicate,
@@ -856,9 +866,15 @@ def _read_worker_response(
         raise invalid() from exc
     if not isinstance(payload, dict):
         raise invalid()
-    if set(payload) not in ({"protocol_version", "request_id", "ok", "result"}, {"protocol_version", "request_id", "ok", "error"}):
+    if set(payload) not in (
+        {"protocol_version", "request_id", "ok", "result"},
+        {"protocol_version", "request_id", "ok", "error"},
+    ):
         raise invalid()
-    if payload.get("protocol_version") != _WORKER_PROTOCOL_VERSION or payload.get("request_id") != request_id:
+    if (
+        payload.get("protocol_version") != _WORKER_PROTOCOL_VERSION
+        or payload.get("request_id") != request_id
+    ):
         raise invalid()
     ok = payload.get("ok")
     if type(ok) is not bool or (ok is not (returncode == 0)):
@@ -866,12 +882,19 @@ def _read_worker_response(
     if ok:
         result = payload.get("result")
         if not isinstance(result, dict) or set(result) != {
-            "outcome", "run_id", "out_dir", "baseline_run_id",
-            "bundle_manifest_sha256", "profile_match", "raw",
+            "outcome",
+            "run_id",
+            "out_dir",
+            "baseline_run_id",
+            "bundle_manifest_sha256",
+            "profile_match",
+            "raw",
         }:
             raise invalid()
         if not isinstance(result.get("outcome"), str) or result["outcome"] not in {
-            "exact", "deterministic_mismatch", "evidence_compared"
+            "exact",
+            "deterministic_mismatch",
+            "evidence_compared",
         }:
             raise invalid()
         for key in ("run_id", "baseline_run_id"):
@@ -885,7 +908,11 @@ def _read_worker_response(
             raise invalid()
         raw = result.get("raw")
         if not isinstance(raw, dict) or set(raw) != {
-            "equal", "different", "missing", "different_page_ids", "missing_page_ids",
+            "equal",
+            "different",
+            "missing",
+            "different_page_ids",
+            "missing_page_ids",
         }:
             raise invalid()
         for key in ("equal", "different", "missing"):
@@ -894,7 +921,9 @@ def _read_worker_response(
                 raise invalid()
         for key in ("different_page_ids", "missing_page_ids"):
             values = raw.get(key)
-            if not isinstance(values, list) or any(not isinstance(value, str) or not value for value in values):
+            if not isinstance(values, list) or any(
+                not isinstance(value, str) or not value for value in values
+            ):
                 raise invalid()
             if values != sorted(set(values)):
                 raise invalid()
@@ -904,11 +933,16 @@ def _read_worker_response(
         profile_match = result["profile_match"]
         if outcome == "exact" and (profile_match is not True or raw["different"] or raw["missing"]):
             raise invalid()
-        if outcome == "deterministic_mismatch" and (profile_match is not True or not (raw["different"] or raw["missing"])):
+        if outcome == "deterministic_mismatch" and (
+            profile_match is not True or not (raw["different"] or raw["missing"])
+        ):
             raise invalid()
         if outcome == "evidence_compared" and profile_match is not None:
             raise invalid()
-        if len(raw["different_page_ids"]) != raw["different"] or len(raw["missing_page_ids"]) != raw["missing"]:
+        if (
+            len(raw["different_page_ids"]) != raw["different"]
+            or len(raw["missing_page_ids"]) != raw["missing"]
+        ):
             raise invalid()
         return result
     error = payload.get("error")
@@ -997,7 +1031,16 @@ def _ordinary_extractor_identity(manifest: dict[str, Any]) -> dict[str, Any]:
 def _validate_extractor_identity(identity: dict[str, Any]) -> None:
     _exact_keys(
         identity,
-        {"adapter", "version", "deterministic", "input_types", "output_types", "capabilities", "options", "reproducibility_profile"},
+        {
+            "adapter",
+            "version",
+            "deterministic",
+            "input_types",
+            "output_types",
+            "capabilities",
+            "options",
+            "reproducibility_profile",
+        },
         "extractor identity",
     )
     if not isinstance(identity["adapter"], str) or not identity["adapter"]:
@@ -1045,7 +1088,15 @@ def _validate_reproducibility_profile(
     for section, keys in {
         "pageledger": {"version", "code_sha256"},
         "adapter": {"module", "name", "version", "code_sha256"},
-        "runtime": {"python_implementation", "python_version", "system", "release", "machine", "preferred_encoding", "filesystem_encoding"},
+        "runtime": {
+            "python_implementation",
+            "python_version",
+            "system",
+            "release",
+            "machine",
+            "preferred_encoding",
+            "filesystem_encoding",
+        },
     }.items():
         value = profile.get(section)
         if not isinstance(value, dict):
@@ -1053,12 +1104,19 @@ def _validate_reproducibility_profile(
         value = cast(dict[str, Any], value)
         if set(value) != keys:
             _fail("profile_invalid", f"profile {section} has unexpected or missing fields")
-        if any(not isinstance(value[item], str) or not value[item] for item in keys if item != "code_sha256"):
+        if any(
+            not isinstance(value[item], str) or not value[item]
+            for item in keys
+            if item != "code_sha256"
+        ):
             _fail("profile_invalid", f"Profile {section} contains invalid strings")
         if "code_sha256" in value and not _is_sha256(value["code_sha256"]):
             _fail("profile_invalid", f"Profile {section} code hash is invalid")
     adapter_profile = profile["adapter"]
-    if adapter_profile["name"] != identity["adapter"] or adapter_profile["version"] != identity["version"]:
+    if (
+        adapter_profile["name"] != identity["adapter"]
+        or adapter_profile["version"] != identity["version"]
+    ):
         _fail("profile_invalid", "Profile adapter identity disagrees with extractor")
     materials = profile.get("materials")
     if not isinstance(materials, list):
@@ -1070,7 +1128,10 @@ def _validate_reproducibility_profile(
             _fail("profile_invalid", "Profile material must be a mapping")
         if set(material) != {"kind", "name", "version", "sha256"}:
             _fail("profile_invalid", "profile material has unexpected or missing fields")
-        if any(not isinstance(material[key], str) or not material[key] for key in ("kind", "name", "version")):
+        if any(
+            not isinstance(material[key], str) or not material[key]
+            for key in ("kind", "name", "version")
+        ):
             _fail("profile_invalid", "Profile material has invalid fields")
         if material["kind"] not in _MATERIAL_KINDS or not _is_sha256(material["sha256"]):
             _fail("profile_invalid", "Profile material kind or hash is invalid")
@@ -1082,12 +1143,17 @@ def _validate_reproducibility_profile(
         if previous is not None and pair <= previous:
             _fail("profile_invalid", "Profile materials must be sorted and unique")
         previous = pair
-    if not _is_sha256(profile.get("profile_sha256")) or profile_sha256(profile) != profile["profile_sha256"]:
+    if (
+        not _is_sha256(profile.get("profile_sha256"))
+        or profile_sha256(profile) != profile["profile_sha256"]
+    ):
         _fail("profile_hash_mismatch", "Reproducibility profile self-hash does not match")
     return profile
 
 
-def _bundle_sources(run_root: Path, manifest: dict[str, Any]) -> tuple[list[dict[str, Any]], list[Path]]:
+def _bundle_sources(
+    run_root: Path, manifest: dict[str, Any]
+) -> tuple[list[dict[str, Any]], list[Path]]:
     inputs = manifest.get("inputs")
     if not isinstance(inputs, list) or not inputs:
         _fail("source_missing", "Manifest has no source inputs")
@@ -1134,7 +1200,9 @@ def _reject_image_evidence(run_root: Path, manifest: dict[str, Any]) -> None:
     path = _declared_file(run_root, manifest, "provenance")
     for line in path.read_text(encoding="utf-8").splitlines():
         if line.strip() and json.loads(line).get("input_evidence") is not None:
-            _fail("image_evidence_unsupported", "Image evidence cannot yet be transported or replayed")
+            _fail(
+                "image_evidence_unsupported", "Image evidence cannot yet be transported or replayed"
+            )
 
 
 def _copy_baseline(run_root: Path, manifest: dict[str, Any], destination: Path) -> None:
@@ -1197,11 +1265,19 @@ def _inventory(root: Path) -> list[dict[str, Any]]:
     entries = []
     for path in sorted(paths, key=lambda item: item.relative_to(root).as_posix()):
         relative = path.relative_to(root).as_posix()
-        entries.append({"path": relative, "size": path.stat().st_size, "sha256": _sha256_file(path)})
+        entries.append(
+            {"path": relative, "size": path.stat().st_size, "sha256": _sha256_file(path)}
+        )
     return entries
 
 
-def _validate_declared_paths(root: Path, baseline: dict[str, Any], replay: dict[str, Any], sources: list[Any], files: list[Any]) -> None:
+def _validate_declared_paths(
+    root: Path,
+    baseline: dict[str, Any],
+    replay: dict[str, Any],
+    sources: list[Any],
+    files: list[Any],
+) -> None:
     for value in (baseline["manifest"], replay["config"], replay["route_map"]):
         _safe_relative(value)
     if not isinstance(sources, list) or not isinstance(files, list):
@@ -1211,7 +1287,13 @@ def _validate_declared_paths(root: Path, baseline: dict[str, Any], replay: dict[
     for entry in sources:
         if not isinstance(entry, dict):
             _fail("source_invalid", "Bundle source entry must be a mapping")
-        _exact_keys(entry, {"index", "path", "sha256", "size", "page_count", "pages"} if "pages" in entry else {"index", "path", "sha256", "size", "page_count"}, "bundle source")
+        _exact_keys(
+            entry,
+            {"index", "path", "sha256", "size", "page_count", "pages"}
+            if "pages" in entry
+            else {"index", "path", "sha256", "size", "page_count"},
+            "bundle source",
+        )
         if type(entry.get("index")) is not int or entry["index"] < 1:
             _fail("source_invalid", "Bundle source index must be a positive integer")
         if not _is_sha256(entry.get("sha256")):
@@ -1242,7 +1324,12 @@ def _validate_declared_paths(root: Path, baseline: dict[str, Any], replay: dict[
             _fail("inventory_order_invalid", "Bundle inventory paths must be sorted")
         previous = relative
         seen_files.add(relative)
-        if not isinstance(entry["size"], int) or isinstance(entry["size"], bool) or entry["size"] < 0 or not _is_sha256(entry["sha256"]):
+        if (
+            not isinstance(entry["size"], int)
+            or isinstance(entry["size"], bool)
+            or entry["size"] < 0
+            or not _is_sha256(entry["sha256"])
+        ):
             _fail("inventory_invalid", f"Invalid bundle inventory metadata: {relative}")
         candidate = root / relative
         _require_regular(candidate, relative)
@@ -1270,16 +1357,26 @@ def _validate_sources_against_manifest(manifest: dict[str, Any], sources: list[A
     for original, transported in zip(inputs, sources, strict=True):
         if not isinstance(original, dict):
             _fail("source_manifest_mismatch", "Baseline manifest source is invalid")
-        if original.get("sha256") != transported.get("sha256") or original.get("page_count") != transported.get("page_count"):
-            _fail("source_manifest_mismatch", "Bundle source metadata disagrees with baseline manifest")
+        if original.get("sha256") != transported.get("sha256") or original.get(
+            "page_count"
+        ) != transported.get("page_count"):
+            _fail(
+                "source_manifest_mismatch",
+                "Bundle source metadata disagrees with baseline manifest",
+            )
         if original.get("pages") != transported.get("pages"):
-            _fail("source_manifest_mismatch", "Bundle source page selection disagrees with baseline manifest")
+            _fail(
+                "source_manifest_mismatch",
+                "Bundle source page selection disagrees with baseline manifest",
+            )
         original_path = original.get("path")
         if not isinstance(original_path, str):
             _fail("source_manifest_mismatch", "Baseline manifest source path is invalid")
         expected = _expected_source_path(transported["index"], original_path)
         if transported.get("path") != expected:
-            _fail("source_path_invalid", "Bundle source filename does not match baseline input suffix")
+            _fail(
+                "source_path_invalid", "Bundle source filename does not match baseline input suffix"
+            )
 
 
 def _expected_source_path(index: int, original_path: str) -> str:
@@ -1351,7 +1448,9 @@ def _validate_transport_allowlist(root: Path, manifest: dict[str, Any], sources:
         _fail("inventory_mismatch", f"Bundle contains undeclared transported files: {unexpected}")
 
 
-def _check_source_route(manifest: dict[str, Any], route_map: dict[str, Any], source_paths: list[Path]) -> None:
+def _check_source_route(
+    manifest: dict[str, Any], route_map: dict[str, Any], source_paths: list[Path]
+) -> None:
     docs = route_map.get("documents")
     inputs = manifest.get("inputs")
     if not isinstance(docs, list) or not isinstance(inputs, list) or len(docs) != len(inputs):
@@ -1362,13 +1461,18 @@ def _check_source_route(manifest: dict[str, Any], route_map: dict[str, Any], sou
         if not isinstance(document, dict) or not isinstance(original, dict):
             _fail("route_source_mismatch", "Route map source mapping is invalid")
         route_source = document.get("source")
-        if not isinstance(route_source, str) or Path(route_source).expanduser().resolve() != source.resolve():
+        if (
+            not isinstance(route_source, str)
+            or Path(route_source).expanduser().resolve() != source.resolve()
+        ):
             _fail("route_source_mismatch", "Route map source disagrees with manifest input")
         if document.get("source_sha256") != original.get("sha256"):
             _fail("route_source_mismatch", "Route map source hash disagrees with manifest")
 
 
-def _check_portable_route(route_map: dict[str, Any], manifest: dict[str, Any], sources: list[Any]) -> None:
+def _check_portable_route(
+    route_map: dict[str, Any], manifest: dict[str, Any], sources: list[Any]
+) -> None:
     docs = route_map.get("documents")
     if not isinstance(docs, list) or len(docs) != len(sources):
         _fail("route_source_mismatch", "Portable route map documents do not match sources")
@@ -1381,7 +1485,9 @@ def _check_portable_route(route_map: dict[str, Any], manifest: dict[str, Any], s
         if path in seen:
             _fail("source_duplicate", "Portable route map contains duplicate source mapping")
         seen.add(path)
-        if document.get("source_sha256") != source.get("sha256") or document.get("page_count") != source.get("page_count"):
+        if document.get("source_sha256") != source.get("sha256") or document.get(
+            "page_count"
+        ) != source.get("page_count"):
             _fail("route_source_mismatch", "Portable route metadata disagrees with bundle sources")
     if route_map.get("run_id") != manifest.get("run_id"):
         _fail("route_source_mismatch", "Portable route run_id disagrees with baseline manifest")
@@ -1390,7 +1496,11 @@ def _check_portable_route(route_map: dict[str, Any], manifest: dict[str, Any], s
 def _check_credentials(value: Any) -> None:
     if isinstance(value, Mapping):
         for key, child in value.items():
-            normalized = "".join(character for character in key.casefold() if character.isalnum()) if isinstance(key, str) else ""
+            normalized = (
+                "".join(character for character in key.casefold() if character.isalnum())
+                if isinstance(key, str)
+                else ""
+            )
             if normalized in _FORBIDDEN_OPTION_KEYS:
                 _fail("credential_key_forbidden", f"Credential option key is forbidden: {key}")
             _check_credentials(child)
@@ -1520,7 +1630,9 @@ def _is_sha256(value: Any) -> bool:
 
 
 def _canonical(value: Any) -> str:
-    return json.dumps(value, ensure_ascii=False, allow_nan=False, sort_keys=True, separators=(",", ":"))
+    return json.dumps(
+        value, ensure_ascii=False, allow_nan=False, sort_keys=True, separators=(",", ":")
+    )
 
 
 def _exact_keys(value: Mapping[str, Any], expected: set[str], label: str) -> None:

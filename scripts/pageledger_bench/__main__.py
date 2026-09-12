@@ -16,9 +16,7 @@ def build_parser() -> argparse.ArgumentParser:
     run_parser = subparsers.add_parser(
         "run", help="Measure one frozen workload in this fresh CLI process"
     )
-    run_parser.add_argument(
-        "--workload", required=True, choices=("primary", "generalization")
-    )
+    run_parser.add_argument("--workload", required=True, choices=("primary", "generalization"))
     run_parser.add_argument(
         "--out", required=True, type=Path, help="New benchmark evidence directory"
     )

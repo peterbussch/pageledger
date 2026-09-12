@@ -38,21 +38,37 @@ class ExtractionResult:
     input_evidence: dict[str, Any] | None = None
 
 
-ADAPTER_FAILURE_CODES = frozenset({
-    "MODEL_TIMEOUT", "MODEL_HTTP_ERROR", "MODEL_QUOTA", "MODEL_OUTPUT_TRUNCATED",
-    "MODEL_NETWORK_ERROR", "MODEL_INVALID_RESPONSE", "MODEL_EMPTY_RESPONSE",
-    "MODEL_UNAVAILABLE", "IMAGE_RENDER_ERROR", "IMAGE_EVIDENCE_INVALID",
-})
+ADAPTER_FAILURE_CODES = frozenset(
+    {
+        "MODEL_TIMEOUT",
+        "MODEL_HTTP_ERROR",
+        "MODEL_QUOTA",
+        "MODEL_OUTPUT_TRUNCATED",
+        "MODEL_NETWORK_ERROR",
+        "MODEL_INVALID_RESPONSE",
+        "MODEL_EMPTY_RESPONSE",
+        "MODEL_UNAVAILABLE",
+        "IMAGE_RENDER_ERROR",
+        "IMAGE_EVIDENCE_INVALID",
+    }
+)
 
 
 class AdapterFailure(RuntimeError):
     """Safe, terminal failure; partial output is evidence, never a completion."""
 
-    def __init__(self, code: str, *, http_status: int | None = None,
-                 partial_result: ExtractionResult | None = None):
+    def __init__(
+        self,
+        code: str,
+        *,
+        http_status: int | None = None,
+        partial_result: ExtractionResult | None = None,
+    ):
         if not isinstance(code, str) or code not in ADAPTER_FAILURE_CODES:
             raise ValueError("Unsupported adapter failure code")
-        if http_status is not None and (type(http_status) is not int or not 100 <= http_status <= 599):
+        if http_status is not None and (
+            type(http_status) is not int or not 100 <= http_status <= 599
+        ):
             raise ValueError("Adapter failure HTTP status must be 100..599 or null")
         if partial_result is not None and not isinstance(partial_result, ExtractionResult):
             raise ValueError("Adapter failure partial_result must be ExtractionResult or null")
@@ -103,7 +119,9 @@ def adapter_page_count(adapter: Any, source: Path) -> int:
     if callable(hook):
         count = hook(source)
         if not isinstance(count, int) or isinstance(count, bool) or count < 1:
-            raise ValueError(f"Adapter '{adapter.name}' page_count(source) must return a positive integer")
+            raise ValueError(
+                f"Adapter '{adapter.name}' page_count(source) must return a positive integer"
+            )
         return count
     return paginate(source, allow_pdf=getattr(adapter, "name", None) in PDF_ADAPTER_NAMES)
 
@@ -190,7 +208,13 @@ class PdfTextAdapter:
         reader = _load_pypdf()(io.BytesIO(data))
         pages = tuple(page.extract_text() or "" for page in reader.pages)
         after = source.stat()
-        if (after.st_dev, after.st_ino, after.st_size, after.st_mtime_ns, after.st_ctime_ns) != identity:
+        if (
+            after.st_dev,
+            after.st_ino,
+            after.st_size,
+            after.st_mtime_ns,
+            after.st_ctime_ns,
+        ) != identity:
             raise ValueError("PDF source changed while reading")
         if not pages:
             raise ValueError("PDF source has no pages")
@@ -313,9 +337,12 @@ class PdfOcrAdapter:
             _run_ocr_command(
                 [
                     pdftoppm,
-                    "-f", str(page_number),
-                    "-l", str(page_number),
-                    "-r", str(self.dpi),
+                    "-f",
+                    str(page_number),
+                    "-l",
+                    str(page_number),
+                    "-r",
+                    str(self.dpi),
                     "-png",
                     str(source),
                     str(prefix),
@@ -325,18 +352,14 @@ class PdfOcrAdapter:
             )
             images = sorted(tmp_path.glob("page-*.png"))
             if not images:
-                raise RuntimeError(
-                    f"pdftoppm produced no image for page {page_number} of {source}"
-                )
+                raise RuntimeError(f"pdftoppm produced no image for page {page_number} of {source}")
             output_prefix = tmp_path / "ocr"
             _run_ocr_command(
                 [tesseract, str(images[0]), str(output_prefix), "-l", self.lang, "txt", "tsv"],
                 timeout=_OCR_TIMEOUT_SECONDS,
                 context=f"tesseract failed on page {page_number} of {source}",
             )
-            text = output_prefix.with_suffix(".txt").read_text(
-                encoding="utf-8", errors="replace"
-            )
+            text = output_prefix.with_suffix(".txt").read_text(encoding="utf-8", errors="replace")
             confidence, confidence_detail = _tesseract_word_confidence(
                 output_prefix.with_suffix(".tsv")
             )
@@ -650,8 +673,7 @@ def _construct_builtin(cls: type, name: str, opts: dict[str, Any]) -> Any:
         return cls(**opts)
     except TypeError as exc:
         raise ValueError(
-            f"Adapter '{name}' does not accept run.adapter_options "
-            f"{sorted(opts)}"
+            f"Adapter '{name}' does not accept run.adapter_options {sorted(opts)}"
         ) from exc
 
 
@@ -672,9 +694,7 @@ def _adapter_contract_issues(adapter: Any) -> list[str]:
         if value is None:
             issues.append(f"missing required attribute '{attr}'")
         elif not isinstance(value, expected_type):
-            issues.append(
-                f"'{attr}' {description}, got {type(value).__name__}"
-            )
+            issues.append(f"'{attr}' {description}, got {type(value).__name__}")
 
     for attr in ("input_types", "output_types", "capabilities"):
         value = getattr(adapter, attr, None)
@@ -682,8 +702,7 @@ def _adapter_contract_issues(adapter: Any) -> list[str]:
             for index, item in enumerate(value):
                 if not isinstance(item, str):
                     issues.append(
-                        f"'{attr}' item {index} must be a string, "
-                        f"got {type(item).__name__}"
+                        f"'{attr}' item {index} must be a string, got {type(item).__name__}"
                     )
 
     if not callable(getattr(adapter, "supports", None)):
@@ -727,9 +746,7 @@ def _load_custom_adapter(spec: str, opts: dict[str, Any] | None = None) -> Any:
             "run.adapter_options require a class or factory"
         )
     if not _looks_like_adapter(adapter):
-        raise ValueError(
-            f"Custom adapter '{spec}' must expose supports(action) and extract(...)"
-        )
+        raise ValueError(f"Custom adapter '{spec}' must expose supports(action) and extract(...)")
 
     return adapter
 
@@ -744,9 +761,7 @@ def _import_object(spec: str, *, description: str) -> Any:
     try:
         module = importlib.import_module(module_name)
     except Exception as exc:
-        raise ValueError(
-            f"Could not import {description.lower()} module '{module_name}'"
-        ) from exc
+        raise ValueError(f"Could not import {description.lower()} module '{module_name}'") from exc
 
     candidate: Any = module
     try:

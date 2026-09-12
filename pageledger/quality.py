@@ -55,8 +55,7 @@ def _build_quality_entry(
         shape_warnings = [
             warning
             for warning in shape_warnings
-            if warning
-            not in {"suspicious_symbol_density", "fragmented_text", "joined_text"}
+            if warning not in {"suspicious_symbol_density", "fragmented_text", "joined_text"}
         ]
     warnings.extend(shape_warnings)
     output_integrity, integrity_warnings = _output_integrity(text, parent_quality)
@@ -206,17 +205,14 @@ def _text_quality_metrics(
     latin_letter_count = sum(
         1
         for char in text
-        if unicodedata.category(char).startswith("L")
-        and "LATIN" in unicodedata.name(char, "")
+        if unicodedata.category(char).startswith("L") and "LATIN" in unicodedata.name(char, "")
     )
     return {
         "replacement_character_count": replacement_character_count,
         "control_character_count": control_character_count,
         "suspicious_symbol_count": suspicious_symbol_count,
         "suspicious_symbol_ratio": (
-            0.0
-            if character_count == 0
-            else round(suspicious_symbol_count / character_count, 4)
+            0.0 if character_count == 0 else round(suspicious_symbol_count / character_count, 4)
         ),
         # Lexical shape of the output. Language-neutral evidence: sort pages
         # by mean_token_length to find fragment noise. These metrics cannot
@@ -224,17 +220,13 @@ def _text_quality_metrics(
         # that needs a dictionary or model, which PageLedger does not ship.
         "alpha_token_count": alpha_token_count,
         "mean_token_length": (
-            None
-            if alpha_token_count == 0
-            else round(sum(token_lengths) / alpha_token_count, 2)
+            None if alpha_token_count == 0 else round(sum(token_lengths) / alpha_token_count, 2)
         ),
         "max_token_length": max(token_lengths, default=0),
         "short_token_ratio": (
             None
             if alpha_token_count == 0
-            else round(
-                sum(1 for length in token_lengths if length <= 2) / alpha_token_count, 4
-            )
+            else round(sum(1 for length in token_lengths if length <= 2) / alpha_token_count, 4)
         ),
         "whitespace_character_ratio": (
             0.0

@@ -30,8 +30,7 @@ def check_release(root: Path, tag: str) -> list[str]:
             errors.append(f"tag {tag} does not match package version {version}")
         else:
             errors.append(
-                f"tag {tag} does not match package version {version} "
-                f"(expected {expected_tag})"
+                f"tag {tag} does not match package version {version} (expected {expected_tag})"
             )
 
     version_text = (root / "pageledger" / "_version.py").read_text(encoding="utf-8")
@@ -58,8 +57,7 @@ def check_release(root: Path, tag: str) -> list[str]:
     editable_versions = [
         package.get("version")
         for package in lock.get("package", [])
-        if package.get("name") == "pageledger"
-        and package.get("source", {}).get("editable") == "."
+        if package.get("name") == "pageledger" and package.get("source", {}).get("editable") == "."
     ]
     if editable_versions != [version]:
         errors.append(

@@ -78,18 +78,14 @@ class OllamaCleanupAdapter:
             or not math.isfinite(temperature)
             or temperature < 0
         ):
-            raise ValueError(
-                "run.adapter_options.temperature must be a finite non-negative number"
-            )
+            raise ValueError("run.adapter_options.temperature must be a finite non-negative number")
         if (
             isinstance(timeout_seconds, bool)
             or not isinstance(timeout_seconds, (int, float))
             or not math.isfinite(timeout_seconds)
             or timeout_seconds <= 0
         ):
-            raise ValueError(
-                "run.adapter_options.timeout_seconds must be a finite positive number"
-            )
+            raise ValueError("run.adapter_options.timeout_seconds must be a finite positive number")
         self._ocr = PdfOcrAdapter(dpi=dpi, lang=lang)
         self.model = model
         self.base_url = base_url.rstrip("/")
@@ -174,8 +170,7 @@ class OllamaCleanupAdapter:
         usage = dict(ocr_result.usage)
         usage["tokens"] = tokens
         usage["compute_seconds"] = round(
-            (usage.get("compute_seconds") or 0.0)
-            + (time.perf_counter() - started),
+            (usage.get("compute_seconds") or 0.0) + (time.perf_counter() - started),
             3,
         )
         return ExtractionResult(

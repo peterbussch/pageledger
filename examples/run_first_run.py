@@ -38,9 +38,7 @@ def _tutorial_script(document: Path) -> str:
     return "\n\n".join(blocks) + "\n"
 
 
-def _import_receipt(
-    python: Path, *, cwd: Path, env: dict[str, str]
-) -> dict[str, str | None]:
+def _import_receipt(python: Path, *, cwd: Path, env: dict[str, str]) -> dict[str, str | None]:
     command = """\
 import json
 import pageledger
@@ -101,10 +99,7 @@ def main(argv: list[str] | None = None) -> int:
         env["PAGELEDGER_TUTORIAL_RECOVERY_HELPER"] = str(recovery_helper)
 
     receipt = _import_receipt(python, cwd=work_dir, env=env)
-    if (
-        args.expected_version is not None
-        and receipt["module_version"] != args.expected_version
-    ):
+    if args.expected_version is not None and receipt["module_version"] != args.expected_version:
         raise RuntimeError(
             f"expected PageLedger {args.expected_version}; imported module version "
             f"{receipt['module_version']}"
@@ -129,7 +124,7 @@ def main(argv: list[str] | None = None) -> int:
     shim_dir.mkdir()
     shim = shim_dir / "pageledger"
     shim.write_text(
-        "#!/bin/sh\nexec " + shlex.quote(str(python)) + " -m pageledger \"$@\"\n",
+        "#!/bin/sh\nexec " + shlex.quote(str(python)) + ' -m pageledger "$@"\n',
         encoding="utf-8",
     )
     shim.chmod(0o755)

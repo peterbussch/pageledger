@@ -161,17 +161,22 @@ def test_frozen_expected_ledger_aggregates_are_truthful(name: str, tmp_path: Pat
     assert manifest["summary"]["pages_extracted"] == expected["output"]["pages_extracted"]
     assert manifest["summary"]["records_normalized"] == expected["normalized"]["records_normalized"]
     assert manifest["summary"]["quality_warning_pages"] == expected["quality"]["warning_pages"]
-    assert Counter(entry["result"]["format"] for entry in provenance) == expected["output"]["format_counts"]
-    assert Counter(path.suffix.lstrip(".") for path in (run_dir / "raw").iterdir()) == (
-        expected["output"]["raw_extension_counts"]
+    assert (
+        Counter(entry["result"]["format"] for entry in provenance)
+        == expected["output"]["format_counts"]
+    )
+    assert (
+        Counter(path.suffix.lstrip(".") for path in (run_dir / "raw").iterdir())
+        == (expected["output"]["raw_extension_counts"])
     )
     for basis, expected_grades in expected["grades"].items():
         actual_grades = Counter(
             entry["grade"] for entry in quality if entry["grade_basis"] == basis
         )
         assert {grade: actual_grades[grade] for grade in expected_grades} == expected_grades
-    assert Counter(entry["reason"] for entry in audit["review_queue"]) == (
-        expected["audit"]["review_queue_by_reason"]
+    assert (
+        Counter(entry["reason"] for entry in audit["review_queue"])
+        == (expected["audit"]["review_queue_by_reason"])
     )
     assert len(audit["review_queue"]) == expected["audit"]["review_queue_items"]
     assert cost["tokens_total"] == expected["cost"]["tokens_total"]
@@ -212,7 +217,9 @@ def test_structured_workload_freezes_alignment_records_and_schema_aware_grades(
 
     assert len(normalized) == expected["files"]
     assert sum(len(entry["records"]) for entry in normalized) == expected["records_normalized"]
-    assert Counter(entry["source_format"] for entry in normalized) == expected["source_format_counts"]
+    assert (
+        Counter(entry["source_format"] for entry in normalized) == expected["source_format_counts"]
+    )
     assert {entry["schema_name"] for entry in normalized} == {expected["schema_name"]}
     assert sum(len(entry["coercion_errors"]) for entry in normalized) == expected["coercion_errors"]
     check = "amount_matches_expected"
@@ -255,7 +262,12 @@ def test_manifest_protects_exact_contracts_and_bounds_the_future_run() -> None:
             "/started_at",
         ],
         "normalized/*.json": ["/run_id"],
-        "provenance.jsonl": ["/*/extraction_seconds", "/*/run_id", "/*/source/path", "/*/timestamp"],
+        "provenance.jsonl": [
+            "/*/extraction_seconds",
+            "/*/run_id",
+            "/*/source/path",
+            "/*/timestamp",
+        ],
         "quality.jsonl": [],
         "rerun-manifest.yml": ["/created_at", "/items/*/source", "/parent_run_id", "/run_id"],
         "route-map.yml": ["/documents/0/source", "/generated_at", "/run_id"],

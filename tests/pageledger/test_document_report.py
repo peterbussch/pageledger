@@ -1,4 +1,5 @@
 """The report is derived, byte-faithful evidence, including incomplete jobs."""
+
 import copy
 import hashlib
 import json
@@ -20,28 +21,72 @@ def job_fixture(root, text="Cafe\u0301\r\n原文\n"):
     raw = root / "attempts" / "local_text" / "raw" / "p1.md"
     raw.parent.mkdir(parents=True)
     raw.write_bytes(text.encode())
-    attempt = {"attempt_id": "a1", "stage": "local_text", "outcome": "completed",
-               "raw_artifact": str(raw.relative_to(root)),
-               "raw_sha256": hashlib.sha256(text.encode()).hexdigest(), "format": "markdown",
-               "warnings": [], "classification": {"type": "text", "reason": "prose"},
-               "alignment": None, "usage": {}, "failure": None}
-    return {"schema_version": "0.1", "job_id": "job1", "created_at": "2026-09-11T12:00:00Z",
-            "source": {"path": "/documents/source.pdf", "sha256": "a" * 64,
-                       "page_count": 3, "annotations": {"status": "present", "count": 2}},
-            "selected_pages": [1, 3], "status": "completed",
-            "pages": [{"page_id": "p1", "page_number": 1, "source_sha256": "a" * 64,
-                       "attempts": [attempt], "selected_attempt": "a1",
-                       "disposition": "unreviewed_text", "review_reasons": [], "review": None,
-                       "next_action": "review"},
-                      {"page_id": "p3", "page_number": 3, "source_sha256": "a" * 64,
-                       "attempts": [], "selected_attempt": None, "disposition": "pending",
-                       "review_reasons": [], "review": None, "next_action": "local_text"}],
-            "usage": {"attempt_pages": 1, "image_calls": 0, "tokens": None,
-                      "cost_usd": None, "cost_known": False}, "limits": {},
-            "links": {"article": None, "custody": None},
-            "source_retention": {"capture": "present", "preservation": "unverified",
-                                 "removal_eligibility": "not_assessed", "removed": False},
-            "next_action": "Review source pages before relying on extracted text."}
+    attempt = {
+        "attempt_id": "a1",
+        "stage": "local_text",
+        "outcome": "completed",
+        "raw_artifact": str(raw.relative_to(root)),
+        "raw_sha256": hashlib.sha256(text.encode()).hexdigest(),
+        "format": "markdown",
+        "warnings": [],
+        "classification": {"type": "text", "reason": "prose"},
+        "alignment": None,
+        "usage": {},
+        "failure": None,
+    }
+    return {
+        "schema_version": "0.1",
+        "job_id": "job1",
+        "created_at": "2026-09-11T12:00:00Z",
+        "source": {
+            "path": "/documents/source.pdf",
+            "sha256": "a" * 64,
+            "page_count": 3,
+            "annotations": {"status": "present", "count": 2},
+        },
+        "selected_pages": [1, 3],
+        "status": "completed",
+        "pages": [
+            {
+                "page_id": "p1",
+                "page_number": 1,
+                "source_sha256": "a" * 64,
+                "attempts": [attempt],
+                "selected_attempt": "a1",
+                "disposition": "unreviewed_text",
+                "review_reasons": [],
+                "review": None,
+                "next_action": "review",
+            },
+            {
+                "page_id": "p3",
+                "page_number": 3,
+                "source_sha256": "a" * 64,
+                "attempts": [],
+                "selected_attempt": None,
+                "disposition": "pending",
+                "review_reasons": [],
+                "review": None,
+                "next_action": "local_text",
+            },
+        ],
+        "usage": {
+            "attempt_pages": 1,
+            "image_calls": 0,
+            "tokens": None,
+            "cost_usd": None,
+            "cost_known": False,
+        },
+        "limits": {},
+        "links": {"article": None, "custody": None},
+        "source_retention": {
+            "capture": "present",
+            "preservation": "unverified",
+            "removal_eligibility": "not_assessed",
+            "removed": False,
+        },
+        "next_action": "Review source pages before relying on extracted text.",
+    }
 
 
 def test_report_embeds_exact_output_bytes_and_hashes_final_transcript(tmp_path):
@@ -57,42 +102,55 @@ def test_report_embeds_exact_output_bytes_and_hashes_final_transcript(tmp_path):
     assert stored["transcript"]["sha256"] == hashlib.sha256(transcript).hexdigest()
     assert transcript == render_transcript(stored).encode()
     assert (tmp_path / "report.md").read_bytes() == render_document_report(stored).encode()
-    assert stored["counts"] == {"source_pages": 3, "selected_pages": 2, "processed_pages": 1,
-                                 "selected_outputs": 1, "unresolved_pages": 2}
+    assert stored["counts"] == {
+        "source_pages": 3,
+        "selected_pages": 2,
+        "processed_pages": 1,
+        "selected_outputs": 1,
+        "unresolved_pages": 2,
+    }
     assert "#page=1" in render_transcript(stored)
     schema = json.loads((Path(__file__).parents[2] / "schemas/document.schema.json").read_text())
     validate(stored, schema)
 
 
-@pytest.mark.parametrize('filename', ['synthetic#draft.pdf', 'synthetic?draft.pdf',
-                                    'synthetic%20draft.pdf', 'synthetic 日本語.pdf'])
+@pytest.mark.parametrize(
+    "filename",
+    ["synthetic#draft.pdf", "synthetic?draft.pdf", "synthetic%20draft.pdf", "synthetic 日本語.pdf"],
+)
 def test_source_links_preserve_filename_characters(tmp_path, filename):
     from urllib.parse import quote, unquote, urlsplit
+
     job = job_fixture(tmp_path)
-    job['source']['path'] = f'/documents/{filename}'
-    article = 'https://example.org/article?q=synthetic%20draft#section'
-    job['links']['article'] = article
+    job["source"]["path"] = f"/documents/{filename}"
+    article = "https://example.org/article?q=synthetic%20draft#section"
+    job["links"]["article"] = article
     report = write_document_report(job, tmp_path)
-    source_link = report['pages'][0]['source_link']
+    source_link = report["pages"][0]["source_link"]
     parsed = urlsplit(source_link)
-    assert unquote(parsed.path) == job['source']['path']
-    assert parsed.query == ''
-    assert parsed.fragment == 'page=1'
+    assert unquote(parsed.path) == job["source"]["path"]
+    assert parsed.query == ""
+    assert parsed.fragment == "page=1"
     markdown = render_document_report(report)
     assert f"(<{quote(job['source']['path'], safe='/')}>)" in markdown
-    assert f'(<{source_link}>)' in markdown
-    assert f'(<{source_link}>)' in render_transcript(report)
-    assert f'(<{article}>)' in markdown
+    assert f"(<{source_link}>)" in markdown
+    assert f"(<{source_link}>)" in render_transcript(report)
+    assert f"(<{article}>)" in markdown
 
 
 def test_report_keeps_partial_evidence_without_selecting_it(tmp_path):
     job = job_fixture(tmp_path)
     partial = tmp_path / "attempts" / "partial.md"
     partial.write_bytes(b"Partial response")
-    failed = {**job["pages"][0]["attempts"][0], "attempt_id": "a2", "stage": "image",
-              "outcome": "failed", "raw_artifact": "attempts/partial.md",
-              "raw_sha256": hashlib.sha256(partial.read_bytes()).hexdigest(),
-              "failure": {"code": "MODEL_OUTPUT_TRUNCATED"}}
+    failed = {
+        **job["pages"][0]["attempts"][0],
+        "attempt_id": "a2",
+        "stage": "image",
+        "outcome": "failed",
+        "raw_artifact": "attempts/partial.md",
+        "raw_sha256": hashlib.sha256(partial.read_bytes()).hexdigest(),
+        "failure": {"code": "MODEL_OUTPUT_TRUNCATED"},
+    }
     job["pages"][0]["attempts"].append(failed)
     result = write_document_report(job, tmp_path)
     assert result["pages"][0]["selected_output"]["attempt_id"] == "a1"
@@ -150,11 +208,17 @@ def test_report_distinguishes_annotation_inventory_and_retention_state(tmp_path)
 
 def test_build_report_checks_evidence_without_mutating_output_directory(tmp_path):
     job = job_fixture(tmp_path)
-    before = {str(path.relative_to(tmp_path)): path.read_bytes()
-              for path in tmp_path.rglob("*") if path.is_file()}
+    before = {
+        str(path.relative_to(tmp_path)): path.read_bytes()
+        for path in tmp_path.rglob("*")
+        if path.is_file()
+    }
     report = build_document_report(job, tmp_path)
-    after = {str(path.relative_to(tmp_path)): path.read_bytes()
-             for path in tmp_path.rglob("*") if path.is_file()}
+    after = {
+        str(path.relative_to(tmp_path)): path.read_bytes()
+        for path in tmp_path.rglob("*")
+        if path.is_file()
+    }
     assert before == after
     assert report["pages"][0]["selected_output"]["text"] == "Cafe\u0301\r\n原文\n"
     assert report == write_document_report(job, tmp_path)
@@ -173,15 +237,29 @@ def test_report_receipt_must_match_the_selected_output(tmp_path):
     page = job["pages"][0]
     page["attempts"].append({**page["attempts"][0], "attempt_id": "a2"})
     page["disposition"] = "reviewed_text"
-    page["review"] = {"schema_version": "0.1", "source_sha256": "a" * 64, "decisions": [{
-        "page_id": "p1", "page_number": 1, "disposition": "reviewed_text",
-        "selected_attempt": "a2", "output_sha256": page["attempts"][0]["raw_sha256"],
-        "reason": "Compared source", "reviewer": "Peter", "reviewed_at": "2026-09-11T12:00:00Z"}]}
+    page["review"] = {
+        "schema_version": "0.1",
+        "source_sha256": "a" * 64,
+        "decisions": [
+            {
+                "page_id": "p1",
+                "page_number": 1,
+                "disposition": "reviewed_text",
+                "selected_attempt": "a2",
+                "output_sha256": page["attempts"][0]["raw_sha256"],
+                "reason": "Compared source",
+                "reviewer": "Peter",
+                "reviewed_at": "2026-09-11T12:00:00Z",
+            }
+        ],
+    }
     with pytest.raises(ValueError, match="review"):
         build_document_report(job, tmp_path)
 
 
-@pytest.mark.parametrize("artifact", ["transcript.md", "report.md", "attempts/local_text/raw/p1.md"])
+@pytest.mark.parametrize(
+    "artifact", ["transcript.md", "report.md", "attempts/local_text/raw/p1.md"]
+)
 def test_verification_detects_tampered_derived_or_raw_artifacts(tmp_path, artifact):
     write_document_report(job_fixture(tmp_path), tmp_path)
     (tmp_path / artifact).write_bytes(b"Tampered")
@@ -207,8 +285,12 @@ def test_schema_accepts_child_run_identity_and_image_evidence(tmp_path):
     job["usage"]["paid_cost_known"] = True
     job["usage"]["paid_tokens_known"] = True
     job["pages"][0]["attempts"][0].update(
-        run_path="attempts/local_text", run_id="child1", page_id="p1", page_number=1,
-        source_sha256="a" * 64, input_evidence=None,
+        run_path="attempts/local_text",
+        run_id="child1",
+        page_id="p1",
+        page_number=1,
+        source_sha256="a" * 64,
+        input_evidence=None,
     )
     report = build_document_report(job, tmp_path)
     schema = json.loads((Path(__file__).parents[2] / "schemas/document.schema.json").read_text())
@@ -225,15 +307,32 @@ def test_partial_token_accounting_is_not_presented_as_a_known_total(tmp_path):
 def test_report_preserves_replaced_human_review_receipts(tmp_path):
     job = job_fixture(tmp_path)
     page = job["pages"][0]
-    first = {"schema_version": "0.1", "source_sha256": "a" * 64, "decisions": [{
-        "page_id": "p1", "page_number": 1, "disposition": "reviewed_text",
-        "selected_attempt": "a1", "output_sha256": page["attempts"][0]["raw_sha256"],
-        "reason": "Compared source", "reviewer": "Peter", "reviewed_at": "2026-09-11T12:00:00Z"}]}
+    first = {
+        "schema_version": "0.1",
+        "source_sha256": "a" * 64,
+        "decisions": [
+            {
+                "page_id": "p1",
+                "page_number": 1,
+                "disposition": "reviewed_text",
+                "selected_attempt": "a1",
+                "output_sha256": page["attempts"][0]["raw_sha256"],
+                "reason": "Compared source",
+                "reviewer": "Peter",
+                "reviewed_at": "2026-09-11T12:00:00Z",
+            }
+        ],
+    }
     second = copy.deepcopy(first)
-    second["decisions"][0].update(reason="Confirmed after a second inspection",
-                                   reviewed_at="2026-09-11T13:00:00Z")
-    page.update(disposition="reviewed_text", review=second, review_history=[first, second],
-                next_action="none")
+    second["decisions"][0].update(
+        reason="Confirmed after a second inspection", reviewed_at="2026-09-11T13:00:00Z"
+    )
+    page.update(
+        disposition="reviewed_text",
+        review=second,
+        review_history=[first, second],
+        next_action="none",
+    )
     report = write_document_report(job, tmp_path)
     stored = json.loads((tmp_path / "document.json").read_bytes())
     assert stored["pages"][0]["review_history"] == [first, second]
@@ -243,17 +342,35 @@ def test_report_preserves_replaced_human_review_receipts(tmp_path):
     validate(report, schema)
 
 
-@pytest.mark.parametrize("disposition", ["source_defect", "handwriting", "unreadable", "illustration"])
+@pytest.mark.parametrize(
+    "disposition", ["source_defect", "handwriting", "unreadable", "illustration"]
+)
 def test_human_confirmed_source_problem_stays_unresolved(tmp_path, disposition):
     job = job_fixture(tmp_path)
     page = job["pages"][0]
-    review = {"schema_version": "0.1", "source_sha256": "a" * 64, "decisions": [{
-        "page_id": "p1", "page_number": 1, "disposition": disposition,
-        "selected_attempt": None, "output_sha256": None,
-        "reason": "Source still requires investigation", "reviewer": "Peter",
-        "reviewed_at": "2026-09-11T12:00:00Z"}]}
-    page.update(disposition=disposition, selected_attempt=None, review=review,
-                review_history=[review], next_action="none")
+    review = {
+        "schema_version": "0.1",
+        "source_sha256": "a" * 64,
+        "decisions": [
+            {
+                "page_id": "p1",
+                "page_number": 1,
+                "disposition": disposition,
+                "selected_attempt": None,
+                "output_sha256": None,
+                "reason": "Source still requires investigation",
+                "reviewer": "Peter",
+                "reviewed_at": "2026-09-11T12:00:00Z",
+            }
+        ],
+    }
+    page.update(
+        disposition=disposition,
+        selected_attempt=None,
+        review=review,
+        review_history=[review],
+        next_action="none",
+    )
     job["next_action"] = "Obtain an alternate source or resolve the remaining source problems."
     report = build_document_report(job, tmp_path)
     assert report["counts"]["unresolved_pages"] == 2
@@ -270,16 +387,26 @@ def test_current_report_separates_selected_ocr_from_historical_blank_hold(tmp_pa
     ocr.parent.mkdir(parents=True)
     ocr.write_text("OCR recovered text\n", encoding="utf-8")
     page["attempts"][0].update(
-        stage="local_text", format="text", warnings=["empty_text"],
-        raw_sha256=hashlib.sha256(b"").hexdigest())
-    page["attempts"].append({
-        **page["attempts"][0], "attempt_id": "a2", "stage": "local_ocr",
-        "raw_artifact": str(ocr.relative_to(tmp_path)),
-        "raw_sha256": hashlib.sha256(ocr.read_bytes()).hexdigest(),
-        "format": "markdown", "warnings": [], "classification": {"type": "text", "reason": "prose"},
-    })
-    page.update(selected_attempt="a2", disposition="blank_candidate",
-                review_reasons=["blank_candidate"])
+        stage="local_text",
+        format="text",
+        warnings=["empty_text"],
+        raw_sha256=hashlib.sha256(b"").hexdigest(),
+    )
+    page["attempts"].append(
+        {
+            **page["attempts"][0],
+            "attempt_id": "a2",
+            "stage": "local_ocr",
+            "raw_artifact": str(ocr.relative_to(tmp_path)),
+            "raw_sha256": hashlib.sha256(ocr.read_bytes()).hexdigest(),
+            "format": "markdown",
+            "warnings": [],
+            "classification": {"type": "text", "reason": "prose"},
+        }
+    )
+    page.update(
+        selected_attempt="a2", disposition="blank_candidate", review_reasons=["blank_candidate"]
+    )
 
     report = build_document_report(job, tmp_path)
     rendered = render_document_report(report)
@@ -296,8 +423,13 @@ def test_current_report_separates_selected_ocr_from_historical_blank_hold(tmp_pa
 def test_current_report_keeps_latest_failure_visible_with_previous_selected_text(tmp_path):
     job = job_fixture(tmp_path)
     page = job["pages"][0]
-    failed = {**page["attempts"][0], "attempt_id": "a2", "stage": "image",
-              "outcome": "failed", "failure": {"code": "MODEL_OUTPUT_TRUNCATED"}}
+    failed = {
+        **page["attempts"][0],
+        "attempt_id": "a2",
+        "stage": "image",
+        "outcome": "failed",
+        "failure": {"code": "MODEL_OUTPUT_TRUNCATED"},
+    }
     page["attempts"].append(failed)
     page.update(disposition="provider_failure", review_reasons=["provider_failure"])
 
@@ -312,8 +444,7 @@ def test_current_report_keeps_latest_failure_visible_with_previous_selected_text
 def test_current_report_labels_numeric_hold_without_hiding_selected_output(tmp_path):
     job = job_fixture(tmp_path)
     page = job["pages"][0]
-    page.update(disposition="numeric_column_conflict",
-                review_reasons=["numeric_column_conflict"])
+    page.update(disposition="numeric_column_conflict", review_reasons=["numeric_column_conflict"])
 
     rendered = render_document_report(build_document_report(job, tmp_path))
 
@@ -327,26 +458,39 @@ def test_current_report_attributes_explicit_selected_attempt_warning_only_to_tha
     page = job["pages"][0]
     page["attempts"][0]["warnings"] = [{"type": "clipped_text"}]
     page.update(disposition="coverage_defect", review_reasons=["coverage_defect"])
-    later = {**page["attempts"][0], "attempt_id": "a2", "stage": "local_ocr",
-             "warnings": [], "classification": {"type": "text", "reason": "prose"}}
+    later = {
+        **page["attempts"][0],
+        "attempt_id": "a2",
+        "stage": "local_ocr",
+        "warnings": [],
+        "classification": {"type": "text", "reason": "prose"},
+    }
     page["attempts"].append(later)
     page.update(selected_attempt="a2")
 
     rendered = render_document_report(build_document_report(job, tmp_path))
 
-    assert "Possible missing or incomplete content (coverage_defect); recorded on Local text attempt" in rendered
+    assert (
+        "Possible missing or incomplete content (coverage_defect); recorded on Local text attempt"
+        in rendered
+    )
     assert "recorded on Local OCR attempt" not in rendered
 
 
 def test_current_report_attributes_new_selected_attempt_warning_to_selected_attempt(tmp_path):
     job = job_fixture(tmp_path)
     page = job["pages"][0]
-    later = {**page["attempts"][0], "attempt_id": "a2", "stage": "local_ocr",
-             "warnings": [{"type": "clipped_text"}],
-             "classification": {"type": "text", "reason": "prose"}}
+    later = {
+        **page["attempts"][0],
+        "attempt_id": "a2",
+        "stage": "local_ocr",
+        "warnings": [{"type": "clipped_text"}],
+        "classification": {"type": "text", "reason": "prose"},
+    }
     page["attempts"].append(later)
-    page.update(selected_attempt="a2", disposition="coverage_defect",
-                review_reasons=["coverage_defect"])
+    page.update(
+        selected_attempt="a2", disposition="coverage_defect", review_reasons=["coverage_defect"]
+    )
 
     rendered = render_document_report(build_document_report(job, tmp_path))
 
@@ -357,11 +501,19 @@ def test_current_report_attributes_new_selected_attempt_warning_to_selected_atte
 def test_current_report_keeps_untraceable_numeric_hold_generic_across_attempts(tmp_path):
     job = job_fixture(tmp_path)
     page = job["pages"][0]
-    later = {**page["attempts"][0], "attempt_id": "a2", "stage": "local_ocr",
-             "warnings": [], "classification": {"type": "text", "reason": "prose"}}
+    later = {
+        **page["attempts"][0],
+        "attempt_id": "a2",
+        "stage": "local_ocr",
+        "warnings": [],
+        "classification": {"type": "text", "reason": "prose"},
+    }
     page["attempts"].append(later)
-    page.update(selected_attempt="a2", disposition="numeric_column_conflict",
-                review_reasons=["numeric_column_conflict"])
+    page.update(
+        selected_attempt="a2",
+        disposition="numeric_column_conflict",
+        review_reasons=["numeric_column_conflict"],
+    )
 
     rendered = render_document_report(build_document_report(job, tmp_path))
 
@@ -372,12 +524,18 @@ def test_current_report_keeps_untraceable_numeric_hold_generic_across_attempts(t
 def test_current_report_keeps_unknown_outcome_generic_across_attempts(tmp_path):
     job = job_fixture(tmp_path)
     page = job["pages"][0]
-    later = {**page["attempts"][0], "attempt_id": "a2", "stage": "local_ocr",
-             "outcome": "outcome_unknown", "warnings": [],
-             "classification": {"type": "text", "reason": "prose"}}
+    later = {
+        **page["attempts"][0],
+        "attempt_id": "a2",
+        "stage": "local_ocr",
+        "outcome": "outcome_unknown",
+        "warnings": [],
+        "classification": {"type": "text", "reason": "prose"},
+    }
     page["attempts"].append(later)
-    page.update(selected_attempt="a1", disposition="outcome_unknown",
-                review_reasons=["outcome_unknown"])
+    page.update(
+        selected_attempt="a1", disposition="outcome_unknown", review_reasons=["outcome_unknown"]
+    )
 
     rendered = render_document_report(build_document_report(job, tmp_path))
 
@@ -388,13 +546,29 @@ def test_current_report_keeps_unknown_outcome_generic_across_attempts(tmp_path):
 def test_current_report_explains_source_only_human_review(tmp_path):
     job = job_fixture(tmp_path)
     page = job["pages"][0]
-    review = {"schema_version": "0.1", "source_sha256": "a" * 64, "decisions": [{
-        "page_id": "p1", "page_number": 1, "disposition": "source_defect",
-        "selected_attempt": None, "output_sha256": None,
-        "reason": "Source page is damaged", "reviewer": "Peter",
-        "reviewed_at": "2026-09-11T12:00:00Z"}]}
-    page.update(disposition="source_defect", selected_attempt=None, review=review,
-                review_history=[review], next_action="none")
+    review = {
+        "schema_version": "0.1",
+        "source_sha256": "a" * 64,
+        "decisions": [
+            {
+                "page_id": "p1",
+                "page_number": 1,
+                "disposition": "source_defect",
+                "selected_attempt": None,
+                "output_sha256": None,
+                "reason": "Source page is damaged",
+                "reviewer": "Peter",
+                "reviewed_at": "2026-09-11T12:00:00Z",
+            }
+        ],
+    }
+    page.update(
+        disposition="source_defect",
+        selected_attempt=None,
+        review=review,
+        review_history=[review],
+        next_action="none",
+    )
 
     rendered = render_document_report(build_document_report(job, tmp_path))
 
@@ -415,7 +589,10 @@ def test_legacy_report_without_format_marker_still_verifies(tmp_path):
     verified = verify_document_report(tmp_path)
 
     assert verified == report
-    assert "| Page | Disposition | Selected output | Review evidence |" in (tmp_path / "report.md").read_text()
+    assert (
+        "| Page | Disposition | Selected output | Review evidence |"
+        in (tmp_path / "report.md").read_text()
+    )
 
 
 def test_report_with_explicit_null_format_marker_is_rejected(tmp_path):
@@ -423,7 +600,8 @@ def test_report_with_explicit_null_format_marker_is_rejected(tmp_path):
     report = build_document_report(job, tmp_path, report_format=None)
     document = dict(report, report_format=None)
     (tmp_path / "document.json").write_bytes(
-        (json.dumps(document, ensure_ascii=False, indent=2) + "\n").encode())
+        (json.dumps(document, ensure_ascii=False, indent=2) + "\n").encode()
+    )
     (tmp_path / "transcript.md").write_bytes(render_transcript(report).encode())
     (tmp_path / "report.md").write_bytes(render_document_report(report).encode())
 

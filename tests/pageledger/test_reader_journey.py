@@ -31,16 +31,12 @@ def _fake_pageledger_environment(
     )
     package = purelib / "pageledger"
     package.mkdir()
-    (package / "__init__.py").write_text(
-        '__version__ = "0.4.1"\n', encoding="utf-8"
-    )
+    (package / "__init__.py").write_text('__version__ = "0.4.1"\n', encoding="utf-8")
     if distribution_version is not None:
         distribution = purelib / f"pageledger-{distribution_version}.dist-info"
         distribution.mkdir()
         (distribution / "METADATA").write_text(
-            "Metadata-Version: 2.1\n"
-            "Name: pageledger\n"
-            f"Version: {distribution_version}\n",
+            f"Metadata-Version: 2.1\nName: pageledger\nVersion: {distribution_version}\n",
             encoding="utf-8",
         )
     return python, purelib
@@ -49,9 +45,7 @@ def _fake_pageledger_environment(
 def test_exact_wheel_mode_rejects_distribution_module_version_mismatch(
     tmp_path: Path,
 ) -> None:
-    python, _ = _fake_pageledger_environment(
-        tmp_path, distribution_version="9.9.9"
-    )
+    python, _ = _fake_pageledger_environment(tmp_path, distribution_version="9.9.9")
     document = tmp_path / "journey.md"
     document.write_text(
         "```bash pageledger-tutorial\necho TUTORIAL_RAN\n```\n",
@@ -84,9 +78,7 @@ def test_exact_wheel_mode_rejects_distribution_module_version_mismatch(
 
 
 def test_source_mode_allows_import_without_distribution_metadata(tmp_path: Path) -> None:
-    python, source_root = _fake_pageledger_environment(
-        tmp_path, distribution_version=None
-    )
+    python, source_root = _fake_pageledger_environment(tmp_path, distribution_version=None)
     document = tmp_path / "source-journey.md"
     document.write_text(
         "```bash pageledger-tutorial\necho SOURCE_TUTORIAL_RAN\n```\n",
@@ -139,9 +131,7 @@ def test_first_run_tutorial_executes_the_documented_sequence(tmp_path: Path) -> 
         capture_output=True,
         env=env,
     )
-    assert result.returncode == 0, (
-        f"stdout:\n{result.stdout}\n\nstderr:\n{result.stderr}"
-    )
+    assert result.returncode == 0, f"stdout:\n{result.stdout}\n\nstderr:\n{result.stderr}"
     for receipt in (
         "TUTORIAL_WARNING_OK",
         "TUTORIAL_RERUN_SELECTION_OK",

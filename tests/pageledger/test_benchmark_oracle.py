@@ -154,9 +154,7 @@ def test_mutations_fail_for_the_intended_oracle_rule(
     assert expected_code in _codes(receipt), receipt.errors
 
 
-def test_symlink_is_rejected_before_its_target_can_be_evidence(
-    frozen_runs, tmp_path: Path
-) -> None:
+def test_symlink_is_rejected_before_its_target_can_be_evidence(frozen_runs, tmp_path: Path) -> None:
     workload, control, _ = frozen_runs
     mutated = _copy_run(control, tmp_path)
     raw = next((mutated / "raw").iterdir())

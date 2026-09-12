@@ -127,7 +127,12 @@ def test_worker_envelope_replay_error(tmp_path: Path, monkeypatch: pytest.Monkey
         ),
     )
 
-    assert worker.main(["request-error", str(result_path), str(tmp_path / "bundle"), str(tmp_path / "out"), ""]) == 1
+    assert (
+        worker.main(
+            ["request-error", str(result_path), str(tmp_path / "bundle"), str(tmp_path / "out"), ""]
+        )
+        == 1
+    )
     assert json.loads(result_path.read_text(encoding="utf-8")) == {
         "protocol_version": "0.1",
         "request_id": "request-error",
@@ -148,7 +153,18 @@ def test_worker_envelope_redacts_unexpected_error(
         lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("secret details")),
     )
 
-    assert worker.main(["request-generic", str(result_path), str(tmp_path / "bundle"), str(tmp_path / "out"), ""]) == 1
+    assert (
+        worker.main(
+            [
+                "request-generic",
+                str(result_path),
+                str(tmp_path / "bundle"),
+                str(tmp_path / "out"),
+                "",
+            ]
+        )
+        == 1
+    )
     payload = json.loads(result_path.read_text(encoding="utf-8"))
     assert payload == {
         "protocol_version": "0.1",
@@ -203,7 +219,16 @@ def test_worker_response_contradictions_fail_closed(tmp_path: Path) -> None:
         ("missing-field", {key: value for key, value in valid.items() if key != "ok"}, 0),
         ("protocol", {**valid, "protocol_version": "9"}, 0),
         ("request", {**valid, "request_id": "other"}, 0),
-        ("exit-error", {"protocol_version": "0.1", "request_id": "id", "ok": False, "error": {"code": "incompatible_environment", "message": "profile mismatch"}}, 0),
+        (
+            "exit-error",
+            {
+                "protocol_version": "0.1",
+                "request_id": "id",
+                "ok": False,
+                "error": {"code": "incompatible_environment", "message": "profile mismatch"},
+            },
+            0,
+        ),
         ("exit-success", valid, 1),
         ("outcome", {**valid, "result": {**result, "outcome": "unknown"}}, 0),
         ("outcome-list", {**valid, "result": {**result, "outcome": []}}, 0),
@@ -212,15 +237,80 @@ def test_worker_response_contradictions_fail_closed(tmp_path: Path) -> None:
         ("outcome-integer", {**valid, "result": {**result, "outcome": 1}}, 0),
         ("count", {**valid, "result": {**result, "raw": {**result["raw"], "equal": True}}}, 0),
         ("path", {**valid, "result": {**result, "out_dir": str(tmp_path / "other")}}, 0),
-        ("page-ids", {**valid, "result": {**result, "raw": {**result["raw"], "different_page_ids": ["p2", "p1"]}}}, 0),
-        ("overlapping-page-ids", {**valid, "result": {**result, "raw": {**result["raw"], "different": 1, "missing": 1, "different_page_ids": ["p1"], "missing_page_ids": ["p1"]}}}, 0),
+        (
+            "page-ids",
+            {
+                **valid,
+                "result": {**result, "raw": {**result["raw"], "different_page_ids": ["p2", "p1"]}},
+            },
+            0,
+        ),
+        (
+            "overlapping-page-ids",
+            {
+                **valid,
+                "result": {
+                    **result,
+                    "raw": {
+                        **result["raw"],
+                        "different": 1,
+                        "missing": 1,
+                        "different_page_ids": ["p1"],
+                        "missing_page_ids": ["p1"],
+                    },
+                },
+            },
+            0,
+        ),
         ("exact-profile", {**valid, "result": {**result, "profile_match": False}}, 0),
-        ("exact-difference", {**valid, "result": {**result, "raw": {**result["raw"], "different": 1}}}, 0),
-        ("mismatch-without-difference", {**valid, "result": {**result, "outcome": "deterministic_mismatch"}}, 0),
-        ("mismatch-null-profile", {**valid, "result": {**result, "outcome": "deterministic_mismatch", "profile_match": None, "raw": {**result["raw"], "different": 1, "different_page_ids": ["p1"]}}}, 0),
-        ("mismatch-false-profile", {**valid, "result": {**result, "outcome": "deterministic_mismatch", "profile_match": False, "raw": {**result["raw"], "different": 1, "different_page_ids": ["p1"]}}}, 0),
+        (
+            "exact-difference",
+            {**valid, "result": {**result, "raw": {**result["raw"], "different": 1}}},
+            0,
+        ),
+        (
+            "mismatch-without-difference",
+            {**valid, "result": {**result, "outcome": "deterministic_mismatch"}},
+            0,
+        ),
+        (
+            "mismatch-null-profile",
+            {
+                **valid,
+                "result": {
+                    **result,
+                    "outcome": "deterministic_mismatch",
+                    "profile_match": None,
+                    "raw": {**result["raw"], "different": 1, "different_page_ids": ["p1"]},
+                },
+            },
+            0,
+        ),
+        (
+            "mismatch-false-profile",
+            {
+                **valid,
+                "result": {
+                    **result,
+                    "outcome": "deterministic_mismatch",
+                    "profile_match": False,
+                    "raw": {**result["raw"], "different": 1, "different_page_ids": ["p1"]},
+                },
+            },
+            0,
+        ),
         ("evidence-profile", {**valid, "result": {**result, "outcome": "evidence_compared"}}, 0),
-        ("page-count", {**valid, "result": {**result, "raw": {**result["raw"], "different": 1, "different_page_ids": []}}}, 0),
+        (
+            "page-count",
+            {
+                **valid,
+                "result": {
+                    **result,
+                    "raw": {**result["raw"], "different": 1, "different_page_ids": []},
+                },
+            },
+            0,
+        ),
     ]
     for name, payload, returncode in cases:
         path = tmp_path / f"{name}.json"
@@ -318,11 +408,31 @@ def test_worker_response_preserves_known_error_and_success(tmp_path: Path) -> No
         "baseline_run_id": "base",
         "bundle_manifest_sha256": "0" * 64,
         "profile_match": True,
-        "raw": {"equal": 1, "different": 0, "missing": 0, "different_page_ids": [], "missing_page_ids": []},
+        "raw": {
+            "equal": 1,
+            "different": 0,
+            "missing": 0,
+            "different_page_ids": [],
+            "missing_page_ids": [],
+        },
     }
     success_path = tmp_path / "success.json"
-    success_path.write_text(json.dumps({"protocol_version": "0.1", "request_id": "success", "ok": True, "result": result}), encoding="utf-8")
-    assert _read_worker_response(success_path, expected_root=tmp_path, request_id="success", returncode=0, expected_out=output) == result
+    success_path.write_text(
+        json.dumps(
+            {"protocol_version": "0.1", "request_id": "success", "ok": True, "result": result}
+        ),
+        encoding="utf-8",
+    )
+    assert (
+        _read_worker_response(
+            success_path,
+            expected_root=tmp_path,
+            request_id="success",
+            returncode=0,
+            expected_out=output,
+        )
+        == result
+    )
 
 
 def test_text_profile_is_stable_and_self_hashing() -> None:
@@ -437,7 +547,10 @@ def test_profile_rejects_path_material_values() -> None:
         build_reproducibility_profile(AdapterReturning())
 
 
-@pytest.mark.parametrize("alias", ["LATEST", "main", "master", "stable", "current", "rolling", "nightly", "HEAD", "unknown"])
+@pytest.mark.parametrize(
+    "alias",
+    ["LATEST", "main", "master", "stable", "current", "rolling", "nightly", "HEAD", "unknown"],
+)
 def test_profile_rejects_mutable_material_version_aliases(alias: str) -> None:
     from pageledger.replay import build_reproducibility_profile
 
@@ -533,7 +646,10 @@ def test_bundle_text_run_has_portable_layout(tmp_path: Path) -> None:
     assert bundle["replay"]["config"] == "baseline/config-snapshot.yml"
     assert bundle["replay"]["route_map"] == "replay-route-map.yml"
     assert bundle["sources"][0]["path"] == "sources/source-0001.txt"
-    assert yaml.safe_load((bundle_dir / "replay-route-map.yml").read_text())["documents"][0]["source"] == "sources/source-0001.txt"
+    assert (
+        yaml.safe_load((bundle_dir / "replay-route-map.yml").read_text())["documents"][0]["source"]
+        == "sources/source-0001.txt"
+    )
     assert all(entry["path"] != "bundle.json" for entry in bundle["files"])
     assert validate_bundle(bundle_dir)["baseline"]["run_id"] == manifest["run_id"]
 
@@ -551,9 +667,10 @@ def test_relocated_text_replay_is_exact_without_original_source(tmp_path: Path) 
     result = replay_bundle(moved, tmp_path / "replayed")
     assert result["outcome"] == "exact"
     assert result["raw"]["different"] == 0
-    assert result["bundle_manifest_sha256"] == hashlib.sha256(
-        (moved / "bundle.json").read_bytes()
-    ).hexdigest()
+    assert (
+        result["bundle_manifest_sha256"]
+        == hashlib.sha256((moved / "bundle.json").read_bytes()).hexdigest()
+    )
     assert verify_run(tmp_path / "replayed")["status"] == "pass"
 
 
@@ -597,7 +714,10 @@ def test_custom_adapter_profile_mismatch_fails_before_output_creation(
         "    capabilities = ('local',)\n"
         "    def supports(self, action): return action == 'transcribe_text'\n"
         "    def reproducibility_profile(self):\n"
-        "        return {'materials': [{'kind': 'asset', 'name': 'fixture', 'version': VERSION, 'sha256': '" + "0" * 64 + "'}]}\n"
+        "        return {'materials': [{'kind': 'asset', 'name': 'fixture', 'version': VERSION, 'sha256': '"
+        + "0"
+        * 64
+        + "'}]}\n"
         "    def extract(self, source, *, page_id, page_number, action, prompt=None):\n"
         "        return ExtractionResult(content='stable', format='text', confidence=None, model=None, warnings=[], usage={'pages': 1})\n"
     )
@@ -626,11 +746,18 @@ def test_nondeterministic_adapter_is_evidence_compared(tmp_path: Path) -> None:
     result = replay_bundle(bundle_dir, tmp_path / "replayed", adapter_path=adapter_dir)
     assert result["outcome"] == "evidence_compared"
     baseline = json.loads((run_dir / "manifest.json").read_text(encoding="utf-8"))
-    replay_manifest = json.loads((tmp_path / "replayed" / "manifest.json").read_text(encoding="utf-8"))
-    replay_evidence = json.loads((tmp_path / "replayed" / "replay.json").read_text(encoding="utf-8"))
+    replay_manifest = json.loads(
+        (tmp_path / "replayed" / "manifest.json").read_text(encoding="utf-8")
+    )
+    replay_evidence = json.loads(
+        (tmp_path / "replayed" / "replay.json").read_text(encoding="utf-8")
+    )
     expected_profile = baseline["extractors"][0]["reproducibility_profile"]
     assert replay_manifest["extractors"][0]["reproducibility_profile"] == expected_profile
-    assert replay_evidence["local_extractor"]["reproducibility_profile_sha256"] == expected_profile["profile_sha256"]
+    assert (
+        replay_evidence["local_extractor"]["reproducibility_profile_sha256"]
+        == expected_profile["profile_sha256"]
+    )
     assert replay_evidence["profile_match"] is None
 
 
@@ -701,9 +828,7 @@ def test_single_adapter_instance_is_reused_through_replay(tmp_path: Path) -> Non
         "        return ExtractionResult(content=self.variant, format='text', confidence=None, model='stateful', warnings=[], usage={'pages': 1})\n",
         encoding="utf-8",
     )
-    config = MINIMAL_CONFIG.replace(
-        "adapter: text", "adapter: constructor_stateful:Adapter"
-    )
+    config = MINIMAL_CONFIG.replace("adapter: text", "adapter: constructor_stateful:Adapter")
     run_dir, _, _ = _run_text(tmp_path, config_text=config, adapter_path=adapter_dir)
     bundle_dir = tmp_path / "bundle"
     bundle_run(run_dir, bundle_dir)
@@ -714,9 +839,7 @@ def test_single_adapter_instance_is_reused_through_replay(tmp_path: Path) -> Non
 
     assert result["outcome"] == "exact"
     assert counter.read_text(encoding="utf-8") == "1"
-    assert (replayed / "raw" / "doc_0001_page_0001.txt").read_text(
-        encoding="utf-8"
-    ) == "variant-1"
+    assert (replayed / "raw" / "doc_0001_page_0001.txt").read_text(encoding="utf-8") == "variant-1"
 
 
 def test_pdf_text_exact_replay(tmp_path: Path) -> None:
@@ -731,7 +854,9 @@ def test_pdf_text_exact_replay(tmp_path: Path) -> None:
     with source.open("wb") as handle:
         writer.write(handle)
     config = tmp_path / "pdf.yml"
-    config.write_text(MINIMAL_CONFIG.replace("adapter: text", "adapter: pdf_text"), encoding="utf-8")
+    config.write_text(
+        MINIMAL_CONFIG.replace("adapter: text", "adapter: pdf_text"), encoding="utf-8"
+    )
     run_dir = tmp_path / "run"
     run(inputs=[source], config_path=config, out_dir=run_dir, dry_run=False)
     bundle_dir = tmp_path / "bundle"
@@ -787,7 +912,13 @@ def test_routed_partial_review_replay_preserves_review_routes(tmp_path: Path) ->
     supplied_route = tmp_path / "review-route.yml"
     supplied_route.write_text(yaml.safe_dump(route, sort_keys=False), encoding="utf-8")
     run_dir = tmp_path / "routed"
-    run(inputs=[source], config_path=config, out_dir=run_dir, dry_run=False, routes_path=supplied_route)
+    run(
+        inputs=[source],
+        config_path=config,
+        out_dir=run_dir,
+        dry_run=False,
+        routes_path=supplied_route,
+    )
     bundle_dir = tmp_path / "bundle"
     bundle_run(run_dir, bundle_dir)
     result = replay_bundle(bundle_dir, tmp_path / "replayed")
@@ -849,9 +980,17 @@ def test_external_alignment_snapshot_replays_without_original_schema(
     source = tmp_path / "table.txt"
     source.write_text("table\n", encoding="utf-8")
     config = tmp_path / "table.yml"
-    config.write_text(MINIMAL_CONFIG.replace("adapter: text", "adapter: tableish:Adapter"), encoding="utf-8")
+    config.write_text(
+        MINIMAL_CONFIG.replace("adapter: text", "adapter: tableish:Adapter"), encoding="utf-8"
+    )
     run_dir = tmp_path / "run"
-    run(inputs=[source], config_path=config, out_dir=run_dir, dry_run=False, adapter_path=adapter_dir)
+    run(
+        inputs=[source],
+        config_path=config,
+        out_dir=run_dir,
+        dry_run=False,
+        adapter_path=adapter_dir,
+    )
     schema = tmp_path / "external-schema.yml"
     schema.write_text(
         "name: table\ncolumns:\n  - {name: place, type: string, required: true}\n  - {name: total, type: integer, required: true}\n",
@@ -899,7 +1038,9 @@ def test_replay_blocks_implicit_bundle_adapter_import_before_execution(
         encoding="utf-8",
     )
     config = tmp_path / "config.yml"
-    config.write_text(MINIMAL_CONFIG.replace("adapter: text", "adapter: source-0001:Adapter"), encoding="utf-8")
+    config.write_text(
+        MINIMAL_CONFIG.replace("adapter: text", "adapter: source-0001:Adapter"), encoding="utf-8"
+    )
     run_dir = tmp_path / "run"
     run(inputs=[payload], config_path=config, out_dir=run_dir, dry_run=False, adapter_path=trusted)
     bundle_dir = tmp_path / "bundle"
@@ -1092,7 +1233,10 @@ def test_profile_hook_cannot_import_bundle_helper(
         encoding="utf-8",
     )
     config = tmp_path / "config.yml"
-    config.write_text(MINIMAL_CONFIG.replace("adapter: text", "adapter: trusted_adapter:Adapter"), encoding="utf-8")
+    config.write_text(
+        MINIMAL_CONFIG.replace("adapter: text", "adapter: trusted_adapter:Adapter"),
+        encoding="utf-8",
+    )
     monkeypatch.chdir(tmp_path)
     run_dir = tmp_path / "run"
     run(inputs=[payload], config_path=config, out_dir=run_dir, dry_run=False, adapter_path=trusted)
@@ -1293,8 +1437,12 @@ def test_bundle_rejects_noncanonical_source_filename(tmp_path: Path, new_name: s
     ]
     route = yaml.safe_load((bundle_dir / "replay-route-map.yml").read_text(encoding="utf-8"))
     route["documents"][0]["source"] = new_name
-    (bundle_dir / "replay-route-map.yml").write_text(yaml.safe_dump(route, sort_keys=False), encoding="utf-8")
-    (bundle_dir / "bundle.json").write_text(json.dumps(bundle, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    (bundle_dir / "replay-route-map.yml").write_text(
+        yaml.safe_dump(route, sort_keys=False), encoding="utf-8"
+    )
+    (bundle_dir / "bundle.json").write_text(
+        json.dumps(bundle, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
     _refresh_bundle_inventory(bundle_dir)
     with pytest.raises(ReplayError):
         validate_bundle(bundle_dir)
@@ -1334,15 +1482,21 @@ def test_bundle_profile_validation_rejects_path_and_mutable_material(tmp_path: P
     bundle_run(run_dir, bundle_dir)
     bundle = json.loads((bundle_dir / "bundle.json").read_text(encoding="utf-8"))
     profile = bundle["baseline"]["extractor"]["reproducibility_profile"]
-    profile["materials"] = [{"kind": "asset", "name": "/tmp/model", "version": "latest", "sha256": "0" * 64}]
+    profile["materials"] = [
+        {"kind": "asset", "name": "/tmp/model", "version": "latest", "sha256": "0" * 64}
+    ]
     profile["profile_sha256"] = profile_sha256(profile)
     manifest_path = bundle_dir / "baseline" / "manifest.json"
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     manifest["extractors"][0]["reproducibility_profile"] = profile
-    manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    manifest_path.write_text(
+        json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
     bundle["baseline"]["extractor"]["reproducibility_profile"] = profile
     bundle["baseline"]["manifest_sha256"] = hashlib.sha256(manifest_path.read_bytes()).hexdigest()
-    (bundle_dir / "bundle.json").write_text(json.dumps(bundle, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    (bundle_dir / "bundle.json").write_text(
+        json.dumps(bundle, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
     _refresh_bundle_inventory(bundle_dir)
     with pytest.raises(ReplayError, match="paths|exact revision"):
         validate_bundle(bundle_dir)
@@ -1354,16 +1508,30 @@ def test_bundle_positive_prose_and_budget_token_text_is_not_scanned(tmp_path: Pa
     config = MINIMAL_CONFIG.replace(
         "run:\n  adapter: text", "run:\n  adapter: text\n  budget:\n    max_tokens: 10"
     )
-    run_dir, _, _ = _run_text(tmp_path, config_text=config, source_text="ordinary token prose\fsecond page\n")
+    run_dir, _, _ = _run_text(
+        tmp_path, config_text=config, source_text="ordinary token prose\fsecond page\n"
+    )
     bundle_run(run_dir, tmp_path / "bundle")
 
 
 @pytest.mark.parametrize(
     "forbidden_key",
     [
-        "api-key", "api_token", "token", "access-token", "auth_token", "bearer-token",
-        "refresh_token", "client-secret", "secret_key", "password", "credential",
-        "credentials", "authorization", "private-key", "access_key",
+        "api-key",
+        "api_token",
+        "token",
+        "access-token",
+        "auth_token",
+        "bearer-token",
+        "refresh_token",
+        "client-secret",
+        "secret_key",
+        "password",
+        "credential",
+        "credentials",
+        "authorization",
+        "private-key",
+        "access_key",
     ],
 )
 def test_bundle_rejects_exact_forbidden_credential_keys(tmp_path: Path, forbidden_key: str) -> None:
@@ -1374,7 +1542,9 @@ def test_bundle_rejects_exact_forbidden_credential_keys(tmp_path: Path, forbidde
     bundle_run(run_dir, bundle_dir)
     bundle = json.loads((bundle_dir / "bundle.json").read_text(encoding="utf-8"))
     bundle["baseline"]["extractor"]["options"] = {forbidden_key: "secret"}
-    (bundle_dir / "bundle.json").write_text(json.dumps(bundle, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    (bundle_dir / "bundle.json").write_text(
+        json.dumps(bundle, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
     with pytest.raises(ReplayError, match="Credential option key"):
         validate_bundle(bundle_dir)
 
@@ -1409,7 +1579,9 @@ def test_bundle_rejects_generation_and_incomplete_runs(
         manifest["summary"].update(manifest_update["summary"])
     else:
         manifest.update(manifest_update)
-    manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    manifest_path.write_text(
+        json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
     monkeypatch.setattr(verify_module, "verify_run", lambda _: {"status": "pass"})
     with pytest.raises(ReplayError, match=message):
         bundle_run(run_dir, tmp_path / "bundle")
@@ -1461,7 +1633,9 @@ def test_bundle_rejects_noncanonical_manifest_artifact_key(tmp_path: Path) -> No
     manifest_path = run_dir / "manifest.json"
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     manifest["artifacts"]["rogue"] = "rogue.txt"
-    manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    manifest_path.write_text(
+        json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
     with pytest.raises(ReplayError):
         bundle_run(run_dir, tmp_path / "bundle")
 
@@ -1476,7 +1650,9 @@ def test_bundle_rejects_wrong_manifest_artifact_path_at_canonical_gate(
     manifest_path = run_dir / "manifest.json"
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     manifest["artifacts"]["audit"] = "wrong-audit.json"
-    manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    manifest_path.write_text(
+        json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
     monkeypatch.setattr(verify_module, "verify_run", lambda _: {"status": "pass"})
     with pytest.raises(ReplayError) as exc_info:
         bundle_run(run_dir, tmp_path / "bundle")
@@ -1511,7 +1687,9 @@ def test_bundle_rejects_unsafe_inventory_paths(tmp_path: Path, unsafe_path: str)
     bundle_run(run_dir, bundle_dir)
     bundle = json.loads((bundle_dir / "bundle.json").read_text(encoding="utf-8"))
     bundle["files"][0]["path"] = unsafe_path
-    (bundle_dir / "bundle.json").write_text(json.dumps(bundle, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    (bundle_dir / "bundle.json").write_text(
+        json.dumps(bundle, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
     with pytest.raises(ReplayError, match="Unsafe bundle path"):
         validate_bundle(bundle_dir)
 
@@ -1526,7 +1704,9 @@ def test_bundle_rejects_duplicate_source_mapping(tmp_path: Path) -> None:
     duplicate = dict(bundle["sources"][0])
     duplicate["index"] = 2
     bundle["sources"].append(duplicate)
-    (bundle_dir / "bundle.json").write_text(json.dumps(bundle, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    (bundle_dir / "bundle.json").write_text(
+        json.dumps(bundle, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
     with pytest.raises(ReplayError, match="source paths"):
         validate_bundle(bundle_dir)
 
@@ -1539,12 +1719,16 @@ def test_bundle_rejects_wrong_canonical_artifact_path(tmp_path: Path) -> None:
     bundle_run(run_dir, bundle_dir)
     bundle = json.loads((bundle_dir / "bundle.json").read_text(encoding="utf-8"))
     bundle["replay"]["config"] = "baseline/wrong-config.yml"
-    (bundle_dir / "bundle.json").write_text(json.dumps(bundle, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    (bundle_dir / "bundle.json").write_text(
+        json.dumps(bundle, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
     with pytest.raises(ReplayError, match="canonical"):
         validate_bundle(bundle_dir)
 
 
-@pytest.mark.parametrize("alias", ["./baseline/audit.json", "baseline//audit.json", "baseline/./audit.json"])
+@pytest.mark.parametrize(
+    "alias", ["./baseline/audit.json", "baseline//audit.json", "baseline/./audit.json"]
+)
 def test_bundle_rejects_noncanonical_inventory_aliases(tmp_path: Path, alias: str) -> None:
     from pageledger.replay import ReplayError, bundle_run, validate_bundle
 
@@ -1585,7 +1769,9 @@ def test_bundle_rejects_forbidden_key_in_config_option_mapping(
     manifest_path = bundle_dir / "baseline" / "manifest.json"
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     manifest["config"]["sha256"] = hashlib.sha256(config_path.read_bytes()).hexdigest()
-    manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    manifest_path.write_text(
+        json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
     _refresh_manifest_metadata(bundle_dir)
     with pytest.raises(ReplayError, match="Credential option key"):
         validate_bundle(bundle_dir)
@@ -1597,9 +1783,12 @@ def test_bundle_positive_raw_log_citation_and_ordinary_option_values_are_not_sca
     from pageledger.replay import bundle_run, validate_bundle
 
     config = MINIMAL_CONFIG.replace(
-        "run:\n  adapter: text", "dataset_citation:\n  label: raw/log/citation token\n  text: api_key prose\nrun:\n  adapter: text"
+        "run:\n  adapter: text",
+        "dataset_citation:\n  label: raw/log/citation token\n  text: api_key prose\nrun:\n  adapter: text",
     )
-    run_dir, _, _ = _run_text(tmp_path, config_text=config, source_text="raw token prose\fsecond page\n")
+    run_dir, _, _ = _run_text(
+        tmp_path, config_text=config, source_text="raw token prose\fsecond page\n"
+    )
     bundle_dir = tmp_path / "bundle"
     bundle_run(run_dir, bundle_dir)
     run_log = bundle_dir / "baseline" / "run.log"
@@ -1616,7 +1805,11 @@ def test_bundle_positive_raw_log_citation_and_ordinary_option_values_are_not_sca
     manifest_path = bundle_dir / "baseline" / "manifest.json"
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     manifest["extractors"][0]["options"] = options
-    manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    (bundle_dir / "bundle.json").write_text(json.dumps(bundle, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    manifest_path.write_text(
+        json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
+    (bundle_dir / "bundle.json").write_text(
+        json.dumps(bundle, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
     _refresh_manifest_metadata(bundle_dir)
     assert validate_bundle(bundle_dir)["baseline"]["run_id"] == manifest["run_id"]

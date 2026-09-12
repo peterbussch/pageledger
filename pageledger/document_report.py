@@ -1,4 +1,5 @@
 """Byte-faithful document evidence with Markdown derived from document.json."""
+
 from __future__ import annotations
 
 import copy
@@ -61,13 +62,23 @@ def _link(label: str, target: str) -> str:
 
 
 def _escape(text: str) -> str:
-    return str(text).replace("\\", "\\\\").replace("|", "\\|").replace("[", "\\[").replace("]", "\\]").replace("\n", " ").replace("\r", " ")
+    return (
+        str(text)
+        .replace("\\", "\\\\")
+        .replace("|", "\\|")
+        .replace("[", "\\[")
+        .replace("]", "\\]")
+        .replace("\n", " ")
+        .replace("\r", " ")
+    )
 
 
 def render_transcript(report: dict) -> str:
     """Serialize the transcript without trimming or normalizing extraction text."""
-    chunks = [f"# Transcript: {_escape(report['job_id'])}\n\n",
-              f"Source SHA-256: `{report['source']['sha256']}`\n\n"]
+    chunks = [
+        f"# Transcript: {_escape(report['job_id'])}\n\n",
+        f"Source SHA-256: `{report['source']['sha256']}`\n\n",
+    ]
     for page in report["pages"]:
         chunks.append(f"## Page {page['page_number']}\n\n")
         chunks.append(_link("Source page", page["source_link"]) + "\n\n")
@@ -75,7 +86,9 @@ def render_transcript(report: dict) -> str:
         if selected is None:
             chunks.append(f"[No selected text: {page['disposition']}.]\n\n")
         else:
-            chunks.append(_link(f"Selected attempt {selected['attempt_id']}", selected["path"]) + "\n\n")
+            chunks.append(
+                _link(f"Selected attempt {selected['attempt_id']}", selected["path"]) + "\n\n"
+            )
             chunks.append(selected["text"])
             chunks.append("\n\n")
     return "".join(chunks)
@@ -106,21 +119,25 @@ def _review_status(page: dict) -> str:
     label = _disposition_label(decision["disposition"])
     source_only = decision["selected_attempt"] is None
     prefix = "Source-only review" if source_only else "Reviewed"
-    return (f"{prefix}: {label}; reviewed by {_escape(decision['reviewer'])} at "
-            f"{_escape(decision['reviewed_at'])}: {_escape(decision['reason'])}")
+    return (
+        f"{prefix}: {label}; reviewed by {_escape(decision['reviewer'])} at "
+        f"{_escape(decision['reviewed_at'])}: {_escape(decision['reason'])}"
+    )
 
 
 def _current_output(page: dict) -> str:
     selected = page.get("selected_output")
     if selected is None:
         if page.get("review") is not None:
-            decision = next(item for item in page["review"]["decisions"]
-                            if item["page_id"] == page["page_id"])
+            decision = next(
+                item for item in page["review"]["decisions"] if item["page_id"] == page["page_id"]
+            )
             if decision["selected_attempt"] is None:
                 return "No selected output (source-only review)"
         return "No selected output"
-    attempt = next((item for item in page["attempts"]
-                    if item["attempt_id"] == selected["attempt_id"]), None)
+    attempt = next(
+        (item for item in page["attempts"] if item["attempt_id"] == selected["attempt_id"]), None
+    )
     if attempt is None:
         raise ValueError("selected output attempt is missing from document report")
     label = f"{_stage_label(attempt['stage'])} attempt {selected['attempt_id']}"
@@ -188,64 +205,112 @@ def render_document_report(report: dict) -> str:
     tokens = str(usage["tokens"]) if usage["tokens"] is not None else "unknown"
     if usage.get("tokens_known") is False:
         tokens = f"unknown (known subtotal: {tokens})"
-    lines = [f"# Document report: {_escape(report['job_id'])}", "",
-             f"Status: {report['status']}", "",
-             f"Source: {_link(source['path'], quote(source['path'], safe='/'))}",
-             f"Source SHA-256: `{source['sha256']}`", "",
-             f"Pages processed: {counts['processed_pages']}; selected for this job: {counts['selected_pages']}; full source: {source_count}.",
-             f"Selected outputs: {counts['selected_outputs']}; unresolved pages: {counts['unresolved_pages']}.", "",
-             f"Annotations: {annotations['status']} ({annotation_count}). This inventory does not establish body extraction or citation completeness.", "",
-             f"Attempt pages: {usage['attempt_pages']}; image calls: {usage['image_calls']}; tokens: {tokens}; cost: {cost}.", "",
-             *(["Current page results", ""] if current else []),
-             ("| Page | Current output | Review status | Recorded concerns |"
-              if current else "| Page | Disposition | Selected output | Review evidence |"),
-             "| --- | --- | --- | --- |"]
+    lines = [
+        f"# Document report: {_escape(report['job_id'])}",
+        "",
+        f"Status: {report['status']}",
+        "",
+        f"Source: {_link(source['path'], quote(source['path'], safe='/'))}",
+        f"Source SHA-256: `{source['sha256']}`",
+        "",
+        f"Pages processed: {counts['processed_pages']}; selected for this job: {counts['selected_pages']}; full source: {source_count}.",
+        f"Selected outputs: {counts['selected_outputs']}; unresolved pages: {counts['unresolved_pages']}.",
+        "",
+        f"Annotations: {annotations['status']} ({annotation_count}). This inventory does not establish body extraction or citation completeness.",
+        "",
+        f"Attempt pages: {usage['attempt_pages']}; image calls: {usage['image_calls']}; tokens: {tokens}; cost: {cost}.",
+        "",
+        *(["Current page results", ""] if current else []),
+        (
+            "| Page | Current output | Review status | Recorded concerns |"
+            if current
+            else "| Page | Disposition | Selected output | Review evidence |"
+        ),
+        "| --- | --- | --- | --- |",
+    ]
     for page in report["pages"]:
         if current:
-            row = (f"| {_link(str(page['page_number']), page['source_link'])} | "
-                   f"{_current_output(page)} | {_review_status(page)} | "
-                   f"{_recorded_concerns(page)} |")
+            row = (
+                f"| {_link(str(page['page_number']), page['source_link'])} | "
+                f"{_current_output(page)} | {_review_status(page)} | "
+                f"{_recorded_concerns(page)} |"
+            )
         else:
             selected = page["selected_output"]
             selected_link = _link(selected["attempt_id"], selected["path"]) if selected else "none"
             reasons = ", ".join(page["review_reasons"]) or "none recorded"
             if page["review"] is not None:
-                decision = next(item for item in page["review"]["decisions"]
-                                if item["page_id"] == page["page_id"])
+                decision = next(
+                    item
+                    for item in page["review"]["decisions"]
+                    if item["page_id"] == page["page_id"]
+                )
                 reasons += f"; reviewed by {decision['reviewer']} at {decision['reviewed_at']}: {decision['reason']}"
-            row = (f"| {_link(str(page['page_number']), page['source_link'])} | {page['disposition']} | "
-                   f"{selected_link} | {_escape(reasons)} |")
+            row = (
+                f"| {_link(str(page['page_number']), page['source_link'])} | {page['disposition']} | "
+                f"{selected_link} | {_escape(reasons)} |"
+            )
         lines.append(row)
     lines.extend(["", "Attempt evidence:", ""])
     for page in report["pages"]:
         for attempt in page["attempts"]:
             path = attempt["raw_artifact"]
-            evidence = _link(attempt["attempt_id"], path) if path else _escape(attempt["attempt_id"])
+            evidence = (
+                _link(attempt["attempt_id"], path) if path else _escape(attempt["attempt_id"])
+            )
             failure = (attempt.get("failure") or {}).get("code")
             detail = f"; failure {_escape(failure)}" if failure else ""
-            stage = _stage_label(attempt['stage']) if current else attempt['stage']
-            lines.append(f"- Page {page['page_number']}: {evidence}; stage {stage}; "
-                         f"outcome {attempt['outcome']}{detail}.")
-    lines.extend(["", f"Capture: {retention['capture']}",
-                  f"Preservation: {retention['preservation']}",
-                  f"Removal eligibility: {retention['removal_eligibility']}",
-                  f"Source removed: {'yes' if retention['removed'] else 'no'}", ""])
+            stage = _stage_label(attempt["stage"]) if current else attempt["stage"]
+            lines.append(
+                f"- Page {page['page_number']}: {evidence}; stage {stage}; "
+                f"outcome {attempt['outcome']}{detail}."
+            )
+    lines.extend(
+        [
+            "",
+            f"Capture: {retention['capture']}",
+            f"Preservation: {retention['preservation']}",
+            f"Removal eligibility: {retention['removal_eligibility']}",
+            f"Source removed: {'yes' if retention['removed'] else 'no'}",
+            "",
+        ]
+    )
     for name, target in report["links"].items():
         if target is not None:
             lines.append(f"{name.title()}: {_link(name, target)}")
-    lines.extend(["", f"Transcript: {_link('transcript.md', report['transcript']['path'])}",
-                  f"Transcript SHA-256: `{report['transcript']['sha256']}`", "",
-                  f"Next action: {_escape(report['next_action'])}", ""])
+    lines.extend(
+        [
+            "",
+            f"Transcript: {_link('transcript.md', report['transcript']['path'])}",
+            f"Transcript SHA-256: `{report['transcript']['sha256']}`",
+            "",
+            f"Next action: {_escape(report['next_action'])}",
+            "",
+        ]
+    )
     return "\n".join(lines)
 
 
-def build_document_report(job: dict, root: Path, *, report_format: str | None = _CURRENT_REPORT_FORMAT) -> dict:
+def build_document_report(
+    job: dict, root: Path, *, report_format: str | None = _CURRENT_REPORT_FORMAT
+) -> dict:
     """Read and verify evidence, deriving the complete report without writing files."""
     root = Path(root)
     if root.is_symlink() or not root.is_dir():
         raise ValueError("Unsafe report root")
-    fields = ("schema_version", "job_id", "created_at", "source", "selected_pages", "status",
-              "usage", "limits", "links", "source_retention", "next_action")
+    fields = (
+        "schema_version",
+        "job_id",
+        "created_at",
+        "source",
+        "selected_pages",
+        "status",
+        "usage",
+        "limits",
+        "links",
+        "source_retention",
+        "next_action",
+    )
     report = {field: copy.deepcopy(job[field]) for field in fields}
     if report_format is not None:
         if report_format != _CURRENT_REPORT_FORMAT:
@@ -258,9 +323,13 @@ def build_document_report(job: dict, root: Path, *, report_format: str | None = 
             raise ValueError("Report page source identity mismatch")
         if page.get("review") is not None:
             validate_review(page["review"], page)
-            decision = next(item for item in page["review"]["decisions"] if item["page_id"] == page["page_id"])
-            if (decision["selected_attempt"] != page["selected_attempt"]
-                    or decision["disposition"] != page["disposition"]):
+            decision = next(
+                item for item in page["review"]["decisions"] if item["page_id"] == page["page_id"]
+            )
+            if (
+                decision["selected_attempt"] != page["selected_attempt"]
+                or decision["disposition"] != page["disposition"]
+            ):
                 raise ValueError("Page selection does not match its review receipt")
         elif page["disposition"] in {"reviewed_text", "reviewed_blank"}:
             raise ValueError("Reviewed page requires a bound review receipt")
@@ -268,8 +337,12 @@ def build_document_report(job: dict, root: Path, *, report_format: str | None = 
         for attempt in page["attempts"]:
             attempt.pop("text", None)
             if attempt["raw_artifact"] is not None:
-                contents[attempt["attempt_id"]] = _artifact_bytes(root, attempt["raw_artifact"], attempt["raw_sha256"])
-        selected = [item for item in page["attempts"] if item["attempt_id"] == page["selected_attempt"]]
+                contents[attempt["attempt_id"]] = _artifact_bytes(
+                    root, attempt["raw_artifact"], attempt["raw_sha256"]
+                )
+        selected = [
+            item for item in page["attempts"] if item["attempt_id"] == page["selected_attempt"]
+        ]
         page["selected_output"] = None
         if page["selected_attempt"] is not None:
             if len(selected) != 1 or selected[0]["outcome"] != "completed":
@@ -281,20 +354,30 @@ def build_document_report(job: dict, root: Path, *, report_format: str | None = 
                 text = contents[chosen["attempt_id"]].decode("utf-8")
             except UnicodeError as exc:
                 raise ValueError("Selected output is not UTF-8") from exc
-            page["selected_output"] = {"attempt_id": chosen["attempt_id"],
-                                       "path": chosen["raw_artifact"], "sha256": chosen["raw_sha256"],
-                                       "format": chosen["format"], "text": text}
+            page["selected_output"] = {
+                "attempt_id": chosen["attempt_id"],
+                "path": chosen["raw_artifact"],
+                "sha256": chosen["raw_sha256"],
+                "format": chosen["format"],
+                "text": text,
+            }
         page["source_link"] = f"{quote(job['source']['path'], safe='/')}#page={page['page_number']}"
         pages.append(page)
     report["pages"] = pages
-    report["counts"] = {"source_pages": job["source"]["page_count"],
-                        "selected_pages": len(job["selected_pages"]),
-                        "processed_pages": sum(bool(page["attempts"]) for page in pages),
-                        "selected_outputs": sum(page["selected_output"] is not None for page in pages),
-                        "unresolved_pages": sum(page["disposition"] not in {"reviewed_text", "reviewed_blank"}
-                                                for page in pages)}
+    report["counts"] = {
+        "source_pages": job["source"]["page_count"],
+        "selected_pages": len(job["selected_pages"]),
+        "processed_pages": sum(bool(page["attempts"]) for page in pages),
+        "selected_outputs": sum(page["selected_output"] is not None for page in pages),
+        "unresolved_pages": sum(
+            page["disposition"] not in {"reviewed_text", "reviewed_blank"} for page in pages
+        ),
+    }
     transcript = render_transcript(report).encode("utf-8")
-    report["transcript"] = {"path": "transcript.md", "sha256": hashlib.sha256(transcript).hexdigest()}
+    report["transcript"] = {
+        "path": "transcript.md",
+        "sha256": hashlib.sha256(transcript).hexdigest(),
+    }
     return report
 
 
@@ -308,7 +391,9 @@ def write_document_report(job: dict, root: Path) -> dict:
     root = Path(root)
     report = build_document_report(job, root)
     transcript = render_transcript(report).encode("utf-8")
-    document = (json.dumps(report, ensure_ascii=False, allow_nan=False, indent=2) + "\n").encode("utf-8")
+    document = (json.dumps(report, ensure_ascii=False, allow_nan=False, indent=2) + "\n").encode(
+        "utf-8"
+    )
     markdown = render_document_report(report).encode("utf-8")
     atomic_bytes(root / "transcript.md", transcript)
     atomic_bytes(root / "report.md", markdown)
@@ -328,9 +413,11 @@ def verify_document_report(root: Path) -> dict:
     try:
         report = json.loads((root / "document.json").read_bytes())
         transcript = (root / "transcript.md").read_bytes()
-        if (transcript != render_transcript(report).encode("utf-8")
-                or hashlib.sha256(transcript).hexdigest() != report["transcript"]["sha256"]
-                or (root / "report.md").read_bytes() != render_document_report(report).encode("utf-8")):
+        if (
+            transcript != render_transcript(report).encode("utf-8")
+            or hashlib.sha256(transcript).hexdigest() != report["transcript"]["sha256"]
+            or (root / "report.md").read_bytes() != render_document_report(report).encode("utf-8")
+        ):
             raise ValueError("Derived document report does not match document.json")
         for page in report["pages"]:
             for attempt in page["attempts"]:
