@@ -4,6 +4,7 @@ include CHANGELOG.md
 include CITATION.cff
 include THIRD_PARTY_NOTICES.md
 recursive-include docs *.md *.yml
+recursive-include docs/validation/0.5.1 *.json *.csv
 recursive-include examples *.py *.sh
 recursive-include schemas *.json
 recursive-include skills *.md

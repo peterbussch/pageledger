@@ -27,25 +27,26 @@ uploading to PyPI also requires approval through the `pypi` environment.
    SHA.
 5. Build wheel and sdist once from that exact clean source into a fresh `dist/`,
    run `twine check`, and inspect both archive inventories. The sdist must carry
-   the maintained first-run, performance, and release documentation plus the
-   tutorial helper, while excluding local planning state, proposals and
+   both maintained first-run tutorials, the reader-trial and validation
+   reports, performance and release documentation, and both tutorial helpers, while excluding local planning state, proposals and
    historical execution reports. The wheel must carry every schema in `schemas/`.
 6. Install the exact wheel into a fresh environment and, from outside the
-   checkout with `PYTHONPATH` cleared, run the maintained reader journey:
+   checkout with `PYTHONPATH` cleared, run each maintained reader journey:
 
    ```bash
    PYTHONPATH= /path/to/wheel-venv/bin/python /absolute/checkout/examples/run_first_run.py \
-     --document /absolute/checkout/docs/first-run.md \
-     --work-dir /fresh/scratch/first-run \
+     --document /absolute/checkout/docs/document-first-run.md \
+     --work-dir /fresh/scratch/document-first-run \
      --python /path/to/wheel-venv/bin/python \
      --expected-version X.Y.Z \
      --forbid-import-root /absolute/checkout
    ```
 
-   Record the imported module path/version and the tutorial's warning,
-   selected-page rerun, external-review integrity and relocated replay results.
-   Exercise document processing and `verify-job` against the installed wheel
-   as well. Repeat the installation smoke test with the sdist.
+   Run the same helper with `docs/first-run.md` and a different fresh scratch
+   directory too. Record the imported module path/version, saved-response
+   recovery, review checks, selected-page rerun, and relocated replay results.
+   Repeat both tutorials with the exact sdist installed in a second fresh
+   environment. Neither tutorial needs an OCR engine or network service.
 7. Record SHA-256 hashes for both distributions alongside the source SHA and
    installed-package smoke results.
 8. Fast-forward or merge the reviewed release commit to `main`, then create and push an

@@ -8,6 +8,10 @@
     "schema_version": {
       "const": "0.1"
     },
+    "report_format": {
+      "const": "0.5.1",
+      "description": "Current human report rendering format. Absent on 0.5.0 reports, which use the legacy rendering."
+    },
     "job_id": {
       "type": "string",
       "minLength": 1

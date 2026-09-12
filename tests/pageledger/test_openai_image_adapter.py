@@ -162,3 +162,76 @@ def test_timeout_remains_typed_and_retains_input(image_adapter, monkeypatch):
     assert failure.value.partial_result.content == ""
     assert (root / failure.value.partial_result.input_evidence["artifact"]).is_file()
     assert "secret" not in str(failure.value)
+
+
+def test_gateway_image_limit_compresses_retained_and_transmitted_bytes(tmp_path, endpoint, monkeypatch):
+    import random
+    import subprocess
+
+    Image = pytest.importorskip("PIL.Image")
+    cls = example_class()
+    renderer = cls._render.__globals__
+    monkeypatch.setattr(renderer["shutil"], "which", lambda name: "/test/pdftoppm")
+    pixels = random.Random(0).randbytes(1400 * 1400 * 3)
+
+    def render(command, **kwargs):
+        if command[-1] == "-v":
+            return subprocess.CompletedProcess(command, 0, stderr=b"test renderer 1")
+        Image.frombytes("RGB", (1400, 1400), pixels).save(command[-1] + ".jpg", quality=90)
+        return subprocess.CompletedProcess(command, 0)
+
+    monkeypatch.setattr(renderer["subprocess"], "run", render)
+    source = tmp_path / "scan.pdf"
+    source.write_bytes(b"synthetic renderer input")
+    root = tmp_path / "run"
+    root.mkdir()
+    adapter = cls(model="gemini-test", evidence_dir=str(root / "evidence"),
+                  base_url=endpoint[0], env_key=None, max_image_bytes=1024 * 1024)
+    result = adapter.extract(source, page_id="p", page_number=1, action="transcribe_text")
+    evidence = result.input_evidence
+    payload = endpoint[1]["requests"][-1][1]
+    transmitted = base64.b64decode(payload["messages"][-1]["content"][1]["image_url"]["url"].split(",", 1)[1])
+    assert len(transmitted) == evidence["bytes"] <= 1024 * 1024
+    assert transmitted == (root / evidence["artifact"]).read_bytes()
+    assert evidence["renderer"]["parameters"]["jpeg_quality"] < 90
+    assert evidence["renderer"]["parameters"]["max_image_bytes"] == 1024 * 1024
+
+
+def test_unachievable_image_limit_stops_before_submission(image_adapter, endpoint):
+    original, source, root = image_adapter
+    adapter = type(original)(model="gemini-test", evidence_dir=str(root / "evidence"),
+                             base_url=endpoint[0], env_key=None, max_image_bytes=1)
+    with pytest.raises(AdapterFailure, match="IMAGE_RENDER_ERROR"):
+        adapter.extract(source, page_id="p", page_number=1, action="transcribe_text")
+    assert not any(body is not None for _, body in endpoint[1]["requests"])
+    assert not (root / "evidence/p.jpg").exists()
+
+
+@pytest.mark.parametrize("limit", [True, 0, -1, 1.5, 3 * 1024 * 1024 + 1])
+def test_invalid_image_limit_is_rejected(tmp_path, limit):
+    with pytest.raises(ValueError, match="max_image_bytes"):
+        example_class()(model="gemini-test", evidence_dir=str(tmp_path / "evidence"),
+                        max_image_bytes=limit)
+
+
+def test_gateway_dimension_limit_bounds_actual_image(image_adapter, endpoint):
+    from pageledger.image_evidence import jpeg_dimensions
+
+    original, source, root = image_adapter
+    adapter = type(original)(model="gemini-test", evidence_dir=str(root / "evidence"),
+                             base_url=endpoint[0], env_key=None, max_image_dimension=512)
+    result = adapter.extract(source, page_id="small", page_number=1, action="transcribe_text")
+    evidence = result.input_evidence
+    payload = endpoint[1]["requests"][-1][1]
+    transmitted = base64.b64decode(payload["messages"][-1]["content"][1]["image_url"]["url"].split(",", 1)[1])
+    assert transmitted == (root / evidence["artifact"]).read_bytes()
+    assert jpeg_dimensions(transmitted) == (evidence["width"], evidence["height"])
+    assert max(evidence["width"], evidence["height"]) == 512
+    assert evidence["renderer"]["parameters"]["scale_to"] == 512
+
+
+@pytest.mark.parametrize("limit", [True, 0, -1, 1.5, 4097])
+def test_invalid_dimension_limit_is_rejected(tmp_path, limit):
+    with pytest.raises(ValueError, match="max_image_dimension"):
+        example_class()(model="gemini-test", evidence_dir=str(tmp_path / "evidence"),
+                        max_image_dimension=limit)

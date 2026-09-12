@@ -440,7 +440,10 @@ def verify_job(job_dir: Path) -> dict:
             raise ValueError('Job selections disagree with retained evidence')
         from .document_report import build_document_report, verify_document_report
         report = verify_document_report(root)
-        if report != build_document_report(job, root):
+        # Reports written before 0.5.1 have no format marker and must be
+        # rebuilt with their original renderer for byte/evidence comparison.
+        report_format = report.get('report_format')
+        if report != build_document_report(job, root, report_format=report_format):
             raise ValueError('Document report differs from verified job evidence')
         return {'status': 'pass', 'job_id': job['job_id'], 'out_dir': str(root)}
     except (ValueError, OSError, KeyError, TypeError) as exc:

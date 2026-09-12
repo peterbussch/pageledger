@@ -228,6 +228,33 @@ def test_forged_internally_consistent_report_is_not_authoritative_over_job(setup
     assert verify_job(setup[2])['status'] == 'fail'
 
 
+def test_verify_job_rejects_selected_output_without_its_attempt(setup):
+    launch(setup, pages='1')
+    path = setup[2] / 'document.json'
+    report = json.loads(path.read_text())
+    assert report['pages'][0]['selected_output'] is not None
+    report['pages'][0]['attempts'] = []
+    path.write_text(json.dumps(report))
+
+    result = verify_job(setup[2])
+
+    assert result['status'] == 'fail'
+    assert 'selected output attempt is missing' in result['error']
+
+
+def test_verify_job_accepts_a_legacy_report_without_format_marker(setup):
+    from pageledger.document_report import render_document_report
+
+    launch(setup)
+    path = setup[2] / 'document.json'
+    report = json.loads(path.read_text())
+    report.pop('report_format')
+    path.write_text(json.dumps(report, ensure_ascii=False, indent=2) + '\n')
+    (setup[2] / 'report.md').write_text(render_document_report(report))
+
+    assert verify_job(setup[2])['status'] == 'pass'
+
+
 def test_read_only_source_inspection_counts_annotations_without_exposing_contents(tmp_path):
     pytest.importorskip('pypdf')
     from pypdf import PdfWriter

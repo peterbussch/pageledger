@@ -1,0 +1,424 @@
+{
+  "date": "2026-09-12",
+  "version": "0.5.1",
+  "scope": "One census PDF spread, page 23; separate from the 60-page local OCR trial.",
+  "result": "Live VLM transcription not completed. All five halted jobs passed evidence verification.",
+  "source_sha256": "bae86fa50e1c6114c761e7f73b5836bb0f0fae13f9fc7b63bb14048c0be74579",
+  "page_number": 23,
+  "ai_source_checks": {
+    "source_sha256": "bae86fa50e1c6114c761e7f73b5836bb0f0fae13f9fc7b63bb14048c0be74579",
+    "page_number": 23,
+    "reviewer_kind": "ai_assisted",
+    "recorded_before_vlm": true,
+    "scope": "Two clear row fragments only; not full-page accuracy.",
+    "checks": [
+      {
+        "location": "Upper table 9, Tashkent region, six percentage columns left to right",
+        "row_label": "Ташкентская",
+        "values": [
+          "32,0",
+          "75,5",
+          "34,6",
+          "83,1",
+          "17,3",
+          "33,3"
+        ]
+      },
+      {
+        "location": "Lower table 10, USSR row, first two numeric columns (urban men,1926 and1939)",
+        "row_label": "СССР",
+        "values": [
+          "85,8",
+          "95,7"
+        ]
+      }
+    ]
+  },
+  "accuracy_assessed": false,
+  "human_review_applied": false,
+  "notes": [
+    "Each fresh job allowed at most three extraction attempts and one image stage.",
+    "Failures were inspected before changing the next explicit configuration; no adapter retry or fallback.",
+    "HTTP submission means a request to the configured gateway, not proof of upstream provider execution.",
+    "The final retained JPEG was visually inspected by an AI assistant before that job; no VLM output was available to compare.",
+    "The jobs used a development checkout, not the installed release packages."
+  ],
+  "trials": [
+    {
+      "requested_model": "antigravity/gemini-3.6-flash-high",
+      "started_at": "2026-09-12T13:35:49.820034+00:00",
+      "ended_at": "2026-09-12T13:36:17.768412+00:00",
+      "wall_seconds": 27.94916854100302,
+      "config_sha256": "a61ac077935098005cf38492dc439603af4c3dfd37fa5c0131c2ec3a0b4fea45",
+      "job_id": "job_4121b7dbe0b14084aac6c4ada00356bd",
+      "package_sha256": "2981fad1fe3db4c587c782a25c52ef19f30595d77d4cc7547f61eec93b1bfb96",
+      "status": "halted",
+      "verification": "pass",
+      "explanation": "Google account had no project; Google later reported that account ineligible.",
+      "limits": {
+        "max_attempt_pages": 3,
+        "max_cost_usd": null,
+        "max_image_pages": 1,
+        "max_tokens": null
+      },
+      "image_http_submission": true,
+      "failure": {
+        "code": "MODEL_HTTP_ERROR",
+        "cost_usd": null,
+        "http_status": 422,
+        "type": "AdapterFailure"
+      },
+      "usage": {
+        "compute_seconds": null,
+        "cost_usd": null,
+        "pages": 1,
+        "tokens": null
+      },
+      "job_sha256": "1727b6598a96edae027864591724e1702b7a534084472533deaa69714c1342fc",
+      "document_sha256": "99a1e8e37341b57ae3ddaf104c476b7f22c88dc7ef805986a23e3820eff97e2d",
+      "attempts": [
+        {
+          "stage": "local_text",
+          "outcome": "completed",
+          "raw_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "warnings": [
+            "empty_text"
+          ]
+        },
+        {
+          "stage": "local_ocr",
+          "outcome": "completed",
+          "raw_sha256": "851c54e5653e8e0d873925b46a92a73ced60699e515f414b1813ddb665605c3d",
+          "warnings": [
+            "suspicious_symbol_density",
+            "fragmented_text",
+            "low_confidence"
+          ]
+        },
+        {
+          "stage": "image",
+          "outcome": "failed",
+          "raw_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "warnings": []
+        }
+      ],
+      "input_image": {
+        "sha256": "13b1ab2095e178a802744ad861a8ef3fc43bd6905addb4c3da882e549ba75be0",
+        "bytes": 1454999,
+        "width": 2941,
+        "height": 4096,
+        "prompt_sha256": "168e2e8be0b9c0ffe1d0052893a125d587312fcda2ed794037283989dc9456bf",
+        "requested_model": "antigravity/gemini-3.6-flash-high",
+        "model": null,
+        "provider": null,
+        "renderer": {
+          "version": "pdftoppm version 26.05.0",
+          "parameters": {
+            "dpi": 150,
+            "jpeg_quality": 90,
+            "optimize": true,
+            "pillow_version": "12.3.0",
+            "scale_to": 4096,
+            "subsampling": 2
+          }
+        }
+      }
+    },
+    {
+      "requested_model": "cursor/gemini-3.6-flash-high",
+      "started_at": "2026-09-12T13:42:32.714466+00:00",
+      "ended_at": "2026-09-12T13:42:57.363449+00:00",
+      "wall_seconds": 24.64896616700571,
+      "config_sha256": "15268935720e45f601eb38ae890afe4f6fc1b51bd24f728842029f61f9d6eb4d",
+      "job_id": "job_e62afff29bfe48808b7fa306a9961205",
+      "package_sha256": "2981fad1fe3db4c587c782a25c52ef19f30595d77d4cc7547f61eec93b1bfb96",
+      "status": "halted",
+      "verification": "pass",
+      "explanation": "Gateway route rejected the image: maximum 1 MiB.",
+      "limits": {
+        "max_attempt_pages": 3,
+        "max_cost_usd": null,
+        "max_image_pages": 1,
+        "max_tokens": null
+      },
+      "image_http_submission": true,
+      "failure": {
+        "code": "MODEL_HTTP_ERROR",
+        "cost_usd": null,
+        "http_status": 400,
+        "type": "AdapterFailure"
+      },
+      "usage": {
+        "compute_seconds": null,
+        "cost_usd": null,
+        "pages": 1,
+        "tokens": null
+      },
+      "job_sha256": "f23806ff7ecc735a2b874d85c14dfef6e6b5c47e2619dcd4005dd7c7e3c3147b",
+      "document_sha256": "fc169f103bdd2af643682b09387d147b677355e1dfe62037654a92f0a1b06b7a",
+      "attempts": [
+        {
+          "stage": "local_text",
+          "outcome": "completed",
+          "raw_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "warnings": [
+            "empty_text"
+          ]
+        },
+        {
+          "stage": "local_ocr",
+          "outcome": "completed",
+          "raw_sha256": "851c54e5653e8e0d873925b46a92a73ced60699e515f414b1813ddb665605c3d",
+          "warnings": [
+            "suspicious_symbol_density",
+            "fragmented_text",
+            "low_confidence"
+          ]
+        },
+        {
+          "stage": "image",
+          "outcome": "failed",
+          "raw_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "warnings": []
+        }
+      ],
+      "input_image": {
+        "sha256": "13b1ab2095e178a802744ad861a8ef3fc43bd6905addb4c3da882e549ba75be0",
+        "bytes": 1454999,
+        "width": 2941,
+        "height": 4096,
+        "prompt_sha256": "168e2e8be0b9c0ffe1d0052893a125d587312fcda2ed794037283989dc9456bf",
+        "requested_model": "cursor/gemini-3.6-flash-high",
+        "model": null,
+        "provider": null,
+        "renderer": {
+          "version": "pdftoppm version 26.05.0",
+          "parameters": {
+            "dpi": 150,
+            "jpeg_quality": 90,
+            "optimize": true,
+            "pillow_version": "12.3.0",
+            "scale_to": 4096,
+            "subsampling": 2
+          }
+        }
+      }
+    },
+    {
+      "requested_model": "antigravity/gemini-3.6-flash-high",
+      "started_at": "2026-09-12T13:55:46.031350+00:00",
+      "ended_at": "2026-09-12T13:56:09.645671+00:00",
+      "wall_seconds": 23.61429641599534,
+      "config_sha256": "a61ac077935098005cf38492dc439603af4c3dfd37fa5c0131c2ec3a0b4fea45",
+      "job_id": "job_37ae3e040c024104a71b0470550a51a1",
+      "package_sha256": "2981fad1fe3db4c587c782a25c52ef19f30595d77d4cc7547f61eec93b1bfb96",
+      "status": "halted",
+      "verification": "pass",
+      "explanation": "Eligible Google account was already authorized with a project, but its Gemini quota was exhausted.",
+      "limits": {
+        "max_attempt_pages": 3,
+        "max_cost_usd": null,
+        "max_image_pages": 1,
+        "max_tokens": null
+      },
+      "image_http_submission": true,
+      "failure": {
+        "code": "MODEL_QUOTA",
+        "cost_usd": null,
+        "http_status": 429,
+        "type": "AdapterFailure"
+      },
+      "usage": {
+        "compute_seconds": null,
+        "cost_usd": null,
+        "pages": 1,
+        "tokens": null
+      },
+      "job_sha256": "b57952bec7eda88f3d21aca98adfe124e846937abe371bfa3a8790aad682348f",
+      "document_sha256": "e930564a321d27a3734b1fbbdc15693bf7b36938de6d01f4e108d268f9acd247",
+      "attempts": [
+        {
+          "stage": "local_text",
+          "outcome": "completed",
+          "raw_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "warnings": [
+            "empty_text"
+          ]
+        },
+        {
+          "stage": "local_ocr",
+          "outcome": "completed",
+          "raw_sha256": "851c54e5653e8e0d873925b46a92a73ced60699e515f414b1813ddb665605c3d",
+          "warnings": [
+            "suspicious_symbol_density",
+            "fragmented_text",
+            "low_confidence"
+          ]
+        },
+        {
+          "stage": "image",
+          "outcome": "failed",
+          "raw_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "warnings": []
+        }
+      ],
+      "input_image": {
+        "sha256": "13b1ab2095e178a802744ad861a8ef3fc43bd6905addb4c3da882e549ba75be0",
+        "bytes": 1454999,
+        "width": 2941,
+        "height": 4096,
+        "prompt_sha256": "168e2e8be0b9c0ffe1d0052893a125d587312fcda2ed794037283989dc9456bf",
+        "requested_model": "antigravity/gemini-3.6-flash-high",
+        "model": null,
+        "provider": null,
+        "renderer": {
+          "version": "pdftoppm version 26.05.0",
+          "parameters": {
+            "dpi": 150,
+            "jpeg_quality": 90,
+            "optimize": true,
+            "pillow_version": "12.3.0",
+            "scale_to": 4096,
+            "subsampling": 2
+          }
+        }
+      }
+    },
+    {
+      "requested_model": "cursor/gemini-3.6-flash-high",
+      "started_at": "2026-09-12T13:58:58.990016+00:00",
+      "ended_at": "2026-09-12T13:59:22.278319+00:00",
+      "wall_seconds": 23.288271875004284,
+      "config_sha256": "111935b5a7b7513743fb451bbacbc5471b5797ce45e88d48f9cbc71a1537226c",
+      "job_id": "job_321a0db74e2b4738ba8248a6cf8cb0c8",
+      "package_sha256": "2981fad1fe3db4c587c782a25c52ef19f30595d77d4cc7547f61eec93b1bfb96",
+      "status": "halted",
+      "verification": "pass",
+      "explanation": "JPEG did not fit 1 MiB at quality 90, 80, 70, or 60; rendering stopped before submission.",
+      "limits": {
+        "max_attempt_pages": 3,
+        "max_cost_usd": null,
+        "max_image_pages": 1,
+        "max_tokens": null
+      },
+      "image_http_submission": false,
+      "failure": {
+        "code": "IMAGE_RENDER_ERROR",
+        "cost_usd": null,
+        "http_status": null,
+        "type": "AdapterFailure"
+      },
+      "usage": {},
+      "job_sha256": "887b4cfb4fcc633f94cda6a3daf50c9c152f6f233e1b3c28eab47c09ccab5768",
+      "document_sha256": "227920df930541d89159b69e840981374b806fc19b5313be22d49795726e06fb",
+      "attempts": [
+        {
+          "stage": "local_text",
+          "outcome": "completed",
+          "raw_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "warnings": [
+            "empty_text"
+          ]
+        },
+        {
+          "stage": "local_ocr",
+          "outcome": "completed",
+          "raw_sha256": "851c54e5653e8e0d873925b46a92a73ced60699e515f414b1813ddb665605c3d",
+          "warnings": [
+            "suspicious_symbol_density",
+            "fragmented_text",
+            "low_confidence"
+          ]
+        },
+        {
+          "stage": "image",
+          "outcome": "failed",
+          "raw_sha256": null,
+          "warnings": []
+        }
+      ],
+      "input_image": null
+    },
+    {
+      "requested_model": "cursor/gemini-3.6-flash-high",
+      "started_at": "2026-09-12T14:02:04.396054+00:00",
+      "ended_at": "2026-09-12T14:02:25.757246+00:00",
+      "wall_seconds": 21.36116187501466,
+      "config_sha256": "9a1af9a7c43e969024ce67dee9b061c6cac84408672fbde2082410b1586a260d",
+      "job_id": "job_cc67429e61c9484686e5dada0b91921c",
+      "package_sha256": "2981fad1fe3db4c587c782a25c52ef19f30595d77d4cc7547f61eec93b1bfb96",
+      "status": "halted",
+      "verification": "pass",
+      "explanation": "Gateway returned HTTP 503; provider execution was not established.",
+      "limits": {
+        "max_attempt_pages": 3,
+        "max_cost_usd": null,
+        "max_image_pages": 1,
+        "max_tokens": null
+      },
+      "image_http_submission": true,
+      "failure": {
+        "code": "MODEL_HTTP_ERROR",
+        "cost_usd": null,
+        "http_status": 503,
+        "type": "AdapterFailure"
+      },
+      "usage": {
+        "compute_seconds": null,
+        "cost_usd": null,
+        "pages": 1,
+        "tokens": null
+      },
+      "job_sha256": "3abaea1e334b0fe2646ef22a24c624a8fbae4228ffe570723bd87fcdfd590768",
+      "document_sha256": "cdbe0f74dc5d9a04ed411407c65675b307c197b45f8d4f611e655d650ee4aafe",
+      "attempts": [
+        {
+          "stage": "local_text",
+          "outcome": "completed",
+          "raw_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "warnings": [
+            "empty_text"
+          ]
+        },
+        {
+          "stage": "local_ocr",
+          "outcome": "completed",
+          "raw_sha256": "851c54e5653e8e0d873925b46a92a73ced60699e515f414b1813ddb665605c3d",
+          "warnings": [
+            "suspicious_symbol_density",
+            "fragmented_text",
+            "low_confidence"
+          ]
+        },
+        {
+          "stage": "image",
+          "outcome": "failed",
+          "raw_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "warnings": []
+        }
+      ],
+      "input_image": {
+        "sha256": "2eb6cd006cc88e0b6c9912e6d7f9fcddc2202268dd49144594250d35be8a18b8",
+        "bytes": 965580,
+        "width": 2206,
+        "height": 3072,
+        "prompt_sha256": "168e2e8be0b9c0ffe1d0052893a125d587312fcda2ed794037283989dc9456bf",
+        "requested_model": "cursor/gemini-3.6-flash-high",
+        "model": null,
+        "provider": null,
+        "renderer": {
+          "version": "pdftoppm version 26.05.0",
+          "parameters": {
+            "dpi": 150,
+            "jpeg_quality": 90,
+            "max_image_bytes": 1048576,
+            "optimize": true,
+            "pillow_version": "12.3.0",
+            "scale_to": 3072,
+            "subsampling": 2
+          }
+        }
+      }
+    }
+  ]
+}

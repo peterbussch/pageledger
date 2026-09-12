@@ -248,3 +248,171 @@ def test_human_confirmed_source_problem_stays_unresolved(tmp_path, disposition):
     assert "unresolved pages: 2" in rendered
     assert disposition in rendered
     assert "Obtain an alternate source" in rendered
+
+
+def test_current_report_separates_selected_ocr_from_historical_blank_hold(tmp_path):
+    job = job_fixture(tmp_path, text="")
+    page = job["pages"][0]
+    ocr = tmp_path / "attempts" / "local_ocr" / "raw" / "p1.md"
+    ocr.parent.mkdir(parents=True)
+    ocr.write_text("OCR recovered text\n", encoding="utf-8")
+    page["attempts"][0].update(
+        stage="local_text", format="text", warnings=["empty_text"],
+        raw_sha256=hashlib.sha256(b"").hexdigest())
+    page["attempts"].append({
+        **page["attempts"][0], "attempt_id": "a2", "stage": "local_ocr",
+        "raw_artifact": str(ocr.relative_to(tmp_path)),
+        "raw_sha256": hashlib.sha256(ocr.read_bytes()).hexdigest(),
+        "format": "markdown", "warnings": [], "classification": {"type": "text", "reason": "prose"},
+    })
+    page.update(selected_attempt="a2", disposition="blank_candidate",
+                review_reasons=["blank_candidate"])
+
+    report = build_document_report(job, tmp_path)
+    rendered = render_document_report(report)
+
+    assert report["report_format"] == "0.5.1"
+    assert "| Page | Current output | Review status | Recorded concerns |" in rendered
+    assert "Local OCR" in rendered
+    assert "Candidate blank" in rendered
+    assert "Review required" in rendered
+    assert "empty text returned by Local text" in rendered
+    assert "OCR recovered text" not in rendered
+
+
+def test_current_report_keeps_latest_failure_visible_with_previous_selected_text(tmp_path):
+    job = job_fixture(tmp_path)
+    page = job["pages"][0]
+    failed = {**page["attempts"][0], "attempt_id": "a2", "stage": "image",
+              "outcome": "failed", "failure": {"code": "MODEL_OUTPUT_TRUNCATED"}}
+    page["attempts"].append(failed)
+    page.update(disposition="provider_failure", review_reasons=["provider_failure"])
+
+    rendered = render_document_report(build_document_report(job, tmp_path))
+
+    assert "Local text" in rendered
+    assert "Extraction failed" in rendered
+    assert "MODEL_OUTPUT_TRUNCATED" in rendered
+    assert "Review required: extraction failed" in rendered
+
+
+def test_current_report_labels_numeric_hold_without_hiding_selected_output(tmp_path):
+    job = job_fixture(tmp_path)
+    page = job["pages"][0]
+    page.update(disposition="numeric_column_conflict",
+                review_reasons=["numeric_column_conflict"])
+
+    rendered = render_document_report(build_document_report(job, tmp_path))
+
+    assert "Numbers need checking" in rendered
+    assert "Local text" in rendered
+    assert "Review required" in rendered
+
+
+def test_current_report_attributes_explicit_selected_attempt_warning_only_to_that_attempt(tmp_path):
+    job = job_fixture(tmp_path)
+    page = job["pages"][0]
+    page["attempts"][0]["warnings"] = [{"type": "clipped_text"}]
+    page.update(disposition="coverage_defect", review_reasons=["coverage_defect"])
+    later = {**page["attempts"][0], "attempt_id": "a2", "stage": "local_ocr",
+             "warnings": [], "classification": {"type": "text", "reason": "prose"}}
+    page["attempts"].append(later)
+    page.update(selected_attempt="a2")
+
+    rendered = render_document_report(build_document_report(job, tmp_path))
+
+    assert "Possible missing or incomplete content (coverage_defect); recorded on Local text attempt" in rendered
+    assert "recorded on Local OCR attempt" not in rendered
+
+
+def test_current_report_attributes_new_selected_attempt_warning_to_selected_attempt(tmp_path):
+    job = job_fixture(tmp_path)
+    page = job["pages"][0]
+    later = {**page["attempts"][0], "attempt_id": "a2", "stage": "local_ocr",
+             "warnings": [{"type": "clipped_text"}],
+             "classification": {"type": "text", "reason": "prose"}}
+    page["attempts"].append(later)
+    page.update(selected_attempt="a2", disposition="coverage_defect",
+                review_reasons=["coverage_defect"])
+
+    rendered = render_document_report(build_document_report(job, tmp_path))
+
+    assert "recorded on Local OCR attempt" in rendered
+    assert "recorded on Local text attempt" not in rendered
+
+
+def test_current_report_keeps_untraceable_numeric_hold_generic_across_attempts(tmp_path):
+    job = job_fixture(tmp_path)
+    page = job["pages"][0]
+    later = {**page["attempts"][0], "attempt_id": "a2", "stage": "local_ocr",
+             "warnings": [], "classification": {"type": "text", "reason": "prose"}}
+    page["attempts"].append(later)
+    page.update(selected_attempt="a2", disposition="numeric_column_conflict",
+                review_reasons=["numeric_column_conflict"])
+
+    rendered = render_document_report(build_document_report(job, tmp_path))
+
+    assert "Numbers need checking (numeric_column_conflict); retained review concern" in rendered
+    assert "from Local text attempt" not in rendered
+
+
+def test_current_report_keeps_unknown_outcome_generic_across_attempts(tmp_path):
+    job = job_fixture(tmp_path)
+    page = job["pages"][0]
+    later = {**page["attempts"][0], "attempt_id": "a2", "stage": "local_ocr",
+             "outcome": "outcome_unknown", "warnings": [],
+             "classification": {"type": "text", "reason": "prose"}}
+    page["attempts"].append(later)
+    page.update(selected_attempt="a1", disposition="outcome_unknown",
+                review_reasons=["outcome_unknown"])
+
+    rendered = render_document_report(build_document_report(job, tmp_path))
+
+    assert "Extraction outcome unknown (outcome_unknown); retained review concern" in rendered
+    assert "recorded on Local" not in rendered
+
+
+def test_current_report_explains_source_only_human_review(tmp_path):
+    job = job_fixture(tmp_path)
+    page = job["pages"][0]
+    review = {"schema_version": "0.1", "source_sha256": "a" * 64, "decisions": [{
+        "page_id": "p1", "page_number": 1, "disposition": "source_defect",
+        "selected_attempt": None, "output_sha256": None,
+        "reason": "Source page is damaged", "reviewer": "Peter",
+        "reviewed_at": "2026-09-11T12:00:00Z"}]}
+    page.update(disposition="source_defect", selected_attempt=None, review=review,
+                review_history=[review], next_action="none")
+
+    rendered = render_document_report(build_document_report(job, tmp_path))
+
+    assert "Source problem confirmed" in rendered
+    assert "No selected output" in rendered
+    assert "Source page is damaged" in rendered
+    assert "Peter" in rendered
+
+
+def test_legacy_report_without_format_marker_still_verifies(tmp_path):
+    job = job_fixture(tmp_path)
+    report = build_document_report(job, tmp_path, report_format=None)
+    document = (json.dumps(report, ensure_ascii=False, indent=2) + "\n").encode()
+    (tmp_path / "document.json").write_bytes(document)
+    (tmp_path / "transcript.md").write_bytes(render_transcript(report).encode())
+    (tmp_path / "report.md").write_bytes(render_document_report(report).encode())
+
+    verified = verify_document_report(tmp_path)
+
+    assert verified == report
+    assert "| Page | Disposition | Selected output | Review evidence |" in (tmp_path / "report.md").read_text()
+
+
+def test_report_with_explicit_null_format_marker_is_rejected(tmp_path):
+    job = job_fixture(tmp_path)
+    report = build_document_report(job, tmp_path, report_format=None)
+    document = dict(report, report_format=None)
+    (tmp_path / "document.json").write_bytes(
+        (json.dumps(document, ensure_ascii=False, indent=2) + "\n").encode())
+    (tmp_path / "transcript.md").write_bytes(render_transcript(report).encode())
+    (tmp_path / "report.md").write_bytes(render_document_report(report).encode())
+
+    with pytest.raises(ValueError, match="Unsupported document report format"):
+        verify_document_report(tmp_path)

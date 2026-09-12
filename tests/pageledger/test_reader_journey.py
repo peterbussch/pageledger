@@ -133,7 +133,7 @@ def test_first_run_tutorial_executes_the_documented_sequence(tmp_path: Path) -> 
             "--source-root",
             str(ROOT),
             "--expected-version",
-            "0.5.0",
+            "0.5.1",
         ],
         text=True,
         capture_output=True,

@@ -25,7 +25,7 @@ from typing import Any
 
 from pageledger.adapters import AdapterFailure, ExtractionResult, pdf_page_count
 from pageledger.checkpoint import atomic_bytes, file_digest
-from pageledger.image_evidence import MAX_IMAGE_DIMENSION, validate_input_evidence
+from pageledger.image_evidence import MAX_IMAGE_BYTES, MAX_IMAGE_DIMENSION, validate_input_evidence
 
 MAX_REQUEST_BYTES = 4 * 1024 * 1024
 MAX_RESPONSE_BYTES = 8 * 1024 * 1024
@@ -54,7 +54,9 @@ class OpenAIImageAdapter:
                  base_url: str = "http://127.0.0.1:20128/v1",
                  env_key: str | None = "OMNIROUTE_API_KEY", max_output_tokens: int = 8192,
                  timeout: float = 120, renderer: str = "pdftoppm", dpi: int = 150,
-                 allowed_models: list[str] | None = None, system_prompt: str | None = None):
+                 allowed_models: list[str] | None = None, system_prompt: str | None = None,
+                 max_image_bytes: int = MAX_IMAGE_BYTES,
+                 max_image_dimension: int = MAX_IMAGE_DIMENSION):
         if not isinstance(model, str) or not _allowed_family(model):
             raise ValueError("model must explicitly name a Gemini or DeepSeek model")
         if allowed_models is not None and (not isinstance(allowed_models, list)
@@ -67,6 +69,10 @@ class OpenAIImageAdapter:
             raise ValueError("timeout must be a finite number in (0, 600]")
         if type(dpi) is not int or not 50 <= dpi <= 300:
             raise ValueError("dpi must be 50..300")
+        if type(max_image_bytes) is not int or not 1 <= max_image_bytes <= MAX_IMAGE_BYTES:
+            raise ValueError(f"max_image_bytes must be 1..{MAX_IMAGE_BYTES}")
+        if type(max_image_dimension) is not int or not 1 <= max_image_dimension <= MAX_IMAGE_DIMENSION:
+            raise ValueError(f"max_image_dimension must be 1..{MAX_IMAGE_DIMENSION}")
         if renderer not in {"pdftoppm", "pdftocairo"}:
             raise ValueError("renderer must be pdftoppm or pdftocairo")
         if env_key is not None and (not isinstance(env_key, str) or not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", env_key)):
@@ -84,6 +90,8 @@ class OpenAIImageAdapter:
         self.base_url, self.env_key = base_url.rstrip("/"), env_key
         self.max_output_tokens, self.timeout = max_output_tokens, timeout
         self.renderer, self.dpi, self.system_prompt = renderer, dpi, system_prompt
+        self.max_image_bytes = max_image_bytes
+        self.max_image_dimension = max_image_dimension
         self._checked_models = False
         self._renderer_version = None
 
@@ -162,17 +170,17 @@ class OpenAIImageAdapter:
             with tempfile.TemporaryDirectory(prefix="pageledger-image-") as directory:
                 prefix = str(Path(directory) / "page")
                 argv = [command, "-f", str(page_number), "-l", str(page_number), "-singlefile",
-                        "-r", str(self.dpi), "-scale-to", str(MAX_IMAGE_DIMENSION), "-jpeg",
+                        "-r", str(self.dpi), "-scale-to", str(self.max_image_dimension), "-jpeg",
                         str(source), prefix]
                 subprocess.run(argv, capture_output=True, timeout=self.timeout, check=True)
                 with Image.open(prefix + ".jpg") as rendered:
                     image = rendered.convert("RGB")
-                    image.thumbnail((MAX_IMAGE_DIMENSION, MAX_IMAGE_DIMENSION))
+                    image.thumbnail((self.max_image_dimension, self.max_image_dimension))
                     for quality in (90, 80, 70, 60):
                         buffer = io.BytesIO()
                         image.save(buffer, format="JPEG", quality=quality, optimize=True, subsampling=2)
                         jpeg = buffer.getvalue()
-                        if len(jpeg) <= _JPEG_BUDGET:
+                        if len(jpeg) <= min(_JPEG_BUDGET, self.max_image_bytes):
                             break
                     else:
                         raise ValueError("image byte limit")
@@ -188,8 +196,9 @@ class OpenAIImageAdapter:
                 "crop": {"kind": "full_page"},
                 "renderer": {"command": command, "version": self._renderer_version,
                              "parameters": {"argv": argv[1:], "dpi": self.dpi,
-                                            "scale_to": MAX_IMAGE_DIMENSION,
+                                            "scale_to": self.max_image_dimension,
                                             "jpeg_quality": quality, "subsampling": 2,
+                                            "max_image_bytes": self.max_image_bytes,
                                             "optimize": True, "pillow_version": Image.__version__}},
                 "requested_model": self.model, "model": None, "provider": None,
                 "prompt_sha256": hashlib.sha256(prompt.encode()).hexdigest(),

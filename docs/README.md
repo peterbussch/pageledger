@@ -1,6 +1,6 @@
 # PageLedger documentation
 
-PageLedger 0.5.0 records extraction attempts, source identity, cost, and review
+PageLedger 0.5.1 records extraction attempts, source identity, cost, and review
 work as plain files. Choose an entry point below.
 
 ## Getting started
@@ -8,6 +8,7 @@ work as plain files. Choose an entry point below.
 | Task | Guide |
 |---|---|
 | Try PageLedger without an OCR engine | [First run: text, review, rerun, and replay](first-run.md) |
+| Run a complete offline document job | [First document job: process, recover, inspect, verify, and review](document-first-run.md) |
 | Extract a PDF text layer or scanned PDF | [First PDF/OCR run](pdf-ocr-first-run.md) |
 | Process a document through local text, OCR, and optional image stages | [Document processing jobs](processing-spec.md) |
 | Recover interrupted extraction in place | [Checkpoint recovery](checkpoint-spec.md#get-started) |
@@ -35,14 +36,16 @@ work as plain files. Choose an entry point below.
 - [Checkpoint and page-attempt records](checkpoint-spec.md)
 - [Document job](processing-spec.md#durable-job-and-attempts)
 - [Document report and human review receipts](document-report-spec.md)
+- [Reader trial protocol and results form](reader-trial.md)
 - [Page image input evidence](image-evidence-spec.md)
 
 The [JSON Schemas](../schemas/) define the machine-readable artifact contract.
-Package 0.5.0 retains artifact `schema_version: "0.1"`.
+Package 0.5.1 retains artifact `schema_version: "0.1"`.
 
 ## Scope and maintenance
 
 - [Capabilities and limits](capabilities-and-limits.md)
+- [60-page source validation for 0.5.1](validation/0.5.1/README.md)
 - [Measured performance](performance.md)
 - [Architecture and future work](design.md)
 - [Release procedure](releasing.md)

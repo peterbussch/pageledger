@@ -73,9 +73,20 @@ jobs:
           with open_tar(sdist, "r:gz") as archive:
               sdist_names = set(archive.getnames())
           required = (
+              "docs/document-first-run.md",
+              "docs/validation/0.5.1/README.md",
+              "docs/validation/0.5.1/summary.json",
+              "docs/validation/0.5.1/page-results.csv",
+              "docs/validation/0.5.1/observations.json",
+              "docs/validation/0.5.1/nara.yml",
+              "docs/validation/0.5.1/cyrillic.yml",
+              "docs/validation/0.5.1/vlm-results.json",
+              "docs/validation/0.5.1/vlm.yml",
               "docs/first-run.md",
+              "docs/reader-trial.md",
               "docs/performance.md",
               "docs/releasing.md",
+              "examples/run_document_recovery.py",
               "examples/run_first_run.py",
           )
           assert all(any(name.endswith("/" + path) for name in sdist_names) for path in required)
@@ -90,6 +101,7 @@ jobs:
       - name: Smoke test wheel install
         env:
           PYTHONPATH: ""
+          PAGELEDGER_TUTORIAL_RECOVERY_HELPER: ${{ github.workspace }}/examples/run_document_recovery.py
         run: |
           python -m venv /tmp/venv-wheel
           /tmp/venv-wheel/bin/pip install "$(ls dist/pageledger-*.whl)[pdf]"
@@ -101,11 +113,18 @@ jobs:
             --document "$GITHUB_WORKSPACE/docs/first-run.md" \
             --work-dir "$WORK_ROOT/first-run" \
             --python /tmp/venv-wheel/bin/python \
-            --expected-version 0.5.0 \
+            --expected-version 0.5.1 \
+            --forbid-import-root "$GITHUB_WORKSPACE"
+          /tmp/venv-wheel/bin/python examples/run_first_run.py \
+            --document "$GITHUB_WORKSPACE/docs/document-first-run.md" \
+            --work-dir "$WORK_ROOT/document-first-run" \
+            --python /tmp/venv-wheel/bin/python \
+            --expected-version 0.5.1 \
             --forbid-import-root "$GITHUB_WORKSPACE"
       - name: Smoke test sdist install
         env:
           PYTHONPATH: ""
+          PAGELEDGER_TUTORIAL_RECOVERY_HELPER: ${{ github.workspace }}/examples/run_document_recovery.py
         run: |
           python -m venv /tmp/venv-sdist
           /tmp/venv-sdist/bin/pip install "$(ls dist/pageledger-*.tar.gz)[pdf]"
@@ -117,7 +136,13 @@ jobs:
             --document "$GITHUB_WORKSPACE/docs/first-run.md" \
             --work-dir "$WORK_ROOT/first-run" \
             --python /tmp/venv-sdist/bin/python \
-            --expected-version 0.5.0 \
+            --expected-version 0.5.1 \
+            --forbid-import-root "$GITHUB_WORKSPACE"
+          /tmp/venv-sdist/bin/python examples/run_first_run.py \
+            --document "$GITHUB_WORKSPACE/docs/document-first-run.md" \
+            --work-dir "$WORK_ROOT/document-first-run" \
+            --python /tmp/venv-sdist/bin/python \
+            --expected-version 0.5.1 \
             --forbid-import-root "$GITHUB_WORKSPACE"
 
   locked:

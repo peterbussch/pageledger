@@ -27,14 +27,14 @@ source and reconstruct how it was produced.
 
 ## Install
 
-PageLedger 0.5.0 requires Python 3.10 or later:
+PageLedger 0.5.1 requires Python 3.10 or later:
 
 ```bash
-pip install pageledger==0.5.0
+pip install pageledger==0.5.1
 pageledger --version
 ```
 
-For PDFs, install `"pageledger[pdf]==0.5.0"`. Scanned PDFs also need Poppler and
+For PDFs, install `"pageledger[pdf]==0.5.1"`. Scanned PDFs also need Poppler and
 Tesseract installed separately. `pageledger doctor` checks the available tools.
 
 ## First run
@@ -75,6 +75,9 @@ notes, and bundle replay. For scans, follow the
 
 ## Process a document
 
+For a small offline example, follow the [document-job tutorial](docs/document-first-run.md).
+It covers processing, recovery, and review with a synthetic text file.
+
 Document processing and resumable runs require a POSIX system such as macOS or
 Linux. Use `process` when you want one job to manage local text extraction, OCR for
 pages with defect evidence, and optional image-model attempts. The job retains
@@ -112,6 +115,9 @@ explicit adapter and a positive page limit. A completed job can still have
 pages awaiting human review; `review-job` records decisions bound to the source
 and selected output. See the [document processing guide](docs/processing-spec.md)
 for configuration, budgets, and review receipts.
+
+The [60-page validation report](docs/validation/0.5.1/README.md) shows what
+these checks caught and where source review is still needed.
 
 ## Recover interrupted work
 

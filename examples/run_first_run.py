@@ -95,6 +95,10 @@ def main(argv: list[str] | None = None) -> int:
     else:
         env.pop("PYTHONPATH", None)
     env["PYTHON"] = str(python)
+    tutorial_examples = document.parent.parent / "examples"
+    recovery_helper = tutorial_examples / "run_document_recovery.py"
+    if "PAGELEDGER_TUTORIAL_RECOVERY_HELPER" not in env and recovery_helper.is_file():
+        env["PAGELEDGER_TUTORIAL_RECOVERY_HELPER"] = str(recovery_helper)
 
     receipt = _import_receipt(python, cwd=work_dir, env=env)
     if (
