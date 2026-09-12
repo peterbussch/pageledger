@@ -56,6 +56,7 @@ def validate_review(review: dict, page: dict) -> None:
                 "reason", "reviewer", "reviewed_at"}
     if (set(decision) != required or decision["page_number"] != page.get("page_number")
             or type(decision["page_number"]) is not int
+            or not isinstance(decision["disposition"], str)
             or decision["disposition"] not in REVIEW_DISPOSITIONS
             or any(not isinstance(decision[key], str) or not decision[key].strip()
                    for key in ("reason", "reviewer", "reviewed_at"))):

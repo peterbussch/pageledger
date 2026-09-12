@@ -35,6 +35,12 @@ jobs:
           python-version: ${{ matrix.python-version }}
       - name: Install with optional PDF extra
         run: pip install ".[${{ matrix.extras }}]"
+      - name: Enable real image-adapter tests in the Python 3.13 PDF lane
+        if: matrix.python-version == '3.13' && matrix.extras == 'dev,pdf'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y poppler-utils
+          pip install Pillow==12.3.0
       - name: Run tests
         run: python -m pytest tests/pageledger/ -v -m "not stress"
 
@@ -53,55 +59,10 @@ jobs:
         run: twine check dist/*
       - name: Validate distribution inventories
         run: |
-          python - <<'PY'
-          from pathlib import Path
-          from tarfile import open as open_tar
-          from zipfile import ZipFile
-
-          dist = Path("dist")
-          wheel = next(dist.glob("pageledger-*.whl"))
-          with ZipFile(wheel) as archive:
-              wheel_names = set(archive.namelist())
-          schemas = tuple(path.name for path in Path("schemas").glob("*.schema.json"))
-          assert schemas
-          assert all(
-              any(name.endswith(".data/data/share/pageledger/schemas/" + schema) for name in wheel_names)
-              for schema in schemas
-          )
-
-          sdist = next(dist.glob("pageledger-*.tar.gz"))
-          with open_tar(sdist, "r:gz") as archive:
-              sdist_names = set(archive.getnames())
-          required = (
-              "docs/document-first-run.md",
-              "docs/validation/0.5.1/README.md",
-              "docs/validation/0.5.1/summary.json",
-              "docs/validation/0.5.1/page-results.csv",
-              "docs/validation/0.5.1/observations.json",
-              "docs/validation/0.5.1/nara.yml",
-              "docs/validation/0.5.1/cyrillic.yml",
-              "docs/validation/0.5.1/vlm-results.json",
-              "docs/validation/0.5.1/vlm.yml",
-              "docs/first-run.md",
-              "docs/reader-trial.md",
-              "docs/performance.md",
-              "docs/releasing.md",
-              "examples/run_document_recovery.py",
-              "examples/run_first_run.py",
-          )
-          assert all(any(name.endswith("/" + path) for name in sdist_names) for path in required)
-          assert not any(
-              prefix in name
-              for name in sdist_names
-              for prefix in ("/docs/superpowers/", "/docs/proposals/", "/docs/reports/")
-          )
-          assert not any("/.planning/" in name or "/.superpowers/" in name for name in sdist_names)
-          print("wheel schema and sdist documentation inventories verified")
-          PY
+          python scripts/check_distributions.py dist
       - name: Smoke test wheel install
         env:
           PYTHONPATH: ""
-          PAGELEDGER_TUTORIAL_RECOVERY_HELPER: ${{ github.workspace }}/examples/run_document_recovery.py
         run: |
           python -m venv /tmp/venv-wheel
           /tmp/venv-wheel/bin/pip install "$(ls dist/pageledger-*.whl)[pdf]"
@@ -124,7 +85,6 @@ jobs:
       - name: Smoke test sdist install
         env:
           PYTHONPATH: ""
-          PAGELEDGER_TUTORIAL_RECOVERY_HELPER: ${{ github.workspace }}/examples/run_document_recovery.py
         run: |
           python -m venv /tmp/venv-sdist
           /tmp/venv-sdist/bin/pip install "$(ls dist/pageledger-*.tar.gz)[pdf]"
@@ -157,5 +117,6 @@ jobs:
           python -m pip install uv==0.11.16
           uv sync --frozen --extra dev --extra pdf
           uv run --frozen --extra dev --extra pdf ruff check pageledger/ tests/ examples/ scripts/
+          uv run --frozen --extra dev --extra pdf ruff format --check pageledger/ tests/ examples/ scripts/
           uv run --frozen --extra dev --extra pdf mypy pageledger/
           uv run --frozen --extra dev --extra pdf python -m pytest tests/pageledger/ -q -m "not stress"

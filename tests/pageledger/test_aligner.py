@@ -103,6 +103,8 @@ def test_spec_parses_columns_checks_quality():
         ({"name": "x", "columns": []}, "schema.columns must be a non-empty list"),
         ({"name": "", "columns": [{"name": "a"}]}, "schema.name"),
         ({"name": "x", "columns": [{"name": "a", "type": "float"}]}, r"columns\[0\].type"),
+        ({"name": "x", "columns": [{"name": "a", "type": []}]}, r"columns\[0\].type"),
+        ({"name": "x", "columns": [{"name": "a", "type": {}}]}, r"columns\[0\].type"),
         ({"name": "x", "columns": [{"name": "a", "required": "yes"}]}, r"columns\[0\].required"),
         ({"name": "x", "columns": [{"name": "a", "aliases": [1]}]}, r"columns\[0\].aliases"),
         (

@@ -1272,7 +1272,7 @@ def _validate_sources_against_manifest(manifest: dict[str, Any], sources: list[A
             _fail("source_manifest_mismatch", "Baseline manifest source is invalid")
         if original.get("sha256") != transported.get("sha256") or original.get("page_count") != transported.get("page_count"):
             _fail("source_manifest_mismatch", "Bundle source metadata disagrees with baseline manifest")
-        if "pages" in original and original.get("pages") != transported.get("pages"):
+        if original.get("pages") != transported.get("pages"):
             _fail("source_manifest_mismatch", "Bundle source page selection disagrees with baseline manifest")
         original_path = original.get("path")
         if not isinstance(original_path, str):

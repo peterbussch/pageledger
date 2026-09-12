@@ -244,6 +244,26 @@ def test_checkpoint_schemas_validate_each_durable_state(job, monkeypatch):
     launch(job)
 
 
+def test_checkpoint_schema_rejects_negative_usage(job):
+    from pathlib import Path
+
+    from jsonschema import Draft202012Validator, ValidationError
+    from referencing import Registry, Resource
+
+    launch(job)
+    schemas = Path(__file__).resolve().parents[2] / "schemas"
+    registry = Registry().with_resources((path.name, Resource.from_contents(json.loads(path.read_text())))
+                                         for path in schemas.glob("*.schema.json"))
+    page_schema = json.loads((schemas / "checkpoint-page.schema.json").read_text())
+    validator = Draft202012Validator(page_schema, registry=registry)
+    page_path = job[2] / ".checkpoint/pages/doc_0001_page_0001.json"
+    page = json.loads(page_path.read_text())
+    page["payload"]["result"]["usage"]["tokens"] = -1
+
+    with pytest.raises(ValidationError):
+        validator.validate(page)
+
+
 def test_incomplete_verify_is_never_a_final_pass(job):
     job[3].failure = KeyboardInterrupt()
     with pytest.raises(KeyboardInterrupt):

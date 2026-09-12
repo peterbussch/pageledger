@@ -194,7 +194,8 @@ The current generation's effective adapter is also the extractor recorded in
   `page_id`, adapter, status, and any error. It is an operational log, not a
   second audit source.
 - `cost.json` reports generated usage rollups with `pages`, `tokens`, and
-  `compute_seconds`. Provenance `usage.cost_usd` remains adapter-reported;
+  `compute_seconds`; reported numeric usage values are non-negative. Provenance
+  `usage.cost_usd` remains adapter-reported;
   the separate per-page `cost` object records the resolved accounting value.
   Aggregate `cost_basis` distinguishes reported cost, configured estimates,
   mixed evidence, and unknown cost. Its optional

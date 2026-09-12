@@ -742,6 +742,25 @@ def test_pdf_text_exact_replay(tmp_path: Path) -> None:
     assert verify_run(tmp_path / "replayed")["status"] == "pass"
 
 
+def test_bundle_rejects_injected_page_selection_before_replay(tmp_path: Path) -> None:
+    from pageledger.replay import ReplayError, bundle_run, replay_bundle, validate_bundle
+
+    run_dir, _, _ = _run_text(tmp_path)
+    bundle_dir = tmp_path / "bundle"
+    bundle_run(run_dir, bundle_dir)
+    path = bundle_dir / "bundle.json"
+    bundle = json.loads(path.read_text())
+    bundle["sources"][0]["pages"] = "1"
+    path.write_text(json.dumps(bundle))
+
+    with pytest.raises(ReplayError, match="page selection"):
+        validate_bundle(bundle_dir)
+    output = tmp_path / "replayed"
+    with pytest.raises(ReplayError, match="page selection"):
+        replay_bundle(bundle_dir, output)
+    assert not output.exists()
+
+
 def test_recorded_pages_selection_is_replayed(tmp_path: Path) -> None:
     from pageledger.replay import bundle_run, replay_bundle
 

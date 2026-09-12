@@ -341,6 +341,30 @@ def test_initialization_interruption_produces_explicit_halt_without_calls(setup,
     assert verify_job(setup[2])['status'] == 'pass'
 
 
+@pytest.mark.parametrize('field', ['page_id', 'disposition'])
+def test_malformed_review_scalar_leaves_job_unchanged(setup, tmp_path, field):
+    launch(setup)
+    job = read_record(setup[2] / 'job.json')
+    chosen = job['pages'][0]['attempts'][0]
+    decision = dict(page_id=chosen['page_id'], page_number=1, disposition='reviewed_text',
+                    selected_attempt=chosen['attempt_id'], output_sha256=chosen['raw_sha256'],
+                    reason='Checked against source', reviewer='Synthetic reviewer',
+                    reviewed_at='2026-09-11T18:00:00Z')
+    decision[field] = []
+    receipt = {'schema_version': '0.1', 'source_sha256': job['source']['sha256'],
+               'decisions': [decision]}
+    review = tmp_path / 'decisions.json'
+    review.write_text(json.dumps(receipt))
+    before = {p: p.read_bytes() for p in setup[2].rglob('*') if p.is_file()}
+    calls = list(setup[3]['calls'])
+
+    with pytest.raises(ValueError, match='Review'):
+        review_job(setup[2], review)
+
+    assert {p: p.read_bytes() for p in setup[2].rglob('*') if p.is_file()} == before
+    assert setup[3]['calls'] == calls
+
+
 def test_replacing_review_retains_history_without_calls(setup, tmp_path):
     launch(setup)
     job = read_record(setup[2] / 'job.json')

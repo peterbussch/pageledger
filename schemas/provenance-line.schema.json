@@ -68,9 +68,9 @@
       "required": ["pages"],
       "properties": {
         "pages": { "type": "integer", "minimum": 1 },
-        "tokens": { "type": ["integer", "null"] },
-        "compute_seconds": { "type": ["number", "null"] },
-        "cost_usd": { "type": ["number", "null"] }
+        "tokens": { "type": ["integer", "null"], "minimum": 0 },
+        "compute_seconds": { "type": ["number", "null"], "minimum": 0 },
+        "cost_usd": { "type": ["number", "null"], "minimum": 0 }
       },
       "additionalProperties": false
     },
@@ -80,9 +80,9 @@
       "required": ["pages"],
       "properties": {
         "pages": { "type": "integer", "minimum": 1 },
-        "tokens": { "type": ["integer", "null"] },
-        "compute_seconds": { "type": ["number", "null"] },
-        "cost_usd": { "type": ["number", "null"] }
+        "tokens": { "type": ["integer", "null"], "minimum": 0 },
+        "compute_seconds": { "type": ["number", "null"], "minimum": 0 },
+        "cost_usd": { "type": ["number", "null"], "minimum": 0 }
       },
       "additionalProperties": false
     },

@@ -15,8 +15,10 @@ from __future__ import annotations
 
 import json
 import sys
+from copy import deepcopy
 from pathlib import Path
 
+import pytest
 import yaml
 
 HERE = Path(__file__).resolve().parent
@@ -404,6 +406,29 @@ def test_provenance_dry_run_empty(tmp_path: Path) -> None:
     if provenance_file.exists():
         text = provenance_file.read_text(encoding="utf-8").strip()
         assert text == ""  # empty is fine
+
+
+def test_usage_schemas_reject_negative_values(tmp_path: Path) -> None:
+    """Reported usage and cost totals cannot be negative in generated artifacts."""
+    from jsonschema import ValidationError, validate
+
+    source = tmp_path / "sample.txt"
+    source.write_text("first page\fsecond page\n", encoding="utf-8")
+    out_dir = _run_pageledger(tmp_path, config_yaml=MINIMAL_CONFIG, inputs=[str(source)])
+    provenance = json.loads(
+        (out_dir / "provenance.jsonl").read_text(encoding="utf-8").splitlines()[0]
+    )
+    cost = json.loads((out_dir / "cost.json").read_text(encoding="utf-8"))
+
+    invalid_provenance = deepcopy(provenance)
+    invalid_provenance["usage"]["tokens"] = -1
+    with pytest.raises(ValidationError):
+        validate(instance=invalid_provenance, schema=_provenance_schema)
+
+    invalid_cost = deepcopy(cost)
+    invalid_cost["usage"]["compute_seconds"] = -1
+    with pytest.raises(ValidationError):
+        validate(instance=invalid_cost, schema=_cost_schema)
 
 
 # --- quality.jsonl validation ---------------------------------------------

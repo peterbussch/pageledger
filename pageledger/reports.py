@@ -43,7 +43,6 @@ def inspect_run(run_dir: Path) -> dict[str, Any]:
     if failed_page_count is None:
         failed_page_count = 0
 
-    # Determine which artifacts are present
     expected_artifacts = [
         "manifest.json", "config-snapshot.yml", "route-map.yml",
         "audit.json", "audit.md", "provenance.jsonl", "quality.jsonl",
@@ -57,7 +56,6 @@ def inspect_run(run_dir: Path) -> dict[str, Any]:
         else:
             artifacts_missing.append(name)
 
-    # Cost info
     cost_known = False
     estimated_cost_usd = None
     cost_path = out_dir / "cost.json"
@@ -66,7 +64,6 @@ def inspect_run(run_dir: Path) -> dict[str, Any]:
         cost_known = cost.get("cost_known", False)
         estimated_cost_usd = cost.get("cost_usd")
 
-    # Review queue count
     review_queue_count = 0
     audit_path = out_dir / "audit.json"
     if audit_path.is_file():

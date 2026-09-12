@@ -24,8 +24,8 @@
       "required": ["pages"],
       "properties": {
         "pages": { "type": ["integer", "null"], "minimum": 1 },
-        "tokens": { "type": ["integer", "null"] },
-        "compute_seconds": { "type": ["number", "null"] },
+        "tokens": { "type": ["integer", "null"], "minimum": 0 },
+        "compute_seconds": { "type": ["number", "null"], "minimum": 0 },
         "extraction_seconds": {
           "type": ["number", "null"],
           "description": "Wall-clock extraction time measured by the runner across all pages. Distinct from adapter-reported compute_seconds."
@@ -35,6 +35,7 @@
     },
     "cost_usd": {
       "type": ["number", "null"],
+      "minimum": 0,
       "description": "Estimated total cost in USD. Null when cost is unknown."
     },
     "cost_known": {
@@ -97,9 +98,9 @@
       "required": ["pages", "tokens", "compute_seconds", "cost_usd", "cost_known"],
       "properties": {
         "pages": { "type": "integer", "minimum": 1 },
-        "tokens": { "type": ["integer", "null"] },
-        "compute_seconds": { "type": ["number", "null"] },
-        "cost_usd": { "type": ["number", "null"] },
+        "tokens": { "type": ["integer", "null"], "minimum": 0 },
+        "compute_seconds": { "type": ["number", "null"], "minimum": 0 },
+        "cost_usd": { "type": ["number", "null"], "minimum": 0 },
         "cost_known": { "type": "boolean" }
       },
       "additionalProperties": false

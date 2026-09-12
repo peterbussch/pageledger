@@ -109,7 +109,7 @@ def load_schema_spec(config_data: dict[str, Any]) -> SchemaSpec | None:
         ):
             raise ValueError(f"{prefix}.aliases must be a list of strings")
         column_type = raw.get("type", "string")
-        if column_type not in COLUMN_TYPES:
+        if not isinstance(column_type, str) or column_type not in COLUMN_TYPES:
             raise ValueError(f"{prefix}.type must be one of: {', '.join(sorted(COLUMN_TYPES))}")
         required = raw.get("required", False)
         if not isinstance(required, bool):

@@ -94,8 +94,8 @@ Normalized records should preserve links back to provenance lines:
 | `route` | object | Page type, action, and route confidence. |
 | `extractor` | object | Adapter, adapter version, model, prompt hash, determinism flag, and adapter capability metadata. |
 | `result` | object | Output format, confidence, warnings, raw artifact path, and (for current writers) the exact raw artifact SHA-256. |
-| `usage` | object | Canonical usage fields: `pages`, `tokens`, `compute_seconds`, and `cost_usd`. |
-| `metrics` | object | Flat copy of `usage` for analytical workflows. |
+| `usage` | object | Canonical usage fields: `pages`, `tokens`, `compute_seconds`, and `cost_usd`; optional numeric fields are non-negative or null. |
+| `metrics` | object | Flat copy of `usage` for analytical workflows; optional numeric fields are non-negative or null. |
 | `cost` | object | Optional PageLedger-resolved per-page cost: `usd` plus `basis` (`adapter_reported`, `configured_rate`, or null). |
 | `extraction_seconds` | number or null | Wall-clock seconds for the successful extraction attempt, measured by the runner (independent of adapter-reported `compute_seconds`). |
 | `timestamp` | ISO timestamp | Extraction time in UTC. |

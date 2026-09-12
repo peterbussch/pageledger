@@ -4,10 +4,14 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
+from tarfile import TarInfo
+from tarfile import open as open_tar
 from zipfile import ZipFile
 
+import pytest
 import yaml
 
+from scripts.check_distributions import REQUIRED_SDIST_FILES, check_distributions
 from scripts.check_release import check_release
 
 REPO = Path(__file__).resolve().parents[2]
@@ -114,6 +118,11 @@ def test_package_workflows_run_shared_reader_journey_outside_checkout() -> None:
             "Smoke-test the exact wheel",
             "/tmp/pageledger-release-wheel/bin/python",
         ),
+        (
+            publish,
+            "Smoke-test the exact sdist",
+            "/tmp/pageledger-release-sdist/bin/python",
+        ),
     ]
     for workflow, step_name, isolated_python in cases:
         step = next(
@@ -124,8 +133,9 @@ def test_package_workflows_run_shared_reader_journey_outside_checkout() -> None:
         command = step["run"]
         assert step["env"]["PYTHONPATH"] == ""
         assert f"{isolated_python} examples/run_first_run.py" in command
-        assert '--document "$GITHUB_WORKSPACE/docs/first-run.md"' in command
-        assert '--work-dir "$WORK_ROOT/first-run"' in command
+        for tutorial in ("first-run", "document-first-run"):
+            assert f'--document "$GITHUB_WORKSPACE/docs/{tutorial}.md"' in command
+            assert f'--work-dir "$WORK_ROOT/{tutorial}"' in command
         assert f"--python {isolated_python}" in command
         assert "--expected-version 0.5.1" in command
         assert '--forbid-import-root "$GITHUB_WORKSPACE"' in command
@@ -139,16 +149,36 @@ def test_package_workflows_validate_schema_and_document_inventories() -> None:
     ]
 
     for workflow in workflows:
-        assert 'Path("schemas").glob("*.schema.json")' in workflow
-        for packaged_path in (
-            "docs/first-run.md",
-            "docs/performance.md",
-            "docs/releasing.md",
-            "examples/run_first_run.py",
-        ):
-            assert packaged_path in workflow
-        for excluded in ("docs/superpowers/", "docs/proposals/", "docs/reports/"):
-            assert excluded in workflow
+        assert "python scripts/check_distributions.py dist" in workflow
+
+
+@pytest.mark.parametrize("defect", [None, "schema", "document", "validation", "private"])
+def test_distribution_check_reads_archives_and_rejects_missing_or_private_files(
+    tmp_path: Path, defect: str | None,
+) -> None:
+    schemas = tmp_path / "schemas"
+    schemas.mkdir()
+    (schemas / "manifest.schema.json").write_text("{}")
+    dist = tmp_path / "dist"
+    dist.mkdir()
+    with ZipFile(dist / "pageledger-1.2.3-py3-none-any.whl", "w") as archive:
+        if defect != "schema":
+            archive.writestr("pageledger-1.2.3.data/data/share/pageledger/schemas/manifest.schema.json", "{}")
+    omitted = {
+        "document": "docs/document-first-run.md",
+        "validation": "docs/validation/0.5.1/vlm-results.json",
+    }.get(defect)
+    with open_tar(dist / "pageledger-1.2.3.tar.gz", "w:gz") as archive:
+        for path in REQUIRED_SDIST_FILES:
+            if path != omitted:
+                archive.addfile(TarInfo("pageledger-1.2.3/" + path))
+        if defect == "private":
+            archive.addfile(TarInfo("pageledger-1.2.3/.planning/private.json"))
+    if defect is None:
+        check_distributions(tmp_path, dist)
+    else:
+        with pytest.raises(ValueError, match="missing|local-only"):
+            check_distributions(tmp_path, dist)
 
 
 def test_all_github_actions_are_pinned_and_ci_has_a_frozen_lane() -> None:

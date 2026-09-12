@@ -669,7 +669,11 @@ def _run(
         if dry_run or adapter is None or action in {"review", "skip"}:
             continue
         page_id = cast(str, page["page_id"])
-        if _checkpoint is not None and _checkpoint.records[page_id]["state"] == "pending":
+        new_adapter_call = (
+            _checkpoint is None
+            or _checkpoint.records[page_id]["state"] == "pending"
+        )
+        if new_adapter_call:
             # Saved results still need replay at the cap; only new calls stop.
             for unit, cap, current in _budget_caps(
                 config, pages_total=pages_extracted, tokens_total=tokens_total,
@@ -1482,16 +1486,20 @@ def _validate_extraction_result(adapter_name: str, result: Any) -> None:
     tokens = result.usage.get("tokens")
     if tokens is not None and (not isinstance(tokens, int) or isinstance(tokens, bool)):
         raise ValueError(f"Adapter '{adapter_name}' usage.tokens must be an integer or null")
+    if tokens is not None and tokens < 0:
+        raise ValueError(f"Adapter '{adapter_name}' usage.tokens must be non-negative or null")
     compute_seconds = result.usage.get("compute_seconds")
     _validate_optional_finite_number(
-        adapter_name, "usage.compute_seconds", compute_seconds
+        adapter_name, "usage.compute_seconds", compute_seconds, non_negative=True
     )
     cost_usd = result.usage.get("cost_usd")
-    _validate_optional_finite_number(adapter_name, "usage.cost_usd", cost_usd)
+    _validate_optional_finite_number(
+        adapter_name, "usage.cost_usd", cost_usd, non_negative=True
+    )
 
 
 def _validate_optional_finite_number(
-    adapter_name: str, field: str, value: Any
+    adapter_name: str, field: str, value: Any, *, non_negative: bool = False
 ) -> None:
     if value is None:
         return
@@ -1502,6 +1510,10 @@ def _validate_optional_finite_number(
     ):
         raise ValueError(
             f"Adapter '{adapter_name}' {field} must be a finite number or null"
+        )
+    if non_negative and value < 0:
+        raise ValueError(
+            f"Adapter '{adapter_name}' {field} must be non-negative or null"
         )
 
 

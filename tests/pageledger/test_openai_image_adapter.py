@@ -170,8 +170,7 @@ def test_gateway_image_limit_compresses_retained_and_transmitted_bytes(tmp_path,
 
     Image = pytest.importorskip("PIL.Image")
     cls = example_class()
-    renderer = cls._render.__globals__
-    monkeypatch.setattr(renderer["shutil"], "which", lambda name: "/test/pdftoppm")
+    monkeypatch.setattr(shutil, "which", lambda name: "/test/pdftoppm")
     pixels = random.Random(0).randbytes(1400 * 1400 * 3)
 
     def render(command, **kwargs):
@@ -180,7 +179,7 @@ def test_gateway_image_limit_compresses_retained_and_transmitted_bytes(tmp_path,
         Image.frombytes("RGB", (1400, 1400), pixels).save(command[-1] + ".jpg", quality=90)
         return subprocess.CompletedProcess(command, 0)
 
-    monkeypatch.setattr(renderer["subprocess"], "run", render)
+    monkeypatch.setattr(subprocess, "run", render)
     source = tmp_path / "scan.pdf"
     source.write_bytes(b"synthetic renderer input")
     root = tmp_path / "run"

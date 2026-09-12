@@ -117,7 +117,8 @@ def _review_decisions(job: dict, review: dict) -> None:
     by_id = {p['page_id']: p for p in job['pages']}
     seen = set()
     for decision in review['decisions']:
-        if (not isinstance(decision, dict) or decision.get('page_id') not in by_id
+        if (not isinstance(decision, dict) or not isinstance(decision.get('page_id'), str)
+                or decision['page_id'] not in by_id
                 or decision['page_id'] in seen):
             raise ValueError('Review has duplicate or unselected pages')
         seen.add(decision['page_id'])

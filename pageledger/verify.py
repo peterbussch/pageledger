@@ -375,7 +375,9 @@ def verify_run(
                     )
                 for page in document["pages"]:
                     counts["routed_pages"] += 1
-                    if not isinstance(page, dict) or not isinstance(page.get("page_id"), str):
+                    if (not isinstance(page, dict)
+                            or not isinstance(page.get("page_id"), str)
+                            or not isinstance(page.get("action"), str)):
                         _add(errors, "artifact_structure_invalid", "Route page is malformed")
                         continue
                     page_id = page["page_id"]
@@ -828,10 +830,28 @@ def verify_run(
 
     log_entries = loaded.get("run_log")
     if isinstance(log_entries, list):
+        for line_number, entry in enumerate(log_entries, start=1):
+            _check_identity(
+                entry,
+                run_id,
+                schema_version,
+                errors,
+                paths["run_log"].name,
+                line_number=line_number,
+            )
+            if not isinstance(entry.get("status"), str):
+                _add(
+                    errors,
+                    "artifact_structure_invalid",
+                    "Run log status must be a string",
+                    artifact=paths["run_log"].name,
+                    line_number=line_number,
+                )
         failed_page_ids = {
             entry.get("page_id")
             for entry in log_entries
-            if entry.get("status") in {"failed", "invalid_result"}
+            if isinstance(entry.get("status"), str)
+            and entry["status"] in {"failed", "invalid_result"}
             and isinstance(entry.get("page_id"), str)
         }
         if (
@@ -863,16 +883,6 @@ def verify_run(
                 expected=summary["pages_not_attempted"],
                 actual=len(not_attempted),
             )
-        for line_number, entry in enumerate(log_entries, start=1):
-            _check_identity(
-                entry,
-                run_id,
-                schema_version,
-                errors,
-                paths["run_log"].name,
-                line_number=line_number,
-            )
-
     _check_replay_linkage(
         manifest, declarations, loaded, provenance, manifest_identities, errors
     )

@@ -20,6 +20,21 @@ Release changes follow the [artifact compatibility policy](docs/run-manifest-spe
   limits for gateways with smaller inputs. A separate live VLM test records
   provider failures and retained evidence; it did not produce a transcription.
 
+### Fixed
+
+- Ordinary runs stop before another adapter call when recorded token or cost
+  usage has reached its cap. Negative adapter usage is rejected.
+- Replay bundles cannot add a page selection that was absent from the original
+  run. Malformed review receipts, route fields and schema column types produce
+  validation errors with useful context.
+- Malformed parent routes are rejected before classification writes new output.
+
+### Maintenance
+
+- Shared package checks replace duplicated workflow code. The locked CI and
+  release checks enforce consistent Python formatting across source, tests,
+  examples and scripts.
+
 ## 0.5.0 - 2026-09-11
 
 ### Added

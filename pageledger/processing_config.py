@@ -19,8 +19,11 @@ def processing_config(data: dict[str, Any], *, pdf: bool) -> dict[str, Any]:
         raise ValueError(f'Unknown processing key: {sorted(unknown)[0]}')
     result: dict[str, Any] = {}
     for name in STAGES:
-        default = ({'adapter': 'pdf_text' if pdf else 'text'} if name == 'local_text'
-                   else {'adapter': 'pdf_ocr'} if name == 'local_ocr' and pdf else None)
+        default = None
+        if name == 'local_text':
+            default = {'adapter': 'pdf_text' if pdf else 'text'}
+        elif name == 'local_ocr' and pdf:
+            default = {'adapter': 'pdf_ocr'}
         entry = value.get(name, default)
         if entry is None:
             if name == 'local_text':

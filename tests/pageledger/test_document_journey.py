@@ -20,9 +20,7 @@ def test_document_first_run_journey_records_recovery_and_bounded_review(
 ) -> None:
     work_dir = tmp_path / "journey"
     environment = {**os.environ, "PYTHONPATH": str(ROOT)}
-    environment["PAGELEDGER_TUTORIAL_RECOVERY_HELPER"] = str(
-        ROOT / "examples" / "run_document_recovery.py"
-    )
+    environment.pop("PAGELEDGER_TUTORIAL_RECOVERY_HELPER", None)
     result = subprocess.run(
         [
             sys.executable,

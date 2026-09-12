@@ -160,8 +160,8 @@ and may be `null`.
 All result evidence must fit the artifact contract before PageLedger writes
 raw output: `confidence` is finite and between 0 and 1, `model` is text or
 null, warning items are strings, `confidence_detail` is a JSON-serializable
-mapping or null, and numeric usage values are finite numbers rather than
-booleans. `NaN` and infinity are rejected at the adapter boundary.
+mapping or null, and numeric usage values are finite, non-negative numbers
+rather than booleans. `NaN` and infinity are rejected at the adapter boundary.
 
 Use `model` for the concrete runtime identity that could affect output, not
 only a marketing model name. The built-in `pdf_text` adapter records the

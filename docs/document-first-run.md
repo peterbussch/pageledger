@@ -83,21 +83,8 @@ that PageLedger reuses the saved response and does not extract page 1 twice.
 
 ```bash pageledger-tutorial
 CALLS_PATH="$PWD/calls-interrupted.jsonl"
-cat > interrupted-job.yml <<'YAML'
-schema_version: "0.1"
-taxonomy:
-  page_types:
-    prose:
-      default_action: transcribe_text
-run:
-  adapter: text
-processing:
-  local_text:
-    adapter: text
-  local_ocr: null
-YAML
 "$PYTHON" "${PAGELEDGER_TUTORIAL_RECOVERY_HELPER:-run_document_recovery.py}" \
-  --source sample-document.txt --config interrupted-job.yml \
+  --source sample-document.txt --config document-job.yml \
   --out jobs/interrupted --calls "$CALLS_PATH"
 pageledger inspect-job jobs/interrupted
 pageledger verify-job jobs/interrupted
@@ -107,7 +94,6 @@ from pathlib import Path
 
 calls = [json.loads(line) for line in Path("calls-interrupted.jsonl").read_text().splitlines()]
 assert [call["page_number"] for call in calls] == [1, 2, 3]
-assert [call["page_number"] for call in calls].count(1) == 1
 print("DOCUMENT_JOURNEY_RECOVERY_OK")
 PY
 ```

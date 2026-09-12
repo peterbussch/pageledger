@@ -28,8 +28,10 @@ uploading to PyPI also requires approval through the `pypi` environment.
 5. Build wheel and sdist once from that exact clean source into a fresh `dist/`,
    run `twine check`, and inspect both archive inventories. The sdist must carry
    both maintained first-run tutorials, the reader-trial and validation
-   reports, performance and release documentation, and both tutorial helpers, while excluding local planning state, proposals and
-   historical execution reports. The wheel must carry every schema in `schemas/`.
+   reports, performance and release documentation, and both tutorial helpers.
+   It must exclude local planning state, proposals and historical execution
+   reports. The wheel must carry every schema in `schemas/`.
+   Run `python scripts/check_distributions.py dist` for the shared archive checks.
 6. Install the exact wheel into a fresh environment and, from outside the
    checkout with `PYTHONPATH` cleared, run each maintained reader journey:
 
@@ -61,8 +63,9 @@ changelog date, or committed lock disagree.
 1. In GitHub Actions, dispatch **Publish** from the release tag with the default
    target, `verify`. The workflow recreates the committed lock, runs the suite
    and static checks, builds once, checks the wheel schema and sdist documentation
-   inventories, runs the maintained journey against the exact wheel outside the
-   checkout, records distribution hashes, and retains `dist-vX.Y.Z` for 14 days.
+   inventories, runs both maintained tutorials against the wheel and sdist
+   outside the checkout, records distribution hashes, and retains
+   `dist-vX.Y.Z` for 14 days.
 2. Download that artifact, inspect `SHA256SUMS` and both archive inventories,
    then install its wheel into a new environment and run a representative
    PageLedger workflow. The verification dispatch cannot upload a package.

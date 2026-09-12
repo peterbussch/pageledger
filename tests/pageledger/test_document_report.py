@@ -189,6 +189,19 @@ def test_verification_detects_tampered_derived_or_raw_artifacts(tmp_path, artifa
         verify_document_report(tmp_path)
 
 
+@pytest.mark.parametrize("legacy", [False, True])
+def test_verification_rejects_review_without_a_matching_decision(tmp_path, legacy):
+    report = write_document_report(job_fixture(tmp_path), tmp_path)
+    if legacy:
+        report.pop("report_format")
+        (tmp_path / "report.md").write_text(render_document_report(report))
+    report["pages"][0]["review"] = {"decisions": []}
+    (tmp_path / "document.json").write_text(json.dumps(report))
+
+    with pytest.raises(ValueError, match="Invalid document report"):
+        verify_document_report(tmp_path)
+
+
 def test_schema_accepts_child_run_identity_and_image_evidence(tmp_path):
     job = job_fixture(tmp_path)
     job["usage"]["paid_cost_known"] = True

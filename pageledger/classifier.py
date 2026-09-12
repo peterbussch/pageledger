@@ -511,10 +511,15 @@ def _classify_from_run(
             elif _sha256_path(source) != recorded_hash:
                 warnings.append(f"Source changed since parent run: {source}")
         pages: list[dict[str, Any]] = []
-        for page in document.get("pages", []):
+        route_pages = document.get("pages")
+        if not isinstance(route_pages, list):
+            raise ValueError(f"Parent route map has invalid pages for {source}")
+        for page in route_pages:
+            if not isinstance(page, dict):
+                raise ValueError(f"Parent route map has an invalid page for {source}")
             page_id = page.get("page_id")
             page_number = page.get("page_number")
-            if not isinstance(page_id, str) or not isinstance(page_number, int):
+            if not isinstance(page_id, str) or type(page_number) is not int:
                 raise ValueError(f"Parent route map has an invalid page for {source}")
             provenance = provenance_by_page.get(page_id)
             quality = quality_by_page.get(page_id)

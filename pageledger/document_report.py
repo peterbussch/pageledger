@@ -35,6 +35,7 @@ _DISPOSITION_LABELS = {
     "source_defect": "Source problem confirmed",
 }
 
+
 def _artifact_bytes(root: Path, relative: str, expected_hash: str) -> bytes:
     if not isinstance(relative, str) or not relative:
         raise ValueError("Missing report artifact path")
@@ -173,8 +174,11 @@ def _recorded_concerns(page: dict) -> str:
     return "; ".join(concerns)
 
 
-def _render_document_report(report: dict, *, current: bool) -> str:
-    """Render either the current or legacy summary from shared sections."""
+def render_document_report(report: dict) -> str:
+    """Render a report, retaining the 0.5.0 format when its marker is absent."""
+    current = "report_format" in report
+    if current and report["report_format"] != _CURRENT_REPORT_FORMAT:
+        raise ValueError(f"Unsupported document report format: {report['report_format']}")
     source, counts = report["source"], report["counts"]
     annotations, retention = source["annotations"], report["source_retention"]
     annotation_count = "unknown" if annotations["count"] is None else str(annotations["count"])
@@ -233,15 +237,6 @@ def _render_document_report(report: dict, *, current: bool) -> str:
                   f"Transcript SHA-256: `{report['transcript']['sha256']}`", "",
                   f"Next action: {_escape(report['next_action'])}", ""])
     return "\n".join(lines)
-
-
-def render_document_report(report: dict) -> str:
-    """Render a report, retaining the 0.5.0 format when its marker is absent."""
-    if "report_format" not in report:
-        return _render_document_report(report, current=False)
-    if report["report_format"] != _CURRENT_REPORT_FORMAT:
-        raise ValueError(f"Unsupported document report format: {report['report_format']}")
-    return _render_document_report(report, current=True)
 
 
 def build_document_report(job: dict, root: Path, *, report_format: str | None = _CURRENT_REPORT_FORMAT) -> dict:
@@ -347,5 +342,5 @@ def verify_document_report(root: Path) -> dict:
                 if raw != selected["text"].encode("utf-8"):
                     raise ValueError("Selected text differs from raw artifact bytes")
         return report
-    except (OSError, KeyError, TypeError, UnicodeError) as exc:
+    except (OSError, KeyError, TypeError, UnicodeError, StopIteration) as exc:
         raise ValueError("Invalid document report") from exc

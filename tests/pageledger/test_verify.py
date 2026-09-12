@@ -36,6 +36,27 @@ def _codes(report: dict, kind: str) -> set[str]:
     return {issue["code"] for issue in report[kind]}
 
 
+@pytest.mark.parametrize("artifact", ["route-map.yml", "run.log"])
+def test_verify_run_reports_malformed_action_or_log_status(tmp_path, artifact):
+    from pageledger.verify import verify_run
+
+    out_dir, _ = _run(tmp_path)
+    path = out_dir / artifact
+    if artifact == "route-map.yml":
+        route = yaml.safe_load(path.read_text())
+        route["documents"][0]["pages"][0]["action"] = []
+        path.write_text(yaml.safe_dump(route))
+    else:
+        entries = [json.loads(line) for line in path.read_text().splitlines()]
+        entries[0]["status"] = []
+        path.write_text("".join(json.dumps(entry) + "\n" for entry in entries))
+
+    report = verify_run(out_dir)
+
+    assert report["status"] == "fail"
+    assert "artifact_structure_invalid" in _codes(report, "errors")
+
+
 def test_verify_run_accepts_coherent_ledger(tmp_path):
     from pageledger.verify import verify_run
 

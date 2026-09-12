@@ -300,6 +300,34 @@ def test_from_run_missing_raw_is_unknown_and_changed_source_warns(tmp_path: Path
     assert any("Source changed since parent run" in warning for warning in result["warnings"])
 
 
+@pytest.mark.parametrize("mutation", ["missing_pages", "boolean_page_number"])
+def test_from_run_rejects_malformed_route_pages(
+    tmp_path: Path, mutation: str
+) -> None:
+    source = tmp_path / "fixture.txt"
+    source.write_text("short page", encoding="utf-8")
+    config = _write_config(tmp_path)
+    parent = tmp_path / "parent"
+    run(inputs=[source], config_path=config, out_dir=parent, dry_run=False)
+
+    route_path = parent / "route-map.yml"
+    route = yaml.safe_load(route_path.read_text(encoding="utf-8"))
+    document = route["documents"][0]
+    if mutation == "missing_pages":
+        document["pages"] = None
+    else:
+        document["pages"][0]["page_number"] = True
+    route_path.write_text(yaml.safe_dump(route), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="invalid page|pages"):
+        classify(
+            inputs=[],
+            config_path=config,
+            out_path=tmp_path / f"{mutation}.yml",
+            from_run=parent,
+        )
+
+
 def test_cli_json_success_and_source_mode_error(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

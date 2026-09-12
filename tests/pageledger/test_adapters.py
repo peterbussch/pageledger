@@ -556,6 +556,33 @@ class ZeroPageAdapter:
     )
 
 
+@pytest.mark.parametrize(
+    "field",
+    ["tokens", "compute_seconds", "cost_usd"],
+)
+def test_runner_rejects_negative_usage_values(field: str) -> None:
+    from pageledger import runner as runner_module
+
+    usage = {
+        "pages": 1,
+        "tokens": None,
+        "compute_seconds": None,
+        "cost_usd": None,
+    }
+    usage[field] = -1
+    result = ExtractionResult(
+        content="test",
+        format="text",
+        confidence=None,
+        model=None,
+        warnings=[],
+        usage=usage,
+    )
+
+    with pytest.raises(ValueError, match=rf"usage\.{field}.*non-negative"):
+        runner_module._validate_extraction_result("negative-usage", result)
+
+
 # =========================================================================
 # Custom adapter: no-arg import string still works
 # =========================================================================

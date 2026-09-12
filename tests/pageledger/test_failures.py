@@ -181,6 +181,71 @@ def test_budget_exceeded_mid_run_preserves_partial_output(tmp_path):
     assert cost["budget"]["usd"]["exceeded"] is True
 
 
+def test_budget_at_exact_cost_cap_stops_before_next_page(tmp_path):
+    """A page that reaches the USD cap must prevent the next adapter call."""
+    class CountingAdapter:
+        name = "counting"
+        version = "1.0"
+        deterministic = True
+        input_types = ("text",)
+        output_types = ("text",)
+        capabilities = ("local",)
+
+        def __init__(self):
+            self.calls = 0
+
+        def supports(self, action):
+            return action == "transcribe_text"
+
+        def extract(self, source, *, page_id, page_number, action, prompt=None):
+            from pageledger.adapters import ExtractionResult
+
+            _ = source, page_id, action, prompt
+            self.calls += 1
+            return ExtractionResult(
+                content=f"page {page_number}",
+                format="text",
+                confidence=None,
+                model=None,
+                warnings=[],
+                usage={
+                    "pages": 1,
+                    "tokens": None,
+                    "compute_seconds": None,
+                    "cost_usd": 1.0,
+                },
+            )
+
+    source = tmp_path / "multi.txt"
+    source.write_text("page one\fpage two\n", encoding="utf-8")
+    config = tmp_path / "config.yml"
+    config.write_text(textwrap.dedent("""\
+        schema_version: "0.1"
+        taxonomy:
+          page_types:
+            prose:
+              default_action: transcribe_text
+        run:
+          adapter: text
+          budget:
+            max_usd: 1
+        """), encoding="utf-8")
+    adapter = CountingAdapter()
+
+    with pytest.raises(BudgetExceededError, match="Budget reached before"):
+        run(
+            inputs=[source],
+            config_path=config,
+            out_dir=tmp_path / "out",
+            dry_run=False,
+            _loaded_adapter=adapter,
+        )
+
+    assert adapter.calls == 1
+    manifest = json.loads((tmp_path / "out" / "manifest.json").read_text())
+    assert manifest["summary"]["pages_extracted"] == 1
+
+
 # =========================================================================
 # Retry exhausted → retry entries + final error
 # =========================================================================
