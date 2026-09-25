@@ -136,7 +136,9 @@ the route page records `review: true`, and after extraction the page joins the
 review queue with reason `route_review:<type>`. `init-config` uses it for
 `sparse`, `table_likely` and `unknown`, the types whose text most often needs
 checking against the image. Use `default_action: review` instead to queue a
-type without extracting it.
+type without extracting it. `classify` only proposes types; the taxonomy
+decides whether each is extracted, so inspect the route map before a full run,
+especially for tables and short pages.
 
 For each page, an action or prompt returned by a custom hook takes precedence.
 Otherwise PageLedger uses the matching taxonomy entry. An unmapped action
