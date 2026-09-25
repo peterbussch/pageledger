@@ -131,6 +131,7 @@ _CURRENT_VERSION_FILES = [
     ROOT / "docs" / "README.md",
     ROOT / "skills" / "pageledger" / "SKILL.md",
     ROOT / "docs" / "route-map-spec.md",
+    ROOT / "docs" / "run-manifest-spec.md",
 ]
 
 
@@ -139,7 +140,7 @@ def test_current_version_strings_match_the_package(document: Path) -> None:
     text = document.read_text(encoding="utf-8")
     versions = set(re.findall(r"pageledger(?:\[pdf\])?==(\d+\.\d+\.\d+)", text))
     versions |= set(re.findall(r"PageLedger (\d+\.\d+\.\d+)", text))
-    versions |= set(re.findall(r'pageledger_version: "(\d+\.\d+\.\d+)"', text))
+    versions |= set(re.findall(r'pageledger_version"?: "(\d+\.\d+\.\d+)"', text))
     assert versions <= {pageledger.__version__}
 
 

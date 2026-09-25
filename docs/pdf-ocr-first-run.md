@@ -98,6 +98,9 @@ YAML
 pageledger run document.pdf --config pageledger-ocr.yml --out runs/document-ocr --json
 ```
 
+The JSON summary reports `"status": "completed"`, and `runs/document-ocr/raw/`
+holds one text file per page.
+
 Tune DPI and language in the `run` section of your config (keep its
 `taxonomy` section, which tells PageLedger which pages to extract):
 
@@ -135,11 +138,13 @@ pageledger compare-runs runs/document-pdf-text runs/document-rerun
 ```
 
 The rerun keeps the original page IDs, records the parent run ID, and enforces
-`run.max_rerun_depth`. `compare-runs` shows which warnings the stronger engine
-resolved or introduced. When OCR recovers text from an empty page,
-`output_inflation` can be expected: it asks you to check the source and does
-not by itself show that the engine invented text. PageLedger does not select or
-assemble a corrected corpus; you choose which outputs to use.
+`run.max_rerun_depth`. The two runs used different adapters, so `compare-runs`
+marks their pages `incomparable_adapter` and does not total the warning
+changes, but its page table still shows them: on a scan, pages the text layer
+left empty list `empty_text` as *resolved*. When OCR recovers text from an
+empty page, `output_inflation` can be expected: it asks you to check the source
+and does not by itself show that the engine invented text. PageLedger does not
+select or assemble a corrected corpus; you choose which outputs to use.
 
 A replay bundle needs a first-generation run: bundle a fresh OCR run rather
 than a rerun.
@@ -168,9 +173,11 @@ than a rerun.
   less than 72 DPI stops the run with `render_limit: ...`. See
   [page size and rendering](ocr-options.md#page-size-and-rendering) before raising the limit.
 - Adapter crash, budget exceeded, or invalid result: a partial run directory is
-  still written. Check `manifest.json` → `status` for `"failed"` (mid-run
-  failure) vs. `"completed"` (success). Inspect `run.log` for per-page error
-  envelopes including adapter name, page ID, and error message. Pages that
+  still written. `manifest.json` → `status` says how far it got: `completed`
+  when every page was extracted or deliberately skipped, `partial` for a dry
+  run or when some pages failed or were routed to review, and `failed` when the
+  run stopped part way. Inspect `run.log` for per-page error envelopes
+  including adapter name, page ID, and error message. Pages that
   succeeded before the failure have raw artifacts, provenance lines, and quality
   entries. See [failure recovery and partial-run
   guarantees](run-manifest-spec.md#failure-recovery-and-partial-run-guarantees) for the full failure scenario table and common error actions.

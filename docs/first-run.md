@@ -59,6 +59,18 @@ pageledger verify-run runs/first
 pageledger inspect-run runs/first --json
 ```
 
+Among other lines, the run and `inspect-run` print:
+
+```text
+Pages: 3 extracted / 3 total
+Quality warning pages: 1
+Status: completed
+Review queue: 1
+Grades (signals): A=2 B=1 C=0 D=0 F=0
+```
+
+and `verify-run` ends with `Run verification: PASS`.
+
 `quality.jsonl` contains observable signals, not a correctness verdict.
 Likewise, an A signals grade means the configured heuristics did not fire; it
 does not certify the transcription. Compare the raw page with the source image
@@ -79,6 +91,14 @@ does any extraction. The parent `rerun-manifest.yml` selects only page 2.
 pageledger rerun runs/first --config pageledger.yml --out runs/second
 pageledger compare-runs runs/first runs/second
 pageledger verify-run runs/second
+```
+
+`compare-runs` reports, among other lines:
+
+```text
+Pages compared: 1 (only in A: 2, only in B: 0)
+Raw output: equal 1 / different 0 / missing 0
+Warnings resolved in B: 0
 ```
 
 This deliberately uses the same deterministic adapter on unchanged source, so

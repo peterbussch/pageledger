@@ -15,8 +15,7 @@ python examples/run_first_run.py \
   --document "$PWD/docs/document-first-run.md" \
   --work-dir /tmp/pageledger-document-first-run \
   --python "$(command -v python)" \
-  --source-root "$PWD" \
-  --expected-version 0.5.2
+  --source-root "$PWD"
 ```
 
 The helper supplies the recovery helper path as

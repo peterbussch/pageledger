@@ -209,7 +209,7 @@ The current generation's effective adapter is also the extractor recorded in
 PageLedger artifacts carry `schema_version: "0.1"` as their release contract.
 
 The package release and artifact schema are versioned independently.
-PageLedger 0.5.2 keeps artifact `schema_version: "0.1"`: its newer classifier,
+PageLedger keeps artifact `schema_version: "0.1"`: its newer classifier,
 escalation, and cost fields are additive and optional, so existing 0.1
 artifacts remain readable. A package minor release does not by itself require
 an artifact schema bump.
