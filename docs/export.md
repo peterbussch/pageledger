@@ -65,7 +65,8 @@ without text has null `attempt` and `text`.
 
 ## TEI
 
-A minimal TEI P5 document:
+A minimal TEI P5 document, which PageLedger's tests validate against the TEI
+All schema of TEI P5 4.12.0:
 
 - `sourceDesc` names the source file and its SHA-256; `encodingDesc` lists the
   engines behind the exported text and how many pages a person reviewed.

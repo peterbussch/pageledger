@@ -35,11 +35,11 @@ jobs:
           python-version: ${{ matrix.python-version }}
       - name: Install with optional PDF extra
         run: pip install ".[${{ matrix.extras }}]"
-      - name: Enable real image-adapter tests in the Python 3.13 PDF lane
+      - name: Install Poppler, Tesseract and xmllint for the Python 3.13 PDF lane
         if: matrix.python-version == '3.13' && matrix.extras == 'dev,pdf'
         run: |
           sudo apt-get update
-          sudo apt-get install -y poppler-utils tesseract-ocr
+          sudo apt-get install -y poppler-utils tesseract-ocr libxml2-utils
           pip install Pillow==12.3.0
       - name: Run the PDF/OCR tutorial on a generated scan
         if: matrix.python-version == '3.13' && matrix.extras == 'dev,pdf'

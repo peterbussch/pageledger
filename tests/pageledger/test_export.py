@@ -1,10 +1,10 @@
 """Exports carry each page's text, review state and attempt identity, never absolute paths."""
 
+import hashlib
 import json
 import os
 import shutil
 import subprocess
-import urllib.request
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
@@ -25,7 +25,9 @@ from pageledger.processing import process, review_job
 
 ROOT = Path(__file__).resolve().parents[2]
 TEI = "{http://www.tei-c.org/ns/1.0}"
-TEI_ALL = "https://tei-c.org/release/xml/tei/custom/schema/relaxng/tei_all.rng"
+# TEI P5 4.12.0, pinned; see tests/fixtures/tei/README.md.
+TEI_ALL = Path(__file__).parents[1] / "fixtures" / "tei" / "tei_all.rng"
+TEI_ALL_SHA256 = "b0f115095ead2ccc6933aa3365c6f4a82cba3b2ec7eee7f76bb616d7a63b7e48"
 
 
 @pytest.fixture
@@ -117,20 +119,18 @@ def test_tei_marks_page_breaks_review_state_and_missing_text(job):
     assert pages[2].find(f"{TEI}gap").get("reason") == "pending"
 
 
-def test_tei_validates_against_tei_all(job, tmp_path):
+def test_the_pinned_tei_schema_is_unchanged():
+    assert hashlib.sha256(TEI_ALL.read_bytes()).hexdigest() == TEI_ALL_SHA256
+
+
+def test_tei_validates_against_tei_all(job):
     xmllint = shutil.which("xmllint")
     if xmllint is None:
         pytest.skip("xmllint is not installed")
-    schema = tmp_path / "tei_all.rng"
-    try:
-        with urllib.request.urlopen(TEI_ALL, timeout=30) as response:
-            schema.write_bytes(response.read())
-    except OSError as exc:
-        pytest.skip(f"TEI All schema unavailable: {exc}")
     _export(job, "tei")
 
     checked = subprocess.run(
-        [xmllint, "--noout", "--relaxng", str(schema), str(job.parents[1] / "exports/book.tei")],
+        [xmllint, "--noout", "--relaxng", str(TEI_ALL), str(job.parents[1] / "exports/book.tei")],
         capture_output=True,
         text=True,
     )
