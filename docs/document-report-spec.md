@@ -196,7 +196,7 @@ receipt again does not append a duplicate. Reports preserve the full history in
 
 ## Human summary rendering
 
-Reports marked with `report_format` `"0.5.1"` or `"0.6"` use separate page-summary
+Reports marked with `report_format` `"0.5.1"` retain separate page-summary
 columns for `Current output`, `Review status`, and `Recorded concerns`. Current
 output links to the selected completed artifact and identifies its extraction
 stage. Review status describes whether source review is pending or records the
@@ -206,6 +206,23 @@ an attempt only when that attempt records matching warning, classification, or
 alignment evidence; otherwise it is shown as a retained review concern without
 inventing an origin. An explicit `empty_text` warning is rendered as empty text
 returned by the named extraction stage.
+
+Reports marked `"0.6"` list first the pages that need a person, then the rest,
+each group in page order. A page needs a person when no one has reviewed it and
+it has a review reason or no selected text; the line above the table says how
+many pages that is. The table shows four facts separately:
+
+- **Selected text**: the stage and attempt the policy selected, linked to its
+  output, or `none`.
+- **Engine agreement**: `agree` or `disagree`, with the lowest word agreement
+  between the selected reading and another clean one, or `not compared`. See
+  [Compare engines on a page](processing-spec.md#compare-engines-on-a-page).
+- **Human review**: who reviewed the page and when, with the recorded
+  disposition and, for a source-only decision, its reason; or `not reviewed`.
+- **Recorded concerns**: as in the 0.5.1 layout.
+
+Under the table the report says that engine agreement is evidence, not proof:
+engines can share a mistake.
 
 These labels describe presentation only. They do not change `selected_attempt`,
 `disposition`, `review_reasons`, review receipts, or the unresolved-page count.

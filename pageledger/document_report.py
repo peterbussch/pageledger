@@ -166,6 +166,38 @@ def _current_output(page: dict) -> str:
     return _link(label, selected["path"])
 
 
+def _agreement(page: dict, holds_for: dict[str, str]) -> str:
+    selected = page.get("selected_attempt")
+    if selected is None:
+        return "not compared"
+    comparisons = selected_clean_comparisons(page, selected, holds_for)
+    if not comparisons:
+        return "not compared"
+    ratio = min(item["agreement_ratio"] for item in comparisons)
+    return f"{'agree' if ratio >= ENGINE_AGREEMENT_THRESHOLD else 'disagree'} ({ratio:.0%})"
+
+
+def _human_review(page: dict) -> str:
+    review = page.get("review")
+    if review is None:
+        return "not reviewed"
+    decision = next(item for item in review["decisions"] if item["page_id"] == page["page_id"])
+    detail = f"{_escape(decision['reviewer'])} at {_escape(decision['reviewed_at'])}"
+    if decision["selected_attempt"] is None:
+        detail = f"Source-only review: {detail}: {_escape(decision['reason'])}"
+    return f"{detail}; {_disposition_label(decision['disposition'])}"
+
+
+def _needs_person(page: dict) -> bool:
+    return page.get("review") is None and bool(
+        page.get("review_reasons") or page.get("selected_output") is None
+    )
+
+
+def _selected_text(page: dict) -> str:
+    return _current_output(page) if page.get("selected_output") is not None else "none"
+
+
 def _explicit_attempt_hold(attempt: dict, reason: str, holds_for: dict[str, str]) -> str | None:
     """Return explicit evidence tying a hold to one attempt, if present."""
     for warning in attempt.get("warnings") or []:
@@ -236,6 +268,7 @@ def render_document_report(report: dict) -> str:
     annotation_count = "unknown" if annotations["count"] is None else str(annotations["count"])
     source_count = "unknown" if counts["source_pages"] is None else str(counts["source_pages"])
     usage = report["usage"]
+    format_06 = report.get("report_format") == "0.6"
     cost = "unknown" if not usage["cost_known"] else f"${usage['cost_usd']}"
     tokens = str(usage["tokens"]) if usage["tokens"] is not None else "unknown"
     if usage.get("tokens_known") is False:
@@ -256,15 +289,35 @@ def render_document_report(report: dict) -> str:
         f"Attempt pages: {usage['attempt_pages']}; image calls: {usage['image_calls']}; tokens: {tokens}; cost: {cost}.",
         "",
         *(["Current page results", ""] if current else []),
-        (
-            "| Page | Current output | Review status | Recorded concerns |"
-            if current
-            else "| Page | Disposition | Selected output | Review evidence |"
+        *(
+            [
+                f"Pages needing a person: {sum(_needs_person(page) for page in report['pages'])}",
+                "",
+                "| Page | Selected text | Engine agreement | Human review | Recorded concerns |",
+                "| --- | --- | --- | --- | --- |",
+            ]
+            if format_06
+            else [
+                (
+                    "| Page | Current output | Review status | Recorded concerns |"
+                    if current
+                    else "| Page | Disposition | Selected output | Review evidence |"
+                ),
+                "| --- | --- | --- | --- |",
+            ]
         ),
-        "| --- | --- | --- | --- |",
     ]
-    for page in report["pages"]:
-        if current:
+    pages, holds = report["pages"], warning_holds(report)
+    if format_06:
+        pages = sorted(pages, key=lambda page: (not _needs_person(page), page["page_number"]))
+    for page in pages:
+        if format_06:
+            row = (
+                f"| {_link(str(page['page_number']), page['source_link'])} | "
+                f"{_selected_text(page)} | {_agreement(page, holds)} | "
+                f"{_human_review(page)} | {_recorded_concerns(page, holds)} |"
+            )
+        elif current:
             row = (
                 f"| {_link(str(page['page_number']), page['source_link'])} | "
                 f"{_current_output(page)} | {_review_status(page)} | "
@@ -286,6 +339,8 @@ def render_document_report(report: dict) -> str:
                 f"{selected_link} | {_escape(reasons)} |"
             )
         lines.append(row)
+    if format_06:
+        lines.extend(["", "Engine agreement is evidence, not proof: engines can share a mistake."])
     lines.extend(["", "Attempt evidence:", ""])
     for page in report["pages"]:
         for attempt in page["attempts"]:

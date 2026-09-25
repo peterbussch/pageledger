@@ -63,6 +63,9 @@ Release changes follow the [artifact compatibility policy](docs/run-manifest-spe
 
 ### Changed
 
+- Document reports list the pages that need a person first, then the rest, and
+  show separately the text the policy selected, whether engines agree on it,
+  and who reviewed it. Reports written before 0.6 keep their layout.
 - Document reports name the source by its path relative to the job directory,
   so a shared `report.md`, `transcript.md` or `document.json` no longer shows
   where its owner keeps files. New reports record `report_format: "0.6"`;
