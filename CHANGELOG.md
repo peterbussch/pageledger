@@ -163,7 +163,10 @@ Release changes follow the [artifact compatibility policy](docs/run-manifest-spe
   `missing_language_pack: ... Installed: eng, osd`. Previously the run started,
   failed on the first page, and showed only `RuntimeError: <redacted>`.
   PageLedger's own setup diagnostics carry a typed code and are shown in full;
-  messages from adapters stay redacted.
+  messages from adapters stay redacted. A page that fails with a typed
+  failure now names its code and HTTP status, for example
+  `AdapterFailure: MODEL_QUOTA (HTTP 429)`, on screen and in `run.log`,
+  whichever adapter raised it: the codes come from a fixed list.
 - Directory inputs skip hidden files such as macOS `.DS_Store` and `._*`
   sidecars. A `.DS_Store` file previously became the first document of a run
   and shifted every document number; on PDF adapters it failed the run. Skipped

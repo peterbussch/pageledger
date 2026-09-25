@@ -252,6 +252,20 @@ def test_run_reads_pages_with_the_vision_adapter(pdf, endpoint, tmp_path):
     assert (out / "raw" / "doc_0001_page_0001.txt").read_text() == "page text"
 
 
+def test_a_failed_page_names_its_failure_code(pdf, endpoint, tmp_path, capsys):
+    Endpoint.status, Endpoint.reply = 429, b"{}"
+    config = tmp_path / "config.yml"
+    run = {"adapter": "vision", "adapter_options": {"base_url": endpoint, "model": "m"}}
+    taxonomy = {"page_types": {"prose": {"default_action": "transcribe_text"}}}
+    config.write_text(yaml.safe_dump({"schema_version": "0.1", "run": run, "taxonomy": taxonomy}))
+
+    out = tmp_path / "run"
+    assert main(["run", str(pdf), "--config", str(config), "--out", str(out)]) == 1
+
+    assert "AdapterFailure: MODEL_QUOTA (HTTP 429)" in capsys.readouterr().err
+    assert "AdapterFailure: MODEL_QUOTA (HTTP 429)" in (out / "run.log").read_text()
+
+
 def test_a_dry_run_plans_every_page_of_a_pdf(tmp_path):
     pypdf = pytest.importorskip("pypdf")
     writer = pypdf.PdfWriter()

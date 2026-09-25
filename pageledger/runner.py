@@ -187,6 +187,12 @@ def _extract_adapter_page(
             break
         except Exception as exc:
             trusted = isinstance(exc, PageLedgerDiagnostic) and _is_built_in(adapter)
+            message = str(exc) if trusted else f"{type(exc).__name__}: {exc}"
+            if isinstance(exc, AdapterFailure):
+                # Its code and HTTP status were checked against an allowlist, so they
+                # are safe to show whichever adapter raised it.
+                status_text = "" if exc.http_status is None else f" (HTTP {exc.http_status})"
+                message, trusted = f"AdapterFailure: {exc.code}{status_text}", True
             final_attempt = (
                 isinstance(exc, (AdapterFailure, PageLedgerDiagnostic))
                 or attempt > config.max_retries
@@ -195,7 +201,7 @@ def _extract_adapter_page(
                 adapter=adapter.name,
                 page_id=page_id,
                 status="failed" if final_attempt else "retry",
-                message=str(exc) if trusted else f"{type(exc).__name__}: {exc}",
+                message=message,
                 stdout=getattr(exc, "stdout", None),
                 stderr=getattr(exc, "stderr", None),
                 trusted=trusted,
