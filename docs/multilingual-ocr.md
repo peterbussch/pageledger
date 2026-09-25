@@ -34,6 +34,9 @@ nothing would be extracted.
 
 ```yaml
 schema_version: "0.1"
+language:
+  script: Cyrillic
+  orthography: prereform
 taxonomy:
   page_types:
     prose:
@@ -44,6 +47,12 @@ run:
     dpi: 400
     lang: rus        # or rus+deu for mixed collections
 ```
+
+The `language` block says what the pages should contain; it does not choose
+OCR languages. With it, a page read mostly in another script gets
+`script_mismatch`, and pre-reform text that comes back in modern spelling gets
+`historical_letters_lost`. PageLedger never guesses a collection's language, so
+without the block neither check runs.
 
 ## A modern born-digital document
 

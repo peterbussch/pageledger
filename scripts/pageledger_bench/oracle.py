@@ -12,6 +12,7 @@ from collections import Counter
 from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from itertools import groupby
 from pathlib import Path
 from typing import Any
 
@@ -1014,6 +1015,16 @@ def _expected_text_metrics(text: str, token_lengths: list[int]) -> dict[str, Any
         for char in text
     )
     token_count = len(token_lengths)
+    line_counts = Counter(line.strip() for line in text.splitlines() if line.strip())
+    identical_line_count = max(
+        (count for line, count in line_counts.items() if not _oracle_rule_line(line)), default=0
+    )
+    letter_runs = (
+        len(list(group))
+        for char, group in groupby(text)
+        if unicodedata.category(char).startswith("L")
+    )
+    longest_letter_run = max((run for run in letter_runs if run > 1), default=0)
     return {
         "replacement_character_count": text.count("\ufffd"),
         "control_character_count": sum(
@@ -1041,7 +1052,29 @@ def _expected_text_metrics(text: str, token_lengths: list[int]) -> dict[str, Any
         "digit_count": sum(unicodedata.category(char) == "Nd" for char in text),
         "mixed_script_token_ratio": _mixed_script_token_ratio(text),
         "private_use_count": _private_use_outside_bullets(text),
+        "largest_identical_line_count": identical_line_count,
+        "longest_repeated_tail_length": _oracle_repeated_tail(text),
+        "longest_letter_run": longest_letter_run,
     }
+
+
+def _oracle_rule_line(line: str) -> bool:
+    characters = set(line) - {" "}
+    return bool(characters) and characters <= set(".·_-=—–")
+
+
+def _oracle_repeated_tail(text: str) -> int:
+    tail = text.rstrip()
+    if not tail or _oracle_rule_line(tail.splitlines()[-1]):
+        return 0
+    longest = 0
+    for size in range(1, min(len(tail) // 20, 200) + 1):
+        # A backreference finds the earliest start of 20 or more copies of the last unit.
+        pattern = f"(?P<unit>{re.escape(tail[-size:])})(?P=unit){{19,}}$"
+        repeated = re.search(pattern, tail)
+        if repeated:
+            longest = max(longest, len(repeated.group()))
+    return longest
 
 
 def _mixed_script_token_ratio(text: str) -> float:

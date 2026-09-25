@@ -902,6 +902,7 @@ def _run(
                 result=result,
                 adapter=adapter,
                 parent_quality=(parent_quality_by_page or {}).get(page_id),
+                language=config.language,
             )
         )
         repeat_key = repeated_text_key(result.content)

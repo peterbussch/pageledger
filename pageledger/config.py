@@ -24,6 +24,7 @@ _KNOWN_TOP_LEVEL = frozenset(
         "schema_version",
         "classify",
         "dataset_citation",
+        "language",
         "taxonomy",
         "schema",
         "run",
@@ -374,6 +375,11 @@ class PageLedgerConfig:
             return {"label": label or "", "text": text or ""}
         return None
 
+    @property
+    def language(self) -> dict[str, str] | None:
+        value = self.data.get("language")
+        return value if isinstance(value, dict) else None
+
 
 def load_config(path: Path, *, validate_adapter: bool = True) -> PageLedgerConfig:
     if not path.exists():
@@ -398,6 +404,7 @@ def load_config(path: Path, *, validate_adapter: bool = True) -> PageLedgerConfi
 def _validate_config(config: PageLedgerConfig, *, validate_adapter: bool) -> None:
     _validate_mapping_sections(config.data)
     _validate_dataset_citation(config.data)
+    _validate_language(config.data)
     _validate_taxonomy(config)
     load_schema_spec(config.data)
     _reject_flat_keys(config)
@@ -470,6 +477,23 @@ def _validate_dataset_citation(data: dict[str, Any]) -> None:
         value = citation.get(key)
         if value is not None and not isinstance(value, str):
             raise ValueError(f"dataset_citation.{key} must be a string")
+
+
+def _validate_language(data: dict[str, Any]) -> None:
+    language = data.get("language")
+    if language is None:
+        return
+    if not isinstance(language, dict):
+        raise ValueError("language must be a mapping")
+    unknown = sorted(set(language) - {"script", "orthography"})
+    if unknown:
+        raise ValueError(f"language.{unknown[0]} is not supported")
+    if language.get("script") not in {"Cyrillic", "Latin", "Greek", "Arabic", "Devanagari"}:
+        raise ValueError(
+            "language.script must be one of: Cyrillic, Latin, Greek, Arabic, Devanagari"
+        )
+    if "orthography" in language and language["orthography"] != "prereform":
+        raise ValueError("language.orthography must be 'prereform'")
 
 
 def _validate_taxonomy(config: PageLedgerConfig) -> None:

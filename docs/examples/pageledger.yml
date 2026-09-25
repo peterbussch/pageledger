@@ -9,6 +9,12 @@ dataset_citation:
   label: Example source collection
   text: Replace this with the archive, collection, DOI, or source-image citation.
 
+# Optional: the script and spelling the pages should have, which enables the
+# script_mismatch and historical_letters_lost warnings.
+# language:
+#   script: Cyrillic
+#   orthography: prereform
+
 taxonomy:
   # The built-in classifier can emit exactly these five structural types.
   # Domain types require a classify.hook (see docs/classifier.md).

@@ -24,6 +24,24 @@ _INSTRUCTION_MARKERS = (
 _PROSE_ONLY_WARNINGS = frozenset(
     {"suspicious_symbol_density", "fragmented_text", "joined_text", "digits_only_text"}
 )
+# Model loops. On 287 outputs of 24 transcribed pages by 11 engines, these
+# limits flag 16 pages from the local vision models, every one a loop on
+# inspection, and nothing from classic OCR, hosted models or the reference.
+# Tables that repeat a label stay under the 30% share. A repeated tail is one
+# unit of up to 200 characters, 20 times over.
+_LOOP_MIN_IDENTICAL_LINES = 20
+_LOOP_MIN_IDENTICAL_SHARE = 0.30
+_LOOP_MIN_TAIL_REPEATS = 20
+_LOOP_MAX_TAIL_UNIT = 200
+_LOOP_MIN_LETTER_RUN = 40
+# Declared-language checks judge only pages with enough letters. A page is in
+# the wrong script when fewer than half its letters are in the declared one. It
+# has lost its pre-reform spelling when 300 or more Cyrillic letters include no
+# abolished letter and at most one word in a hundred ends in a hard sign.
+_LANGUAGE_MIN_LETTERS = 200
+_SCRIPT_MIN_SHARE = 0.5
+_PREREFORM_MIN_LETTERS = 300
+_FINAL_HARD_SIGN_MIN_SHARE = 0.01
 
 
 def _build_quality_entry(
@@ -34,6 +52,7 @@ def _build_quality_entry(
     result: Any,
     adapter: Any,
     parent_quality: dict[str, Any] | None = None,
+    language: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     text = _quality_text(result.content)
     character_count = len(text)
@@ -54,6 +73,8 @@ def _build_quality_entry(
         token_lengths=token_lengths,
     )
     text_quality.update(_content_coverage_metrics(text, tokens))
+    repetition_metrics, repetition_warnings = _repetition_evidence(text)
+    text_quality.update(repetition_metrics)
     shape_warnings = _text_quality_warnings(text_quality)
     if result.format in ALIGNABLE_FORMATS:
         # The symbol/shape heuristics are calibrated on prose. Structured
@@ -63,6 +84,9 @@ def _build_quality_entry(
             warning for warning in shape_warnings if warning not in _PROSE_ONLY_WARNINGS
         ]
     warnings.extend(shape_warnings)
+    warnings.extend(repetition_warnings)
+    if language:
+        warnings.extend(_declared_language_warnings(text, language))
     output_integrity, integrity_warnings = _output_integrity(text, parent_quality)
     warnings.extend(integrity_warnings)
     confidence_detail = getattr(result, "confidence_detail", None)
@@ -235,6 +259,77 @@ def _content_coverage_metrics(text: str, tokens: list[str]) -> dict[str, Any]:
         "mixed_script_token_ratio": 0.0 if not tokens else round(mixed / len(tokens), 4),
         "private_use_count": _private_use_count(text),
     }
+
+
+def _repetition_evidence(text: str) -> tuple[dict[str, int], list[str]]:
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    identical = max(
+        (count for line, count in Counter(lines).items() if not _is_rule_line(line)), default=0
+    )
+    tail = _repeated_tail_length(text)
+    letter_run = max(
+        (
+            len(match.group())
+            for match in re.finditer(r"(.)\1+", text)
+            if unicodedata.category(match.group(1)).startswith("L")
+        ),
+        default=0,
+    )
+    looping = (
+        identical >= max(_LOOP_MIN_IDENTICAL_LINES, _LOOP_MIN_IDENTICAL_SHARE * len(lines))
+        or tail > 0
+        or letter_run >= _LOOP_MIN_LETTER_RUN
+    )
+    metrics = {
+        "largest_identical_line_count": identical,
+        "longest_repeated_tail_length": tail,
+        "longest_letter_run": letter_run,
+    }
+    return metrics, ["repetition_loop"] if looping else []
+
+
+def _is_rule_line(line: str) -> bool:
+    """Dot leaders and rules, which tables legitimately repeat."""
+    compact = line.replace(" ", "")
+    return bool(compact) and all(char in ".·_-=—–" for char in compact)
+
+
+def _repeated_tail_length(text: str) -> int:
+    """Length of the longest ending made of one unit repeated 20 or more times."""
+    tail = text.rstrip()
+    if not tail or _is_rule_line(tail.splitlines()[-1]):
+        return 0
+    longest = 0
+    for size in range(1, min(len(tail) // _LOOP_MIN_TAIL_REPEATS, _LOOP_MAX_TAIL_UNIT) + 1):
+        unit, start = tail[-size:], len(tail) - size
+        while start >= size and tail[start - size : start] == unit:
+            start -= size
+        if len(tail) - start >= _LOOP_MIN_TAIL_REPEATS * size:
+            longest = max(longest, len(tail) - start)
+    return longest
+
+
+def _declared_language_warnings(text: str, language: dict[str, str]) -> list[str]:
+    letters = [char for char in text if unicodedata.category(char).startswith("L")]
+    if len(letters) < _LANGUAGE_MIN_LETTERS:
+        return []
+    warnings = []
+    if _in_script(letters, language["script"]) < _SCRIPT_MIN_SHARE * len(letters):
+        warnings.append("script_mismatch")
+    words = len(_alphabetic_tokens(text))
+    if (
+        language.get("orthography") == "prereform"
+        and _in_script(letters, "Cyrillic") >= _PREREFORM_MIN_LETTERS
+        and not any(char in _PREREFORM_LETTERS for char in text)
+        and len(_TERMINAL_HARD_SIGN.findall(text)) <= max(1, _FINAL_HARD_SIGN_MIN_SHARE * words)
+    ):
+        warnings.append("historical_letters_lost")
+    return warnings
+
+
+def _in_script(letters: list[str], script: str) -> int:
+    prefix = f"{script.upper()} "
+    return sum(unicodedata.name(char, "").startswith(prefix) for char in letters)
 
 
 def _text_quality_metrics(

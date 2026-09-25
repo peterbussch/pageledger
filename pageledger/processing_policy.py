@@ -69,6 +69,9 @@ _WARNING_HOLDS = {
     "mixed_script_tokens": "coverage_defect",
     "private_use_characters": "coverage_defect",
     "repeated_page_text": "coverage_defect",
+    "repetition_loop": "coverage_defect",
+    "script_mismatch": "coverage_defect",
+    "historical_letters_lost": "coverage_defect",
 }
 # Jobs written before 0.6 carry no hold_policy and filed an engine's low
 # confidence under coverage_defect; verification rebuilds them that way.

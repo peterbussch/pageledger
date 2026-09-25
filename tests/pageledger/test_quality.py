@@ -406,7 +406,8 @@ def test_fragmented_text_not_triggered_by_prose_or_few_tokens(tmp_path):
 def test_joined_text_triggers_warning_and_caps_signals_grade(tmp_path):
     """Collapsed Latin word boundaries become review evidence, not an A."""
     source = tmp_path / "joined.txt"
-    source.write_text(" ".join(["a" * 100] * 25), encoding="utf-8")
+    words = ["".join(chr(97 + (7 * n + 3 * i) % 26) for i in range(100)) for n in range(25)]
+    source.write_text(" ".join(words), encoding="utf-8")
     out_dir = _run(
         [source],
         textwrap.dedent("""\
@@ -1067,3 +1068,78 @@ def test_repeated_page_text_needs_three_identical_short_pages(tmp_path, pages):
     source.write_text("\f".join(pages), encoding="utf-8")
     entries = _quality_entries(_run([source], _TEXT_CONFIG, tmp_path))
     assert not any("repeated_page_text" in entry["warnings"] for entry in entries)
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "\n".join(["MALE"] * 25),
+        "normal opening text\n" + "3—2" * 30,
+        "normal opening text\n" + "є" * 50,
+        "ordinary page content\n" + "| | | | | | | | | |\n" * 30,
+    ],
+)
+def test_model_repetition_loops_warn(tmp_path, text):
+    entry = _page_warnings(tmp_path, text)
+    assert "repetition_loop" in entry["warnings"]
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Page text\n" + "." * 80 + "\n" + "_" * 80 + "\n" + "-" * 80,
+        "\n".join(
+            ["из них с числом жителей:"] * 25 + [f"Row {index} | {index}" for index in range(175)]
+        ),
+    ],
+)
+def test_legitimate_repetition_does_not_warn(tmp_path, text):
+    entry = _page_warnings(tmp_path, text)
+    assert "repetition_loop" not in entry["warnings"]
+
+
+def _declared_page(tmp_path, text, language):
+    source = tmp_path / "page.txt"
+    source.write_text(text, encoding="utf-8")
+    config = _TEXT_CONFIG + "\nlanguage:\n" + language
+    return _quality_entries(_run([source], config, tmp_path))[0]
+
+
+def test_declared_script_flags_a_page_read_in_look_alike_latin(tmp_path):
+    entry = _declared_page(tmp_path, "CBOMOMCTBOBAHIA " * 30, "  script: Cyrillic\n")
+    assert "script_mismatch" in entry["warnings"]
+
+
+@pytest.mark.parametrize(
+    ("text", "flagged"),
+    [
+        ("Слово город губерния население уезд область статистика " * 10, True),
+        ("Слово городъ губернія населеніе уѣздъ область статистика " * 10, False),
+    ],
+)
+def test_declared_prereform_spelling_flags_only_modernized_text(tmp_path, text, flagged):
+    entry = _declared_page(tmp_path, text, "  script: Cyrillic\n  orthography: prereform\n")
+    assert ("historical_letters_lost" in entry["warnings"]) is flagged
+
+
+def test_language_warnings_require_declaration(tmp_path):
+    entry = _page_warnings(tmp_path, "CBOMOMCTBOBAHIA " * 30)
+    assert "script_mismatch" not in entry["warnings"]
+    assert "historical_letters_lost" not in entry["warnings"]
+
+
+@pytest.mark.parametrize(
+    "language,error",
+    [
+        ("script: Martian", "language.script"),
+        ("script: Cyrillic\n  dialect: unknown", "language.dialect"),
+        ("script: Cyrillic\n  orthography: modern", "language.orthography"),
+    ],
+)
+def test_language_config_rejects_unknown_values(tmp_path, language, error):
+    from pageledger.config import load_config
+
+    path = tmp_path / "config.yml"
+    path.write_text(_TEXT_CONFIG + "\nlanguage:\n  " + language + "\n", encoding="utf-8")
+    with pytest.raises(ValueError, match=error):
+        load_config(path, validate_adapter=False)

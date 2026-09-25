@@ -16,6 +16,17 @@ Release changes follow the [artifact compatibility policy](docs/run-manifest-spe
   `private_use_count`. The thresholds were measured on 5,702 sampled pages
   from a research library before they were set, and `process` treats these
   warnings as coverage defects, so such a page moves on to OCR.
+- Warnings for the ways vision models fail. `repetition_loop` flags a model
+  stuck in a loop: one line on much of the page, an ending repeated 20 or more
+  times, or one letter repeated 40 times. On 287 outputs of 24 transcribed
+  pages by 11 engines it flagged 16 pages, every one a loop, and nothing from
+  classic OCR engines, hosted models or the reference. A new top-level
+  `language` block enables `script_mismatch`, for a page read mostly in another
+  script, and with `orthography: prereform`, `historical_letters_lost`, for
+  pre-reform text returned in modern spelling; PageLedger does not guess a
+  language. Quality lines gain `largest_identical_line_count`,
+  `longest_repeated_tail_length` and `longest_letter_run`, and document jobs
+  hold such pages as coverage defects.
 - A page type can set `review: true` to be extracted and still held for
   review: after extraction the page joins the review queue with reason
   `route_review:<type>`. `classify` copies the flag into route maps; route
@@ -124,7 +135,7 @@ Release changes follow the [artifact compatibility policy](docs/run-manifest-spe
 ### Compatibility
 
 - New artifact fields are optional, so artifacts written by earlier versions
-  still validate: `skipped_inputs` in manifests and checkpoints, the four new
+  still validate: `skipped_inputs` in manifests and checkpoints, the seven new
   `text_quality` counts in quality lines, and `hold_policy` and
   `limits_history` in jobs and document reports. Job and report `status` may
   now be `paused_budget`, and a report's `report_format` may be `"0.6"`. Eight

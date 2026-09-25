@@ -98,6 +98,20 @@ def test_serial_escalation_preserves_exact_denominator_and_review_holds(setup):
     assert (setup[2] / "report.md").is_file()
 
 
+def test_job_language_config_reaches_child_quality_lines(setup):
+    data = yaml.safe_load(setup[1].read_text())
+    data["language"] = {"script": "Cyrillic"}
+    data["processing"]["limits"]["max_image_pages"] = 3
+    setup[1].write_text(yaml.safe_dump(data))
+
+    assert launch(setup)["status"] == "completed"
+    job = read_record(setup[2] / "job.json")
+    first_stage = next(stage for stage in job["stages"] if stage["stage"] == "local_text")
+    lines = (setup[2] / first_stage["run_path"] / "quality.jsonl").read_text().splitlines()
+    quality = json.loads(lines[0])
+    assert "script_mismatch" in quality["warnings"]
+
+
 def test_child_completion_before_job_commit_is_adopted_without_repeating(setup, monkeypatch):
     from pageledger import processing
 

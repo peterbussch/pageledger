@@ -196,8 +196,11 @@ not garble.
 | `digit_count` | integer | Decimal digits. |
 | `mixed_script_token_ratio` | number (0–1) | Share of letter tokens that mix Latin, Cyrillic or Greek letters, as look-alike substitutions do (`пpoдoлжoние` with Latin `p` and `o`). |
 | `private_use_count` | integer | Private Use Area code points, except one that opens a line before a space: that is a bullet or icon glyph from a symbol font. |
+| `largest_identical_line_count` | integer | How often the most repeated non-empty line occurs, ignoring dot leaders and rules. |
+| `longest_repeated_tail_length` | integer | Length in characters of the longest ending made of one unit of up to 200 characters repeated at least 20 times; 0 when there is none. |
+| `longest_letter_run` | integer | Longest run of one repeated letter; 0 when no letter repeats. |
 
-The last four fields are new in 0.6; older quality lines omit them.
+The last seven fields are new in 0.6; older quality lines omit them.
 
 ### Warning taxonomy
 
@@ -219,8 +222,12 @@ The last four fields are new in 0.6; older quality lines omit them.
 | `mixed_script_tokens` | `mixed_script_token_ratio >= 0.05` over ≥20 alphabetic tokens. Look-alike letters from another script inside words: search and alignment miss them. |
 | `private_use_characters` | `private_use_count >= 3`. Characters the text layer lost to font-specific code points, such as old-style digits or ligatures. |
 | `repeated_page_text` | The page's whole text, under 200 characters after whitespace is collapsed, is identical on at least three pages of the run. A stamp-only text layer repeats a scanner's or website's mark on every page and none of the content. |
+| `repetition_loop` | A line other than dot leaders or rules occurs at least 20 times and makes up at least 30% of the page's non-empty lines; or the text ends in one unit of up to 200 characters repeated at least 20 times; or one letter repeats at least 40 times in a row. These are the shapes of a model stuck in a loop; a table that repeats a label on some of its rows stays below them. |
+| `script_mismatch` | Only when the config declares `language.script`: the page has at least 200 letters and fewer than half are in that script. |
+| `historical_letters_lost` | Only when the config declares `language.orthography: prereform`: at least 300 Cyrillic letters, none of ѣ, ѳ or ѵ, and a word-final ъ on at most 1% of words (or on one word). і is not counted, because modern Ukrainian and Belarusian use it. |
 
-The four warnings above were measured before their thresholds were set: on
+`digits_only_text`, `mixed_script_tokens`, `private_use_characters` and
+`repeated_page_text` were measured before their thresholds were set: on
 5,702 sampled pages from 1,500 PDFs in a research library, and on 24 pages with
 reference transcriptions. Transcribed pages raised none of them. On the
 sample, `digits_only_text` fired only on one Internet Archive derivative
@@ -229,6 +236,15 @@ files. Private-use characters appeared in 44 files, mostly as bullets;
 `private_use_characters` fired on 19 pages of 12 files. A layer in the wrong script
 entirely, such as Latin-letter OCR of a Cyrillic book, contains no mixed
 tokens and raises none of these warnings.
+
+`repetition_loop` was set on 287 outputs of the same 24 transcribed pages by 11
+engines. It flags 16 pages, all from local vision models and every one a loop on
+inspection: a line repeated up to 1,684 times, dot leaders running for 11,000
+characters, a single letter repeated 5,897 times. It flags nothing from the
+classic OCR engines, the hosted models or the reference transcriptions. The two
+language checks run only when a config declares the language, because
+PageLedger does not guess a collection's script or spelling; they have not yet
+been measured on a corpus.
 
 Adapter-native warnings appear in the same `warnings` list. The built-in
 `pdf_ocr` adapter adds `render_dpi_capped` when it rendered a page below the
