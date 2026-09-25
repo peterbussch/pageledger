@@ -8,7 +8,7 @@ used across the reference.
 
 | Task | Built-in support | What remains your responsibility |
 |---|---|---|
-| Extract pages | `text`, `pdf_text` and `pdf_ocr`; custom adapters use the adapter protocol. | Select the extractor, configure it, and judge its output. |
+| Extract pages | `text`, `pdf_text`, `pdf_ocr`, `rapidocr` and `vision`; custom adapters use the adapter protocol. | Select the extractor, configure it, and judge its output. |
 | Route pages | `classify` assigns structural types and writes a route map and text-free sidecar. | Review decisions; domain labels require a classifier hook. |
 | Process a document | `process` manages local text, OCR and optional image stages with shared limits and retained attempts. | Supply stage config, adapter code and credentials where needed. |
 | Review and export | Job reports, source-bound review receipts, review sheets and verified `txt`, `md`, `jsonl`, or `tei` exports. | A human makes and records review decisions. |
@@ -21,7 +21,7 @@ used across the reference.
 
 | Supported | What to rely on | Limit |
 |---|---|---|
-| `run` with `text`, `pdf_text`, or `pdf_ocr`; custom adapters follow the adapter protocol. | Page-level attempts and recorded source, extractor, quality and cost details. `--pages` preserves source page numbers. | `pdf_text` reads a text layer; `pdf_ocr` needs locally installed Poppler and Tesseract. Quality signals do not establish accuracy. See [PDF first run](pdf-ocr-first-run.md) and [quality warnings](provenance-spec.md#warning-taxonomy). |
+| `run` with `text`, `pdf_text`, `pdf_ocr`, `rapidocr` or `vision`; custom adapters follow the adapter protocol. | Page-level attempts and recorded source, extractor, quality and cost details. `--pages` preserves source page numbers. | `pdf_text` reads a text layer; `pdf_ocr` needs locally installed Poppler and Tesseract. Quality signals do not establish accuracy. See [PDF first run](pdf-ocr-first-run.md) and [quality warnings](provenance-spec.md#warning-taxonomy). |
 | Built-in adapter defaults, `adapter_options`, `--adapter-path`, and dry-run planning. | Defaults are recorded; dry runs do not call extractors. | Only explicitly supplied configuration is read. See [CLI](cli.md), [adapter protocol](adapter-protocol.md), and [OCR options](ocr-options.md). |
 | Page budgets, retries and optional continue-on-error. | Page, token and dollar limits; failed or unattempted pages can enter rerun work. | Cost may be unknown or estimated, not provider-billed spend. See [plan time and cost](plan-time-and-cost.md) and [warnings](warnings.md). |
 | Text-quality warnings, OCR confidence, historical-orthography signals and grades. | Diagnostics identify some risks and can guide review. | They are not calibrated accuracy measures. See [warnings](warnings.md) and [multilingual OCR](multilingual-ocr.md). |

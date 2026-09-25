@@ -55,11 +55,16 @@ Release changes follow the [artifact compatibility policy](docs/run-manifest-spe
   maps without it behave as before.
 - Engine recipes (`docs/engine-recipes.md`) for putting a stronger engine than
   Tesseract behind PageLedger: a local vision model through `mlx_vlm.server`
-  or llama.cpp, RapidOCR with the PP-OCRv5 Cyrillic recognizer
-  (`examples/rapidocr_adapter.py`), Tesseract's community `orus` model for
+  or llama.cpp, RapidOCR with the PP-OCRv5 Cyrillic recognizer (the built-in
+  `rapidocr` adapter below), Tesseract's community `orus` model for
   pre-reform print, Apple Vision on macOS (`examples/apple_vision_adapter.py`)
   and hosted models through a gateway, each with what it was measured to do
   well and badly on real pages.
+- A built-in `rapidocr` adapter reads scans with RapidOCR and a PP-OCRv5
+  recognizer you supply, such as the Cyrillic one that keeps pre-reform
+  letters. Install it with `pip install 'pageledger[rapidocr]'`; it runs on
+  the CPU and needs Poppler. `pageledger doctor` reports whether RapidOCR and
+  ONNX Runtime are installed.
 - A built-in `vision` adapter reads pages with a vision model behind an
   OpenAI-compatible endpoint, on this machine (`llama-server`,
   `mlx_vlm.server`) or hosted. It renders each page with Poppler within the

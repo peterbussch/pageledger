@@ -1697,6 +1697,7 @@ def test_cli_doctor_json_redacts_environment_values(monkeypatch, capsys):
     report = json.loads(captured.out)
     assert report["pageledger_version"] == pageledger.__version__
     assert report["optional_packages"]["pypdf"]["available"] in {True, False}
+    assert set(report["optional_packages"]) == {"pypdf", "rapidocr", "onnxruntime"}
     assert report["external_commands"]["tesseract"]["available"] in {True, False}
     assert report["cloud_environment"]["GOOGLE_API_KEY"]["set"] is True
     assert report["cloud_environment"]["GOOGLE_API_KEY"]["value"] == "<redacted>"

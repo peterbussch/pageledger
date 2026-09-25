@@ -898,6 +898,10 @@ def load_adapter(name: str, options: dict[str, Any] | None = None) -> Any:
         from .vision import VisionAdapter
 
         adapter = _construct_builtin(VisionAdapter, name, opts)
+    elif name == "rapidocr":
+        from .rapidocr_adapter import RapidOCRAdapter
+
+        adapter = _construct_builtin(RapidOCRAdapter, name, opts)
     elif name == "pdf_ocr":
         adapter = _construct_builtin(PdfOcrAdapter, name, opts)
     elif name in PDF_ADAPTER_NAMES:
@@ -905,7 +909,9 @@ def load_adapter(name: str, options: dict[str, Any] | None = None) -> Any:
     elif ":" in name:
         adapter = _load_custom_adapter(name, opts)
     else:
-        valid = ", ".join(["text", "pdf_text", "pdf_ocr", "vision", "module.path:object"])
+        valid = ", ".join(
+            ["text", "pdf_text", "pdf_ocr", "vision", "rapidocr", "module.path:object"]
+        )
         raise ValueError(f"Unsupported adapter '{name}'. Valid adapters: {valid}")
     issues = _adapter_contract_issues(adapter)
     if issues:

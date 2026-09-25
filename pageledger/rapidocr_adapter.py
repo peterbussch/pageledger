@@ -1,9 +1,10 @@
-"""RapidOCR 3 custom adapter using the PP-OCRv5 Cyrillic recognizer.
+"""The built-in ``rapidocr`` adapter: RapidOCR 3 with a PP-OCRv5 recognizer you supply.
 
-Install RapidOCR and provide a Cyrillic recognizer directory containing
-``inference.onnx`` and ``keys.txt``; the generic ``lang='ru'`` model lacks ѣ.
-Without ``det_model_dir``, RapidOCR may download its default detection model
-on first use.
+Install with ``pip install 'pageledger[rapidocr]'`` and point ``rec_model_dir`` at a
+recognizer directory containing ``inference.onnx`` and ``keys.txt``, such as the
+Cyrillic one, which keeps ѣ where RapidOCR's generic Russian model does not.
+Without ``det_model_dir``, RapidOCR may download its default detection model on
+first use.
 """
 
 from __future__ import annotations
@@ -21,7 +22,7 @@ from pathlib import Path
 from statistics import mean
 from typing import Any, ClassVar
 
-from pageledger.adapters import ExtractionResult, ocr_pdf_page_count
+from .adapters import ExtractionResult, ocr_pdf_page_count
 
 
 @dataclass(frozen=True)
@@ -29,8 +30,8 @@ class RapidOCRAdapter:
     rec_model_dir: str
     max_side: int = 3200
     det_model_dir: str | None = None
-    name: ClassVar[str] = "rapidocr-cyrillic"
-    version: ClassVar[str] = "example-0.1"
+    name: ClassVar[str] = "rapidocr"
+    version: ClassVar[str] = "0.1"
     deterministic: ClassVar[bool] = True
     input_types: ClassVar[tuple[str, ...]] = ("pdf",)
     output_types: ClassVar[tuple[str, ...]] = ("text",)
@@ -44,7 +45,8 @@ class RapidOCRAdapter:
             or not (model_dir / "keys.txt").is_file()
         ):
             raise ValueError(
-                "rec_model_dir must contain inference.onnx and keys.txt for the PP-OCRv5 Cyrillic recognizer"
+                "rapidocr rec_model_dir must contain inference.onnx and keys.txt from a "
+                "PP-OCRv5 recognizer"
             )
         if type(self.max_side) is not int or not 256 <= self.max_side <= 10000:
             raise ValueError(
@@ -67,7 +69,6 @@ class RapidOCRAdapter:
             "Rec.model_path": str(Path(self.rec_model_dir).expanduser() / "inference.onnx"),
             "Rec.rec_keys_path": str(Path(self.rec_model_dir).expanduser() / "keys.txt"),
             "Rec.ocr_version": rapidocr.OCRVersion.PPOCRV5,
-            "Rec.lang_type": rapidocr.LangRec.CYRILLIC,
         }
         if self.det_model_dir is not None:
             params["Det.model_path"] = str(Path(self.det_model_dir).expanduser() / "inference.onnx")
@@ -84,7 +85,7 @@ class RapidOCRAdapter:
             return importlib.import_module("rapidocr")
         except ImportError as exc:
             raise ValueError(
-                "RapidOCR is missing; install RapidOCR 3 with its ONNX Runtime extra (pip install 'rapidocr[onnxruntime]')"
+                "RapidOCR is missing; install it with pip install 'pageledger[rapidocr]'"
             ) from exc
 
     def supports(self, action: str) -> bool:
@@ -169,7 +170,7 @@ class RapidOCRAdapter:
             format="text",
             confidence=None if not scores else round(mean(line["score"] for line in lines), 4),
             model=(
-                f"rapidocr {importlib.metadata.version('rapidocr')}; rec cyrillic_PP-OCRv5 "
+                f"rapidocr {importlib.metadata.version('rapidocr')}; rec PP-OCRv5 "
                 f"sha256:{self._recognizer_sha256}; scale-to={self.max_side}"
             ),
             warnings=[],

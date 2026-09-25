@@ -76,11 +76,13 @@ notes and bundle replay. For scans, follow the
 ## Choose an engine
 
 Built-in adapters read plain text files (`text`), PDF text layers
-(`pdf_text`), scans with Tesseract (`pdf_ocr`), and page images with a vision
-model behind an OpenAI-compatible endpoint, on your machine or hosted
-(`vision`). The [engine recipes](https://github.com/peterbussch/pageledger/blob/main/docs/engine-recipes.md) add RapidOCR,
-Tesseract's model for pre-1918 Russian print, Apple Vision and local vision
-models, with what each did well and badly on 24 transcribed historical pages.
+(`pdf_text`), scans with Tesseract (`pdf_ocr`) or RapidOCR (`rapidocr`, after
+`pip install 'pageledger[rapidocr]'`), and page images with a vision model
+behind an OpenAI-compatible endpoint, on your machine or hosted (`vision`). The
+[engine recipes](https://github.com/peterbussch/pageledger/blob/main/docs/engine-recipes.md)
+show how to set each up, with Tesseract's model for pre-1918 Russian print and
+Apple Vision, and what each did well and badly on 24 transcribed historical
+pages.
 [OCR options](https://github.com/peterbussch/pageledger/blob/main/docs/ocr-options.md)
 compares the approaches, and the
 [adapter protocol](https://github.com/peterbussch/pageledger/blob/main/docs/adapter-protocol.md)

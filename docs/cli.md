@@ -450,7 +450,7 @@ Configuration sections and defaults:
 | `classify.hook`, `classify.hook_options` | string, mapping | Optional hook import and options. |
 | `classify.min_confidence` | number 0–1 | `0.5`. |
 | `classify.thresholds` | mapping | Classifier threshold overrides; omitted values use built-in defaults. |
-| `run.adapter` | string | Optional adapter name/import path. |
+| `run.adapter` | string | Optional: `text`, `pdf_text`, `pdf_ocr`, `rapidocr`, `vision`, or a custom adapter's `module:object` import path. |
 | `run.adapter_options` | mapping | Empty; adapter-specific. Cannot accompany `adapter_order`. |
 | `run.adapter_order` | non-empty list | Optional chain; entries are adapter strings or `{adapter, adapter_options}` mappings. Mutually exclusive with `adapter` and top-level `adapter_options`. |
 | `run.budget.max_pages`, `max_tokens`, `max_usd` | non-negative integer, integer, number | No cap unless set; these limits are also used by `process` only when placed under `processing.limits`. |

@@ -60,7 +60,8 @@ def build_doctor_report() -> dict[str, Any]:
             "path": os.environ.get("PATH", ""),
         },
         "optional_packages": {
-            "pypdf": {"available": importlib.util.find_spec("pypdf") is not None}
+            name: {"available": importlib.util.find_spec(name) is not None}
+            for name in ("pypdf", "rapidocr", "onnxruntime")
         },
         "external_commands": {name: _command_report(name) for name in EXTERNAL_COMMANDS},
         "ocr_languages": _ocr_languages_report(),

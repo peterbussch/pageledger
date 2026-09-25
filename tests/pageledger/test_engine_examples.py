@@ -36,17 +36,27 @@ def _load(path: Path, name: str):
     return module
 
 
+def _recognizer(path: Path) -> Path:
+    path.mkdir()
+    (path / "inference.onnx").write_bytes(b"recognizer")
+    (path / "keys.txt").write_text("keys", encoding="utf-8")
+    return path
+
+
+def _fake_rapidocr(monkeypatch: pytest.MonkeyPatch, engine: type) -> None:
+    fake = types.ModuleType("rapidocr")
+    fake.OCRVersion = types.SimpleNamespace(PPOCRV5="v5")
+    fake.RapidOCR = engine
+    monkeypatch.setitem(sys.modules, "rapidocr", fake)
+    monkeypatch.setattr(importlib.metadata, "version", lambda _name: "3.9.2")
+
+
 def test_rapidocr_assembles_text_and_maps_confidence(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    model = tmp_path / "model"
-    model.mkdir()
-    (model / "inference.onnx").touch()
-    (model / "keys.txt").touch()
+    from pageledger.adapters import load_adapter
+
     points = [[[0, 0], [10, 0], [10, 10], [0, 10]], [[20, 0], [30, 0], [30, 10], [20, 10]]]
-    fake = types.ModuleType("rapidocr")
-    fake.OCRVersion = types.SimpleNamespace(PPOCRV5="v5")
-    fake.LangRec = types.SimpleNamespace(CYRILLIC="cyrillic")
 
     class Engine:
         def __init__(self, params):
@@ -55,11 +65,9 @@ def test_rapidocr_assembles_text_and_maps_confidence(
         def __call__(self, _image):
             return types.SimpleNamespace(boxes=points, txts=["Alpha", "Beta"], scores=[0.9, 0.4])
 
-    fake.RapidOCR = Engine
-    monkeypatch.setitem(sys.modules, "rapidocr", fake)
-    monkeypatch.setattr(importlib.metadata, "version", lambda _name: "3.9.2")
-    module = _load(ROOT / "examples/rapidocr_adapter.py", "rapid_example")
-    result = module.RapidOCRAdapter(str(model)).extract(
+    _fake_rapidocr(monkeypatch, Engine)
+    adapter = load_adapter("rapidocr", {"rec_model_dir": str(_recognizer(tmp_path / "rec"))})
+    result = adapter.extract(
         _pdf(tmp_path / "sample.pdf"), page_id="p1", page_number=1, action="transcribe_text"
     )
     assert result.content == "Alpha | Beta"
@@ -71,6 +79,7 @@ def test_rapidocr_assembles_text_and_maps_confidence(
         "below_60_count": 1,
         "below_60_ratio": 0.5,
     }
+    assert result.model.startswith("rapidocr 3.9.2; rec PP-OCRv5 sha256:")
 
 
 def test_rapidocr_run_cli_writes_normalized_quality_and_detail(
@@ -78,13 +87,6 @@ def test_rapidocr_run_cli_writes_normalized_quality_and_detail(
 ) -> None:
     from pageledger.cli import main
 
-    model = tmp_path / "rec"
-    model.mkdir()
-    (model / "inference.onnx").write_bytes(b"recognizer")
-    (model / "keys.txt").write_text("keys", encoding="utf-8")
-    fake = types.ModuleType("rapidocr")
-    fake.OCRVersion = types.SimpleNamespace(PPOCRV5="v5")
-    fake.LangRec = types.SimpleNamespace(CYRILLIC="cyrillic")
     constructions = []
 
     class Engine:
@@ -98,18 +100,14 @@ def test_rapidocr_run_cli_writes_normalized_quality_and_detail(
                 scores=[0.8],
             )
 
-    fake.RapidOCR = Engine
-    monkeypatch.setitem(sys.modules, "rapidocr", fake)
-    monkeypatch.setattr(importlib.metadata, "version", lambda _name: "3.9.2")
+    _fake_rapidocr(monkeypatch, Engine)
     config = tmp_path / "config.yml"
+    options = {"rec_model_dir": str(_recognizer(tmp_path / "rec")), "max_side": 3200}
     config.write_text(
         yaml.safe_dump(
             {
                 "schema_version": "0.1",
-                "run": {
-                    "adapter": "rapidocr_adapter:RapidOCRAdapter",
-                    "adapter_options": {"rec_model_dir": str(model), "max_side": 3200},
-                },
+                "run": {"adapter": "rapidocr", "adapter_options": options},
                 "taxonomy": {"page_types": {"prose": {"default_action": "transcribe_text"}}},
             }
         ),
@@ -118,21 +116,7 @@ def test_rapidocr_run_cli_writes_normalized_quality_and_detail(
     source = _pdf(tmp_path / "source.pdf")
     out = tmp_path / "run"
 
-    assert (
-        main(
-            [
-                "run",
-                str(source),
-                "--config",
-                str(config),
-                "--adapter-path",
-                str(ROOT / "examples"),
-                "--out",
-                str(out),
-            ]
-        )
-        == 0
-    )
+    assert main(["run", str(source), "--config", str(config), "--out", str(out)]) == 0
     quality = json.loads((out / "quality.jsonl").read_text(encoding="utf-8").splitlines()[0])
     assert quality["confidence"] == 0.8
     assert quality["confidence_detail"]["mean"] == 80.0
@@ -142,23 +126,21 @@ def test_rapidocr_run_cli_writes_normalized_quality_and_detail(
 def test_rapidocr_missing_package_is_actionable(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    model = tmp_path / "model"
-    model.mkdir()
-    (model / "inference.onnx").touch()
-    (model / "keys.txt").touch()
+    from pageledger.adapters import load_adapter
+
     monkeypatch.setitem(sys.modules, "rapidocr", None)
-    module = _load(ROOT / "examples/rapidocr_adapter.py", "rapid_example_missing")
-    with pytest.raises(ValueError, match="install RapidOCR 3"):
-        module.RapidOCRAdapter(str(model))
+    with pytest.raises(ValueError, match=r"pip install 'pageledger\[rapidocr\]'"):
+        load_adapter("rapidocr", {"rec_model_dir": str(_recognizer(tmp_path / "rec"))})
 
 
 def test_rapidocr_missing_model_files_is_actionable(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    from pageledger.adapters import load_adapter
+
     monkeypatch.setitem(sys.modules, "rapidocr", types.ModuleType("rapidocr"))
-    module = _load(ROOT / "examples/rapidocr_adapter.py", "rapid_example_model_missing")
     with pytest.raises(ValueError, match="inference.onnx and keys.txt"):
-        module.RapidOCRAdapter(str(tmp_path))
+        load_adapter("rapidocr", {"rec_model_dir": str(tmp_path)})
 
 
 def test_apple_vision_adapter_runs_helper_and_assembles_rows(tmp_path: Path) -> None:

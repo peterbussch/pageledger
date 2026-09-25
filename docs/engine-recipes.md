@@ -65,20 +65,24 @@ taxonomy:
 
 RapidOCR was the best permissively licensed engine in this evaluation: 11.0%
 character error, 91% exact numbers, and 28% of pre-reform letters kept. It took
-about 3 seconds per page on the M4 Pro CPU. Install `pip install
-'rapidocr[onnxruntime]'` and Poppler. Download `inference.onnx` and `keys.txt`
-from [PaddlePaddle/cyrillic_PP-OCRv5_mobile_rec_onnx](https://huggingface.co/PaddlePaddle/cyrillic_PP-OCRv5_mobile_rec_onnx)
-into a recognizer directory; `lang: ru` is not a substitute because its default
-model lacks ѣ. For a pinned detector, download `inference.onnx` from
+about 3 seconds per page on the M4 Pro CPU. PageLedger's built-in `rapidocr`
+adapter runs it: install `pip install 'pageledger[rapidocr]'` (tested with
+RapidOCR 3.9.2 and ONNX Runtime 1.30.0) and Poppler. Download `inference.onnx`
+and `keys.txt` from
+[PaddlePaddle/cyrillic_PP-OCRv5_mobile_rec_onnx](https://huggingface.co/PaddlePaddle/cyrillic_PP-OCRv5_mobile_rec_onnx)
+into a recognizer directory; RapidOCR's default Russian model is not a
+substitute, because it lacks ѣ. For a pinned detector, download
+`inference.onnx` from
 [PaddlePaddle/PP-OCRv5_mobile_det_onnx](https://huggingface.co/PaddlePaddle/PP-OCRv5_mobile_det_onnx)
 into a detection directory. RapidOCR and both PaddleOCR models are Apache-2.0.
 If `det_model_dir` is omitted, RapidOCR may download its default detector on
-first use.
+first use. Any PP-OCRv5 recognizer works the same way; each page's provenance
+records the recognizer's hash.
 
 ```yaml
 schema_version: "0.1"
 run:
-  adapter: rapidocr_adapter:RapidOCRAdapter
+  adapter: rapidocr
   adapter_options:
     rec_model_dir: /models/ppocrv5-cyrillic
     det_model_dir: /models/ppocrv5-mobile-det
@@ -89,8 +93,7 @@ taxonomy:
       default_action: transcribe_text
 ```
 
-Run with `pageledger run book.pdf --config pageledger.yml --adapter-path
-examples --out runs/rapidocr`.
+Run with `pageledger run book.pdf --config pageledger.yml --out runs/rapidocr`.
 
 ## Tesseract with the community orus model (macOS and Linux)
 
