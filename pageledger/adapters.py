@@ -47,6 +47,8 @@ ADAPTER_FAILURE_CODES = frozenset(
         "MODEL_HTTP_ERROR",
         "MODEL_QUOTA",
         "MODEL_OUTPUT_TRUNCATED",
+        "MODEL_CONTENT_FILTERED",
+        "MODEL_RECITATION",
         "MODEL_NETWORK_ERROR",
         "MODEL_INVALID_RESPONSE",
         "MODEL_EMPTY_RESPONSE",
@@ -892,6 +894,10 @@ def load_adapter(name: str, options: dict[str, Any] | None = None) -> Any:
     opts = dict(options or {})
     if name == "text":
         adapter = _construct_builtin(TextAdapter, name, opts)
+    elif name == "vision":
+        from .vision import VisionAdapter
+
+        adapter = _construct_builtin(VisionAdapter, name, opts)
     elif name == "pdf_ocr":
         adapter = _construct_builtin(PdfOcrAdapter, name, opts)
     elif name in PDF_ADAPTER_NAMES:
@@ -899,7 +905,7 @@ def load_adapter(name: str, options: dict[str, Any] | None = None) -> Any:
     elif ":" in name:
         adapter = _load_custom_adapter(name, opts)
     else:
-        valid = ", ".join(["text", "pdf_text", "pdf_ocr", "module.path:object"])
+        valid = ", ".join(["text", "pdf_text", "pdf_ocr", "vision", "module.path:object"])
         raise ValueError(f"Unsupported adapter '{name}'. Valid adapters: {valid}")
     issues = _adapter_contract_issues(adapter)
     if issues:

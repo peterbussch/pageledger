@@ -131,6 +131,7 @@ Use `pageledger.adapters.AdapterFailure(code, http_status=None,
 partial_result=None)` for a typed terminal failure. Codes are
 `MODEL_TIMEOUT`, `MODEL_HTTP_ERROR`, `MODEL_QUOTA`, `MODEL_OUTPUT_TRUNCATED`,
 `MODEL_NETWORK_ERROR`, `MODEL_INVALID_RESPONSE`, `MODEL_EMPTY_RESPONSE`,
+`MODEL_CONTENT_FILTERED`, `MODEL_RECITATION`,
 `MODEL_UNAVAILABLE`, `IMAGE_RENDER_ERROR`, and `IMAGE_EVIDENCE_INVALID`.
 `http_status` is an integer 100–599 or null. `partial_result` is an
 `ExtractionResult` or null. The resumable runner validates and retains any
@@ -449,9 +450,11 @@ Adapters should return `ExtractionResult` instances with:
 - olmOCR for LLM-oriented PDF extraction.
 - API VLMs through OpenAI-compatible clients.
 
-Built-in adapters: `text`, `pdf_text` (through `pageledger[pdf]`), and
-`pdf_ocr` (through locally installed poppler + Tesseract). Anything stronger
-is a custom adapter; the adapter contract matters more than adapter breadth.
+Built-in adapters: `text`, `pdf_text` (through `pageledger[pdf]`), `pdf_ocr`
+(through locally installed Poppler and Tesseract), and
+[`vision`](vision-adapter.md), which sends page images to a local or hosted
+vision model. Anything else is a custom adapter; the adapter contract matters
+more than adapter breadth.
 
 Copy-paste examples live in `examples/`:
 

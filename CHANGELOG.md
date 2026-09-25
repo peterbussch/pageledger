@@ -31,6 +31,14 @@ Release changes follow the [artifact compatibility policy](docs/run-manifest-spe
   review: after extraction the page joins the review queue with reason
   `route_review:<type>`. `classify` copies the flag into route maps; route
   maps without it behave as before.
+- A built-in `vision` adapter reads pages with a vision model behind an
+  OpenAI-compatible endpoint, on this machine (`llama-server`,
+  `mlx_vlm.server`) or hosted. It renders each page with Poppler within the
+  request's size limit, sends pages to another machine only over `https://`
+  with `allow_remote: true`, reads the key only from a named environment
+  variable, and refuses redirects. Finish states become typed failures,
+  including the new `MODEL_CONTENT_FILTERED` and `MODEL_RECITATION`. In
+  document jobs' image stages it keeps the exact JPEG sent as image evidence.
 - `pageledger review-sheet JOB --out review.csv` writes a CSV for reviewing a
   job in a spreadsheet: a link to each page, its disposition, the start of its
   text and its review reasons, with empty `decision` and `note` columns.

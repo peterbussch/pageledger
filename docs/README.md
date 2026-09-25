@@ -19,6 +19,7 @@ work as plain files. Choose an entry point below.
 ## Working with a collection
 
 - [Choose an OCR or VLM adapter](ocr-options.md)
+- [Read pages with a vision model](vision-adapter.md)
 - [Classify pages and review route evidence](classifier.md)
 - [Run OCR on non-English and historical documents](multilingual-ocr.md)
 - [Work through a scanned government archive](examples/jfk-scanned-archive.md)
