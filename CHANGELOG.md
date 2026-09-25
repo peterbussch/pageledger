@@ -38,6 +38,13 @@ Release changes follow the [artifact compatibility policy](docs/run-manifest-spe
   review: after extraction the page joins the review queue with reason
   `route_review:<type>`. `classify` copies the flag into route maps; route
   maps without it behave as before.
+- Engine recipes (`docs/engine-recipes.md`) for putting a stronger engine than
+  Tesseract behind PageLedger: a local vision model through `mlx_vlm.server`
+  or llama.cpp, RapidOCR with the PP-OCRv5 Cyrillic recognizer
+  (`examples/rapidocr_adapter.py`), Tesseract's community `orus` model for
+  pre-reform print, Apple Vision on macOS (`examples/apple_vision_adapter.py`)
+  and hosted models through a gateway, each with what it was measured to do
+  well and badly on real pages.
 - A built-in `vision` adapter reads pages with a vision model behind an
   OpenAI-compatible endpoint, on this machine (`llama-server`,
   `mlx_vlm.server`) or hosted. It renders each page with Poppler within the
