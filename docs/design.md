@@ -204,7 +204,7 @@ them or try another adapter inside the same run.
 
 ## Verified replay
 
-A completed generation-zero run can be verified, bundled with its source
+A completed original run (not a rerun) can be verified, bundled with its source
 bytes, and replayed using a locally available compatible adapter:
 
 ```bash
@@ -220,31 +220,24 @@ run and portable route map, and writes one inventory index. `replay` validates
 that directory, uses the locally available adapter through the ordinary `run`
 path, and writes `replay.json` with extractor/profile linkage and raw
 comparison. `exact`, `evidence_compared`, and `deterministic_mismatch` are
-evidence outcomes; none claims environment installation, cloud identity, code
-or model transport, signatures, or hermetic reproduction. The [replay
+comparison outcomes; none claims environment installation, cloud identity,
+code or model transport, signatures, or an isolated reproduction. The [replay
 boundary](capabilities-and-limits.md#verified-replay-boundary) covers the
 authenticity, declared-material, side-effect, mutation, zero-byte, and
 editable-install limits.
 
-## Document jobs and recovery
+## Document jobs
 
 `process` owns the ordered stages and their shared budget. Each stage produces
-ordinary generation-zero child runs with checkpoints. The job records which
+ordinary resumable child runs. The job records which
 attempt supplies each page's text and preserves previous defects as review
 holds. A source-bound human receipt can mark text or a blank page as reviewed.
 Grades and model confidence do not select the winning attempt.
 
-The job checkpoint retains child plans before launching them. Page checkpoints
-save request starts, responses, and completed output identities. Resume checks
-that evidence before reusing it or starting pending work. A started request
-without a saved response stops the queue because its outcome is unknown.
-Recovery requires the original paths, source bytes, configuration, and compatible
-code; it does not recreate an environment on another machine.
-
-The [processing specification](processing-spec.md),
-[checkpoint specification](checkpoint-spec.md), and
-[document report specification](document-report-spec.md) describe the state and
-verification rules.
+For job recovery, limits and retained attempts, see the
+[processing specification](processing-spec.md). Individual-run recovery is
+described in the [checkpoint specification](checkpoint-spec.md). Report states
+and review are covered by the [document report specification](document-report-spec.md).
 
 ## Future work and external integrations
 

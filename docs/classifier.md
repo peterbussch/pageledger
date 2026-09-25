@@ -67,9 +67,9 @@ Probe mode has no retries, run budget, cost ledger, or run directory. A probe
 exception is contained to that page and emits `unknown` with null confidence,
 action `review`, and reason `probe_failed:<ExceptionType>`.
 
-## Reclassify retained run evidence
+## Reclassify a saved run
 
-`--from-run` classifies the raw artifacts already retained by a completed run:
+`--from-run` classifies the raw artifacts saved by a completed run:
 
 ```bash
 pageledger classify \
@@ -82,10 +82,10 @@ This mode reads the parent `manifest.json`, `route-map.yml`,
 `provenance.jsonl`, `quality.jsonl`, and `raw/` artifacts. It preserves the
 parent manifest's recorded source hash and page count in the new route map. A
 changed or unavailable current source produces a warning because the decision
-still comes from retained evidence.
+uses the saved run records.
 
 Input paths and `--adapter` cannot be combined with `--from-run`. The parent
-must be a full, non-dry-run generation-zero run; reruns and `--pages` partial
+must be a complete original run; dry runs, reruns and `--pages` partial
 runs are rejected because they cannot supply complete route-map coverage. A
 page with missing provenance or a missing raw artifact becomes
 `unknown`/`review` with reason `no_parent_evidence`.
@@ -321,15 +321,15 @@ to reconstruct or rerun classification.
 - Fixed confidences rank the rule outcomes; they are not calibrated accuracy or
   comparable to a custom hook's confidence scale.
 - Pipe, spacing, and digit rules can miss tables whose extraction lost layout,
-  and can flag digit-heavy prose. Review the route map and evidence before an
+  and can flag digit-heavy prose. Review the route map and signals before an
   expensive run.
 - Probe mode does not enforce `run.budget`. A `pdf_ocr` probe still spends OCR
   time on every page.
 - A custom probe and the later run adapter can disagree on page count. The
   complete-coverage check in `run --routes` fails rather than silently changing
   page IDs or dropping routes.
-- `--from-run` needs a full-coverage generation-zero ledger. Missing retained
-  evidence for an individual page becomes `unknown`/`review`; a dry run,
+- `--from-run` needs a full-coverage original run, not a rerun. Missing saved
+  records for an individual page become `unknown`/`review`; a dry run,
   rerun, or `--pages` partial parent is rejected because it cannot define the
   full source-page set.
 

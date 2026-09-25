@@ -2,7 +2,7 @@
 
 > **Historical transcript (recorded 2026-07-07).** The exact PageLedger
 > package version was not captured, so the output below cannot be presented as
-> current-version output. It is retained as historical evidence. For a current,
+> current-version output. It is kept as a historical record. For a current,
 > automatically verified path through the supported commands, use the
 > [offline text first run](../first-run.md).
 
@@ -13,7 +13,7 @@ TIFF image. The workflow: a cheap first pass, quality signals that catch
 what it missed, and a page-scoped OCR rerun, all recorded as plain files.
 
 All command output below is from that recorded run (macOS, Tesseract 5.5.2,
-poppler 26.05); it is not a regenerated 0.4.1 transcript.
+Poppler 26.05) and has not been regenerated since.
 
 ## Get the document
 

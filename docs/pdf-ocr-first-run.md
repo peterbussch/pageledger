@@ -182,11 +182,10 @@ than a rerun.
   entries. See [failure recovery and partial-run
   guarantees](run-manifest-spec.md#failure-recovery-and-partial-run-guarantees) for the full failure scenario table and common error actions.
 
-## Document jobs and recovery
+## Document jobs
 
 For a document that needs both text-layer extraction and OCR, use
 [`process`](processing-spec.md). It manages attempts under one budget and
-produces a source-linked transcript and report. Document jobs retain
-checkpoints automatically; individual `run` commands need `--resumable` at
-creation. Both use [`pageledger resume DIR`](checkpoint-spec.md#get-started)
-after an interruption.
+produces a source-linked transcript and report. Jobs retain checkpoints
+automatically; individual `run` commands need `--resumable` at creation. Use
+[`pageledger resume DIR`](checkpoint-spec.md#get-started) to recover either.

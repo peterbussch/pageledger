@@ -99,9 +99,9 @@ individual records do not carry provenance identifiers. See the
 - `prompt_hash` is required whenever a prompt influenced output.
 - `deterministic` is `false` unless the adapter can actually guarantee
   stable output for the same input and config.
-- `usage` is the authoritative adapter-facing record. `metrics` is retained in
-  schema version `"0.1"` as a compatibility copy for spreadsheet and JSONL
-  analysis workflows that flatten page-level rows. If these fields diverge in a
+- PageLedger reads `usage`, the adapter-facing record. `metrics` is a copy
+  kept in schema version `"0.1"` for spreadsheet and JSONL analysis workflows
+  that flatten page-level rows. If these fields diverge in a
   future artifact schema, the schema version must change.
 - `usage.cost_usd` remains adapter-reported evidence. `cost.usd` is the value
   PageLedger actually uses after applying adapter-reported cost first and then
@@ -111,8 +111,8 @@ individual records do not carry provenance identifiers. See the
   always emit it. `verify-run` fails if raw bytes differ or if any digest is
   absent. Older evidence remains parseable and receives an incomplete-evidence
   warning, but it cannot receive an integrity PASS without a raw digest. This
-  detects accidental or local modification; it is not authenticity without an
-  externally trusted or signed manifest/provenance set.
+  detects accidental or local modification; it does not establish
+  authenticity without an externally trusted or signed manifest/provenance set.
 - The JSON Schema for this artifact is at `schemas/provenance-line.schema.json`.
 - Schema validation tests are in `tests/pageledger/test_schemas.py`.
 

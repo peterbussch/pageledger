@@ -182,26 +182,14 @@ not invent their own prompt hashes.
 
 ### Resumable execution
 
-`run --resumable` uses the same adapter protocol. It records a durable request
-start before calling `extract()`, saves the returned result before publishing
-page artifacts, and records completion only after the page evidence is ready.
-`resume` verifies and reuses retained responses without calling `extract()`
-again. Adapter construction and metadata/profile checks can still occur;
-constructors and page-count hooks should not perform extraction requests.
-
-The initial resumable mode requires `run.retry.max_retries: 0` and
-`run.on_page_error: stop` (both are defaults). A request interrupted before a
-durable outcome is `outcome_unknown`, even if a text file survived. PageLedger
-does not infer whether a remote provider processed it and does not retry it
-automatically. A recorded failure also halts queued pages. Adapter exception
-messages and stdout/stderr remain redacted; safe typed outcome and available
-HTTP status are diagnostic evidence, not proof of the root cause.
-
-Adapters must report the actual returned model and usage when available.
-An optional `ExtractionResult.input_evidence` dictionary records an exact page
-JPEG and its rendering/request identity; see
-[`image-evidence-spec.md`](image-evidence-spec.md). It defaults to null, so old
-adapters remain compatible.
+Resumable runs and document jobs use the same adapter protocol. Resume reuses
+saved responses without calling `extract()` again, but it still constructs
+the adapter and checks its metadata, so constructors and page-count hooks must
+not make extraction requests. Resumable execution needs zero automatic retries
+and `on_page_error: stop`. Recovery cannot see retries made inside an adapter
+or know whether a provider processed a request twice; if your adapter
+retries, say so in its own documentation. The recovery rules are in the
+[checkpoint specification](checkpoint-spec.md).
 
 Use `pageledger.adapters.AdapterFailure(code, http_status=None,
 partial_result=None)` for a typed terminal failure. Codes are
@@ -210,18 +198,19 @@ partial_result=None)` for a typed terminal failure. Codes are
 `MODEL_CONTENT_FILTERED`, `MODEL_RECITATION`,
 `MODEL_UNAVAILABLE`, `IMAGE_RENDER_ERROR`, and `IMAGE_EVIDENCE_INVALID`.
 `http_status` is an integer 100–599 or null. `partial_result` is an
-`ExtractionResult` or null. The resumable runner validates and retains any
-partial result, including truncated text and reported usage, in the failed
-receipt. It never completes that page or retries it. A malformed partial
-result is discarded and the receipt reports `IMAGE_EVIDENCE_INVALID`.
-Typed failures also bypass ordinary runner retries; use resumable execution
-when durable partial output is required.
+`ExtractionResult` or null. Resumable runs and document jobs validate a
+partial result and keep it, with its usage, in the failure record; they never
+complete or retry that page. A malformed partial result is discarded and the
+failure is reported as `IMAGE_EVIDENCE_INVALID`. An ordinary run keeps no
+partial result, and typed failures bypass its retries: use `--resumable` when
+partial output must survive. Adapter messages and stdout/stderr are redacted;
+failure codes and HTTP status do not prove a root cause.
 
-Recovery preserves that evidence, including null monetary cost. It cannot
-observe retries hidden inside an adapter or establish provider-side
-idempotency. Keep such behavior explicit in the adapter's own contract.
-See [`checkpoint-spec.md`](checkpoint-spec.md) for persistence and identity
-checks.
+Adapters must report the actual returned model and usage when available.
+An optional `ExtractionResult.input_evidence` dictionary records an exact page
+JPEG and its rendering/request identity; see
+[`image-evidence-spec.md`](image-evidence-spec.md). It defaults to null, so old
+adapters remain compatible.
 
 ## The `usage.pages` contract
 
@@ -329,7 +318,7 @@ only the materials the adapter declares, not every imported dependency or
 their authenticity. Cloud adapters are evidence-compared because cloud
 identity and service state are outside this contract. See the [replay
 boundary](capabilities-and-limits.md#verified-replay-boundary); this feature is
-intentionally non-hermetic.
+not isolated from external software, credentials, services, or machine state.
 
 ### Finding the adapter module
 
@@ -371,7 +360,7 @@ pageledger run report.pdf --config pageledger.yml \
 ```
 
 The standard pipeline performs local OCR, layout analysis, and table
-recognition. For the dogfooded local VLM pass, set `pipeline: vlm` and
+recognition. To run the example's local VLM pass, set `pipeline: vlm` and
 `vlm_model: smoldocling`. The example never enables
 Docling remote services or external plugins. Docling may download model assets
 on first use, so prewarm it before an offline run.
@@ -514,7 +503,7 @@ Adapters should return `ExtractionResult` instances with:
 | `model` | string or null | Model or OCR engine identifier. |
 | `warnings` | array | Non-fatal quality issues (empty list if none). Preserved in provenance and copied into `quality.jsonl`, so they affect grades and audit routing. |
 | `usage` | object | **`pages` must be 1**; `tokens`, `compute_seconds`, `cost_usd` optional/nullable. |
-| `confidence_detail` | object or null | Optional engine-native confidence evidence, adapter-defined shape; recorded into `quality.jsonl` verbatim. `pdf_ocr` fills Tesseract per-word statistics (`scale`, `word_count`, `mean`, `min`, `below_60_count`, `below_60_ratio`). |
+| `confidence_detail` | object or null | Optional engine-native confidence data, adapter-defined shape; recorded into `quality.jsonl` verbatim. `pdf_ocr` fills Tesseract per-word statistics (`scale`, `word_count`, `mean`, `min`, `below_60_count`, `below_60_ratio`). |
 | `input_evidence` | object or null | Optional exact page image descriptor; shape, file containment, hashes and dimensions follow [the image evidence contract](image-evidence-spec.md). |
 
 An adapter whose output a model generates, and so can contain text that is

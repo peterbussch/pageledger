@@ -19,14 +19,10 @@ file's checksum no longer matches the parent manifest, the rerun fails before
 creating the child directory; changed bytes are a new input, not the same
 lineage.
 
-`pageledger resume RUN_DIR` is a separate recovery operation for interrupted
-generation-zero runs started with `run --resumable`. It consumes durable
-checkpoint evidence, retains the same run id and adapter step, and does not
-consume this rerun queue. A saved successful response is reused; an unknown
-request outcome is held without automatic retry. See
-[`checkpoint-spec.md`](checkpoint-spec.md).
+`pageledger resume RUN_DIR` is separate from this rerun queue. For run recovery,
+see [`checkpoint-spec.md`](checkpoint-spec.md).
 
-The supplied config is the execution authority. The optional `escalation`
+The supplied config determines execution. The optional `escalation`
 block records what the producing run planned; it does not pin a future rerun
 to that plan. If the supplied chain selects a different next adapter,
 PageLedger warns and uses the config. Supplying a single `run.adapter` in
@@ -171,8 +167,8 @@ when the chain records another adapter.
 At execution time PageLedger compares the parent rerun manifest's recorded
 `next_adapter` with the effective adapter selected by the supplied config.
 A mismatch is returned and printed as an `escalation_warnings` entry; the
-config wins. This makes the artifact an auditable plan without turning stale
-configuration into hidden authority.
+config wins. The artifact is an auditable plan; a stale plan never overrides
+the config you supply.
 
 `verify-run` independently normalizes `run.adapter_order` from the retained
 `config-snapshot.yml`, checks the manifest chain and generation against it,

@@ -13,7 +13,7 @@ terms used here.
 ```text
 jobs/book/
 ├── job.json          # saved policy, source identity, attempts, and review state
-├── document.json     # authoritative document report
+├── document.json     # document report used to render report.md
 ├── report.md         # human rendering of document.json
 ├── transcript.md     # selected text with source-page and attempt links
 ├── attempts/         # ordinary resumable runs for the processing stages
@@ -30,7 +30,7 @@ and the [report contract](document-report-spec.md).
 
 ```text
 runs/run-001/
-├── manifest.json        # canonical run record
+├── manifest.json        # run record
 ├── config-snapshot.yml  # the exact config that produced the run
 ├── route-map.yml        # which page went where, and why
 ├── raw/
@@ -46,8 +46,7 @@ runs/run-001/
 └── rerun-manifest.yml   # executable plan for re-extracting flagged pages
 ```
 
-Runs started with `--resumable` additionally retain operational recovery
-evidence:
+Runs started with `--resumable` also keep these recovery files:
 
 ```text
 checkpoint.json             # immutable job identity and complete page plan
@@ -56,12 +55,8 @@ checkpoint.json             # immutable job identity and complete page plan
 .resume.lock                # advisory writer lock; the file can outlive the process
 ```
 
-The checkpoint is the recovery authority while final artifacts are incomplete.
-Each page response is persisted before raw publication, and its completion
-record binds the raw bytes to provenance, quality signals and any alignment.
-Resume validates the complete inventory before further calls and regenerates
-the aggregate ledger from retained responses. A surviving raw file is never a
-completion record. `manifest.json` remains the final publication indicator.
+See the [checkpoint specification](checkpoint-spec.md) for how these files are
+used during recovery.
 
 Recovery files are separate from the portable artifact inventory. Bundles
 retain the finalized extraction ledger; they do not transport an executable
@@ -90,7 +85,7 @@ snapshot's checksum, extractor identities (engine, version, options), and
 summary counts. Runs configured with `run.adapter_order` also record an
 optional `escalation` block with the chain's adapter names and this
 generation's zero-based `step`. One chain entry is the effective adapter for
-the whole generation. This is the canonical artifact; start here.
+the whole generation. Start here for the run record.
 Spec: [`run-manifest-spec.md`](run-manifest-spec.md).
 
 `config-snapshot.yml` records what you asked for. It is a verbatim copy of the
@@ -184,8 +179,8 @@ means the classifier could not make a confident decision or no classifier
 ran.
 `verify-run` regenerates the Markdown rendering in memory and fails when
 `audit.md` is stale or edited. It also requires and verifies
-`result.raw_sha256` for every provenance line; readable legacy evidence without
-that digest fails integrity verification.
+`result.raw_sha256` for every provenance line; records from older versions
+that lack it stay readable but fail integrity verification.
 Spec: [`audit-spec.md`](audit-spec.md).
 
 Record human decisions outside the run directory, keyed by `run_id` and
@@ -204,7 +199,7 @@ do not appear in rerun items, even if they also have review reasons.
 For adapter chains, its optional `escalation` block adds the planned
 `next_adapter`. If candidates remain after the chain ends, status is
 `chain_exhausted`, items are cleared, and the audit review queue remains the
-human worklist. The config supplied to `rerun` is authoritative; a mismatch
+human worklist. The config supplied to `rerun` takes precedence; a mismatch
 with the recorded plan produces an escalation warning and the config wins.
 The rerun remains a separate ledger; PageLedger does not automatically merge it
 with the parent or decide which output belongs in a corrected corpus.
@@ -284,6 +279,6 @@ Artifact fields follow the compatibility policy in
 compatible within a schema version. The current package therefore retains
 `schema_version: "0.1"` for its optional classifier, escalation, alert, and
 rollup, and replay-linkage fields. The schemas in
-[`schemas/`](../schemas/) are the machine-readable authority, enforced by
+[`schemas/`](../schemas/) define the machine-readable contract, enforced by
 `tests/pageledger/test_schemas.py`. Built wheels install the same contracts
 under the environment's `share/pageledger/schemas/` directory.

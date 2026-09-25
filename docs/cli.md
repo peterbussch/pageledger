@@ -154,7 +154,7 @@ Other flags:
 | `--pages "1-8,81,100-110"` | Extract only these source pages (single input). Page ids keep the source numbering, so provenance stays truthful when you sample a large volume. Recorded in `manifest.inputs[].pages`. |
 | `--routes FILE` | Execute a complete route map from `pageledger classify`, a human, or an external classifier. Requires `--config`; cannot be combined with `--adapter` or `--pages`. |
 | `--dry-run` | Write the route map and planning artifacts without calling extractors. Inspect routing before spending money. |
-| `--resumable` | Retain durable page attempts so an interrupted generation-zero execution can resume in the same directory. Requires zero automatic retries and stop-on-error policy; cannot be combined with `--dry-run`. |
+| `--resumable` | Keep page attempts so an interrupted run can be resumed in place. Needs zero automatic retries and `on_page_error: stop`; cannot be combined with `--dry-run`. See the [checkpoint contract](checkpoint-spec.md). |
 | `--json` | Machine-readable result on stdout; errors as JSON too. |
 | `--log-level LEVEL` | Minimum `run.log` event level: DEBUG, INFO, WARNING, ERROR. |
 | `--adapter-path DIR` | Add a directory to `sys.path` so custom adapters named by `run.adapter` or `run.adapter_order` can be imported. |
@@ -167,7 +167,7 @@ accepted with warnings and the current values are recorded.
 `--dry-run --routes` preserves the proposed decisions without calling
 `extract()`.
 
-Human run summaries read the persisted `cost.json` evidence. `Cost USD:
+Human run summaries read `cost.json`. `Cost USD:
 unknown` means no complete dollar total was established; known zero remains
 `0.0`, and a known subtotal with unknown pages is explicitly labeled partial.
 Adapter-reported totals are labeled as such; configured-rate totals are called
@@ -175,7 +175,7 @@ estimates and explicitly distinguished from provider charges; mixed-basis
 totals name both evidence sources.
 Dry-run output says that no extraction was performed, so its zero is not
 presented as a provider charge or projected bill. `--json` result mappings are
-unchanged; use `cost.json` for the authoritative `cost_known`, `cost_usd`, and
+unchanged; use `cost.json` for the `cost_known`, `cost_usd`, and
 `cost_basis` fields.
 
 ## resume
@@ -188,41 +188,13 @@ pageledger inspect-run runs/book/
 pageledger verify-run runs/book/
 ```
 
-Continues a run created with `run --resumable`, or a document job created with
-`process`, in its existing directory. For a job, use `pageledger resume jobs/book`;
-see [job recovery](processing-spec.md#resume-an-interrupted-job). A job paused
-by a processing limit continues only with `--raise-limit LIMIT=VALUE`
-(repeatable), for example `--raise-limit max_attempt_pages=200`; see
-[one budget for the job](processing-spec.md#one-budget-for-the-job). The flag is
-refused for runs and for jobs that are not paused.
-
-For an individual run, resume retains the run id. The retained config snapshot, source identities, page
-selection, routes and adapter identity are the execution authority. There are
-no replacement-input, config, adapter, budget or page-selection flags.
-`--adapter-path DIR` loads a trusted custom adapter; `--json` emits a
-machine-readable result.
-
-Before further extraction, resume verifies saved page evidence and source
-bytes. Verified completed pages and durably saved responses are reused without
-another adapter call. A raw text file alone is insufficient. Costs and budgets
-include the retained successful pages; unknown dollar costs remain unknown.
-Source hashes are checked again before final publication.
-
-An interrupted request with no durable outcome is `outcome_unknown`. Resume
-refuses to retry it or start queued calls: the provider might already have
-processed and charged for the request. A recorded adapter failure also stops
-queued work. Retain the evidence and resolve the request outcome with the
-provider or adapter operator before deliberately starting new work. Resume
-does not promise exactly-once remote execution.
-
-Run recovery supports generation-zero execute runs. Ordinary
-runs without a recovery journal, dry runs and interrupted rerun generations
-cannot be resumed. `run.adapter_order` retains its generation semantics;
-resume does not advance it. Resume refuses finalized failed runs. For other
-finalized runs, it verifies and returns the existing result without reconstructing
-it or loading the extraction adapter. Valid later alignment changes are preserved. Use the
-audit queue and separate `rerun` command for quality-driven re-extraction.
-See the [checkpoint contract](checkpoint-spec.md).
+Continues an individual run created with `run --resumable`, or a document job
+created with `process`, in its existing directory. For document-job recovery
+and processing limits, see [document processing](processing-spec.md). For
+individual-run recovery rules, see the [checkpoint contract](checkpoint-spec.md).
+`--adapter-path DIR` adds a trusted adapter import directory; `--json` emits a
+machine-readable result. `--raise-limit LIMIT=VALUE` applies only to a paused
+document job; see [one budget for the job](processing-spec.md#one-budget-for-the-job).
 
 ## classify
 

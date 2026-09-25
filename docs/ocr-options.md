@@ -82,7 +82,7 @@ prohibitively expensive. In VLM mode it passes a one-page range for each page
 PageLedger actually requests; this makes selective reruns possible without
 converting the entire source. Start with `pipeline: standard` for local OCR,
 layout, and tables. Escalate selected difficult pages with `pipeline: vlm` and
-the dogfooded local preset (`smoldocling`). Remote services
+the tested local preset (`smoldocling`). Remote services
 and external plugins remain disabled. Both lanes are uncalibrated extractors:
 inspect PageLedger's warnings and the rendered source rather than assuming that
 richer layout output is automatically more accurate. The VLM lane always emits

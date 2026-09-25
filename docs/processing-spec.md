@@ -61,10 +61,11 @@ pageledger inspect-job jobs/book
 pageledger verify-job jobs/book
 ```
 
-Recovery validates retained attempts before scheduling pending work. Saved
+Job recovery checks retained attempts before scheduling pending work. Saved
 responses are reused. A request with no saved outcome, a recorded provider
-failure, or a halted job is not retried automatically. The
-[checkpoint specification](checkpoint-spec.md) describes the recovery records.
+failure, or a halted job is not retried automatically. Each attempt is a
+resumable run; the [checkpoint specification](checkpoint-spec.md) describes
+its recovery records.
 
 `--adapter-path DIR` on `process` or `resume` loads custom adapters. Use
 `process --review FILE` to supply source-bound human decisions before extraction,
@@ -185,7 +186,7 @@ budget before each pending call, including after recovering a saved response.
 `job.json` uses the checksummed envelope defined by `schemas/job.schema.json`.
 Its payload includes the absolute root, source SHA-256, full/selected page
 inventory, original configuration and hash, normalized policy, package hash,
-ordered child plans, attempt evidence, page selections/reviews, usage and status.
+ordered child plans, attempt records, page selections/reviews, usage and status.
 The checksum detects inconsistent content. It does not establish authorship
 or prevent deliberate rewriting.
 
@@ -196,18 +197,17 @@ path, attempt ID and source page; these are separate from rerun lineage IDs.
 Existing run commands, selected denominators and generation-zero text replay
 keep their contracts.
 
-Before further calls, resume checks all retained child records, outputs,
-source/page identities and configuration snapshots. Each child's configuration
-digest must match its saved stage plan. Resume hashes the source once and
-confirms that every child still refers to that source, and that its retained
-artifacts are intact, before reusing its work. A child completed before
-the job index was saved is adopted without extraction. A response saved before
-publication is recovered by the child runner. A started request without a
+Before further calls, resume checks retained child records, outputs,
+source/page identities and configuration snapshots. A child completed before
+the job index was saved is adopted without extraction. The child runner recovers
+a saved response that has not yet been published. A request without a saved
 response becomes `outcome_unknown`; no automatic retry or fallback is allowed.
-Typed provider failures, quota errors, and truncated output stop the whole
-queue. Failed partial output is retained under `partials/` and linked in the
-report, but cannot be selected as the transcript. Missing image input evidence
-also stops the job and excludes that response from selection.
+Typed provider failures, quota errors and truncated output stop the whole
+queue. Failed partial output is kept under
+`partials/` and linked in the report, but cannot be selected as the transcript.
+Missing image input evidence also stops the job and excludes that response from
+selection. The [checkpoint specification](checkpoint-spec.md) describes
+individual-run recovery checks and limits.
 
 An interruption before a child's durable plan exists produces an explicit
 `initialization_incomplete` halt. No extraction is scheduled without that plan.
@@ -226,10 +226,11 @@ presence does not establish recovery of comments, body text, notes or citations.
 
 A `completed` job means its configured processing work finished. It does not
 mean its pages have passed human review. A `paused_budget` job continues when
-resumed with a higher limit. A `halted` job retains its evidence; `resume`
-reports it without retrying. Reconcile uncertain requests externally
-before explicitly starting any new job. `verify-job` is read-only and binds the
-report back to validated job/child evidence.
+resumed with a higher limit. A `halted` job keeps its records, and `resume`
+reports it without retrying; settle any uncertain request with the provider
+before starting a new job.
+`verify-job` is read-only and binds the report back to validated job and child
+records.
 
 ## Reports and review
 
@@ -279,9 +280,9 @@ decision is one of:
 A blank decision, or a deleted row, leaves the page unreviewed; the note becomes
 the receipt's reason. `review-job` checks the whole sheet before recording
 anything: every row must belong to the job, appear once, hold no spreadsheet
-formula, and still match the evidence it was written from, which
+formula, and still match the saved job records it was written from, which
 `review.csv.binding.json` records beside the sheet. A sheet written before the
-job's evidence changed is refused; write a new one. `--dry-run` checks and
+job's records changed is refused; write a new one. `--dry-run` checks and
 counts the decisions without recording them. Scripts can keep writing JSON
 receipts.
 

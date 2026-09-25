@@ -130,7 +130,7 @@ tutorials use bash.
 
 ## Recover interrupted work
 
-Document jobs retain recovery evidence automatically. For an individual run,
+A document job keeps recovery records automatically. For an individual run,
 opt in when starting it:
 
 ```bash
@@ -139,12 +139,12 @@ pageledger run book.pdf --adapter pdf_ocr --resumable --out runs/book
 pageledger resume runs/book
 ```
 
-Use `pageledger resume jobs/book` for a document job. Keep the source files,
-output directory and adapter environment in place. Resume verifies saved
-responses and reuses them without another extraction call. A request started
-without a saved outcome stops recovery because it may already have been
-processed. See the [checkpoint specification](https://github.com/peterbussch/pageledger/blob/main/docs/checkpoint-spec.md) for
-supported states and recovery limits.
+Use `pageledger resume jobs/book` for a document job. Resume reuses saved work
+and never repeats a request that may already have been processed. See the
+[checkpoint specification](https://github.com/peterbussch/pageledger/blob/main/docs/checkpoint-spec.md)
+for run recovery rules and the
+[processing specification](https://github.com/peterbussch/pageledger/blob/main/docs/processing-spec.md)
+for document-job recovery.
 
 ## What the ledger records
 

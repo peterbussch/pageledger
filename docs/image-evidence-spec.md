@@ -38,7 +38,7 @@ a real directory.
 
 The authoring adapter must retain input evidence for an image request. PageLedger
 checks its source, page, prompt, and JPEG bindings when saving and verifying
-results. Output hashes and usage remain separate provenance evidence.
+results. Output hashes and usage remain separate provenance records.
 
 Image-evidence bundles and replay are currently unsupported. `pageledger bundle`
 rejects them explicitly with `image_evidence_unsupported`; it never emits a
