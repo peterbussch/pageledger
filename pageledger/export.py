@@ -39,6 +39,7 @@ def export_job(job_dir: Path, out: Path, *, format: str, reviewed_only: bool = F
         raise ValueError(f"Document job does not verify: {verification['error']}")
     report = verify_document_report(root)
     out = Path(out).expanduser()
+    out.parent.mkdir(parents=True, exist_ok=True)
     source = relative_path(read_record(root / "job.json")["source"]["path"], out.parent.resolve())
     pages = _pages(root, report, reviewed_only)
     render = {"txt": _txt, "md": _md, "jsonl": _jsonl, "tei": _tei}[format]

@@ -87,12 +87,24 @@ def build_parser() -> argparse.ArgumentParser:
         ("inspect-job", "Show a document report"),
         ("verify-job", "Verify document source, attempts, selection and report"),
         ("review-job", "Apply source/output-bound human review without extraction"),
+        ("review-sheet", "Write a CSV for reviewing a document job in a spreadsheet"),
     ):
         job_parser = subparsers.add_parser(command, help=help_text)
         job_parser.add_argument("job_dir", type=Path)
         job_parser.add_argument("--json", action="store_true", dest="json_output")
         if command == "review-job":
             job_parser.add_argument("--review", type=Path, required=True)
+            job_parser.add_argument(
+                "--reviewer",
+                help="Name recorded with review-sheet decisions (or PAGELEDGER_REVIEWER)",
+            )
+            job_parser.add_argument(
+                "--dry-run", action="store_true", help="Check every decision without recording any"
+            )
+        elif command == "review-sheet":
+            job_parser.add_argument(
+                "--out", type=Path, required=True, help="CSV to write; its binding goes beside it"
+            )
 
     export_parser = subparsers.add_parser(
         "export", help="Write a verified document job's text as txt, md, jsonl or TEI"
@@ -328,6 +340,7 @@ def main(argv: list[str] | None = None) -> int:
         "inspect-job": _cmd_job,
         "verify-job": _cmd_job,
         "review-job": _cmd_job,
+        "review-sheet": _cmd_job,
         "export": _cmd_export,
         "init-config": _cmd_init_config,
         "inspect-run": _cmd_inspect_run,
@@ -671,7 +684,7 @@ def _cmd_resume(args: argparse.Namespace) -> int:
 
 
 def _cmd_job(args: argparse.Namespace) -> int:
-    from .processing import process, review_job, verify_job
+    from .processing import create_review_sheet, process, review_job, verify_job
 
     if args.command == "process":
         result = process(
@@ -683,7 +696,9 @@ def _cmd_job(args: argparse.Namespace) -> int:
             review_path=args.review,
         )
     elif args.command == "review-job":
-        result = review_job(args.job_dir, args.review)
+        result = review_job(args.job_dir, args.review, reviewer=args.reviewer, dry_run=args.dry_run)
+    elif args.command == "review-sheet":
+        result = create_review_sheet(args.job_dir, args.out)
     elif args.command == "verify-job":
         result = verify_job(args.job_dir)
     else:
@@ -695,6 +710,12 @@ def _cmd_job(args: argparse.Namespace) -> int:
         print(json.dumps(result, ensure_ascii=False, sort_keys=True))
     else:
         print(f"Status: {result['status']}")
+        if "decisions" in result:
+            counts = sorted(result["decisions"].items())
+            print("Decisions: " + (", ".join(f"{name} {n}" for name, n in counts) or "none"))
+        if "binding" in result:
+            print(f"Review sheet: {result['out']} ({result['rows']} pages)")
+            print(f"Binding: {result['binding']}")
         if result.get("report"):
             print(f"Report: {result['report']}")
         if result.get("next_action"):

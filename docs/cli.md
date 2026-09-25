@@ -40,21 +40,28 @@ A job can finish with unresolved pages. `completed` means processing finished,
 automatically. `process` and `resume` exit 0 for a paused job, which is an
 expected outcome of a configured limit, and 1 for a halted or failed one.
 
-## inspect-job, verify-job, and review-job
+## inspect-job, verify-job, review-sheet and review-job
 
 ```bash
 pageledger inspect-job jobs/book
 pageledger inspect-job jobs/book --json
 pageledger verify-job jobs/book
+pageledger review-sheet jobs/book --out review.csv
+pageledger review-job jobs/book --review review.csv --reviewer "Name"
+pageledger review-job jobs/book --review review.csv --dry-run
 pageledger review-job jobs/book --review reviewed-pages.json
 ```
 
 `inspect-job` displays `report.md`, or `document.json` with `--json`.
 `verify-job` checks the source, retained attempts, selections, and report.
-`review-job` applies human decisions without extraction and preserves previous
-receipts. Create the review file using the
-[review receipt contract](document-report-spec.md#human-review-receipt).
-All three commands accept `--json`.
+`review-sheet` writes a CSV of the job's pages to fill in with a spreadsheet.
+`review-job` records human decisions from that sheet, or from a JSON file
+following the [review receipt contract](document-report-spec.md#human-review-receipt),
+without extracting anything and keeping earlier receipts. Decisions from a sheet
+need `--reviewer NAME` or the `PAGELEDGER_REVIEWER` variable; `--dry-run` checks
+and counts them without recording any. See
+[Review in a spreadsheet](processing-spec.md#review-in-a-spreadsheet).
+All four commands accept `--json`.
 
 ## export
 

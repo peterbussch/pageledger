@@ -5,6 +5,7 @@ from __future__ import annotations
 import copy
 import json
 import math
+from collections import Counter
 from dataclasses import asdict
 from pathlib import Path
 from uuid import uuid4
@@ -28,6 +29,7 @@ from .processing_config import STAGES, processing_config
 from .processing_policy import HOLD_POLICY, warning_holds
 from .processing_source import inspect_source
 from .replay import _package_code_sha256
+from .review_sheet import read_review_sheet, write_review_sheet
 from .verify import verify_run
 
 
@@ -735,12 +737,32 @@ def resume_job(
         return _continue(job, root, adapter_path)
 
 
-def review_job(job_dir: Path, review_path: Path) -> dict:
+def review_job(
+    job_dir: Path, review_path: Path, *, reviewer: str | None = None, dry_run: bool = False
+) -> dict:
+    """Record human decisions from a JSON receipt or a filled-in review sheet (.csv).
+
+    With dry_run, every decision is checked and counted but nothing is recorded.
+    """
     root = job_dir.expanduser().resolve()
     with writer_lock(root):
         job = _load(root)
         _refresh(job, root)
-        _review_decisions(job, json.loads(review_path.read_text(encoding="utf-8")))
+        if review_path.suffix.lower() == ".csv":
+            review = read_review_sheet(job, review_path, reviewer)
+        elif reviewer:
+            raise ValueError("--reviewer is for review sheets; a JSON receipt names its reviewers")
+        else:
+            review = json.loads(review_path.read_text(encoding="utf-8"))
+        if dry_run:
+            _review_decisions(copy.deepcopy(job), review)
+            return {
+                "job_id": job["job_id"],
+                "out_dir": str(root),
+                "status": "checked",
+                "decisions": _decision_counts(review),
+            }
+        _review_decisions(job, review)
         _refresh(job, root)
         if job["status"] == "processing":
             job.update(
@@ -750,7 +772,19 @@ def review_job(job_dir: Path, review_path: Path) -> dict:
             )
         elif job["status"] == "completed":
             job["next_action"] = _review_next_action(job)
-        return _publish(job, root)
+        return {**_publish(job, root), "decisions": _decision_counts(review)}
+
+
+def _decision_counts(review: dict) -> dict[str, int]:
+    return dict(Counter(decision["disposition"] for decision in review["decisions"]))
+
+
+def create_review_sheet(job_dir: Path, sheet: Path) -> dict:
+    root = job_dir.expanduser().resolve()
+    with writer_lock(root):
+        job = _load(root)
+        _refresh(job, root, materialize=False)
+        return {"status": "written", **write_review_sheet(job, sheet)}
 
 
 def verify_job(job_dir: Path) -> dict:

@@ -216,6 +216,35 @@ claims of preservation or publication. Source capture, preservation, removal
 eligibility and removal are separate fields. This implementation never moves,
 deletes, publishes or certifies preservation of source files.
 
+### Review in a spreadsheet
+
+```bash
+pageledger review-sheet jobs/book --out review.csv
+pageledger review-job jobs/book --review review.csv --reviewer "A. Reader" --dry-run
+pageledger review-job jobs/book --review review.csv --reviewer "A. Reader"
+```
+
+`review-sheet` writes one row per page: a link to the page in the source, its
+disposition, the start of its selected text, its review reasons, and empty
+`decision` and `note` columns. Fill those in a spreadsheet and save as CSV. A
+decision is one of:
+
+| Decision | Records |
+|---|---|
+| `accept` | The selected text, as `reviewed_text` |
+| `blank` | The page as blank, `reviewed_blank` |
+| `illustration`, `handwriting`, `unreadable`, `source_defect` | That disposition |
+| `use:ATTEMPT` | Another completed attempt's text, named by its attempt ID from the report |
+
+A blank decision, or a deleted row, leaves the page unreviewed; the note becomes
+the receipt's reason. `review-job` checks the whole sheet before recording
+anything: every row must belong to the job, appear once, hold no spreadsheet
+formula, and still match the evidence it was written from, which
+`review.csv.binding.json` records beside the sheet. A sheet written before the
+job's evidence changed is refused; write a new one. `--dry-run` checks and
+counts the decisions without recording them. Scripts can keep writing JSON
+receipts.
+
 ## Image adapter boundary
 
 The optional [OpenAI-compatible example](../examples/openai_image_adapter.py)

@@ -31,6 +31,14 @@ Release changes follow the [artifact compatibility policy](docs/run-manifest-spe
   review: after extraction the page joins the review queue with reason
   `route_review:<type>`. `classify` copies the flag into route maps; route
   maps without it behave as before.
+- `pageledger review-sheet JOB --out review.csv` writes a CSV for reviewing a
+  job in a spreadsheet: a link to each page, its disposition, the start of its
+  text and its review reasons, with empty `decision` and `note` columns.
+  `review-job --review review.csv --reviewer NAME` records the decisions after
+  checking the whole sheet against the evidence each row was written from,
+  which a binding file beside the sheet records. A stale, duplicated or
+  formula-bearing row stops the import before anything is recorded, and
+  `--dry-run` checks and counts the decisions without recording them.
 - `pageledger export JOB --format txt|md|jsonl|tei --out FILE` writes a
   verified job's selected text page by page, with each page's review state,
   the attempt and engine that produced its text, and the text's SHA-256.
