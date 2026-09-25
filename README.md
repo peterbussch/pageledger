@@ -81,7 +81,10 @@ model behind an OpenAI-compatible endpoint, on your machine or hosted
 (`vision`). The [engine recipes](https://github.com/peterbussch/pageledger/blob/main/docs/engine-recipes.md) add RapidOCR,
 Tesseract's model for pre-1918 Russian print, Apple Vision and local vision
 models, with what each did well and badly on 24 transcribed historical pages.
-The [adapter protocol](https://github.com/peterbussch/pageledger/blob/main/docs/adapter-protocol.md) connects any other engine.
+[OCR options](https://github.com/peterbussch/pageledger/blob/main/docs/ocr-options.md)
+compares the approaches, and the
+[adapter protocol](https://github.com/peterbussch/pageledger/blob/main/docs/adapter-protocol.md)
+connects any other engine.
 
 ## Process a document
 
