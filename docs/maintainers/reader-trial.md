@@ -5,7 +5,7 @@ document-job journey. It is a template for future readers; no external
 participants or timings are reported here.
 
 Ask each participant to use a fresh scratch directory and the exact package
-under evaluation. Provide the link to [the document first-run tutorial](document-first-run.md)
+under evaluation. Provide the link to [the document first-run tutorial](../document-first-run.md)
 and no additional walkthrough. Ask them to:
 
 1. create the synthetic source and configuration;

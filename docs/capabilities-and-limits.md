@@ -339,7 +339,7 @@ PageLedger has been exercised locally on:
   default, not a general benchmark.
 
 These historical checks describe the tested documents and workloads. They
-are not benchmarks of every current workflow; see [performance](performance.md)
+are not benchmarks of every current workflow; see [performance](maintainers/performance.md)
 for the measured serialization improvement and its limits. Stress
 tests are marked `@pytest.mark.stress` and skipped in default CI:
 

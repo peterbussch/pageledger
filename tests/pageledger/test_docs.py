@@ -76,14 +76,22 @@ def _links(document: Path) -> list[str]:
     return targets
 
 
+# The README is also the PyPI description, so it links to the repository absolutely.
+_REPOSITORY = "https://github.com/peterbussch/pageledger/blob/main/"
+
+
 @pytest.mark.parametrize("document", DOCUMENTS, ids=lambda path: str(path.relative_to(ROOT)))
-def test_relative_links_and_anchors_resolve(document: Path) -> None:
+def test_links_and_anchors_resolve(document: Path) -> None:
     broken = []
     for target in _links(document):
-        if re.match(r"^[a-z][a-z0-9+.-]*:", target):
+        if target.startswith(_REPOSITORY):
+            base, target = ROOT, target.removeprefix(_REPOSITORY)
+        elif re.match(r"^[a-z][a-z0-9+.-]*:", target):
             continue
+        else:
+            base = document.parent
         path_part, _, anchor = target.partition("#")
-        resolved = (document.parent / path_part).resolve() if path_part else document
+        resolved = (base / path_part).resolve() if path_part else document
         if not resolved.exists():
             broken.append(f"{target}: no such file")
         elif anchor and resolved.suffix == ".md" and anchor not in _anchors(resolved):
@@ -156,7 +164,7 @@ def test_readme_first_run_executes(tmp_path: Path) -> None:
         env=env,
     )
     assert result.returncode == 0, f"stdout:\n{result.stdout}\n\nstderr:\n{result.stderr}"
-    assert (tmp_path / "readme" / "runs" / "second" / "manifest.json").is_file()
+    assert (tmp_path / "readme" / "runs" / "first" / "manifest.json").is_file()
 
 
 _EXAMPLE_CONFIGS = [

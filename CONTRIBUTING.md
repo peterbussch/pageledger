@@ -32,8 +32,8 @@ uv run --frozen --extra dev --extra pdf mypy pageledger/
 ```
 
 [AGENTS.md](AGENTS.md) covers repository structure, test requirements and
-implementation constraints. See [the release procedure](docs/releasing.md)
-for package checks and publication.
+implementation constraints. See [maintainer procedures](docs/maintainers/README.md)
+for release, performance, reader-trial, and tutorial-verification records.
 
 Use `ruff format` with the same paths to format changes. CI uses the version
 in `uv.lock` so local and automated checks agree.

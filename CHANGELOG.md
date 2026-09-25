@@ -6,6 +6,14 @@ Release changes follow the [artifact compatibility policy](docs/run-manifest-spe
 
 ### Added
 
+- Documentation for working with a real collection: a glossary; a reference of
+  every warning, hold and disposition with its likely cause and what to do;
+  how-to guides for processing a collection, choosing OCR settings, planning
+  time and cost, troubleshooting, and sharing and citing results; and engine
+  recipes. The documentation index is grouped into tutorials, how-to guides,
+  reference and explanation, and maintainer records moved to
+  `docs/maintainers/`. The PDF/OCR tutorial now runs in CI against a generated
+  scan, and README links work on PyPI.
 - Warnings for text layers that exist but carry little of the page:
   `digits_only_text` (a table layer that kept its digits and lost its words),
   `mixed_script_tokens` (Latin look-alikes inside Cyrillic words, or the

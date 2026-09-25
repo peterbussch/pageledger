@@ -39,8 +39,28 @@ jobs:
         if: matrix.python-version == '3.13' && matrix.extras == 'dev,pdf'
         run: |
           sudo apt-get update
-          sudo apt-get install -y poppler-utils
+          sudo apt-get install -y poppler-utils tesseract-ocr
           pip install Pillow==12.3.0
+      - name: Run the PDF/OCR tutorial on a generated scan
+        if: matrix.python-version == '3.13' && matrix.extras == 'dev,pdf'
+        run: |
+          python - <<'PY'
+          from PIL import Image, ImageDraw, ImageFont
+
+          font = ImageFont.load_default(size=40)
+          pages = []
+          for text in ("A scanned page for the PageLedger tutorial.", "Its second page."):
+              page = Image.new("RGB", (1700, 2200), "white")
+              ImageDraw.Draw(page).text((150, 300), text, font=font, fill="black")
+              pages.append(page)
+          pages[0].save("document.pdf", "PDF", resolution=200, save_all=True, append_images=pages[1:])
+          PY
+          python examples/run_first_run.py \
+            --document docs/pdf-ocr-first-run.md \
+            --work-dir "$RUNNER_TEMP/pdf-ocr-tutorial" \
+            --python "$(command -v python)" \
+            --source-root . \
+            --fixture document.pdf
       - name: Run tests
         run: python -m pytest tests/pageledger/ -v -m "not stress"
 

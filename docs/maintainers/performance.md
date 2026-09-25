@@ -32,7 +32,7 @@ any value contains whitespace or unsupported characters. Because source paths
 are embedded in route and rerun artifacts, a filename containing a space makes
 those complete artifacts use the legacy dumper. Identical small inputs named
 `sample.txt` and `Source collection.txt` confirmed selection behavior, not a
-new timing result. See the [serializer guard](../pageledger/artifacts.py), the
+new timing result. See the [serializer guard](../../pageledger/artifacts.py), the
 [fixture definitions](https://github.com/peterbussch/pageledger/blob/186e5642ddd3caf9052ad6fe7acd9b9cb7bb0f25/scripts/pageledger_bench/workloads.py),
 the [measurement boundary](https://github.com/peterbussch/pageledger/blob/186e5642ddd3caf9052ad6fe7acd9b9cb7bb0f25/scripts/pageledger_bench/measure.py),
 and the [independent oracle](https://github.com/peterbussch/pageledger/blob/186e5642ddd3caf9052ad6fe7acd9b9cb7bb0f25/scripts/pageledger_bench/oracle.py)

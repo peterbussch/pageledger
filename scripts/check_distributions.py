@@ -11,9 +11,9 @@ from zipfile import ZipFile
 REQUIRED_SDIST_FILES = (
     "docs/document-first-run.md",
     "docs/first-run.md",
-    "docs/reader-trial.md",
-    "docs/performance.md",
-    "docs/releasing.md",
+    "docs/maintainers/reader-trial.md",
+    "docs/maintainers/performance.md",
+    "docs/maintainers/releasing.md",
     "examples/run_document_recovery.py",
     "examples/run_first_run.py",
     "scripts/check_distributions.py",

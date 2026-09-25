@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import csv
+import json
 import os
 import subprocess
 import sys
@@ -132,10 +134,34 @@ def test_first_run_tutorial_executes_the_documented_sequence(tmp_path: Path) -> 
         env=env,
     )
     assert result.returncode == 0, f"stdout:\n{result.stdout}\n\nstderr:\n{result.stderr}"
-    for receipt in (
-        "TUTORIAL_WARNING_OK",
-        "TUTORIAL_RERUN_SELECTION_OK",
-        "TUTORIAL_EXTERNAL_REVIEW_INTEGRITY_OK",
-        "TUTORIAL_REPLAY_RELOCATION_OK",
-    ):
-        assert receipt in result.stdout
+    work = tmp_path / "tutorial"
+
+    first = _lines(work / "runs" / "first" / "quality.jsonl")
+    flagged = [(row["page_id"], row["warnings"]) for row in first if row["warnings"]]
+    assert flagged == [("doc_0001_page_0002", ["replacement_characters"])]
+    pages = list(csv.DictReader((work / "pages.csv").open(newline="", encoding="utf-8")))
+    assert (pages[1]["page_number"], pages[1]["warnings"]) == ("2", "replacement_characters")
+
+    second = json.loads((work / "runs" / "second" / "manifest.json").read_text())
+    assert second["summary"]["pages_total"] == 1
+    assert [row["page_id"] for row in _lines(work / "runs" / "second" / "quality.jsonl")] == [
+        "doc_0001_page_0002"
+    ]
+    assert [path.name for path in (work / "runs" / "second" / "raw").iterdir()] == [
+        "doc_0001_page_0002.txt"
+    ]
+    assert (work / "review" / "decisions.csv").is_file()
+
+    replay = json.loads((work / "runs" / "replayed" / "replay.json").read_text())
+    assert replay["outcome"] == "exact"
+    assert (replay["raw"]["equal"], replay["raw"]["different"], replay["raw"]["missing"]) == (
+        3,
+        0,
+        0,
+    )
+    assert (work / "relocated" / "original-source.moved").is_file()
+    assert not (work / "sample.txt").exists()
+
+
+def _lines(path: Path) -> list[dict]:
+    return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
