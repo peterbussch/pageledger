@@ -1,0 +1,92 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/peterbussch/pageledger/schemas/export-page.json",
+  "title": "PageLedger JSONL Export Page",
+  "description": "One line of `pageledger export --format jsonl`: a page's selected text with its review state and attempt identity.",
+  "type": "object",
+  "properties": {
+    "job_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "source_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "page_number": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "page_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "disposition": {
+      "type": "string",
+      "minLength": 1
+    },
+    "attempt": {
+      "description": "The attempt whose output is the page's text; null when the page has none.",
+      "type": [
+        "object",
+        "null"
+      ],
+      "properties": {
+        "attempt_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "stage": {
+          "type": "string",
+          "minLength": 1
+        },
+        "adapter": {
+          "type": "string",
+          "minLength": 1
+        },
+        "model": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "output_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      },
+      "required": [
+        "attempt_id",
+        "stage",
+        "adapter",
+        "model",
+        "output_sha256"
+      ],
+      "additionalProperties": false
+    },
+    "text": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "review": {
+      "description": "This page's decision from its human review receipt (see job-review.schema.json); null when the page was not reviewed.",
+      "type": [
+        "object",
+        "null"
+      ]
+    }
+  },
+  "required": [
+    "job_id",
+    "source_sha256",
+    "page_number",
+    "page_id",
+    "disposition",
+    "attempt",
+    "text",
+    "review"
+  ],
+  "additionalProperties": false
+}

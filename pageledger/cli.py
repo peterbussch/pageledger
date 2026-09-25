@@ -15,6 +15,7 @@ from .aligner import align_run
 from .classifier import classify
 from .compare import compare_runs, render_comparison
 from .doctor import build_doctor_report
+from .export import FORMATS, export_job
 from .grading import GRADES, grade_basis_label
 from .replay import bundle_run, replay_bundle
 from .reports import inspect_run, run_pages_csv
@@ -92,6 +93,16 @@ def build_parser() -> argparse.ArgumentParser:
         job_parser.add_argument("--json", action="store_true", dest="json_output")
         if command == "review-job":
             job_parser.add_argument("--review", type=Path, required=True)
+
+    export_parser = subparsers.add_parser(
+        "export", help="Write a verified document job's text as txt, md, jsonl or TEI"
+    )
+    export_parser.add_argument("job_dir", type=Path)
+    export_parser.add_argument("--format", choices=FORMATS, required=True)
+    export_parser.add_argument("--out", type=Path, required=True)
+    export_parser.add_argument(
+        "--reviewed-only", action="store_true", help="Only pages with a human review receipt"
+    )
 
     run_parser = subparsers.add_parser(
         "run",
@@ -317,6 +328,7 @@ def main(argv: list[str] | None = None) -> int:
         "inspect-job": _cmd_job,
         "verify-job": _cmd_job,
         "review-job": _cmd_job,
+        "export": _cmd_export,
         "init-config": _cmd_init_config,
         "inspect-run": _cmd_inspect_run,
         "compare-runs": _cmd_compare_runs,
@@ -692,6 +704,12 @@ def _cmd_job(args: argparse.Namespace) -> int:
         if result.get("error"):
             print(result["error"], file=sys.stderr)
     return 1 if result.get("status") in {"halted", "failed", "fail"} else 0
+
+
+def _cmd_export(args: argparse.Namespace) -> int:
+    count = export_job(args.job_dir, args.out, format=args.format, reviewed_only=args.reviewed_only)
+    print(f"Exported {count} pages to {args.out}")
+    return 0
 
 
 # -- rerun ---------------------------------------------------------------------

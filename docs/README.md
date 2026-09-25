@@ -13,6 +13,7 @@ work as plain files. Choose an entry point below.
 | Process a document through local text, OCR, and optional image stages | [Document processing jobs](processing-spec.md) |
 | Recover interrupted extraction in place | [Checkpoint recovery](checkpoint-spec.md#get-started) |
 | Review selected text and record human decisions | [Document reports and review receipts](document-report-spec.md) |
+| Export verified document text | [Document export formats and citation](export.md) |
 
 ## Working with a collection
 
@@ -36,6 +37,7 @@ work as plain files. Choose an entry point below.
 - [Checkpoint and page-attempt records](checkpoint-spec.md)
 - [Document job](processing-spec.md#durable-job-and-attempts)
 - [Document report and human review receipts](document-report-spec.md)
+- [Document export formats and citation](export.md)
 - [Reader trial protocol and results form](reader-trial.md)
 - [Page image input evidence](image-evidence-spec.md)
 

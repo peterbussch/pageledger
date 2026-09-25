@@ -198,6 +198,8 @@ The job publishes `document.json`, `report.md` and `transcript.md`. See
 review receipt examples. `report.md` and the exact final UTF-8 transcript are
 rendered from JSON. The transcript digest covers its serialized bytes, including
 headings and source-page links; no implicit NFC conversion occurs.
+Reports name the source by its path relative to the job directory. To use the
+text elsewhere, [export it](export.md) as plain text, Markdown, JSONL or TEI.
 
 ```bash
 pageledger review-job jobs/book --review reviewed-pages.json

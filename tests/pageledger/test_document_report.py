@@ -122,17 +122,17 @@ def test_source_links_preserve_filename_characters(tmp_path, filename):
     from urllib.parse import quote, unquote, urlsplit
 
     job = job_fixture(tmp_path)
-    job["source"]["path"] = f"/documents/{filename}"
+    job["source"]["path"] = str(tmp_path.parent / "documents" / filename)
     article = "https://example.org/article?q=synthetic%20draft#section"
     job["links"]["article"] = article
     report = write_document_report(job, tmp_path)
     source_link = report["pages"][0]["source_link"]
     parsed = urlsplit(source_link)
-    assert unquote(parsed.path) == job["source"]["path"]
+    assert unquote(parsed.path) == f"../documents/{filename}"
     assert parsed.query == ""
     assert parsed.fragment == "page=1"
     markdown = render_document_report(report)
-    assert f"(<{quote(job['source']['path'], safe='/')}>)" in markdown
+    assert f"(<{quote(f'../documents/{filename}', safe='/')}>)" in markdown
     assert f"(<{source_link}>)" in markdown
     assert f"(<{source_link}>)" in render_transcript(report)
     assert f"(<{article}>)" in markdown
@@ -411,7 +411,7 @@ def test_current_report_separates_selected_ocr_from_historical_blank_hold(tmp_pa
     report = build_document_report(job, tmp_path)
     rendered = render_document_report(report)
 
-    assert report["report_format"] == "0.5.1"
+    assert report["report_format"] == "0.6"
     assert "| Page | Current output | Review status | Recorded concerns |" in rendered
     assert "Local OCR" in rendered
     assert "Candidate blank" in rendered

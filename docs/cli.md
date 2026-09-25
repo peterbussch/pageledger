@@ -56,6 +56,19 @@ receipts. Create the review file using the
 [review receipt contract](document-report-spec.md#human-review-receipt).
 All three commands accept `--json`.
 
+## export
+
+```bash
+pageledger export jobs/book --format txt --out book.txt
+pageledger export jobs/book --format jsonl --out book.jsonl --reviewed-only
+```
+
+Writes a job's selected text page by page as `txt`, `md`, `jsonl` or `tei`,
+with each page's review state and the attempt that produced it. A job that does
+not verify is refused. `--reviewed-only` keeps only pages with a human review
+receipt. See [Export document text](export.md) for the formats and for citing an
+export.
+
 ## run
 
 ```bash

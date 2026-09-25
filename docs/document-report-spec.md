@@ -13,7 +13,7 @@ and retained attempt evidence are the sources for reconstructing the report. A r
 | Field | Meaning |
 | --- | --- |
 | `schema_version` | `"0.1"` |
-| `report_format` | Optional `"0.5.1"` marker for the current human summary layout. Its absence identifies a 0.5.0 report and selects the legacy renderer during verification. |
+| `report_format` | `"0.6"`: the source is named by its path relative to the job directory. `"0.5.1"`: by its absolute path. Absent on 0.5.0 reports, which use the legacy renderer. |
 | `job_id`, `created_at` | Job identity and creation timestamp |
 | `source` | Original `path`, exact byte `sha256`, `page_count`, and annotation inventory |
 | `selected_pages` | Unique, one-based source page numbers requested for this job |
@@ -196,7 +196,7 @@ receipt again does not append a duplicate. Reports preserve the full history in
 
 ## Human summary rendering
 
-Current reports marked with `report_format: "0.5.1"` use separate page-summary
+Reports marked with `report_format` `"0.5.1"` or `"0.6"` use separate page-summary
 columns for `Current output`, `Review status`, and `Recorded concerns`. Current
 output links to the selected completed artifact and identifies its extraction
 stage. Review status describes whether source review is pending or records the
@@ -215,9 +215,15 @@ source review. Failed and unknown latest attempts remain visible even when a
 previous completed output is selected. A source-only human receipt is shown as
 such and does not acquire a selected output.
 
+Reports marked `"0.6"` name the source by its path relative to the job
+directory, in `source.path` and in every page link, so a shared report does not
+reveal where its owner keeps files. A source on another Windows drive is named
+by its file name alone. `job.json` keeps the absolute path, which verification
+needs. Reports marked `"0.5.1"` keep the absolute path and still verify.
+
 Reports without `report_format` use the 0.5.0 renderer. `verify_document_report`
 and `verify_job` select that renderer for those reports so existing report bytes
-remain verifiable; current reports select the 0.5.1 renderer from their marker.
+remain verifiable; marked reports select their versioned renderer.
 
 ## Integrity and rendering APIs
 

@@ -9,8 +9,8 @@
       "const": "0.1"
     },
     "report_format": {
-      "const": "0.5.1",
-      "description": "Current human report rendering format. Absent on 0.5.0 reports, which use the legacy rendering."
+      "enum": ["0.5.1", "0.6"],
+      "description": "0.5.1 uses the historical absolute source links; 0.6 uses paths relative to the job directory. Reports without this marker use the 0.5.0 renderer."
     },
     "limits_history": {
       "type": "array",

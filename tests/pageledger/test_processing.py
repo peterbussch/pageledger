@@ -407,13 +407,17 @@ def test_verify_job_rejects_selected_output_without_its_attempt(setup):
 
 
 def test_verify_job_accepts_a_legacy_report_without_format_marker(setup):
-    from pageledger.document_report import render_document_report
+    from pageledger.checkpoint import read_record
+    from pageledger.document_report import (
+        build_document_report,
+        render_document_report,
+        render_transcript,
+    )
 
     launch(setup)
-    path = setup[2] / "document.json"
-    report = json.loads(path.read_text())
-    report.pop("report_format")
-    path.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n")
+    report = build_document_report(read_record(setup[2] / "job.json"), setup[2], report_format=None)
+    (setup[2] / "document.json").write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n")
+    (setup[2] / "transcript.md").write_text(render_transcript(report))
     (setup[2] / "report.md").write_text(render_document_report(report))
 
     assert verify_job(setup[2])["status"] == "pass"

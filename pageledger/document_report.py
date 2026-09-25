@@ -5,13 +5,16 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
+import os
 from pathlib import Path
 from urllib.parse import quote
 
 from .checkpoint import atomic_bytes
 from .processing_policy import _attempt_holds, validate_review, warning_holds
 
-_CURRENT_REPORT_FORMAT = "0.5.1"
+_CURRENT_REPORT_FORMAT = "0.6"
+# 0.6 names the source by a path relative to the job; 0.5.1 kept the absolute path.
+_REPORT_FORMATS = {"0.5.1", _CURRENT_REPORT_FORMAT}
 
 _STAGE_LABELS = {
     "local_text": "Local text",
@@ -56,6 +59,14 @@ def _artifact_bytes(root: Path, relative: str, expected_hash: str) -> bytes:
     if hashlib.sha256(content).hexdigest() != expected_hash:
         raise ValueError(f"Report artifact hash mismatch: {relative}")
     return content
+
+
+def relative_path(path: str, start: Path) -> str:
+    """`path` relative to `start`, or only its name when it is on another Windows drive."""
+    try:
+        return Path(os.path.relpath(path, start)).as_posix()
+    except ValueError:
+        return Path(path).name
 
 
 def _link(label: str, target: str) -> str:
@@ -195,7 +206,7 @@ def _recorded_concerns(page: dict, holds_for: dict[str, str]) -> str:
 def render_document_report(report: dict) -> str:
     """Render a report, retaining the 0.5.0 format when its marker is absent."""
     current = "report_format" in report
-    if current and report["report_format"] != _CURRENT_REPORT_FORMAT:
+    if current and report["report_format"] not in _REPORT_FORMATS:
         raise ValueError(f"Unsupported document report format: {report['report_format']}")
     source, counts = report["source"], report["counts"]
     annotations, retention = source["annotations"], report["source_retention"]
@@ -317,9 +328,12 @@ def build_document_report(
         if optional in job:
             report[optional] = copy.deepcopy(job[optional])
     if report_format is not None:
-        if report_format != _CURRENT_REPORT_FORMAT:
+        if report_format not in _REPORT_FORMATS:
             raise ValueError(f"Unsupported document report format: {report_format}")
         report["report_format"] = report_format
+    if report_format == "0.6":
+        report["source"]["path"] = relative_path(job["source"]["path"], root)
+    quoted_source = quote(report["source"]["path"], safe="/")
     pages = []
     for original in job["pages"]:
         page = copy.deepcopy(original)
@@ -365,7 +379,7 @@ def build_document_report(
                 "format": chosen["format"],
                 "text": text,
             }
-        page["source_link"] = f"{quote(job['source']['path'], safe='/')}#page={page['page_number']}"
+        page["source_link"] = f"{quoted_source}#page={page['page_number']}"
         pages.append(page)
     report["pages"] = pages
     report["counts"] = {

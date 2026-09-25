@@ -20,9 +20,19 @@ Release changes follow the [artifact compatibility policy](docs/run-manifest-spe
   review: after extraction the page joins the review queue with reason
   `route_review:<type>`. `classify` copies the flag into route maps; route
   maps without it behave as before.
+- `pageledger export JOB --format txt|md|jsonl|tei --out FILE` writes a
+  verified job's selected text page by page, with each page's review state,
+  the attempt and engine that produced its text, and the text's SHA-256.
+  `--reviewed-only` keeps only reviewed pages. The TEI is a minimal TEI P5
+  document with a `<pb>` for every source page and reviewed and unreviewed
+  pages marked apart. Links to the source are relative to the exported file.
 
 ### Changed
 
+- Document reports name the source by its path relative to the job directory,
+  so a shared `report.md`, `transcript.md` or `document.json` no longer shows
+  where its owner keeps files. New reports record `report_format: "0.6"`;
+  reports written by 0.5.1 keep their absolute paths and still verify.
 - `init-config` now extracts `sparse`, `table_likely` and `unknown` pages with
   `review: true`. They were previously routed to review without extraction,
   so a first `classify` and `run --routes` on a statistical volume extracted
@@ -117,8 +127,9 @@ Release changes follow the [artifact compatibility policy](docs/run-manifest-spe
   still validate: `skipped_inputs` in manifests and checkpoints, the four new
   `text_quality` counts in quality lines, and `hold_policy` and
   `limits_history` in jobs and document reports. Job and report `status` may
-  now be `paused_budget`. Eight retained 0.5.1 document jobs, seven of them with
-  `low_confidence` pages, pass `verify-job` unchanged.
+  now be `paused_budget`, and a report's `report_format` may be `"0.6"`. Eight
+  retained 0.5.1 document jobs, seven of them with `low_confidence` pages, pass
+  `verify-job` unchanged.
 - The `pdf` extra adds `cryptography` (through `pypdf[crypto]`). Core still
   depends only on PyYAML.
 
