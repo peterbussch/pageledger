@@ -41,7 +41,83 @@ require zero automatic retries and stop after a failed or uncertain request.
 See [checkpoint recovery](checkpoint-spec.md) and
 [image input evidence](image-evidence-spec.md) for durable response handling.
 
-## Python sketch
+## Write and check a small adapter
+
+This complete example reads a text file whose pages are separated by form
+feeds. Save it as
+`toy_adapter.py` beside `pageledger.yml`. It uses the actual result type from
+PageLedger, rather than defining a competing protocol type.
+
+```python
+from pathlib import Path
+from typing import ClassVar
+
+from pageledger.adapters import ExtractionResult, adapter_conformance_check
+
+
+class ToyAdapter:
+    name: ClassVar[str] = "toy"
+    version: ClassVar[str] = "1"
+    deterministic: ClassVar[bool] = True
+    input_types: ClassVar[tuple[str, ...]] = ("text",)
+    output_types: ClassVar[tuple[str, ...]] = ("text",)
+    capabilities: ClassVar[tuple[str, ...]] = ("embedded_text", "local")
+
+    def supports(self, action: str) -> bool:
+        return action == "transcribe_text"
+
+    def page_count(self, source: Path) -> int:
+        return source.read_text(encoding="utf-8").count("\f") + 1
+
+    def extract(
+        self,
+        source: Path,
+        *,
+        page_id: str,
+        page_number: int,
+        action: str,
+        prompt: str | None = None,
+    ) -> ExtractionResult:
+        if not self.supports(action):
+            raise ValueError(f"Toy adapter does not support action: {action}")
+        _ = page_id, prompt
+        pages = source.read_text(encoding="utf-8").split("\f")
+        return ExtractionResult(
+            content=pages[page_number - 1], format="text", confidence=None,
+            model="toy-1", warnings=[], usage={"pages": 1},
+        )
+
+
+if __name__ == "__main__":
+    issues = adapter_conformance_check(ToyAdapter())
+    if issues:
+        raise SystemExit("\n".join(issues))
+    print("ToyAdapter conforms")
+```
+
+Run `python toy_adapter.py`; an empty issue list prints `ToyAdapter conforms`.
+Then configure the adapter in a complete config (the taxonomy is required):
+
+```yaml
+schema_version: "0.1"
+taxonomy:
+  page_types:
+    prose:
+      default_action: transcribe_text
+run:
+  adapter: toy_adapter:ToyAdapter
+```
+
+For `sample.txt`, containing one or more form-feed-separated pages, run
+`pageledger run sample.txt --config pageledger.yml --out runs/toy
+--adapter-path .`. A conformance check validates declared shape; it does not
+prove extraction correctness. Add tests for supported actions, page numbering,
+input handling, and failures. An image adapter follows the same one-call,
+one-page contract: declare `input_types = ("image",)` and return
+`usage={"pages": 1}` for each image file. A directory of image files is a set
+of inputs, not one multi-page source.
+
+## Python protocol reference
 
 ```python
 from dataclasses import dataclass
@@ -462,9 +538,10 @@ Built-in adapters: `text`, `pdf_text` (through `pageledger[pdf]`), `pdf_ocr`
 vision model. Anything else is a custom adapter; the adapter contract matters
 more than adapter breadth.
 
-Copy-paste examples live in `examples/`:
+Runnable examples live in `examples/`:
 
-- `tesseract_pdftoppm_adapter.py`
+- `tesseract_pdftoppm_adapter.py`: compatibility import for existing configs;
+  new configs should use the built-in `pdf_ocr` adapter
 - `docling_adapter.py`: machine-level standard or local-VLM Docling conversion,
   document-batched into page-level Markdown
 - `cloud_vlm_adapter_skeleton.py`

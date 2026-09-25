@@ -203,6 +203,12 @@ The workflow is the same at every tier: run cheap, read the flags, rerun
 just the flagged pages with something stronger, then inspect the unranked
 cross-adapter comparison and choose downstream output explicitly.
 
+`rerun` processes only flagged pages; it is not a whole-document cleanup
+command. For a job's page-ordered text, review state, and hashes, use
+[`pageledger export`](../export.md). See [troubleshooting](../troubleshooting.md)
+for setup diagnostics, rendering limits, and direct page reproduction, and
+[sharing and citation](../share-and-cite.md) before depositing results.
+
 ## Honest limits
 
 - Tesseract output on 1960s–70s typescript is usable but rough: stamps,

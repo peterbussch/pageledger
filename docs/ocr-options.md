@@ -14,7 +14,7 @@ The examples below show local, hosted, and mixed extraction paths.
 | Scanned PDF, plain text | `pdf_ocr` (Tesseract) | yes | free, plus compute | Image-only or noisy-layer scans where plain text is enough | Built-in adapter; needs poppler + Tesseract installed. `dpi`, `lang` and `max_render_pixels` via `run.adapter_options`. |
 | Scanned PDF, read by a vision model | `vision` | yes, or hosted | free locally, plus compute; provider rates when hosted | Tables, mixed scripts and damaged print that Tesseract misreads; every page needs review | Built-in adapter; needs Poppler and an OpenAI-compatible endpoint. See [Read pages with a vision model](vision-adapter.md). |
 | Baseline OCR preprocessing | OCRmyPDF + Tesseract | yes | free, plus compute | Producing a searchable PDF for other tools too | External preprocessing, then `pdf_text`. |
-| Local-LLM cleanup | Tesseract + local model (mlx_lm, llama.cpp, Ollama) | yes | free, plus compute | Fixing character-level OCR errors without sending pages anywhere | Custom adapter; see [`local_llm_cleanup_adapter.py`](../examples/local_llm_cleanup_adapter.py) or [`ollama_cleanup_adapter.py`](../examples/ollama_cleanup_adapter.py). |
+| Local-LLM cleanup | Tesseract + local model (mlx_lm, llama.cpp, Ollama) | yes | free, plus compute | Fixing character-level OCR errors without sending pages anywhere | Custom adapter; see [`local_llm_cleanup_adapter.py`](../examples/local_llm_cleanup_adapter.py) or [`ollama_cleanup_adapter.py`](../examples/ollama_cleanup_adapter.py). `rerun` handles flagged pages only. |
 | Local document conversion | Docling | yes | free/open, plus compute | PDF/document conversion with layout-aware output | Functional machine-level example in [`docling_adapter.py`](../examples/docling_adapter.py), returning page-level Markdown. |
 | Markdown/JSON extraction | Marker | yes | free/open, plus compute | Markdown, JSON, tables, equations, forms, images | Custom adapter returning Markdown or JSON. |
 | Local OCR/layout/tables | Surya | yes | free/open, often heavier compute | OCR, reading order, layout, table recognition | Custom adapter with `capabilities=("ocr", "layout", "tables", "local")`. |
@@ -159,3 +159,7 @@ evidence:
 
 The best default is usually hybrid: run cheap local extraction first, then route
 only suspicious or high-value pages to a stronger OCR/VLM path.
+
+For symptom-based recovery, see [Troubleshooting](troubleshooting.md). To
+assemble and share usable job text, see [Export document text](export.md) and
+[Share and cite results](share-and-cite.md).

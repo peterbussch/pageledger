@@ -1,4 +1,4 @@
-# Example PageLedger page taxonomy.
+# fragment: example page taxonomy to paste into a complete config.
 #
 # A taxonomy names page types and maps them to default extraction actions.
 # This file is deliberately domain-specific: use it with a matching

@@ -13,6 +13,9 @@ shape works with llama.cpp or vLLM — swap ``_generate``.
     pageledger rerun runs/tesseract --config cleanup.yml \\
         --out runs/cleaned --adapter-path examples
 
+``rerun`` applies this adapter only to the parent's flagged pages. For a
+whole-document cleanup, use ``pageledger run`` with the same config and source.
+
 with ``cleanup.yml``:
 
     schema_version: "0.1"

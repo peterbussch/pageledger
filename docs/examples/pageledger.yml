@@ -1,7 +1,7 @@
 # Combined PageLedger config (artifact/config schema 0.1, package 0.5.2).
 #
-# The split files in this examples directory are easier to read in docs. This
-# single-file form is the recommended first-use shape.
+# This is a complete config. The other YAML files in this directory are
+# annotated excerpts to paste into one config, not files to combine at load time.
 
 schema_version: "0.1"  # Config file format version.
 
