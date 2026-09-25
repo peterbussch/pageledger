@@ -1032,13 +1032,15 @@ def test_separate_latin_words_in_cyrillic_prose_are_not_mixed_script(tmp_path):
 def test_private_use_characters_warn(tmp_path):
     # Old-style figures that a 1990s PDF mapped to the Private Use Area: the
     # year 1830 is unreadable in the text layer.
-    entry = _page_warnings(tmp_path, "Въ  году было обоего пола много душъ въ уѣздѣ.")
+    entry = _page_warnings(
+        tmp_path, "Въ \uf731\uf738\uf733\uf730 году было обоего пола много душъ въ уѣздѣ."
+    )
     assert "private_use_characters" in entry["warnings"]
     assert entry["text_quality"]["private_use_count"] == 4
 
 
 def test_bullet_glyphs_are_not_private_use_warnings(tmp_path):
-    entry = _page_warnings(tmp_path, " first point\n second point\n" * 5)
+    entry = _page_warnings(tmp_path, "\uf0b7 first point\n\uf0b7 second point\n" * 5)
     assert "private_use_characters" not in entry["warnings"]
     assert entry["text_quality"]["private_use_count"] == 0
 

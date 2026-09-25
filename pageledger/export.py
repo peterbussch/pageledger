@@ -22,7 +22,7 @@ from .processing import verify_job
 FORMATS = ("txt", "md", "jsonl", "tei")
 TEI = "http://www.tei-c.org/ns/1.0"
 # Characters XML 1.0 cannot carry; OCR engines emit some of them.
-_NOT_XML = re.compile("[\x00-\x08\x0b\x0c\x0e-\x1f￾￿]")
+_NOT_XML = re.compile("[\x00-\x08\x0b\x0c\x0e-\x1f\ufffe\uffff]")
 
 
 def export_job(job_dir: Path, out: Path, *, format: str, reviewed_only: bool = False) -> int:
