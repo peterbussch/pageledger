@@ -59,8 +59,10 @@ prompt_sha256=prompt_hash)` before submitting a paid request. The same check
 runs before checkpointing and during verification. It checks the bindings and
 retained JPEG hash, byte count, and dimensions.
 
-`examples/openai_image_adapter.py:OpenAIImageAdapter` is a thin optional
-adapter. Install Poppler and Pillow separately; no provider SDK is required.
+The built-in [vision adapter](vision-adapter.md) writes this evidence in a
+job's image and second-opinion stages.
+`examples/openai_image_adapter.py:OpenAIImageAdapter` is an older, thin
+optional adapter. Install Poppler and Pillow separately; no provider SDK is required.
 The controller supplies `evidence_dir` as the absolute child run root followed
 by `/evidence`. The parent directory must exist by extraction time. Example
 adapter options are:

@@ -308,14 +308,31 @@ blank decisions so those pages remain unreviewed.
 
 ## Image adapter boundary
 
-The optional [OpenAI-compatible example](../examples/openai_image_adapter.py)
-accepts explicit Gemini or DeepSeek model names, checks the live model list,
-sends one bounded JPEG request, and records returned identity and input-image
-provenance. Pillow and Poppler belong to that adapter environment. Core includes
-no provider SDK, OCR engine or pricing catalog. See
-[image-evidence-spec.md](image-evidence-spec.md).
+The built-in [vision adapter](vision-adapter.md) reads a page image with a
+model behind an OpenAI-compatible endpoint: on this machine, or over HTTPS
+with `allow_remote: true`. In the image and second-opinion stages it keeps the
+exact JPEG it sent, as described in [image evidence](image-evidence-spec.md):
+
+```yaml
+# fragment
+processing:
+  image:
+    adapter: vision
+    adapter_options:
+      base_url: http://127.0.0.1:8080/v1
+      model: YOUR_VISION_MODEL
+```
+
+A model writes its reading rather than reading it off the page. Unless a
+clean reading from another engine agrees with it, the job holds that text for
+review as `unconfirmed_model_output`; see [warnings and holds](warnings.md).
+
+The older [OpenAI-compatible example](../examples/openai_image_adapter.py)
+remains for existing configs. It accepts only Gemini or DeepSeek model names,
+checks the live model list, and needs Pillow and Poppler in its environment.
+Core includes no provider SDK, OCR engine or pricing catalog.
 
 Image-evidence runs currently refuse `bundle` with an explicit unsupported
-error. They remain verifiable and resumable in place. Ordinary generation-zero
-text bundles/replay remain supported. Whole-job portable bundles, synthesis, Zotero/Drive connectors, and file
+error. They remain verifiable and resumable in place. Original text runs (not
+reruns) can still be bundled and replayed. Whole-job portable bundles, synthesis, Zotero/Drive connectors, and file
 retirement are outside the processing workflow.

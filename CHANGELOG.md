@@ -13,7 +13,13 @@ Release changes follow the [artifact compatibility policy](docs/run-manifest-spe
   recipes. The documentation index is grouped into tutorials, how-to guides,
   reference and explanation, and maintainer records moved to
   `docs/maintainers/`. The PDF/OCR tutorial now runs in CI against a generated
-  scan, and README links work on PyPI.
+  scan, and README links work on PyPI. Capabilities and limits are grouped by
+  task, and each recovery rule is stated once: for runs in the checkpoint
+  specification, for document jobs in the processing specification.
+  `docs/examples/processing.yml` now matches the configs shown in the README
+  and processing specification (a job pauses after 100 attempted pages), a
+  test keeps them identical, and its optional image stage uses the built-in
+  `vision` adapter.
 - Warnings for text layers that exist but carry little of the page:
   `digits_only_text` (a table layer that kept its digits and lost its words),
   `mixed_script_tokens` (Latin look-alikes inside Cyrillic words, or the

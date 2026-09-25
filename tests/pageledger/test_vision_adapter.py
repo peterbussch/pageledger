@@ -250,3 +250,25 @@ def test_a_document_job_can_use_a_local_vision_model_for_ocr(pdf, endpoint, tmp_
     assert result["status"] == "completed"
     page = json.loads((tmp_path / "job" / "document.json").read_text())["pages"][0]
     assert page["selected_output"]["text"] == "page text"
+
+
+def test_a_document_job_can_send_empty_pages_to_a_vision_model(pdf, endpoint, tmp_path):
+    config = tmp_path / "config.yml"
+    processing = {
+        "local_text": {"adapter": "pdf_text"},
+        "local_ocr": {"adapter": "pdf_text"},
+        "image": {
+            "adapter": "vision",
+            "adapter_options": {"base_url": endpoint, "model": "requested"},
+        },
+        "limits": {"max_image_pages": 1},
+    }
+    config.write_text(yaml.safe_dump({"schema_version": "0.1", "processing": processing}))
+
+    result = process(source=pdf, config_path=config, out_dir=tmp_path / "job")
+
+    assert result["status"] == "completed"
+    page = json.loads((tmp_path / "job" / "document.json").read_text())["pages"][0]
+    assert page["selected_output"]["attempt_id"].startswith("image-")
+    assert page["disposition"] == "unconfirmed_model_output"
+    assert any((tmp_path / "job" / "attempts").glob("image-*/evidence/*"))

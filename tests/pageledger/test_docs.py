@@ -183,3 +183,11 @@ def test_example_config_files_load(example: Path) -> None:
     config = load_config(example, validate_adapter=False)
     if config.adapter_name is not None and "processing" not in config.data:
         assert config.has_page_types, f"{example.name} runs an adapter but has no page types"
+
+
+@pytest.mark.parametrize("document", ["README.md", "docs/processing-spec.md"])
+def test_inline_processing_config_matches_the_example_file(document: str) -> None:
+    text = (ROOT / document).read_text(encoding="utf-8")
+    inline = next(block for block in _code_blocks(text, "yaml") if "processing:" in block)
+    example = ROOT / "docs" / "examples" / "processing.yml"
+    assert yaml.safe_load(inline) == yaml.safe_load(example.read_text(encoding="utf-8"))

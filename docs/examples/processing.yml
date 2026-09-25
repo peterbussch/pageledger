@@ -1,5 +1,5 @@
 # Document job: local PDF text followed by OCR for weak pages.
-schema_version: '0.1'
+schema_version: "0.1"
 processing:
   local_text:
     adapter: pdf_text
@@ -9,16 +9,14 @@ processing:
       lang: eng
       dpi: 300
   limits:
-    max_attempt_pages: 2000
+    max_attempt_pages: 100
     max_image_pages: 0
-  # Explicit opt-in, with examples/ on --adapter-path and the adapter's optional
-  # dependencies installed. Replace the model placeholder with an available
-  # Gemini or DeepSeek model from your provider/router.
+  # Optional: send the pages OCR could not read to a vision model. This needs
+  # an OpenAI-compatible endpoint that serves the model (see
+  # docs/vision-adapter.md) and a positive limits.max_image_pages.
   # image:
-  #   adapter: openai_image_adapter:OpenAIImageAdapter
+  #   adapter: vision
   #   adapter_options:
-  #     model: gemini-YOUR_MODEL
-  #     max_output_tokens: 8192
-  #     timeout: 120
-  # Set limits.max_image_pages to a positive bound before enabling image.
-  # second_opinion can use another explicit Gemini or DeepSeek model.
+  #     base_url: http://127.0.0.1:8080/v1
+  #     model: YOUR_VISION_MODEL
+  # A second_opinion stage can ask a second model in the same way.

@@ -95,6 +95,8 @@ and keeps every attempt. Create `processing.yml`:
 ```yaml
 schema_version: "0.1"
 processing:
+  local_text:
+    adapter: pdf_text
   local_ocr:
     adapter: pdf_ocr
     adapter_options:
