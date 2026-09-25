@@ -234,7 +234,10 @@ Adapter-native warnings appear in the same `warnings` list. The built-in
 `pdf_ocr` adapter adds `render_dpi_capped` when it rendered a page below the
 requested DPI to stay within `run.adapter_options.max_render_pixels`; the
 page's `model` string then records both values, for example
-`dpi=94 (requested 300)`. See [oversized pages](ocr-options.md#oversized-pages).
+`dpi=94 (requested 300)`. When a page is rendered above the requested DPI to
+preserve embedded image resolution, its `model` string records that reason,
+for example `dpi=621 (requested 300, native image)`. See
+[page size and rendering](ocr-options.md#page-size-and-rendering).
 
 ### output_integrity fields
 

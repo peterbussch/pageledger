@@ -206,7 +206,7 @@ lineage and cannot be used as bundle baselines.
   that rendering it at your DPI would exceed `max_render_pixels`, so it was
   rendered at a lower DPI, which provenance records. A page that would need
   less than 72 DPI stops the run with `render_limit: ...`. See
-  [oversized pages](ocr-options.md#oversized-pages) before raising the limit.
+  [page size and rendering](ocr-options.md#page-size-and-rendering) before raising the limit.
 - Adapter crash, budget exceeded, or invalid result: a partial run directory is
   still written. Check `manifest.json` → `status` for `"failed"` (mid-run
   failure) vs. `"completed"` (success). Inspect `run.log` for per-page error

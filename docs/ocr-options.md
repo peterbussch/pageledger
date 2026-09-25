@@ -43,17 +43,29 @@ New runs record the concrete built-in backend identity in per-page provenance:
 Poppler/pdftoppm, DPI, and language. A custom OCR/VLM adapter should put the
 equivalent model/revision and material runtime settings in `ExtractionResult.model`.
 
-### Oversized pages
+### Page size and rendering
 
-`pdf_ocr` measures each page before rendering it. Some scans declare pages far
-larger than the paper, and at 300 DPI one such page can need hundreds of
-megapixels. When a page would exceed `max_render_pixels` (60,000,000 by
-default; an A2 sheet at 300 DPI is about 35 million), that page is rendered at
-the highest DPI that fits. Its quality line gets the warning
-`render_dpi_capped`, and its `model` string records both values, for example
-`dpi=94 (requested 300)`. The DPI is never raised. A page that would need less
-than 72 DPI stops the run with `render_limit`; raise `max_render_pixels` or
-split the page.
+`pdf_ocr` checks each page's size before rendering it, because scanned PDFs
+often declare page sizes that have little to do with the paper.
+
+- **Too large.** An Internet Archive scan of a 1911 memorial book declares
+  pages 1.75 by 2.47 metres, about 600 megapixels each at 300 DPI. When a page
+  would exceed `max_render_pixels` (60,000,000 by default; an A2 sheet at 300
+  DPI is about 35 million), it is rendered at the highest DPI that fits. Its
+  quality line gets the warning `render_dpi_capped`, and its `model` string
+  records both values, for example `dpi=94 (requested 300)`. A page that would
+  need less than 72 DPI stops the run with `render_limit`; raise
+  `max_render_pixels` or split the page.
+- **Too small.** An 1872 volume declares 18 by 29 mm pages holding scans about
+  440 pixels wide. At 300 DPI such a page renders about 217 pixels wide, half
+  the scan's own resolution. When pypdf is installed, `pdf_ocr` reads the pixel
+  size of each page's embedded images, without decoding them, and renders at
+  the largest image's own resolution instead, up to 1200 DPI. The `model`
+  string records the reason, for example `dpi=621 (requested 300, native image)`.
+  The pixel cap still applies afterwards.
+
+Born-digital pages, pages without images, and installations without pypdf keep
+the requested DPI.
 
 ### Docling: standard first, VLM selectively
 

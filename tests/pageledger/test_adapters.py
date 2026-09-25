@@ -1133,6 +1133,8 @@ def test_pdf_ocr_confidence_survives_malformed_tsv(tmp_path: Path, monkeypatch) 
 
 
 def _fake_binaries_with_langs(monkeypatch, langs: list[str]):
+    calls: list[list[str]] = []
+
     def fake_run(argv, **kwargs):  # noqa: ANN001, ANN003
         binary = Path(argv[0]).name
         if "--version" in argv:
@@ -1145,6 +1147,7 @@ def _fake_binaries_with_langs(monkeypatch, langs: list[str]):
             listed = "\n".join(langs)
             body = f'List of available languages in "/fake/tessdata/" ({len(langs)}):\n{listed}\n'
             return subprocess.CompletedProcess(argv, 0, stdout=body, stderr="")
+        calls.append(list(argv))
         if binary == "pdftoppm":
             prefix = Path(argv[-1])
             (prefix.parent / "page-1.png").write_bytes(b"png")
@@ -1155,6 +1158,7 @@ def _fake_binaries_with_langs(monkeypatch, langs: list[str]):
 
     monkeypatch.setattr(adapters_module.shutil, "which", lambda name: f"/fake/bin/{name}")
     monkeypatch.setattr(adapters_module.subprocess, "run", fake_run)
+    return calls
 
 
 def test_pdf_ocr_rejects_missing_language_pack(tmp_path: Path, monkeypatch) -> None:
@@ -1596,6 +1600,126 @@ def test_unreadable_probe_keeps_requested_dpi(monkeypatch) -> None:
         300,
         False,
     )
+
+
+def _image_pdf(path: Path, *, width: int = 440, height: int = 700, pages: int = 1) -> Path:
+    from pypdf import PdfWriter
+    from pypdf.generic import DecodedStreamObject, DictionaryObject, NameObject, NumberObject
+
+    writer = PdfWriter()
+    for _ in range(pages):
+        page = writer.add_blank_page(width=18 * 72 / 25.4, height=29 * 72 / 25.4)
+        image = DecodedStreamObject()
+        image.set_data(b"\x00" * width * height)
+        image.update(
+            {
+                NameObject("/Type"): NameObject("/XObject"),
+                NameObject("/Subtype"): NameObject("/Image"),
+                NameObject("/Width"): NumberObject(width),
+                NameObject("/Height"): NumberObject(height),
+                NameObject("/ColorSpace"): NameObject("/DeviceGray"),
+                NameObject("/BitsPerComponent"): NumberObject(8),
+            }
+        )
+        page[NameObject("/Resources")] = DictionaryObject(
+            {
+                NameObject("/XObject"): DictionaryObject(
+                    {NameObject("/Im0"): writer._add_object(image)}
+                )
+            }
+        )
+    writer.write(path)
+    return path
+
+
+def test_pdf_ocr_raises_render_dpi_to_embedded_image_resolution(
+    tmp_path: Path, monkeypatch
+) -> None:
+    pytest.importorskip("pypdf")
+    calls = _fake_binaries_with_langs(monkeypatch, ["eng"])
+    monkeypatch.setattr(adapters_module, "_probe_size_at_10dpi", lambda *args: (7, 12))
+    pdf = _image_pdf(tmp_path / "small-page.pdf")
+    result = PdfOcrAdapter().extract(
+        pdf, page_id="doc_0001_page_0001", page_number=1, action="transcribe_text"
+    )
+    render = [call for call in calls if Path(call[0]).name == "pdftoppm" and "-png" in call][-1]
+    dpi = render[render.index("-r") + 1]
+    assert int(dpi) == 621
+    assert "dpi=621 (requested 300, native image)" in result.model
+
+
+def test_pdf_ocr_born_digital_keeps_requested_dpi(tmp_path: Path, monkeypatch) -> None:
+    _fake_binaries_with_langs(monkeypatch, ["eng"])
+    monkeypatch.setattr(adapters_module, "_probe_size_at_10dpi", lambda *args: (7, 12))
+    pdf = _one_page_pdf(tmp_path / "digital.pdf")
+    result = PdfOcrAdapter(dpi=300).extract(
+        pdf, page_id="doc_0001_page_0001", page_number=1, action="transcribe_text"
+    )
+    assert result.model and "; dpi=300;" in result.model
+
+
+def test_pdf_ocr_without_pypdf_keeps_requested_dpi(tmp_path: Path, monkeypatch) -> None:
+    pytest.importorskip("pypdf")
+    calls = _fake_binaries_with_langs(monkeypatch, ["eng"])
+    monkeypatch.setattr(adapters_module, "_probe_size_at_10dpi", lambda *args: (7, 12))
+    pdf = _image_pdf(tmp_path / "small-page.pdf")
+    monkeypatch.setitem(sys.modules, "pypdf", None)
+    result = PdfOcrAdapter().extract(
+        pdf, page_id="doc_0001_page_0001", page_number=1, action="transcribe_text"
+    )
+    render = [call for call in calls if Path(call[0]).name == "pdftoppm" and "-png" in call][-1]
+    assert render[render.index("-r") + 1] == "300"
+    assert "; dpi=300;" in result.model
+
+
+def test_native_dpi_still_respects_pixel_cap(tmp_path: Path, monkeypatch) -> None:
+    pytest.importorskip("pypdf")
+    calls = _fake_binaries_with_langs(monkeypatch, ["eng"])
+    monkeypatch.setattr(adapters_module, "_probe_size_at_10dpi", lambda *args: (100, 100))
+    pdf = _image_pdf(tmp_path / "capped.pdf", width=1200, height=1200)
+    result = PdfOcrAdapter(max_render_pixels=1_000_000).extract(
+        pdf, page_id="doc_0001_page_0001", page_number=1, action="transcribe_text"
+    )
+    render = [call for call in calls if Path(call[0]).name == "pdftoppm" and "-png" in call][-1]
+    assert int(render[render.index("-r") + 1]) < 1200
+    assert "render_dpi_capped" in result.warnings
+
+
+def test_pdf_ocr_scans_a_source_once_for_all_its_pages(tmp_path: Path, monkeypatch) -> None:
+    pytest.importorskip("pypdf")
+    _fake_binaries_with_langs(monkeypatch, ["eng"])
+    monkeypatch.setattr(adapters_module, "_probe_size_at_10dpi", lambda *args: (7, 12))
+    pdf = _image_pdf(tmp_path / "volume.pdf", pages=2)
+    scans = []
+    scan = adapters_module._page_image_ppis
+    monkeypatch.setattr(
+        adapters_module, "_page_image_ppis", lambda path: scans.append(path) or scan(path)
+    )
+    adapter = PdfOcrAdapter()
+    for number in (1, 2):
+        result = adapter.extract(
+            pdf, page_id=f"doc_0001_page_{number:04d}", page_number=number, action="transcribe_text"
+        )
+        assert "native image" in result.model
+    assert len(scans) == 1
+
+
+def test_pdf_sources_are_read_once_and_refused_when_changed(tmp_path: Path) -> None:
+    source = tmp_path / "scan.pdf"
+    source.write_bytes(b"first")
+    reads = []
+    cache: dict = {}
+
+    def read(path: Path) -> str:
+        reads.append(path)
+        return path.read_text()
+
+    assert adapters_module._read_once(cache, source, read) == "first"
+    assert adapters_module._read_once(cache, source, read) == "first"
+    assert len(reads) == 1
+    source.write_bytes(b"changed")
+    with pytest.raises(ValueError, match="changed"):
+        adapters_module._read_once(cache, source, read)
 
 
 def test_pdf_ocr_records_capped_render(tmp_path: Path, monkeypatch) -> None:

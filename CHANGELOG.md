@@ -81,6 +81,13 @@ Release changes follow the [artifact compatibility policy](docs/run-manifest-spe
   lowered page carries the warning `render_dpi_capped`, and its provenance
   records both values, for example `dpi=94 (requested 300)`. A page that would
   need less than 72 DPI stops with `render_limit`.
+- `pdf_ocr` no longer downsamples scans filed on undersized pages. An 1872
+  volume declares 18 by 29 mm pages holding scans about 440 pixels wide, which
+  300 DPI rendered at half their resolution. When pypdf is installed, a page
+  whose largest embedded image has a higher resolution than the requested DPI
+  is rendered at the image's resolution, up to 1200 DPI, and its provenance
+  says so, for example `dpi=621 (requested 300, native image)`. Image sizes
+  are read from the PDF without decoding the images, once per file.
 - A missing `pdftoppm`, `tesseract` or Tesseract language pack now stops a
   `pdf_ocr` run before any page is read, with a message such as
   `missing_language_pack: ... Installed: eng, osd`. Previously the run started,

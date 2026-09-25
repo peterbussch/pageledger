@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib
 import importlib.metadata
+import importlib.util
 import math
 import re
 import shutil
@@ -225,28 +226,9 @@ class PdfTextAdapter:
         return len(self._document_text(source))
 
     def _document_text(self, source: Path) -> tuple[str, ...]:
-        source = source.absolute()
-        stat = source.stat()
-        identity = (stat.st_dev, stat.st_ino, stat.st_size, stat.st_mtime_ns, stat.st_ctime_ns)
-        cached = self._documents.get(source)
-        if cached is not None:
-            if cached[0] != identity:
-                raise ValueError("PDF source changed during adapter lifetime")
-            return cached[1]
-        with source.open("rb") as handle, _reading_pdf(source) as open_pdf:
-            pages = tuple(page.extract_text() or "" for page in open_pdf(handle).pages)
-        after = source.stat()
-        if (
-            after.st_dev,
-            after.st_ino,
-            after.st_size,
-            after.st_mtime_ns,
-            after.st_ctime_ns,
-        ) != identity:
-            raise ValueError("PDF source changed while reading")
+        pages = _read_once(self._documents, source, _pdf_page_texts)
         if not pages:
             raise ValueError("PDF source has no pages")
-        self._documents[source] = (identity, pages)
         return pages
 
     def extract(
@@ -282,6 +264,8 @@ _LANG_PATTERN = re.compile(r"^[A-Za-z0-9_]+(\+[A-Za-z0-9_]+)*$")
 _RENDER_TIMEOUT_SECONDS = 120
 _OCR_TIMEOUT_SECONDS = 300
 _PROBE_DPI = 10
+# Scans rarely exceed this resolution; a higher estimate means odd page metadata.
+_MAX_NATIVE_DPI = 1200
 _MIN_RENDER_DPI = 72
 _DEFAULT_MAX_RENDER_PIXELS = 60_000_000
 
@@ -299,6 +283,7 @@ class PdfOcrAdapter:
     dpi: int = 300
     lang: str = "eng"
     max_render_pixels: int = _DEFAULT_MAX_RENDER_PIXELS
+    _image_ppis: dict = field(default_factory=dict, init=False, repr=False, compare=False)
     name: ClassVar[str] = "pdf_ocr"
     version: ClassVar[str] = "0.1"
     deterministic: ClassVar[bool] = True
@@ -379,8 +364,9 @@ class PdfOcrAdapter:
         _check_tesseract_langs(tesseract, self.lang)
 
         started = time.perf_counter()
+        target_dpi = _native_image_dpi(source, page_number, self.dpi, self._image_ppis)
         render_dpi, capped = _render_dpi(
-            pdftoppm, source, page_number, self.dpi, self.max_render_pixels
+            pdftoppm, source, page_number, target_dpi, self.max_render_pixels
         )
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
@@ -420,8 +406,8 @@ class PdfOcrAdapter:
             confidence=confidence,
             model=(
                 f"{_tesseract_model_string()}; {_pdftoppm_model_string()}; "
-                + (f"dpi={render_dpi} (requested {self.dpi})" if capped else f"dpi={self.dpi}")
-                + f"; lang={self.lang}"
+                f"{_dpi_note(render_dpi, self.dpi, raised=target_dpi > self.dpi)}; "
+                f"lang={self.lang}"
             ),
             warnings=["render_dpi_capped"] if capped else [],
             usage={
@@ -603,8 +589,8 @@ def _render_dpi(
     """DPI to render at so a page stays within max_pixels, and whether it was lowered.
 
     Some scans declare pages meters wide; rendering them at a fixed 300 DPI can
-    need hundreds of megapixels. The requested DPI is never raised. An
-    unreadable probe keeps the requested DPI, as before this check existed.
+    need hundreds of megapixels. The DPI is only ever lowered here. An
+    unreadable probe keeps the requested DPI.
     """
     size = _probe_size_at_10dpi(pdftoppm, source, page)
     if size is None:
@@ -621,6 +607,75 @@ def _render_dpi(
             "raise run.adapter_options.max_render_pixels or split the page",
         )
     return capped, True
+
+
+def _native_image_dpi(source: Path, page_number: int, requested_dpi: int, cache: dict) -> int:
+    """The DPI that renders the page's largest embedded image at its own resolution.
+
+    Some scans are filed as tiny declared pages, which a fixed DPI downsamples.
+    Without pypdf, or when pypdf cannot read the file, the requested DPI stands;
+    pdftoppm then renders the page or refuses it with its own error.
+    """
+    if importlib.util.find_spec("pypdf") is None:
+        return requested_dpi
+    try:
+        page_ppis = _read_once(cache, source, _page_image_ppis)
+    except (OSError, PageLedgerDiagnostic):
+        return requested_dpi
+    ppi = page_ppis[page_number - 1] if page_number <= len(page_ppis) else 0.0
+    return max(requested_dpi, min(round(ppi), _MAX_NATIVE_DPI))
+
+
+def _page_image_ppis(source: Path) -> tuple[float, ...]:
+    """Each page's largest embedded image, in pixels per inch of the declared page.
+
+    Treating the image as covering the whole page can only underestimate its
+    resolution. Image data is never decoded.
+    """
+    with source.open("rb") as handle, _reading_pdf(source) as open_pdf:
+        return tuple(_largest_image_ppi(page) for page in open_pdf(handle).pages)
+
+
+def _largest_image_ppi(page: Any) -> float:
+    width = float(page.mediabox.width) / 72
+    height = float(page.mediabox.height) / 72
+    resources = page["/Resources"] if "/Resources" in page else {}
+    xobjects = resources["/XObject"] if "/XObject" in resources else {}
+    ppi = 0.0
+    if width > 0 and height > 0:
+        for name in xobjects:
+            xobject = xobjects[name]
+            if xobject.get("/Subtype") == "/Image":
+                ppi = max(ppi, int(xobject["/Width"]) / width, int(xobject["/Height"]) / height)
+    return ppi
+
+
+def _dpi_note(render_dpi: int, requested_dpi: int, *, raised: bool) -> str:
+    if render_dpi == requested_dpi:
+        return f"dpi={render_dpi}"
+    reason = ", native image" if raised else ""
+    return f"dpi={render_dpi} (requested {requested_dpi}{reason})"
+
+
+def _file_identity(path: Path) -> tuple[int, ...]:
+    stat = path.stat()
+    return (stat.st_dev, stat.st_ino, stat.st_size, stat.st_mtime_ns, stat.st_ctime_ns)
+
+
+def _read_once(cache: dict, source: Path, read: Callable[[Path], Any]) -> Any:
+    """Read a PDF once per adapter lifetime, refusing a source that changes meanwhile."""
+    source = source.absolute()
+    identity = _file_identity(source)
+    cached = cache.get(source)
+    if cached is not None:
+        if cached[0] != identity:
+            raise ValueError("PDF source changed during adapter lifetime")
+        return cached[1]
+    value = read(source)
+    if _file_identity(source) != identity:
+        raise ValueError("PDF source changed while reading")
+    cache[source] = (identity, value)
+    return value
 
 
 def _require_binary(name: str) -> str:
@@ -816,6 +871,11 @@ def _pdf_page_count(source: Path) -> int:
 def pdf_page_count(source: Path) -> int:
     """Return a PDF page count using the optional ``pageledger[pdf]`` dependency."""
     return _pdf_page_count(source)
+
+
+def _pdf_page_texts(source: Path) -> tuple[str, ...]:
+    with source.open("rb") as handle, _reading_pdf(source) as open_pdf:
+        return tuple(page.extract_text() or "" for page in open_pdf(handle).pages)
 
 
 def _pdf_page_text(source: Path, page_number: int) -> str:
