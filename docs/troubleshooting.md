@@ -1,8 +1,10 @@
 # Troubleshooting PageLedger
 
 This guide is organized by the symptom you see. A typed diagnostic is a
-PageLedger-authored error code and message. Adapter exceptions are redacted;
-when their text is `<redacted>`, the cause is not established by that message.
+PageLedger-authored error code and message. A typed adapter failure, such as
+`AdapterFailure: MODEL_QUOTA (HTTP 429)`, shows its code; other adapter
+messages are redacted, and when a message reads `<redacted>`, it does not
+establish the cause.
 
 ## `missing_binary` or `missing_language_pack`
 
@@ -23,6 +25,23 @@ page is unusually large or the machine is under load. Try a smaller page range
 or a lower `dpi`, while checking that reduced resolution remains useful. For a
 custom adapter, set an explicit subprocess timeout and handle its timeout; see
 [adapter subprocess guidance](adapter-protocol.md#timeout-and-subprocess-guidance).
+
+## A model page fails with `MODEL_...`
+
+These codes come from the [`vision` adapter](vision-adapter.md), and from
+custom adapters that use the same failure codes.
+
+| Code | Likely cause | What to do |
+|---|---|---|
+| `MODEL_NETWORK_ERROR` | Nothing answers at `base_url`. | Start the server, or correct its host and port; `curl {base_url}/models` should answer. |
+| `MODEL_HTTP_ERROR` | The server answered with an error, shown as its HTTP status: often a `base_url` without its `/v1`, a model name the server does not know, or a rejected key (401, 403). | Compare `base_url` and `model` with the names `{base_url}/models` lists, and check the key. |
+| `MODEL_UNAVAILABLE` | The variable that `env_key` names is not set. | Set it in the shell that runs PageLedger. |
+| `MODEL_QUOTA` | A rate limit or an exhausted quota (HTTP 402 or 429). | Wait, or use another route. PageLedger sends one page at a time. |
+| `MODEL_TIMEOUT` | No answer within `timeout_seconds`. | A local model can need longer on a large page: raise `timeout_seconds`, up to 600, or lower `max_image_side`. |
+| `MODEL_OUTPUT_TRUNCATED` | The reading reached `max_tokens`: the model spent it reasoning, looped, or the page is very long. | See [models that reason before answering](vision-adapter.md#models-that-reason-before-answering) and [time, heat and loops](vision-adapter.md#local-models-time-heat-and-loops). |
+| `MODEL_CONTENT_FILTERED`, `MODEL_RECITATION` | The provider declined the page. | Read that page with another engine or by hand. |
+| `MODEL_EMPTY_RESPONSE`, `MODEL_INVALID_RESPONSE` | No reading, or an answer that is not a chat completion. | Read one page with `--pages`, and check that the model accepts images. |
+| `IMAGE_RENDER_ERROR` | The page image could not be made small enough for the request. | Lower `max_image_side`. |
 
 ## `unsupported_encryption`, `missing_crypto_dependency`, or `malformed_pdf`
 
