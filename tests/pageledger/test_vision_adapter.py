@@ -135,6 +135,8 @@ def test_image_stage_evidence_records_the_exact_jpeg_and_served_model(pdf, endpo
     ("finish", "content", "code"),
     [
         ("length", "cut off", "MODEL_OUTPUT_TRUNCATED"),
+        ("MAX_TOKENS", "cut off", "MODEL_OUTPUT_TRUNCATED"),
+        ("SAFETY", "", "MODEL_CONTENT_FILTERED"),
         ("content_filter", "", "MODEL_CONTENT_FILTERED"),
         ("recitation", "", "MODEL_RECITATION"),
         ("tool_calls", "text", "MODEL_INVALID_RESPONSE"),

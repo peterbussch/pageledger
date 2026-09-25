@@ -38,7 +38,10 @@ _JPEG_BUDGET = (MAX_REQUEST_BYTES - 64 * 1024) * 3 // 4
 # A page too large for the budget is rendered smaller and compressed harder.
 _RENDER_TRIES = ((1.0, 90), (0.75, 80), (0.5, 70))
 _RENDER_TIMEOUT_SECONDS = 120
+# Finish reasons as OpenAI-compatible servers report them, and as some gateways
+# pass through Gemini's own (MAX_TOKENS, SAFETY, ...), compared in lower case.
 _TRUNCATED = {"length", "max_tokens", "max_output_tokens"}
+_FILTERED = {"content_filter", "safety", "blocklist", "prohibited_content", "spii"}
 _REASONING_EFFORTS = ("none", "minimal", "low", "medium", "high")
 _PAGE_ID = re.compile(r"[A-Za-z0-9_-]+\Z")
 DEFAULT_PROMPT = (
@@ -209,11 +212,12 @@ class VisionAdapter:
             started,
         )
         reason = choice.get("finish_reason")
+        reason = reason.lower() if isinstance(reason, str) else reason
         if not isinstance(content, str):
             raise AdapterFailure("MODEL_INVALID_RESPONSE", partial_result=result)
         if reason in _TRUNCATED:
             raise AdapterFailure("MODEL_OUTPUT_TRUNCATED", partial_result=result)
-        if reason == "content_filter":
+        if reason in _FILTERED:
             raise AdapterFailure("MODEL_CONTENT_FILTERED", partial_result=result)
         if reason == "recitation":
             raise AdapterFailure("MODEL_RECITATION", partial_result=result)
