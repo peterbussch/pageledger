@@ -365,7 +365,7 @@ def align_run(
     from .artifacts import build_rerun_manifest, read_jsonl, render_audit_markdown
     from .config import load_config
     from .grading import grade_distribution, grade_distributions_by_basis, grade_page
-    from .policy import rebuild_policy_queues
+    from .policy import generative_page_ids, rebuild_policy_queues
 
     out_dir = Path(run_dir).expanduser().resolve()
     manifest_path = out_dir / "manifest.json"
@@ -434,6 +434,7 @@ def align_run(
         routes=routes,
         review_queue=audit.get("review_queue", []),
         quarantine_queue=audit.get("quarantine_queue", []),
+        generative_pages=generative_page_ids(provenance_entries),
     )
     audit["review_queue"] = review_queue
     audit["quarantine_queue"] = quarantine_queue

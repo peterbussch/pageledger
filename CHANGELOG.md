@@ -46,7 +46,8 @@ Release changes follow the [artifact compatibility policy](docs/run-manifest-spe
   held as `engine_disagreement`; when a number differs, as
   `numeric_disagreement`. A reading from a generative adapter, such as
   `vision`, stays in review as `unconfirmed_model_output` until another engine
-  agrees with it. `processing.benchmark` runs a stage on every Nth page even
+  agrees with it. A plain `run` holds every page a generative adapter read in
+  its review queue, with the same reason. `processing.benchmark` runs a stage on every Nth page even
   when it is not needed, to compare engines on a sample.
 - A page type can set `review: true` to be extracted and still held for
   review: after extraction the page joins the review queue with reason

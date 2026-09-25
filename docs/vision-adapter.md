@@ -7,11 +7,12 @@ own machine or a hosted service. Besides Python it needs only Poppler's
 
 A vision model writes its reading rather than reading it off the page. It can
 invent, drop or modernize text, so PageLedger marks every `vision` attempt as
-generative. A document job holds such a reading for review, as
-`unconfirmed_model_output`, until a clean reading from another engine agrees
-with it or a person confirms it. A plain `run` does not hold it: a reading
-with no quality warning grades well and stays out of the review queue. To
-queue every page of a run for a person, add `review: true` to its page type.
+generative and holds its pages for review as `unconfirmed_model_output`. A
+plain `run` holds every such page in the review queue of `audit.json`; a
+document job holds it until a clean reading from another engine agrees with it
+or a person confirms it. After a plain run, `pageledger rerun` with another
+engine reads the held pages again, and `compare-runs` compares the two runs
+page by page.
 
 ## Plug in a model
 

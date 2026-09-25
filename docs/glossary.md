@@ -21,7 +21,7 @@ The links point to the main page describing each term.
 | Export | The selected text of a verified job, written as plain text, Markdown, JSONL or TEI. | [Export](export.md) |
 | Fail closed | Refuse an operation when a required safety or integrity check cannot be satisfied. | [Verification](artifacts.md#verification) |
 | Generation | A run's place in a rerun sequence: the original is generation zero, followed by explicit reruns. | [Reruns](cli.md#rerun) |
-| Generative | Output a model writes rather than reads off the page, which can contain text that is not there. In a document job, such readings stay in review until confirmed. | [Vision adapter](vision-adapter.md) |
+| Generative | Output a model writes rather than reads off the page, which can contain text that is not there. PageLedger holds such readings for review. | [Vision adapter](vision-adapter.md) |
 | Grade basis | The kind of information behind a grade: text signals or schema checks. These bases are not interchangeable. | [Comparison](cli.md#compare-runs) |
 | Hold | A recorded reason a page or attempt remains unresolved or needs a person. | [Warnings and holds](warnings.md) |
 | Job | A document-level record of staged attempts, selected text, review state, and report. | [Processing](processing-spec.md) |

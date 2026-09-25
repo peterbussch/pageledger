@@ -38,7 +38,7 @@ state. A document job can finish while pages remain unresolved; see
 | `illustration`, `handwriting`, `unreadable` | The page is described as image-only illustration, handwriting, or unreadable. | Confirm the description against the source and record a review decision. Use a specialized process if needed; these labels alone do not confirm text. |
 | `sparse`, `fragmented`, `joined`, `unknown` | Structural classification indicates uncertain or limited text shape. Short correct pages can also be sparse. | Inspect the page. OCR may help if content is absent, but do not treat the classification alone as proof of a defect. |
 | `numeric_disagreement`, `engine_disagreement` | Two clean attempts disagree on numbers or on less than 60% of words. Engines can share errors, too. | Compare both readings against the source. Agreement is evidence, not proof. |
-| `unconfirmed_model_output` | A generative adapter's selected reading lacks sufficient agreement from another clean engine. | Confirm it against the source or obtain an independent reading before accepting it. |
+| `unconfirmed_model_output` | A generative adapter, such as `vision`, wrote the reading. A plain run holds every such page; a document job holds it until a clean reading from another engine agrees. | Confirm it against the source, or read the page with another engine and compare, before accepting it. |
 
 Adapter-specific warnings may also appear in the page's `warnings` list. Their
 meaning depends on the adapter; consult that adapter's documentation and inspect

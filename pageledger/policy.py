@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+from collections.abc import Collection
 from decimal import Decimal
 from typing import Any
 
@@ -75,6 +76,15 @@ def evaluate_policies(
     return matches
 
 
+def generative_page_ids(provenance_entries: list[dict[str, Any]]) -> set[str]:
+    """Pages read by an adapter that declared it writes its output, like a vision model."""
+    return {
+        entry["page_id"]
+        for entry in provenance_entries
+        if "generative" in (entry.get("extractor") or {}).get("capabilities", [])
+    }
+
+
 def rebuild_policy_queues(
     *,
     config: Any,
@@ -83,13 +93,14 @@ def rebuild_policy_queues(
     routes: dict[str, dict[str, Any]],
     review_queue: list[dict[str, Any]] | None = None,
     quarantine_queue: list[dict[str, Any]] | None = None,
+    generative_pages: Collection[str] = (),
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     """Rebuild evidence-derived queues while preserving operational entries."""
     grades = {entry["page_id"]: entry for entry in quality_entries}
     review = []
     for item in review_queue or []:
         reason = str(item.get("reason", ""))
-        if reason in {"quality_warning", "grade_below_threshold"}:
+        if reason in {"quality_warning", "grade_below_threshold", "unconfirmed_model_output"}:
             continue
         if reason.startswith(("rerun_if:", "route_review:")):
             continue
@@ -117,6 +128,15 @@ def rebuild_policy_queues(
                     **queue_entry,
                     "action": "review",
                     "reason": f"route_review:{queue_entry['type']}",
+                }
+            )
+        if entry["page_id"] in generative_pages:
+            # A model wrote this reading; only a person can confirm it in a plain run.
+            review.append(
+                {
+                    **queue_entry,
+                    "action": "review",
+                    "reason": "unconfirmed_model_output",
                 }
             )
         if entry.get("warnings"):

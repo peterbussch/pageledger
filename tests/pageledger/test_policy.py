@@ -10,7 +10,7 @@ import pytest
 import yaml
 
 from pageledger.config import load_config
-from pageledger.policy import evaluate_policies
+from pageledger.policy import evaluate_policies, rebuild_policy_queues
 
 
 def _load(tmp_path: Path, policy_yaml: str):
@@ -314,3 +314,21 @@ columns:
     from pageledger.verify import verify_run
 
     assert verify_run(out_dir)["status"] == "pass"
+
+
+def test_generative_readings_are_held_once_for_review(tmp_path: Path) -> None:
+    config = _load(tmp_path, "  adapter: text\n")
+    quality = [
+        {"page_id": page, "page_number": number, "grade": "A", "grade_basis": "signals_only"}
+        for number, page in enumerate(["doc_0001_page_0001", "doc_0001_page_0002"], start=1)
+    ]
+    rebuild = {"config": config, "quality_entries": quality, "alignments": {}, "routes": {}}
+
+    review, _ = rebuild_policy_queues(**rebuild, generative_pages={"doc_0001_page_0001"})
+    again, _ = rebuild_policy_queues(
+        **rebuild, review_queue=review, generative_pages={"doc_0001_page_0001"}
+    )
+
+    assert [(item["page_id"], item["reason"]) for item in again] == [
+        ("doc_0001_page_0001", "unconfirmed_model_output")
+    ]

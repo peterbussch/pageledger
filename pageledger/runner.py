@@ -53,7 +53,7 @@ from .budget import (
 )
 from .config import load_config
 from .grading import grade_page
-from .policy import rebuild_policy_queues
+from .policy import generative_page_ids, rebuild_policy_queues
 from .quality import _build_quality_entry, mark_repeated_page_text, repeated_text_key
 from .replay import build_reproducibility_profile
 from .reports import inspect_run as inspect_run
@@ -1034,6 +1034,7 @@ def _run(
         routes=routes,
         review_queue=review_queue,
         quarantine_queue=quarantine_queue,
+        generative_pages=generative_page_ids(provenance_entries),
     )
 
     phase_clock.switch("models")

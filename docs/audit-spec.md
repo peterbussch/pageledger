@@ -81,7 +81,7 @@ For warning, disposition, and next-action guidance, see the
 | `type` | string | ✅ | no | Page type from taxonomy. |
 | `confidence` | number | ❌ | yes | Route classifier confidence from `route-map.yml`, between 0 and 1 when available. Emitted by current runs; optional for older 0.1 artifacts and null for unknown/unclassified routes. |
 | `action` | string | ✅ | no | `review` for review entries; `quarantine` for policy quarantine entries. |
-| `reason` | string | ✅ | no | Queue reason. A route sent directly to review can retain a classifier reason such as `prose_text`; policy reasons include `quality_warning`, `grade_below_threshold`, `rerun_if:*`, and `quarantine_if:*`. |
+| `reason` | string | ✅ | no | Queue reason. A route sent directly to review can retain a classifier reason such as `prose_text`; policy reasons include `quality_warning`, `grade_below_threshold`, `unconfirmed_model_output` (a page a generative adapter such as `vision` read), `rerun_if:*`, and `quarantine_if:*`. |
 | `grade` | string | ❌ | yes | Page grade at queue time (`A`–`F`). Absent on entries queued before grading (configured-review pages). |
 | `grade_basis` | string | ❌ | yes | `signals_only` or `schema_aware`. |
 

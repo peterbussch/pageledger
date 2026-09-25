@@ -250,6 +250,9 @@ def test_run_reads_pages_with_the_vision_adapter(pdf, endpoint, tmp_path):
 
     assert main(["run", str(pdf), "--config", str(config), "--out", str(out)]) == 0
     assert (out / "raw" / "doc_0001_page_0001.txt").read_text() == "page text"
+    audit = json.loads((out / "audit.json").read_text())
+    assert "unconfirmed_model_output" in {item["reason"] for item in audit["review_queue"]}
+    assert main(["verify-run", str(out)]) == 0
 
 
 def test_a_failed_page_names_its_failure_code(pdf, endpoint, tmp_path, capsys):

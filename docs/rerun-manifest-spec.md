@@ -181,8 +181,9 @@ manifest and rerun plan together cannot substitute an unconfigured adapter.
   the parent manifest. `pageledger rerun` rejects edited executable plans.
 - Top-level `reason` values: `dry_run` or `audit_policy`.
 - Item-level `reason` values: `no_classifier_available`, `configured_review`,
-  `quality_warning`, `grade_below_threshold`, `extraction_failed`,
-  `not_attempted_after_failure`, `not_attempted_after_budget`, and
+  `quality_warning`, `grade_below_threshold`, `unconfirmed_model_output`,
+  `extraction_failed`, `not_attempted_after_failure`,
+  `not_attempted_after_budget`, and
   `rerun_if:<predicate>`
   (joined with `+` when a page matches several).
 - `previous_grade` is the page grade at generation time; `null` only for
