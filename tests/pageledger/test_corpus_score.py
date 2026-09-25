@@ -15,7 +15,10 @@ import score  # noqa: E402
 
 
 def _engine(**pages):
-    return {page: {"text": text, "seconds": None, "cost_usd": None} for page, text in pages.items()}
+    return {
+        page: {"text": text, "seconds": None, "cost_usd": None, "failure": None}
+        for page, text in pages.items()
+    }
 
 
 def _score(reference, engine_text):
@@ -88,28 +91,47 @@ def test_pages_without_text_and_loops_are_counted():
     assert report["overall"]["pages_without_text"] == 1 and report["overall"]["loops"] == 1
 
 
-def test_a_corpus_run_supplies_text_time_and_cost(tmp_path):
+def test_a_corpus_run_supplies_text_time_cost_and_failures(tmp_path):
     run = tmp_path / "run"
     (run / "DOC" / "raw").mkdir(parents=True)
-    (run / "DOC" / "raw" / "p3.txt").write_text("page three", encoding="utf-8")
+    (run / "DOC" / "raw" / "text.txt").write_text("text layer", encoding="utf-8")
+    (run / "DOC" / "raw" / "ocr.txt").write_text("ocr reading", encoding="utf-8")
+    text = {"stage": "local_text", "outcome": "completed", "failure": None}
+    ocr = {"stage": "local_ocr", "outcome": "completed", "failure": None}
     rows = [
         {
             "item_id": "DOC",
             "page_number": 3,
-            "selected_output": "DOC/raw/p3.txt",
+            "selected_output": "DOC/raw/text.txt",
             "attempts": [
-                {"seconds": 1.5, "usage": {"cost_usd": None}},
-                {"seconds": 2.0, "usage": {"cost_usd": 0.002}},
+                {**text, "seconds": 1.5, "usage": {"cost_usd": None}, "output": "DOC/raw/text.txt"},
+                {**ocr, "seconds": 2.0, "usage": {"cost_usd": 0.002}, "output": "DOC/raw/ocr.txt"},
             ],
         },
-        {"item_id": "DOC", "page_number": 4, "selected_output": None, "attempts": []},
-    ]
+        {
+            "item_id": "DOC",
+            "page_number": 4,
+            "selected_output": None,
+            "attempts": [
+                {**ocr, "outcome": "failed", "failure": "MODEL_TIMEOUT", "seconds": 300.0,
+                 "usage": {}, "output": None},
+            ],
+        },
+    ]  # fmt: skip
     (run / "results.jsonl").write_text("".join(json.dumps(row) + "\n" for row in rows))
 
-    assert score.read_engine(run) == {
-        "DOC_p0003": {"text": "page three", "seconds": 3.5, "cost_usd": 0.002},
-        "DOC_p0004": {"text": None, "seconds": 0, "cost_usd": None},
-    }
+    selected = score.read_engine(run)
+    by_stage = score.read_engine(run, "local_ocr")
+
+    assert selected["DOC_p0003"] == {
+        "text": "text layer", "seconds": 3.5, "cost_usd": 0.002, "failure": None
+    }  # fmt: skip
+    assert by_stage["DOC_p0003"]["text"] == "ocr reading"
+    assert by_stage["DOC_p0004"] == {
+        "text": None, "seconds": 300.0, "cost_usd": None, "failure": "MODEL_TIMEOUT"
+    }  # fmt: skip
+    assert "DOC_p0003" in score.read_engine(run, "local_text")
+    assert score.read_engine(run, "image") == {}
 
 
 def test_command_line_scores_one_split_by_stratum(tmp_path, capsys):

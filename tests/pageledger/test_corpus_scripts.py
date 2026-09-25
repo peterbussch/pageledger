@@ -86,7 +86,9 @@ def test_runner_checks_sources_before_running_them(tmp_path):
     rows = [json.loads(line) for line in (out / "results.jsonl").read_text().splitlines()]
     assert [(r["item_id"], r["page_number"]) for r in rows] == [("ok", 1), ("ok", 2)]
     assert (out / rows[0]["selected_output"]).read_text() == "First page of prose."
-    assert rows[0]["attempts"][0]["adapter"] == "text"
+    attempt = rows[0]["attempts"][0]
+    assert attempt["adapter"] == "text" and attempt["failure"] is None
+    assert (out / attempt["output"]).read_text() == "First page of prose."
     assert "| changed | failed | 0 | checksum_mismatch |" in (out / "summary.md").read_text()
 
 

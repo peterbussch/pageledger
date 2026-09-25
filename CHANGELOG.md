@@ -154,8 +154,9 @@ Release changes follow the [artifact compatibility policy](docs/run-manifest-spe
   lists 23 public-domain scans with their source, SHA-256 and the pages each
   tier runs. `scripts/corpus/run.py` runs a tier as verified document jobs,
   `compare.py` shows what changed between two runs, `sweep.py` checks that every
-  PDF under a folder opens, and `score.py` scores a run against reference
-  transcriptions, reproducing the calibration grader's numbers.
+  PDF under a folder opens, and `score.py` scores a run, or one stage's engine
+  within it, against reference transcriptions, reproducing the calibration
+  grader's numbers.
 - Documentation tests: every complete config in the docs and in
   `docs/examples/` loads, every relative link and heading anchor resolves,
   version strings in the README, docs index, skill and route-map

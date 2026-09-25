@@ -124,6 +124,8 @@ def _run_item(
 
 def _page_rows(item_id: str, job: Path, out: Path) -> list[dict]:
     report = json.loads((job / "document.json").read_text(encoding="utf-8"))
+    runs = {a["run_path"] for page in report["pages"] for a in page["attempts"]}
+    provenance = {run: _provenance(job / run) for run in runs}
     rows = []
     for page in report["pages"]:
         selected = page.get("selected_output")
@@ -134,27 +136,39 @@ def _page_rows(item_id: str, job: Path, out: Path) -> list[dict]:
                 "disposition": page["disposition"],
                 "review_reasons": page["review_reasons"],
                 "selected_attempt": selected["attempt_id"] if selected else None,
-                "selected_output": str((job / selected["path"]).relative_to(out))
-                if selected
-                else None,
-                "attempts": [_attempt(job, attempt) for attempt in page["attempts"]],
+                "selected_output": _relative(job, selected["path"], out) if selected else None,
+                "attempts": [
+                    _attempt(
+                        attempt,
+                        provenance[attempt["run_path"]],
+                        _relative(job, attempt["raw_artifact"], out),
+                    )
+                    for attempt in page["attempts"]
+                ],
             }
         )
     return rows
 
 
-def _attempt(job: Path, attempt: dict) -> dict:
+def _relative(job: Path, artifact: str | None, out: Path) -> str | None:
+    return None if artifact is None else str((job / artifact).relative_to(out))
+
+
+def _attempt(attempt: dict, provenance: dict[str, dict], output: str | None) -> dict:
     """An attempt with the engine and timing its child run recorded in provenance."""
-    provenance = _provenance(job / attempt["run_path"]).get(attempt["page_id"], {})
+    record = provenance.get(attempt["page_id"], {})
+    failure = attempt["failure"] or {}
     return {
         "attempt_id": attempt["attempt_id"],
         "stage": attempt["stage"],
         "outcome": attempt["outcome"],
+        "failure": failure.get("code") or failure.get("type"),
         "warnings": attempt["warnings"],
-        "adapter": provenance.get("extractor", {}).get("adapter"),
-        "model": provenance.get("extractor", {}).get("model"),
-        "seconds": provenance.get("extraction_seconds"),
+        "adapter": record.get("extractor", {}).get("adapter"),
+        "model": record.get("extractor", {}).get("model"),
+        "seconds": record.get("extraction_seconds"),
         "usage": attempt["usage"],
+        "output": output,
     }
 
 

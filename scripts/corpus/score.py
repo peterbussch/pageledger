@@ -15,6 +15,7 @@ import html
 import json
 import re
 import unicodedata
+from collections import Counter
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
@@ -224,26 +225,39 @@ def summarize(rows: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
-def read_engine(path: Path) -> dict[str, dict[str, Any]]:
-    """Each page's text, and for a corpus run its seconds and reported cost."""
+def read_engine(path: Path, stage: str | None = None) -> dict[str, dict[str, Any]]:
+    """Each page's text, and for a corpus run its seconds, reported cost and failure.
+
+    For a corpus run, `stage` scores that stage's latest attempt on each page
+    instead of the text the job selected; pages the stage never read are left out.
+    """
     if not (path / "results.jsonl").is_file():
         return {
-            page.stem: {"text": page.read_text(encoding="utf-8"), "seconds": None, "cost_usd": None}
+            page.stem: {
+                "text": page.read_text(encoding="utf-8"),
+                "seconds": None,
+                "cost_usd": None,
+                "failure": None,
+            }
             for page in sorted(path.glob("*.txt"))
         }
     pages = {}
     for line in (path / "results.jsonl").read_text(encoding="utf-8").splitlines():
         row = json.loads(line)
-        selected = row["selected_output"]
-        costs = [
-            a["usage"]["cost_usd"]
-            for a in row["attempts"]
-            if a["usage"].get("cost_usd") is not None
-        ]
+        attempts, output, failure = row["attempts"], row["selected_output"], None
+        if stage is not None:
+            attempts = [attempt for attempt in attempts if attempt["stage"] == stage][-1:]
+            if not attempts:
+                continue
+            output, failure = attempts[0]["output"], attempts[0]["failure"]
+            if attempts[0]["outcome"] != "completed":
+                output = None
+        costs = [a["usage"]["cost_usd"] for a in attempts if a["usage"].get("cost_usd") is not None]
         pages[f"{row['item_id']}_p{row['page_number']:04d}"] = {
-            "text": (path / selected).read_text(encoding="utf-8") if selected else None,
-            "seconds": sum(attempt["seconds"] or 0 for attempt in row["attempts"]),
+            "text": (path / output).read_text(encoding="utf-8") if output else None,
+            "seconds": sum(attempt["seconds"] or 0 for attempt in attempts),
             "cost_usd": sum(costs) if costs else None,
+            "failure": failure,
         }
     return pages
 
@@ -264,6 +278,7 @@ def score(
             "loop": bool(text and _repetition_evidence(text)[1]),
             "seconds": engine[page_id]["seconds"],
             "cost_usd": engine[page_id]["cost_usd"],
+            "failure": engine[page_id]["failure"],
             "rows": rows,
         }
     all_rows = [row for page in pages.values() for row in page["rows"]]
@@ -278,6 +293,9 @@ def score(
             "reference_pages_not_read": len(references.keys() - engine.keys()),
             "pages_without_text": sum(page["no_text"] for page in pages.values()),
             "loops": sum(page["loop"] for page in pages.values()),
+            "failures": dict(
+                Counter(page["failure"] for page in pages.values() if page["failure"])
+            ),
             "seconds": round(sum(seconds), 1) if seconds else None,
             "cost_usd": round(sum(costs), 4) if costs else None,
         },
@@ -305,7 +323,9 @@ def markdown(report: dict[str, Any]) -> str:
     lines.append(
         f"{overall['pages']} pages scored, {overall['pages_without_text']} without text, "
         f"{overall['loops']} loops, {overall['reference_pages_not_read']} reference pages not "
-        f"read. Worst pages: "
+        f"read. Failures: "
+        + (", ".join(f"{code} {n}" for code, n in sorted(overall["failures"].items())) or "none")
+        + ". Worst pages: "
         + ", ".join(f"{page['page_id']} ({page['cer']})" for page in report["worst_pages"])
         + "."
     )
@@ -319,10 +339,15 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--pages", type=Path, help="JSON list of pages with their stratum")
     parser.add_argument("--split", choices=("dev", "holdout"))
     parser.add_argument("--splits", type=Path, help="JSON object: document id -> dev or holdout")
+    parser.add_argument(
+        "--stage", help="For a corpus run: score this stage's latest attempt, not the selected text"
+    )
     parser.add_argument("--json", action="store_true", help="Write JSON, with every line")
     args = parser.parse_args(argv)
     if args.split and not args.splits:
         parser.error("--split requires --splits FILE")
+    if args.stage and not (args.engine / "results.jsonl").is_file():
+        parser.error("--stage needs a corpus run directory")
     references = {
         page.stem: page.read_text(encoding="utf-8") for page in args.references.glob("*.txt")
     }
@@ -338,7 +363,7 @@ def main(argv: list[str] | None = None) -> int:
         if args.pages
         else {}
     )
-    report = score(references, read_engine(args.engine), strata)
+    report = score(references, read_engine(args.engine, args.stage), strata)
     print(json.dumps(report, ensure_ascii=False, indent=1) if args.json else markdown(report))
     return 0
 

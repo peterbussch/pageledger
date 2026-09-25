@@ -56,6 +56,11 @@ with a model loop (PageLedger's `repetition_loop` check) and, for a corpus run,
 seconds and reported cost. `--json` adds every line: the reference, the text it
 matched and its edits.
 
+For a corpus run, `--stage local_ocr` (or any other stage) scores that
+stage's latest attempt on each page instead of the text the job selected, so
+one engine can be measured even where the job chose another. Pages the stage
+never read are left out, and its failed attempts are counted by failure code.
+
 To score only the development or the held-out documents, pass a JSON object
 mapping document IDs to `dev` or `holdout`. The split is by document, so
 neighbouring pages never fall on both sides:
