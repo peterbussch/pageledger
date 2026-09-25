@@ -22,6 +22,7 @@ work as plain files. Choose an entry point below.
 - [Read pages with a vision model](vision-adapter.md)
 - [Classify pages and review route evidence](classifier.md)
 - [Run OCR on non-English and historical documents](multilingual-ocr.md)
+- [Score transcriptions against references](scoring.md)
 - [Work through a scanned government archive](examples/jfk-scanned-archive.md)
 - [Write a custom extraction adapter](adapter-protocol.md)
 - [Compare PageLedger with extraction tools](comparison.md)

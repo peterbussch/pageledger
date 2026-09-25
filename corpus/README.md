@@ -34,6 +34,8 @@ baseline, point `--pageledger` at another installed version, for example
 disposition or review reasons changed between two runs, with the engines each
 used. `scripts/corpus/sweep.py --root DIR --out FILE` checks that every PDF
 under a folder opens and yields text, one child process per file.
+`scripts/corpus/score.py REFERENCES RUN` scores a run's pages against
+reference transcriptions; see [Scoring transcriptions](../docs/scoring.md).
 
 ## Rights
 
