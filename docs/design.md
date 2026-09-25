@@ -4,7 +4,7 @@ PageLedger has two controllers. `run` applies one adapter to routed pages;
 `process` coordinates a document's local text, OCR, and optional image attempts.
 Both retain page identities and extraction evidence. The
 [capabilities and limits](capabilities-and-limits.md) and
-[artifact schemas](../schemas/) define the 0.5.2 contract.
+[artifact schemas](../schemas/) define the artifact contract.
 
 ```mermaid
 flowchart TD
@@ -50,6 +50,8 @@ priority order: (1) adapter-reported `cost_usd`, (2) configured unit rates
 still reports raw page counts. Budgets cap on pages, tokens, or dollars,
 whichever the config sets, because the page count is the only value always
 present.
+
+See the [glossary](glossary.md) for the terms used in these workflow descriptions.
 
 ## Design principles
 

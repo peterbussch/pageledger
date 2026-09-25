@@ -57,9 +57,11 @@ together — the spec docs and runtime output must agree exactly.
 Three assertions that bite during routine changes:
 
 - The release version is pinned in `test_dry_run.py`
-  (`test_package_exports_release_version`) — bump it with
-  `pyproject.toml`, `pageledger/_version.py`, `CITATION.cff`, and the editable
-  package entry in `uv.lock`.
+  (`test_package_exports_release_version`), `test_release.py`,
+  `test_reader_journey.py`, `test_document_journey.py` and
+  `.github/workflows/{ci,publish}.yml` — bump them with `pyproject.toml`,
+  `pageledger/_version.py`, `CITATION.cff`, and the editable package entry in
+  `uv.lock`.
 - `test_docs_examples_smoke_without_heavy_ocr_installs` pins strings in
   README, `docs/ocr-options.md`, `MANIFEST.in`, and `examples/` — docs
   restructuring can fail the suite.

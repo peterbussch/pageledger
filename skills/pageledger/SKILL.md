@@ -11,9 +11,10 @@ does not extract anything itself: it routes pages to an adapter
 page/token/dollar budgets, and records provenance, quality signals, cost,
 review queues, and rerun plans as plain files in a run directory.
 
-Use `pageledger --version` to check the installed release. This guide covers
-0.5.0; `docs/capabilities-and-limits.md` is the
-authoritative scope list.
+Use `pageledger --version` to check the installed release. The
+[`docs/capabilities-and-limits.md`](../../docs/capabilities-and-limits.md)
+page lists supported workflows and limits; the
+[`docs/glossary.md`](../../docs/glossary.md) defines shared terms.
 
 ## Command quick reference
 
@@ -169,7 +170,7 @@ domain types belong in a hook.
 | Recovery and image input evidence | `docs/checkpoint-spec.md`, `docs/image-evidence-spec.md` |
 | Exact scope of this version | `docs/capabilities-and-limits.md` |
 | Classifier signals, hooks, and evidence | `docs/classifier.md` |
-| All flags and config keys | `docs/cli.md` |
+| Commands, options, exit codes and configuration | `docs/cli.md` |
 | What each run artifact means | `docs/artifacts.md`, `docs/*-spec.md`, `schemas/` |
 | Writing an adapter | `docs/adapter-protocol.md`, `examples/*.py` |
 | Choosing an engine or escalation tier | `docs/ocr-options.md`, `docs/examples/jfk-scanned-archive.md` |

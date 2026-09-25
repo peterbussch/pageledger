@@ -1,7 +1,19 @@
-# Capabilities and limits (PageLedger 0.5.2)
+# Capabilities and limits
 
-This page lists the supported workflows, the adapters you supply, and the
-limits of the recorded evidence. Artifact schemas remain at version 0.1.
+This page lists supported workflows, adapters you supply, and limits on what
+the recorded files can establish. See the [glossary](glossary.md) for terms
+used across the reference.
+
+## Supported workflows
+
+| Task | Built-in support | What remains your responsibility |
+|---|---|---|
+| Extract pages | `text`, `pdf_text` and `pdf_ocr`; custom adapters use the adapter protocol. | Select the extractor, configure it, and judge its output. |
+| Route pages | `classify` assigns structural types and writes a route map and text-free sidecar. | Review decisions; domain labels require a classifier hook. |
+| Process a document | `process` manages local text, OCR and optional image stages with shared limits and retained attempts. | Supply stage config, adapter code and credentials where needed. |
+| Review and export | Job reports, source-bound review receipts, review sheets and verified `txt`, `md`, `jsonl`, or `tei` exports. | A human makes and records review decisions. |
+| Align structured output | Schema alignment supports `markdown_table`, `json`, and `csv` output. | Produce structured output and declare columns/checks. Plain text is not aligned. |
+| Compare or replay | Compare-runs reports page differences; bundles and replay check transport and recorded identities. | Comparison is conditional; replay does not reproduce external services or certify accuracy. |
 
 ## Built in and tested
 
@@ -129,6 +141,7 @@ limits of the recorded evidence. Artifact schemas remain at version 0.1.
   version, effective grading policy, evidence basis, and (for schema-aware
   grades) the same schema identity. Changed-source,
   cross-adapter, and same-adapter/different-extractor transitions are unranked.
+  The comparison rules are summarized in the [CLI reference](cli.md#compare-runs).
 - `pageledger verify-run`: checks cross-artifact ledger coherence, identifiers,
   route-action/page-bucket counts, hashes, and references without claiming OCR
   correctness or requiring a runtime JSON Schema dependency. Current manifests
@@ -186,9 +199,9 @@ installation or hermetic reproduction. Its trust boundaries are:
 - The replay worker is not a credential/network/cloud-side-effect sandbox. It
   does not bundle credentials, establish cloud identity, or make external
   services deterministic.
-- Integrity checks are at-rest observations, not a lock or snapshot against
+- Integrity checks inspect files as read; they are not a lock or snapshot against
   concurrent mutation while files are being read.
-- `exact` with `raw.equal == 0` proves no extraction bytes were produced for
+- `exact` with `raw.equal == 0` means no extraction bytes were produced for
   comparison; it does not prove that the source contains no bytes.
 - Isolated startup does not process editable-install `.pth` hooks. Adapter code
   must be normally installed or supplied through `--adapter-path`.
@@ -201,6 +214,8 @@ does not perform licensing, privacy, or legal review.
 Details and examples live in [`design.md`](design.md).
 
 ## Known limits
+
+### Inputs and routing
 
 - `pdf_text` reads existing text layers. It does not OCR. For scanned PDFs
   use `pdf_ocr` or wrap a stronger engine as a custom adapter.
@@ -249,6 +264,8 @@ Details and examples live in [`design.md`](design.md).
   "material"); Tesseract's own word confidence (`low_confidence`) is the
   closest built-in signal, and it reflects the engine's opinion of
   itself, not ground truth.
+
+### Extraction quality and review
 - Output-integrity signals are deliberately conservative heuristics. A marker
   or large rerun expansion queues review; it does not prove that an adapter
   hallucinated, and absence of a warning does not prove faithful output.
@@ -296,6 +313,11 @@ Details and examples live in [`design.md`](design.md).
   preserve enough evidence that a researcher can see what ran, what
   failed, what is uncertain, and what should be reviewed or rerun.
 
+### Replay and custody
+
+Replay and bundle limits are described in the [verified replay boundary](#verified-replay-boundary).
+Source custody, licensing, privacy, and legal review remain with the project.
+
 ## Tested scale and documents
 
 PageLedger has been exercised locally on:
@@ -313,11 +335,11 @@ PageLedger has been exercised locally on:
 - A 72-page born-digital PDF via `pageledger[pdf]`.
 - The 0.2.0 structural classifier was checked against retained OCR from five
   sampled pages of a 1916 Bessarabia address-calendar and seven sampled 1939
-  census spreads. That pass tuned the column-line threshold; it is evidence for
-  the default, not a general benchmark.
+  census spreads. That pass tuned the column-line threshold; it supports the
+  default, not a general benchmark.
 
 These historical checks describe the tested documents and workloads. They
-are not benchmarks of every 0.5.2 workflow; see [performance](performance.md)
+are not benchmarks of every current workflow; see [performance](performance.md)
 for the measured serialization improvement and its limits. Stress
 tests are marked `@pytest.mark.stress` and skipped in default CI:
 

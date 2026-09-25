@@ -1,9 +1,10 @@
 # Run and document-job artifacts
 
 Runs and document jobs are directories of plain files that you can inspect
-with `cat`, `grep`, and `jq`. JSON/JSONL artifacts validate
+with a text editor or command-line tools. JSON/JSONL artifacts validate
 against schemas in [`schemas/`](../schemas/); YAML artifacts use documented
-field contracts, also tested in CI.
+field contracts, also tested in CI. The [glossary](glossary.md) defines the
+terms used here.
 
 ## Document jobs
 
@@ -226,28 +227,14 @@ when the preview is applied.
 
 ## Verification
 
-`pageledger verify-run <run-dir>` checks the relationships among these files:
-declared paths, identifiers, hashes, page counts, raw/normalized provenance,
-quality totals, audit/rerun references, configured adapter chains, and cost
-totals. Malformed evidence produces a structured failure rather than reaching
-artifact renderers. `manifest.json` and normalized artifacts must be contained
-regular files, not symbolic links. Raw references are rejected without opening
-or hashing the target when the declared `raw/` directory is absent, invalid,
-or escaped; symbolic links are not accepted as raw artifacts. Re-alignment
-hashes must match either `config-snapshot.yml` or a contained, non-escaping
-`align-schema-snapshot.yml`. Unresolvable and looped links fail structurally.
-Internal corruption is an error; a missing or changed external source is a
-warning because the ledger itself remains inspectable. Verification does not
-judge OCR accuracy and does not replace the build-time JSON Schema suite.
-
-`compare-runs` applies the same no-follow boundary to each run's manifest,
-quality, provenance, and optional cost evidence. Those inputs must be contained
-regular files; malformed paths and unresolvable or looped links fail closed.
-
-`verify-run` requires `result.raw_sha256` on every provenance line. A missing
-hash is an integrity error even for an otherwise readable legacy manifest;
-deleting generator-version evidence cannot downgrade it to a warning-only
-PASS.
+`pageledger verify-run <run-dir>` checks whether the files in a run agree about
+identifiers, hashes, page counts, output references, quality totals, review and
+rerun queues, adapter chains, and cost. Internal inconsistency is an error;
+missing or changed source files are warnings. It also checks raw-byte hashes and
+that `audit.md` matches `audit.json`. Verification does not judge OCR accuracy
+or replace the build-time schema tests. `compare-runs` also rejects symbolic
+links in the files it reads. See the [manifest specification](run-manifest-spec.md)
+for containment and compatibility details.
 
 ## Verified replay bundle
 
@@ -294,7 +281,7 @@ at rest rather than locking them against concurrent mutation. See the
 
 Artifact fields follow the compatibility policy in
 [`run-manifest-spec.md`](run-manifest-spec.md): additions are backward
-compatible within a schema version. PageLedger 0.5.2 therefore retains
+compatible within a schema version. The current package therefore retains
 `schema_version: "0.1"` for its optional classifier, escalation, alert, and
 rollup, and replay-linkage fields. The schemas in
 [`schemas/`](../schemas/) are the machine-readable authority, enforced by

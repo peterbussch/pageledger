@@ -1,6 +1,6 @@
 # PageLedger documentation
 
-PageLedger 0.5.2 records extraction attempts, source identity, cost, and review
+PageLedger records extraction attempts, source identity, cost, and review
 work as plain files. Choose an entry point below.
 
 ## Getting started
