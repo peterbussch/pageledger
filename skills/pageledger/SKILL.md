@@ -26,6 +26,7 @@ page lists supported workflows and limits; the
 | Start a resumable run | `pageledger run scan.pdf --adapter pdf_ocr --resumable --out runs/a` |
 | Recover pending work in place | `pageledger resume runs/a` or `pageledger resume jobs/book` |
 | OCR a scan, no config | `pageledger run scan.pdf --adapter pdf_ocr --out runs/a` |
+| Read pages with a vision model | a config with `run.adapter: vision`, `base_url` and `model`; try `--pages 1` first ([vision adapter](../../docs/vision-adapter.md)) |
 | Born-digital PDF | `pageledger run doc.pdf --adapter pdf_text --out runs/a` (needs `pageledger[pdf]`) |
 | Sample pages first | add `--pages "1-10,50-60"` (page ids keep source numbering) |
 | Plan without extracting | add `--dry-run` |
