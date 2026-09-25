@@ -63,6 +63,7 @@ Use hosted models only for pages you have the right to send.
 | `max_tokens` | 8192 | Longest reading to request. |
 | `timeout_seconds` | 300 | Longest wait to connect or for the next data, at most 600. |
 | `max_image_side` | 2048 | Longest side of the page image in pixels, from 256 to 4096. |
+| `reasoning_effort` | none sent | `none`, `minimal`, `low`, `medium` or `high`, sent as the request's `reasoning_effort` for models that reason before answering. |
 
 The prompt comes from the page type or the processing stage. Without one, the
 adapter asks for an exact transcription that keeps the original spelling and
@@ -108,3 +109,10 @@ environment are ignored, so neither can carry a key elsewhere.
 
 A missing `pdftoppm` stops the run before any page is read, with the
 diagnostic `missing_binary`.
+
+A model that reasons before it answers spends `max_tokens` on the reasoning as
+well as the reading. On a dense page it can run out before the reading ends,
+and the page fails with `MODEL_OUTPUT_TRUNCATED`. Set `reasoning_effort: none`
+or `low` if the server supports it, or raise `max_tokens`. In the evaluation,
+a hosted Gemini Flash model that reasons by default ran out on 9 of the 14
+pages it read at the default 8192 tokens.

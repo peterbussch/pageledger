@@ -39,6 +39,7 @@ _JPEG_BUDGET = (MAX_REQUEST_BYTES - 64 * 1024) * 3 // 4
 _RENDER_TRIES = ((1.0, 90), (0.75, 80), (0.5, 70))
 _RENDER_TIMEOUT_SECONDS = 120
 _TRUNCATED = {"length", "max_tokens", "max_output_tokens"}
+_REASONING_EFFORTS = ("none", "minimal", "low", "medium", "high")
 _PAGE_ID = re.compile(r"[A-Za-z0-9_-]+\Z")
 DEFAULT_PROMPT = (
     "Transcribe this page exactly as printed. Keep the original spelling and "
@@ -84,6 +85,7 @@ class VisionAdapter:
         max_tokens: int = 8192,
         timeout_seconds: float = 300,
         max_image_side: int = 2048,
+        reasoning_effort: str | None = None,
         evidence_dir: str | None = None,
     ) -> None:
         parsed = urllib.parse.urlsplit(base_url) if isinstance(base_url, str) else None
@@ -126,6 +128,11 @@ class VisionAdapter:
             raise ValueError(
                 f"vision max_image_side must be an integer from 256 to {MAX_IMAGE_DIMENSION}"
             )
+        if reasoning_effort is not None and reasoning_effort not in _REASONING_EFFORTS:
+            raise ValueError(
+                "vision reasoning_effort must be one of none, minimal, low, medium or high, "
+                "or be omitted"
+            )
         if evidence_dir is not None and (
             not isinstance(evidence_dir, str)
             or not Path(evidence_dir).is_absolute()
@@ -138,6 +145,7 @@ class VisionAdapter:
         self.max_tokens = max_tokens
         self.timeout_seconds = float(timeout_seconds)
         self.max_image_side = max_image_side
+        self.reasoning_effort = reasoning_effort
         self.evidence_dir = None if evidence_dir is None else Path(evidence_dir)
         self.capabilities = ("ocr", "page_image", "generative", *(("remote",) if remote else ()))
         self._source_hashes: dict = {}
@@ -295,15 +303,15 @@ class VisionAdapter:
             {"type": "text", "text": prompt},
             {"type": "image_url", "image_url": {"url": image}},
         ]
-        body = json.dumps(
-            {
-                "model": self.model,
-                "messages": [{"role": "user", "content": content}],
-                "max_tokens": self.max_tokens,
-                "stream": False,
-            },
-            ensure_ascii=False,
-        ).encode("utf-8")
+        request: dict[str, Any] = {
+            "model": self.model,
+            "messages": [{"role": "user", "content": content}],
+            "max_tokens": self.max_tokens,
+            "stream": False,
+        }
+        if self.reasoning_effort is not None:
+            request["reasoning_effort"] = self.reasoning_effort
+        body = json.dumps(request, ensure_ascii=False).encode("utf-8")
         if len(body) > MAX_REQUEST_BYTES:
             raise ValueError("The vision prompt is too long to send with a page image")
         return body

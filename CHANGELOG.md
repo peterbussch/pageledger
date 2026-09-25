@@ -67,6 +67,8 @@ Release changes follow the [artifact compatibility policy](docs/run-manifest-spe
   variable, and refuses redirects. Finish states become typed failures,
   including the new `MODEL_CONTENT_FILTERED` and `MODEL_RECITATION`. In
   document jobs' image stages it keeps the exact JPEG sent as image evidence.
+  `reasoning_effort` asks a model that reasons before answering to reason
+  less, so its token budget goes to the reading.
 - `pageledger review-sheet JOB --out review.csv` writes a CSV for reviewing a
   job in a spreadsheet: a link to each page, its disposition, the start of its
   text and its review reasons, with empty `decision` and `note` columns.

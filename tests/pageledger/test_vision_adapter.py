@@ -99,6 +99,22 @@ def test_reads_a_page_and_records_what_produced_the_text(pdf, endpoint):
     text, image = sent["messages"][0]["content"]
     assert text == {"type": "text", "text": "Read."}
     assert image["image_url"]["url"].startswith("data:image/jpeg;base64,")
+    assert "reasoning_effort" not in sent
+
+
+def test_reasoning_effort_is_sent_when_configured(pdf, endpoint):
+    _read(pdf, endpoint, reasoning_effort="none")
+
+    _headers, sent = Endpoint.requests[0]
+    assert sent["reasoning_effort"] == "none"
+
+
+def test_reasoning_effort_must_be_a_known_level():
+    with pytest.raises(ValueError, match="reasoning_effort must be one of"):
+        load_adapter(
+            "vision",
+            {"base_url": "http://127.0.0.1:8080/v1", "model": "m", "reasoning_effort": "off"},
+        )
 
 
 def test_image_stage_evidence_records_the_exact_jpeg_and_served_model(pdf, endpoint, tmp_path):
