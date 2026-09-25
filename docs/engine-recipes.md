@@ -1,8 +1,10 @@
 # Engine recipes
 
 These examples use the built-in `vision` adapter or custom adapters in
-`examples/`. Agreement scores are agreement with a model-made reference on 24 pages, not accuracy;
-they describe that evaluation set, not a guarantee for other documents.
+`examples/`. Scores are agreement with a model-made reference on 24 transcribed
+pages of historical print, not accuracy; later runs through PageLedger used 19
+of those pages. They describe that evaluation set, not a guarantee for other
+documents.
 
 ## Local Qwen3.5-9B with mlx-vlm (macOS)
 
@@ -10,7 +12,11 @@ Qwen3.5-9B 4-bit was the strongest local model on prose (8.4% character error)
 and directories and dictionaries (2.0%) in the evaluation; its overall error
 was 16.0%, exact numbers 60%, and it kept 90% of pre-reform letters. It looped
 on some pages. On an M4 Pro, it took about 90 seconds per page and used 8.3 GB
-of memory. Use it selectively and review every generated reading.
+of memory. In a later run through PageLedger, the pages it finished took a
+median of 38 seconds and measured 1.6% character error, but 4 of the 12 pages
+it attempted looped until `max_tokens`; see
+[time, heat and loops](vision-adapter.md#local-models-time-heat-and-loops). Use
+it selectively and review every generated reading.
 
 Install in an MLX-capable Python environment with `pip install mlx-vlm`
 (tested with 0.7.3), then start
@@ -143,12 +149,16 @@ Use `--adapter-path examples` when running the config.
 
 ## Hosted OpenAI-compatible model
 
-The hosted Claude Sonnet 4.6 run measured 6.7% character error, 92% exact
-numbers and retained 87% of pre-reform letters. Hosted speed and cost vary by
-provider; consult its service terms and pricing. The 24-page results did not
-include comparable time or memory measurements. Install Poppler. Set
-`GATEWAY_API_KEY` in the environment and configure an HTTPS OpenAI-compatible
-gateway:
+Gemini 3.8 Flash, read through an OpenAI-compatible gateway with
+`reasoning_effort: none`, measured 3.8% character error and found 97% of
+numbers on 19 of the pages, at a median of 16 seconds per page. On the same 19
+pages, Claude Sonnet 4.6 measured 7.2%; on all 24 it measured 6.7%, with 92%
+exact numbers and 87% of pre-reform letters kept. Without `reasoning_effort`,
+Gemini spent its token budget reasoning and most dense pages failed; see
+[models that reason before answering](vision-adapter.md#models-that-reason-before-answering).
+Hosted speed and cost vary by provider; consult its service terms and pricing.
+Install Poppler, set `GATEWAY_API_KEY` in the environment, and use the model
+name your gateway lists at `/v1/models`:
 
 ```yaml
 schema_version: "0.1"
@@ -156,9 +166,10 @@ run:
   adapter: vision
   adapter_options:
     base_url: https://gateway.example.org/v1
-    model: claude-sonnet-4-6
+    model: gemini-3.8-flash
     env_key: GATEWAY_API_KEY
     allow_remote: true
+    reasoning_effort: none
 taxonomy:
   page_types:
     prose:
@@ -169,8 +180,9 @@ A gateway on this machine that forwards requests to a hosted provider still
 sends page images off the machine. Use this path only for pages you have the
 right to send there.
 
-Surya OCR 2 and Chandra also measured well, but their weights are licensed for
-research and small organizations; check their terms. They are named here
-without a recipe.
+Surya OCR 2 also measured well, at 9.9% character error on the 24 pages. Its
+weights, like Chandra's, are licensed only for research and small
+organizations; check their terms. Chandra was not run on these pages. Neither
+has a recipe here.
 
 

@@ -19,7 +19,6 @@ The examples below show local, hosted, and mixed extraction paths.
 | Markdown/JSON extraction | Marker | yes | free/open, plus compute | Markdown, JSON, tables, equations, forms, images | Custom adapter returning Markdown or JSON. |
 | Local OCR/layout/tables | Surya | yes | free/open, often heavier compute | OCR, reading order, layout, table recognition | Custom adapter with `capabilities=("ocr", "layout", "tables", "local")`. |
 | Cloud OCR/document AI | User-chosen provider | no | provider-defined | Managed OCR, forms, tables, enterprise pipelines | Custom adapter with redacted env checks and configured pricing. |
-| Cloud VLM | User-chosen model/API | no | provider-defined | Hard pages, multimodal reasoning, messy forms/tables | Custom adapter, usually capped by page/token/dollar budgets. |
 | Hybrid | Local first, cloud only for weak pages | mixed | controlled | Large collections with a small hard subset | Use `quality.jsonl` and review queues to decide reruns. |
 
 ## Recommended workflow
@@ -30,8 +29,11 @@ The examples below show local, hosted, and mixed extraction paths.
 3. Use `pdf_ocr` for scans when plain text is enough.
 4. Use Docling, Marker, or Surya through a custom adapter when layout, tables,
    Markdown, or richer JSON matter.
-5. Use a cloud OCR/VLM adapter only when local output is weak, the document is
-   especially complex, or managed infrastructure is required.
+5. Use the [`vision` adapter](vision-adapter.md) with a local or hosted model
+   when Tesseract's reading is weak, as it often is on historical print; the
+   [engine recipes](engine-recipes.md) compare the models measured. Every
+   reading it makes needs review, and a hosted model sends the pages off the
+   machine.
 6. Inspect `quality.jsonl`, `provenance.jsonl`, `run.log`, and `cost.json`
    before deciding whether to rerun pages with a stronger adapter.
 
