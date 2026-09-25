@@ -1436,7 +1436,7 @@ def _planned_page_count(source: Path, *, adapter: Any, adapter_name: str | None)
     if adapter is not None:
         return adapter_page_count(adapter, source)
     if source.suffix.lower() == ".pdf":
-        if adapter_name == "pdf_ocr":
+        if adapter_name in {"pdf_ocr", "vision"}:
             return ocr_pdf_page_count(source)
         if adapter_name in PDF_ADAPTER_NAMES or adapter_name is None:
             return pdf_page_count(source)

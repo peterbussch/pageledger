@@ -234,6 +234,29 @@ def test_run_reads_pages_with_the_vision_adapter(pdf, endpoint, tmp_path):
     assert (out / "raw" / "doc_0001_page_0001.txt").read_text() == "page text"
 
 
+def test_a_dry_run_plans_every_page_of_a_pdf(tmp_path):
+    pypdf = pytest.importorskip("pypdf")
+    writer = pypdf.PdfWriter()
+    for _ in range(3):
+        writer.add_blank_page(width=612, height=792)
+    source = tmp_path / "book.pdf"
+    writer.write(source)
+    config = tmp_path / "config.yml"
+    run = {
+        "adapter": "vision",
+        "adapter_options": {"base_url": "http://127.0.0.1:9/v1", "model": "m"},
+    }
+    taxonomy = {"page_types": {"prose": {"default_action": "transcribe_text"}}}
+    config.write_text(yaml.safe_dump({"schema_version": "0.1", "run": run, "taxonomy": taxonomy}))
+
+    out = tmp_path / "run"
+    arguments = ["run", str(source), "--config", str(config), "--pages", "2-3", "--dry-run"]
+    assert main([*arguments, "--out", str(out)]) == 0
+
+    routes = yaml.safe_load((out / "route-map.yml").read_text())
+    assert [page["page_number"] for page in routes["documents"][0]["pages"]] == [2, 3]
+
+
 def test_a_document_job_can_use_a_local_vision_model_for_ocr(pdf, endpoint, tmp_path):
     config = tmp_path / "config.yml"
     stages = {

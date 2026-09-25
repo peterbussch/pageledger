@@ -262,9 +262,10 @@ missing metadata: doing so would make provenance claims the adapter did not
 make. Classes and factories are constructed once per execution.
 
 If the adapter can count pages before extraction, expose `page_count(source)`
-returning a positive integer. Adapters without this hook fall back to the
-generic paginator (form-feed for text, 1 page for unknown types, pypdf for PDFs
-when the adapter is in `PDF_ADAPTER_NAMES`).
+returning a positive integer. Without this hook, a text file is split at form
+feeds and any other file, a PDF included, counts as one page. A dry run does
+not load the adapter, so it plans one page per PDF for a custom adapter even
+when the adapter has this hook.
 
 ### Adapter options
 
