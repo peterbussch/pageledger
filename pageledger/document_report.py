@@ -10,7 +10,14 @@ from pathlib import Path
 from urllib.parse import quote
 
 from .checkpoint import atomic_bytes
-from .processing_policy import _attempt_holds, validate_review, warning_holds
+from .processing_policy import (
+    _DISAGREEMENTS,
+    ENGINE_AGREEMENT_THRESHOLD,
+    _attempt_holds,
+    selected_clean_comparisons,
+    validate_review,
+    warning_holds,
+)
 
 _CURRENT_REPORT_FORMAT = "0.6"
 # 0.6 names the source by a path relative to the job; 0.5.1 kept the absolute path.
@@ -28,6 +35,9 @@ _DISPOSITION_LABELS = {
     "coverage_defect": "Possible missing or incomplete content",
     "low_confidence": "The engine was unsure of some words",
     "numeric_column_conflict": "Numbers need checking",
+    "engine_disagreement": "Engines disagree",
+    "numeric_disagreement": "Engines read numbers differently",
+    "unconfirmed_model_output": "Model output not confirmed by another engine",
     "blank_candidate": "Candidate blank",
     "provider_failure": "Extraction failed",
     "outcome_unknown": "Extraction outcome unknown",
@@ -185,6 +195,19 @@ def _recorded_concerns(page: dict, holds_for: dict[str, str]) -> str:
     concerns = []
     for reason in reasons:
         evidence = []
+        if reason in _DISAGREEMENTS and page["selected_attempt"] is not None:
+            comparisons = selected_clean_comparisons(page, page["selected_attempt"], holds_for)
+            for comparison in comparisons:
+                applies = (
+                    comparison["agreement_ratio"] < ENGINE_AGREEMENT_THRESHOLD
+                    if reason == "engine_disagreement"
+                    else bool(comparison["number_differences"])
+                )
+                if applies:
+                    evidence.append(
+                        f"comparison of {_escape(comparison['left_attempt'])} and "
+                        f"{_escape(comparison['right_attempt'])}"
+                    )
         for attempt in page["attempts"]:
             code = _explicit_attempt_hold(attempt, reason, holds_for)
             if code is None:

@@ -441,6 +441,12 @@ Adapters should return `ExtractionResult` instances with:
 | `confidence_detail` | object or null | Optional engine-native confidence evidence, adapter-defined shape; recorded into `quality.jsonl` verbatim. `pdf_ocr` fills Tesseract per-word statistics (`scale`, `word_count`, `mean`, `min`, `below_60_count`, `below_60_ratio`). |
 | `input_evidence` | object or null | Optional exact page image descriptor; shape, file containment, hashes and dimensions follow [the image evidence contract](image-evidence-spec.md). |
 
+An adapter whose output a model generates, and so can contain text that is
+not on the page, should declare `generative` in `capabilities`. Document jobs
+keep such a reading in review until another engine agrees with it; see
+[Compare engines on a page](processing-spec.md#compare-engines-on-a-page).
+PageLedger never infers the capability from an adapter's name.
+
 ## Adapter candidates
 
 - Tesseract / pytesseract for cheap OCR fallback.

@@ -106,6 +106,46 @@ can clear a hold only when they bind the source/page and, for reviewed text,
 the selected attempt and output hash. A known source defect directs the user to
 an alternate source and prevents further automatic extraction.
 
+## Compare engines on a page
+
+When a page has readings from more than one engine, the job compares them word
+by word, after NFC normalization and with whitespace collapsed. Each comparison
+records the two attempts, their word agreement from 0 to 1, up to 20 passages
+where they differ and up to 20 numbers that differ. Comparisons are stored with
+the page in `job.json` and the report.
+
+Only readings that are clean themselves count. A page moves on to OCR because
+its text layer was held, so that layer disagreeing with the OCR is expected and
+says nothing. Comparing the selected reading with another clean one:
+
+- word agreement below 0.60 adds the review reason `engine_disagreement`;
+- a number that differs adds `numeric_disagreement`;
+- a reading from a generative adapter, such as [`vision`](vision-adapter.md),
+  stays in review as `unconfirmed_model_output` unless another clean reading
+  agrees at 0.60 or above.
+
+These reasons hold a page for review; they never start another stage. Engine
+agreement is evidence, not truth: two engines can make the same mistake.
+
+The 0.60 threshold was set on 24 transcribed calibration pages, where it holds
+9 pages when RapidOCR is compared with Apple Vision, 14 for Surya with
+RapidOCR and 22 for Tesseract with RapidOCR: the weaker the engines, the more
+pages it holds. How many real number errors it catches has not been measured.
+Jobs created before 0.6 are not compared and keep their review reasons.
+
+To compare engines on pages that need no second reading, run one on a sample:
+
+```yaml
+processing:
+  benchmark:
+    stage: local_ocr
+    every_nth_page: 10
+```
+
+This runs `local_ocr` on source pages 10, 20, 30 and so on, even when their
+text layer is clean. The stage must be enabled, and its pages count against the
+job's limits.
+
 ## One budget for the job
 
 `processing.limits` accepts:

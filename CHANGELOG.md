@@ -27,6 +27,13 @@ Release changes follow the [artifact compatibility policy](docs/run-manifest-spe
   language. Quality lines gain `largest_identical_line_count`,
   `longest_repeated_tail_length` and `longest_letter_run`, and document jobs
   hold such pages as coverage defects.
+- Document jobs compare the engines' readings of each page. When the selected
+  reading and another clean one agree on fewer than 60% of words, the page is
+  held as `engine_disagreement`; when a number differs, as
+  `numeric_disagreement`. A reading from a generative adapter, such as
+  `vision`, stays in review as `unconfirmed_model_output` until another engine
+  agrees with it. `processing.benchmark` runs a stage on every Nth page even
+  when it is not needed, to compare engines on a sample.
 - A page type can set `review: true` to be extracted and still held for
   review: after extraction the page joins the review queue with reason
   `route_review:<type>`. `classify` copies the flag into route maps; route

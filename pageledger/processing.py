@@ -24,6 +24,7 @@ from .checkpoint import (
     writer_lock,
 )
 from .classifier import classify_signals, merge_classify_thresholds, structural_signals
+from .comparison import compare_texts
 from .config import load_config
 from .processing_config import STAGES, processing_config
 from .processing_policy import HOLD_POLICY, warning_holds
@@ -64,6 +65,21 @@ def _check_source(job: dict) -> None:
     source = Path(job["source"]["path"])
     if not source.is_file() or file_digest(source) != job["source"]["sha256"]:
         raise ValueError("Document job source changed or is missing")
+
+
+def _build_comparisons(attempts: list[dict]) -> list[dict]:
+    readable = [
+        item for item in attempts if item["outcome"] == "completed" and item["text"].strip()
+    ]
+    return [
+        {
+            "left_attempt": left["attempt_id"],
+            "right_attempt": right["attempt_id"],
+            **compare_texts(left["text"], right["text"]),
+        }
+        for index, left in enumerate(readable)
+        for right in readable[index + 1 :]
+    ]
 
 
 def _safe(root: Path, relative: str) -> Path:
@@ -446,6 +462,10 @@ def _refresh(job: dict, root: Path, *, materialize: bool = True) -> None:
                 "failure": record.get("error"),
                 "input_evidence": result.get("input_evidence"),
             }
+            if job.get("hold_policy") == HOLD_POLICY:
+                attempt["adapter_capabilities"] = provenance.get("extractor", {}).get(
+                    "capabilities", []
+                )
             if (
                 stage["stage"] in {"image", "second_opinion"}
                 and state == "completed"
@@ -464,8 +484,13 @@ def _refresh(job: dict, root: Path, *, materialize: bool = True) -> None:
                     next_action="Inspect the image adapter: completed image calls require bound input evidence.",
                 )
             pages[page_id]["attempts"].append(attempt)
+    holds = warning_holds(job)
     for page in pages.values():
-        page.update(assess_page(page, page["review"], holds_for=warning_holds(job)))
+        if job.get("hold_policy") == HOLD_POLICY:
+            page["comparisons"] = _build_comparisons(page["attempts"])
+        else:
+            page.pop("comparisons", None)
+        page.update(assess_page(page, page["review"], holds_for=holds))
     attempts = [attempt for page in pages.values() for attempt in page["attempts"]]
     paid = [a for a in attempts if a["stage"] in {"image", "second_opinion"}]
     token_values = [a["usage"].get("tokens") for a in attempts]
@@ -680,6 +705,17 @@ def _continue(job: dict, root: Path, adapter_path: Path | None) -> dict:
         if job["policy"][name] is None:
             continue
         eligible = [p["page_number"] for p in job["pages"] if p["next_action"] == name]
+        benchmark = job["policy"].get("benchmark")
+        if benchmark and benchmark["stage"] == name:
+            eligible = sorted(
+                set(eligible)
+                | {
+                    p["page_number"]
+                    for p in job["pages"]
+                    if p["page_number"] % benchmark["every_nth_page"] == 0
+                    and not any(a["stage"] == name for a in p["attempts"])
+                }
+            )
         groups = [eligible] if name == "local_text" and eligible else [[n] for n in eligible]
         for numbers in groups:
             reason = _budget_reason(job, name, len(numbers))

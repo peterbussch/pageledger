@@ -162,6 +162,60 @@ def test_report_keeps_partial_evidence_without_selecting_it(tmp_path):
         write_document_report(job, tmp_path)
 
 
+def test_report_lists_only_clean_selected_comparison_evidence():
+    from pageledger.document_report import _recorded_concerns
+
+    page = {
+        "selected_attempt": "ocr",
+        "review_reasons": ["engine_disagreement", "numeric_disagreement"],
+        "attempts": [
+            {
+                "attempt_id": "ocr",
+                "outcome": "completed",
+                "warnings": [],
+                "raw_artifact": "ocr.md",
+                "raw_sha256": "a" * 64,
+                "text": "ocr text",
+            },
+            {
+                "attempt_id": "clean",
+                "outcome": "completed",
+                "warnings": [],
+                "raw_artifact": "clean.md",
+                "raw_sha256": "b" * 64,
+                "text": "clean text",
+            },
+            {
+                "attempt_id": "held",
+                "outcome": "completed",
+                "warnings": ["coverage_defect"],
+                "raw_artifact": "held.md",
+                "raw_sha256": "c" * 64,
+                "text": "held text",
+            },
+        ],
+        "comparisons": [
+            {
+                "left_attempt": "ocr",
+                "right_attempt": "clean",
+                "agreement_ratio": 0.4,
+                "number_differences": [{"number": "12", "side": "left", "context": "row"}],
+            },
+            {
+                "left_attempt": "ocr",
+                "right_attempt": "held",
+                "agreement_ratio": 0.1,
+                "number_differences": [{"number": "99", "side": "right", "context": "row"}],
+            },
+        ],
+    }
+
+    concerns = _recorded_concerns(page, {"coverage_defect": "coverage_defect"})
+
+    assert "ocr and clean" in concerns
+    assert "ocr and held" not in concerns
+
+
 @pytest.mark.parametrize("mutation", ["tampered", "traversal", "absolute", "symlink", "non_utf8"])
 def test_report_rejects_unsafe_or_changed_selected_evidence(tmp_path, mutation):
     job = job_fixture(tmp_path)

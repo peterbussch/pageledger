@@ -28,14 +28,30 @@ class StageAdapter(TextAdapter):
         self.calls.append((self.stage, page_number))
         if self.failure and self.stage == "image":
             raise self.failure
-        warnings = ["coverage_defect"] if page_number in self.defective else []
+        defective = page_number in self.defective and not (
+            getattr(self, "text_only_defective", False) and self.stage != "local_text"
+        )
+        warnings = ["coverage_defect"] if defective else []
         evidence = (
             image_descriptor(Path(self.evidence_dir).parent, source, page_number, prompt)
             if self.stage in {"image", "second_opinion"}
             else None
         )
+        content = TEXT
+        if self.stage == "local_text" and getattr(self, "numeric", False):
+            content = TEXT.replace("source page", "source page 13")
+        if self.stage == "local_ocr" and getattr(self, "different", False):
+            content = (
+                TEXT.replace("source page", "source page 14")
+                if getattr(self, "numeric", False)
+                else "Unrelated OCR result with entirely different words. " * 8
+            )
+        if self.stage in {"local_text", "local_ocr"} and getattr(self, "generative_only", False):
+            content = ""
+        if self.stage == "image" and getattr(self, "generative_only", False):
+            content = TEXT
         return ExtractionResult(
-            TEXT,
+            content,
             "text",
             1.0,
             "gemini-test-returned" if evidence else "synthetic",
@@ -66,6 +82,15 @@ def setup(tmp_path, monkeypatch):
         object.__setattr__(value, "stage", name)
         object.__setattr__(value, "failure", shared["failure"])
         object.__setattr__(value, "defective", shared["defective"])
+        object.__setattr__(value, "different", shared.get("different", False))
+        object.__setattr__(value, "numeric", shared.get("numeric", False))
+        object.__setattr__(value, "generative_only", shared.get("generative_only", False))
+        object.__setattr__(value, "text_only_defective", shared.get("text_only_defective", False))
+        object.__setattr__(
+            value,
+            "capabilities",
+            ("generative",) if name == "image" and shared.get("generative_only") else (),
+        )
         object.__setattr__(value, "evidence_dir", args[0].get("evidence_dir") if args else None)
         return value
 
@@ -110,6 +135,126 @@ def test_job_language_config_reaches_child_quality_lines(setup):
     lines = (setup[2] / first_stage["run_path"] / "quality.jsonl").read_text().splitlines()
     quality = json.loads(lines[0])
     assert "script_mismatch" in quality["warnings"]
+
+
+def test_cross_engine_disagreement_with_held_attempt_is_not_review_evidence(setup):
+    setup[3]["defective"] = {1}
+    setup[3]["text_only_defective"] = True
+    setup[3]["different"] = True
+    launch(setup, pages="1")
+    page = read_record(setup[2] / "job.json")["pages"][0]
+    assert "engine_disagreement" not in page["review_reasons"]
+    assert page["next_action"] == "review"
+
+
+def test_numeric_disagreement_with_held_attempt_is_not_review_evidence(setup):
+    setup[3]["defective"] = {1}
+    setup[3]["text_only_defective"] = True
+    setup[3]["numeric"] = True
+    setup[3]["different"] = True
+    launch(setup, pages="1")
+    page = read_record(setup[2] / "job.json")["pages"][0]
+    assert "numeric_disagreement" not in page["review_reasons"]
+
+
+def test_held_text_layer_is_not_comparison_evidence_against_clean_ocr(setup):
+    setup[3]["defective"] = {1}
+    setup[3]["text_only_defective"] = True
+    setup[3]["different"] = True
+    launch(setup, pages="1")
+    page = read_record(setup[2] / "job.json")["pages"][0]
+    assert page["selected_attempt"].startswith("local_ocr-")
+    assert "engine_disagreement" not in page["review_reasons"]
+    assert "numeric_disagreement" not in page["review_reasons"]
+
+
+def test_generative_only_selection_is_unconfirmed(setup):
+    setup[3]["defective"] = {1}
+    setup[3]["generative_only"] = True
+    launch(setup, pages="1")
+    page = read_record(setup[2] / "job.json")["pages"][0]
+    assert page["selected_attempt"].startswith("image-")
+    assert "unconfirmed_model_output" in page["review_reasons"]
+
+
+def test_clean_classic_selection_is_not_held_by_generative_second_opinion(setup):
+    from pageledger.processing_policy import assess_page
+
+    page = {
+        "attempts": [
+            {
+                "attempt_id": "classic",
+                "outcome": "completed",
+                "raw_artifact": "a",
+                "raw_sha256": "x",
+                "text": "same",
+                "adapter_capabilities": [],
+            },
+            {
+                "attempt_id": "model",
+                "outcome": "completed",
+                "raw_artifact": "b",
+                "raw_sha256": "y",
+                "text": "same",
+                "adapter_capabilities": ["generative"],
+            },
+        ],
+        "comparisons": [
+            {
+                "left_attempt": "classic",
+                "right_attempt": "model",
+                "agreement_ratio": 1.0,
+                "number_differences": [],
+            }
+        ],
+    }
+    assert "unconfirmed_model_output" not in assess_page(page)["review_reasons"]
+
+
+def test_agreeing_second_attempt_confirms_generative_selection():
+    from pageledger.processing_policy import assess_page
+
+    page = {
+        "attempts": [
+            {
+                "attempt_id": "classic",
+                "outcome": "completed",
+                "raw_artifact": "a",
+                "raw_sha256": "x",
+                "text": "same",
+                "adapter_capabilities": [],
+                "warnings": ["coverage_defect"],
+            },
+            {
+                "attempt_id": "model",
+                "outcome": "completed",
+                "raw_artifact": "b",
+                "raw_sha256": "y",
+                "text": "same",
+                "adapter_capabilities": ["generative"],
+            },
+        ],
+        "comparisons": [
+            {
+                "left_attempt": "classic",
+                "right_attempt": "model",
+                "agreement_ratio": 1.0,
+                "number_differences": [],
+            }
+        ],
+    }
+    assessed = assess_page(page)
+    assert assessed["selected_attempt"] == "model"
+    assert "unconfirmed_model_output" in assessed["review_reasons"]
+
+
+def test_benchmark_samples_source_page_numbers(setup):
+    data = yaml.safe_load(setup[1].read_text())
+    data["processing"]["benchmark"] = {"stage": "local_ocr", "every_nth_page": 2}
+    setup[1].write_text(yaml.safe_dump(data))
+    launch(setup)
+    assert ("local_ocr", 2) in setup[3]["calls"]
+    assert ("local_ocr", 1) not in setup[3]["calls"]
 
 
 def test_child_completion_before_job_commit_is_adopted_without_repeating(setup, monkeypatch):
@@ -435,6 +580,49 @@ def test_verify_job_accepts_a_legacy_report_without_format_marker(setup):
     (setup[2] / "report.md").write_text(render_document_report(report))
 
     assert verify_job(setup[2])["status"] == "pass"
+
+
+def test_verify_job_rebuilds_legacy_hold_policy_artifacts(setup):
+    from pageledger.checkpoint import write_record
+    from pageledger.document_report import (
+        build_document_report,
+        render_document_report,
+        render_transcript,
+    )
+
+    launch(setup)
+    job_path = setup[2] / "job.json"
+    job = read_record(job_path)
+    job.pop("hold_policy", None)
+    for page in job["pages"]:
+        page.pop("comparisons", None)
+        for attempt in page["attempts"]:
+            attempt.pop("adapter_capabilities", None)
+    write_record(job_path, job)
+    report = build_document_report(job, setup[2], report_format="0.5.1")
+    (setup[2] / "document.json").write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n")
+    (setup[2] / "transcript.md").write_text(render_transcript(report))
+    (setup[2] / "report.md").write_text(render_document_report(report))
+    assert verify_job(setup[2])["status"] == "pass"
+
+
+@pytest.mark.parametrize(
+    "reason,label",
+    [
+        ("engine_disagreement", "Engines disagree"),
+        ("numeric_disagreement", "Engines read numbers differently"),
+        ("unconfirmed_model_output", "Model output not confirmed by another engine"),
+    ],
+)
+def test_new_review_dispositions_render_in_report(setup, reason, label):
+    from pageledger.document_report import build_document_report, render_document_report
+
+    launch(setup, pages="1")
+    job = read_record(setup[2] / "job.json")
+    job["pages"][0]["disposition"] = reason
+    job["pages"][0]["review_reasons"] = [reason]
+    rendered = render_document_report(build_document_report(job, setup[2]))
+    assert label in rendered
 
 
 def test_read_only_source_inspection_counts_annotations_without_exposing_contents(tmp_path):

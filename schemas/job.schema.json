@@ -210,6 +210,12 @@
                         "object",
                         "null"
                       ]
+                    },
+                    "adapter_capabilities": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
                     }
                   },
                   "required": [
@@ -240,6 +246,9 @@
                   "coverage_defect",
                   "low_confidence",
                   "numeric_column_conflict",
+                  "engine_disagreement",
+                  "numeric_disagreement",
+                  "unconfirmed_model_output",
                   "blank_candidate",
                   "provider_failure",
                   "outcome_unknown",
@@ -538,6 +547,53 @@
                     "schema_version",
                     "source_sha256",
                     "decisions"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "comparisons": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "left_attempt": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "right_attempt": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "agreement_ratio": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 1
+                    },
+                    "spans": {
+                      "type": "array",
+                      "maxItems": 20,
+                      "items": {
+                        "type": "object"
+                      }
+                    },
+                    "number_differences": {
+                      "type": "array",
+                      "maxItems": 20,
+                      "items": {
+                        "type": "object"
+                      }
+                    },
+                    "truncated": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "left_attempt",
+                    "right_attempt",
+                    "agreement_ratio",
+                    "spans",
+                    "number_differences",
+                    "truncated"
                   ],
                   "additionalProperties": false
                 }
