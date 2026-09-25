@@ -535,8 +535,6 @@ Runnable examples live in `examples/`:
 - `docling_adapter.py`: machine-level standard or local-VLM Docling conversion,
   document-batched into page-level Markdown
 - `cloud_vlm_adapter_skeleton.py`
-- `openai_image_adapter.py`: bounded image requests over an OpenAI-compatible
-  transport, restricted to explicit Gemini or DeepSeek model names
 - `prereform_normalizer_adapter.py`: OCR plus pre-1918 Russian orthography
   canonicalization, with the rewrite recorded as a result warning
 

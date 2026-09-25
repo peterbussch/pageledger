@@ -327,9 +327,6 @@ A model writes its reading rather than reading it off the page. Unless a
 clean reading from another engine agrees with it, the job holds that text for
 review as `unconfirmed_model_output`; see [warnings and holds](warnings.md).
 
-The older [OpenAI-compatible example](../examples/openai_image_adapter.py)
-remains for existing configs. It accepts only Gemini or DeepSeek model names,
-checks the live model list, and needs Pillow and Poppler in its environment.
 Core includes no provider SDK, OCR engine or pricing catalog.
 
 Image-evidence runs currently refuse `bundle` with an explicit unsupported

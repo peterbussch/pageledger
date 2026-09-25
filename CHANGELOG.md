@@ -134,6 +134,16 @@ Release changes follow the [artifact compatibility policy](docs/run-manifest-spe
   higher limit in `limits_history` and continues. Unknown paid usage under a
   token or cost limit still halts.
 
+### Removed
+
+- `examples/openai_image_adapter.py`, the example image adapter. The built-in
+  `vision` adapter reads pages in a document job's image and second-opinion
+  stages and keeps the same image evidence. To move a config, name
+  `adapter: vision` with `base_url`, `model` and `env_key`; a host other than
+  this machine also needs an `https://` address and `allow_remote: true`.
+  `vision` takes `max_tokens` where the example took `max_output_tokens`, and
+  does not limit models to the Gemini and DeepSeek families.
+
 ### Fixed
 
 - Encrypted and damaged PDFs stop with a typed message that names the file:
@@ -206,8 +216,9 @@ Release changes follow the [artifact compatibility policy](docs/run-manifest-spe
   now be `paused_budget`, and a report's `report_format` may be `"0.6"`. Eight
   retained 0.5.1 document jobs, seven of them with `low_confidence` pages, pass
   `verify-job` unchanged.
-- The `pdf` extra adds `cryptography` (through `pypdf[crypto]`). Core still
-  depends only on PyYAML.
+- The `pdf` extra adds `cryptography` (through `pypdf[crypto]`), and the new
+  `rapidocr` extra installs RapidOCR and ONNX Runtime. Core still depends only
+  on PyYAML.
 
 ## 0.5.2 - 2026-09-12
 
