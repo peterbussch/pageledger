@@ -19,7 +19,7 @@ scope list.
 | `schemas/` | JSON Schemas for every generated artifact — the output contract |
 | `docs/` | User docs and per-artifact specs (`*-spec.md`), adapter protocol |
 | `docs/examples/` | Config examples (`pageledger.yml` is the recommended starting point) |
-| `examples/` | Custom adapter examples (Tesseract, OCRmyPDF preprocessing, cloud-VLM skeleton) |
+| `examples/` | Custom adapter examples (RapidOCR, Apple Vision, Docling, Tesseract variants, a cloud-VLM skeleton) and the tutorial runner |
 | `tests/pageledger/` | Test suite; fixtures under `tests/fixtures/` |
 | `skills/pageledger/SKILL.md` | Claude Code skill for operating PageLedger |
 
@@ -30,16 +30,16 @@ pip install -e ".[dev,pdf]"
 pageledger init-config --out pageledger.yml
 printf 'first page\fsecond page\n' > sample.txt
 pageledger classify sample.txt --config pageledger.yml --out routes.yml --json
-pageledger run sample.txt --config pageledger.yml --out runs/demo --json
-pageledger run sample.txt --config pageledger.yml --routes routes.yml --out runs/routed
+pageledger run sample.txt --config pageledger.yml --routes routes.yml --out runs/demo
 pageledger inspect-run runs/demo
-pageledger rerun runs/demo --config pageledger.yml --out runs/demo-2  # if flagged pages exist
-pageledger compare-runs runs/demo runs/demo-2
+pageledger verify-run runs/demo
 pageledger doctor --json
 ```
 
 `--dry-run` writes the route map and planning artifacts without extracting.
-Output directories must not already exist.
+Output directories must not already exist. Neither page of this sample is
+flagged, so there is nothing to rerun; the tested first run in `README.md`
+flags a page and continues with `rerun` and `compare-runs`.
 
 ## Test and verify
 
