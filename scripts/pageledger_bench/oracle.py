@@ -1037,7 +1037,41 @@ def _expected_text_metrics(text: str, token_lengths: list[int]) -> dict[str, Any
         "latin_letter_ratio": 0.0 if not letter_count else round(latin_count / letter_count, 4),
         "prereform_letter_count": sum(char in _PREREFORM_LETTERS for char in text),
         "terminal_hard_sign_count": len(_TERMINAL_HARD_SIGN.findall(text)),
+        "letter_count": letter_count,
+        "digit_count": sum(unicodedata.category(char) == "Nd" for char in text),
+        "mixed_script_token_ratio": _mixed_script_token_ratio(text),
+        "private_use_count": _private_use_outside_bullets(text),
     }
+
+
+def _mixed_script_token_ratio(text: str) -> float:
+    tokens: list[set[str]] = []
+    scripts: set[str] | None = None
+    for character in text:
+        category = unicodedata.category(character)
+        if category.startswith("L") or (category.startswith("M") and scripts is not None):
+            scripts = set() if scripts is None else scripts
+            name = unicodedata.name(character, "")
+            scripts.update(s for s in ("LATIN", "CYRILLIC", "GREEK") if name.startswith(s))
+        elif character in {"\u200c", "\u200d"} and scripts is not None:
+            continue
+        elif scripts is not None:
+            tokens.append(scripts)
+            scripts = None
+    if scripts is not None:
+        tokens.append(scripts)
+    return 0.0 if not tokens else round(sum(len(t) > 1 for t in tokens) / len(tokens), 4)
+
+
+def _private_use_outside_bullets(text: str) -> int:
+    count = 0
+    for line in text.splitlines():
+        body = line.lstrip()
+        for position, character in enumerate(body):
+            if unicodedata.category(character) != "Co":
+                continue
+            count += not (position == 0 and body[1:2].strip() == "")
+    return count
 
 
 def _suspicious_symbol(character: str) -> bool:

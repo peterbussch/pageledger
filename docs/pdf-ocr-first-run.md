@@ -107,7 +107,8 @@ YAML
   --json
 ```
 
-Tune DPI and language in the config:
+Tune DPI and language in the `run` section of your `pageledger.yml` (keep its
+`taxonomy` section, which tells PageLedger which pages to extract):
 
 ```yaml
 run:
@@ -185,13 +186,27 @@ lineage and cannot be used as bundle baselines.
 
 ## 8. Interpreting failures
 
-- Missing `pypdf`: install `pageledger[pdf]` for `pdf_text` and PDF page counts.
-- Missing `pdftoppm` or `tesseract`: install those external commands or use a
-  different adapter.
+- Missing `pypdf`: install `pageledger[pdf]` for `pdf_text`, PDF page counts
+  and AES-encrypted files.
+- `unsupported_encryption`, `malformed_pdf` or `missing_crypto_dependency`
+  before any page runs: the named PDF needs a password, uses an encryption
+  scheme pypdf cannot read, is damaged, or needs the AES support that
+  `pageledger[pdf]` installs. PageLedger does not take passwords or repair
+  files; use an unprotected or repaired copy.
+- Missing `pdftoppm` or `tesseract`, or a language pack named in `lang`: the
+  run stops before any page is read and prints a message that starts with a
+  code, for example `missing_binary: ... install Poppler` or
+  `missing_language_pack: ... Installed: eng, osd`. No run directory is
+  written. Install what the message names, or change `lang`.
 - Missing cloud key: set the provider env var only in the shell that needs it.
   Doctor reports presence as redacted metadata.
 - Short, empty, or noisy pages in `quality.jsonl`: inspect the raw page artifact
   and compare against the PDF. Treat OCR output as evidence, not truth.
+- `render_dpi_capped` in `quality.jsonl`: the PDF declares that page so large
+  that rendering it at your DPI would exceed `max_render_pixels`, so it was
+  rendered at a lower DPI, which provenance records. A page that would need
+  less than 72 DPI stops the run with `render_limit: ...`. See
+  [oversized pages](ocr-options.md#oversized-pages) before raising the limit.
 - Adapter crash, budget exceeded, or invalid result: a partial run directory is
   still written. Check `manifest.json` → `status` for `"failed"` (mid-run
   failure) vs. `"completed"` (success). Inspect `run.log` for per-page error

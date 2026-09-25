@@ -13,6 +13,11 @@ Run it against a run produced by plain ``pdf_ocr`` — not instead of one:
 
 with ``normalized.yml`` naming this adapter:
 
+    schema_version: "0.1"
+    taxonomy:
+      page_types:
+        prose:
+          default_action: transcribe_text
     run:
       adapter: prereform_normalizer_adapter:PrereformNormalizerAdapter
       adapter_options:

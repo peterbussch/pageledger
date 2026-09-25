@@ -15,6 +15,11 @@ shape works with llama.cpp or vLLM — swap ``_generate``.
 
 with ``cleanup.yml``:
 
+    schema_version: "0.1"
+    taxonomy:
+      page_types:
+        prose:
+          default_action: transcribe_text
     run:
       adapter: local_llm_cleanup_adapter:LocalLlmCleanupAdapter
       adapter_options:

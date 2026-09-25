@@ -56,7 +56,7 @@ def test_pdf_document_text_is_cached_and_changed_source_rejected(tmp_path, monke
             return "page"
 
     class Reader:
-        def __init__(self, _handle):
+        def __init__(self, _handle, strict=False):
             reads.append("reader")
             self.pages = [Page(), Page()]
 

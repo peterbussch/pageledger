@@ -31,6 +31,7 @@ _HOLD_ORDER = (
     "source_defect",
     "numeric_column_conflict",
     "coverage_defect",
+    "low_confidence",
     "handwriting",
     "unreadable",
     "illustration",
@@ -62,10 +63,23 @@ _WARNING_HOLDS = {
     "replacement_characters": "coverage_defect",
     "control_characters": "coverage_defect",
     "suspicious_symbol_density": "coverage_defect",
-    "low_confidence": "coverage_defect",
+    "low_confidence": "low_confidence",
     "instruction_echo": "coverage_defect",
+    "digits_only_text": "coverage_defect",
+    "mixed_script_tokens": "coverage_defect",
+    "private_use_characters": "coverage_defect",
+    "repeated_page_text": "coverage_defect",
 }
+# Jobs written before 0.6 carry no hold_policy and filed an engine's low
+# confidence under coverage_defect; verification rebuilds them that way.
+_LEGACY_WARNING_HOLDS = {**_WARNING_HOLDS, "low_confidence": "coverage_defect"}
+HOLD_POLICY = "0.6"
 _HASH = re.compile(r"[0-9a-f]{64}\Z")
+
+
+def warning_holds(record: dict) -> dict[str, str]:
+    """The warning-to-hold mapping that a job or its report was written with."""
+    return _WARNING_HOLDS if record.get("hold_policy") == HOLD_POLICY else _LEGACY_WARNING_HOLDS
 
 
 def validate_review(review: dict, page: dict) -> None:
@@ -132,18 +146,18 @@ def validate_review(review: dict, page: dict) -> None:
         raise ValueError("Review output binding is invalid")
 
 
-def _attempt_holds(attempt: dict) -> list[str]:
+def _attempt_holds(attempt: dict, holds_for: dict[str, str] = _WARNING_HOLDS) -> list[str]:
     holds = []
     warnings = attempt.get("warnings") or []
     for warning in warnings:
         code = warning.get("type", warning.get("code")) if isinstance(warning, dict) else warning
-        if isinstance(code, str) and code in _WARNING_HOLDS:
-            holds.append(_WARNING_HOLDS[code])
+        if isinstance(code, str) and code in holds_for:
+            holds.append(holds_for[code])
     classification = (attempt.get("classification") or {}).get("type")
-    if classification in _WARNING_HOLDS:
+    if classification in holds_for:
         reason = (attempt.get("classification") or {}).get("reason", "")
         if reason != "empty_pdf_text_ambiguous":
-            holds.append(_WARNING_HOLDS[classification])
+            holds.append(holds_for[classification])
     alignment = attempt.get("alignment") or {}
     metrics = alignment.get("metrics") or {}
     if (
@@ -262,12 +276,14 @@ def _numeric_conflict(left: dict, right: dict) -> bool:
     )
 
 
-def assess_page(page: dict, review: dict | None = None) -> dict:
+def assess_page(
+    page: dict, review: dict | None = None, *, holds_for: dict[str, str] = _WARNING_HOLDS
+) -> dict:
     """Select evidence deterministically while keeping all recorded review holds."""
     attempts = page.get("attempts", [])
     reasons = list(dict.fromkeys(page.get("review_reasons") or []))
     completed = [item for item in attempts if item.get("outcome") == "completed"]
-    holds_by_id = {item["attempt_id"]: _attempt_holds(item) for item in attempts}
+    holds_by_id = {item["attempt_id"]: _attempt_holds(item, holds_for) for item in attempts}
     for holds in holds_by_id.values():
         reasons.extend(hold for hold in holds if hold not in reasons)
     numeric_conflict = any(_numeric_conflict(a, b) for a, b in combinations(completed, 2))

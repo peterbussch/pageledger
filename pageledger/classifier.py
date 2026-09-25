@@ -305,7 +305,7 @@ def classify(
     run_id = f"classify-{_utc_now_compact()}"
     warnings: list[str] = list(config.warnings)
     if from_run is None:
-        expanded_inputs = _expand_inputs(inputs)
+        expanded_inputs, _skipped_inputs = _expand_inputs(inputs)
         _validate_unique_inputs(expanded_inputs)
         documents, evidence, probe_identities = _classify_inputs(
             inputs=expanded_inputs,
@@ -424,7 +424,7 @@ def _classify_inputs(
                     signals=signals,
                 )
             routed = _route_decision(config, decision)
-            pages.append(_page_route(page_id, page_number, routed))
+            pages.append(_page_route(config, page_id, page_number, routed))
             evidence.append(
                 _evidence_entry(
                     config=config,
@@ -596,7 +596,7 @@ def _classify_from_run(
                     signals=signals,
                 )
             routed = _route_decision(config, decision)
-            pages.append(_page_route(page_id, page_number, routed))
+            pages.append(_page_route(config, page_id, page_number, routed))
             evidence.append(
                 _evidence_entry(
                     config=config,
@@ -709,7 +709,9 @@ def _route_decision(
     )
 
 
-def _page_route(page_id: str, page_number: int, decision: ClassificationResult) -> dict[str, Any]:
+def _page_route(
+    config: PageLedgerConfig, page_id: str, page_number: int, decision: ClassificationResult
+) -> dict[str, Any]:
     page = {
         "page_id": page_id,
         "page_number": page_number,
@@ -720,6 +722,8 @@ def _page_route(page_id: str, page_number: int, decision: ClassificationResult) 
     }
     if decision.prompt is not None:
         page["prompt"] = decision.prompt
+    if decision.action not in {"review", "skip"} and config.review_after_extraction(decision.type):
+        page["review"] = True
     return page
 
 

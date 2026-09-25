@@ -103,14 +103,17 @@ taxonomy:
     blank:
       default_action: skip
     sparse:
-      default_action: review
+      default_action: transcribe_text
+      review: true
     prose:
       default_action: transcribe_text
       prompt: Preserve spelling and line breaks.
     table_likely:
-      default_action: review
+      default_action: transcribe_text
+      review: true
     unknown:
-      default_action: review
+      default_action: transcribe_text
+      review: true
 
 classify:
   adapter: pdf_ocr
@@ -127,6 +130,13 @@ run:
     dpi: 300
     lang: eng
 ```
+
+`review: true` extracts pages of that type and still holds them for a person:
+the route page records `review: true`, and after extraction the page joins the
+review queue with reason `route_review:<type>`. `init-config` uses it for
+`sparse`, `table_likely` and `unknown`, the types whose text most often needs
+checking against the image. Use `default_action: review` instead to queue a
+type without extracting it.
 
 For each page, an action or prompt returned by a custom hook takes precedence.
 Otherwise PageLedger uses the matching taxonomy entry. An unmapped action

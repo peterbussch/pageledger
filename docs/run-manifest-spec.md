@@ -91,6 +91,7 @@ is the durable pointer to every other artifact in the run directory.
 | `completed_at` | ISO timestamp or null | Run completion time in UTC. |
 | `status` | string | `completed`, `failed`, or `partial`. |
 | `inputs` | array | Source files and checksums. Each entry carries `path`, `sha256`, and `page_count` (the source's full size). When `--pages` or a rerun limits the run, the entry also carries the selection expression as `pages` (e.g. `"1-8,81"`). |
+| `skipped_inputs` | array | Optional. Names of hidden files (such as `.DS_Store` and `._*` sidecars) found in input directories and skipped. Present only when a file was skipped. |
 | `config` | object | Run-directory config snapshot path, checksum, and source config paths. |
 | `extractors` | array | Extractor adapters and model/version metadata. Current writers may add an optional `reproducibility_profile` containing the profile envelope and `profile_sha256`; it is path-free and omitted when an adapter has no hook. |
 | `dataset_citation` | object or null | Optional user-provided source citation for the input collection. |
@@ -303,9 +304,22 @@ canonical signal that PageLedger finished writing every artifact it points to;
   exception class, page, adapter, attempt, and whether stdout/stderr existed.
   Adapter-controlled messages and stdout/stderr contents are replaced with
   `<redacted>` in both `run.log` and terminal output so provider errors cannot
-  leak credentials.
+  leak credentials. The exception is a typed diagnostic that a built-in
+  adapter raises about its own setup (codes `missing_binary`,
+  `missing_language_pack`, `missing_crypto_dependency`,
+  `unsupported_encryption`, `malformed_pdf`, `render_limit`, `engine_timeout`).
+  PageLedger writes those messages itself, so they are shown in full and the
+  page is not retried.
+- **Built-in adapters check their setup first.** `pdf_ocr` confirms that
+  `pdftoppm`, `tesseract` and every language in `lang` are installed before
+  any page runs; a missing one stops the run before its directory is written.
 - **Config snapshot is always written before extraction.** If a failure happens
   during extraction, `config-snapshot.yml` exists and can be audited.
+- **Artifacts are written whole or not at all.** Each artifact is written to a
+  hidden temporary file beside it and then renamed into place, so a full disk
+  or a crash leaves the previous file or none, never a truncated one. A failed
+  write stops the run with the operating system's error, for example
+  `No space left on device`.
 - **Output directory is empty-or-new before extraction starts.** The runner
   rejects non-empty directories at preflight, so a partial run never contaminates
   a prior run's artifacts.
@@ -320,6 +334,13 @@ canonical signal that PageLedger finished writing every artifact it points to;
 | `Adapter 'X' does not support action 'Y'` | Adapter/action mismatch | Check `adapter.supports(action)` |
 | `Cannot read input file` | Permission error or missing file | `chmod +r` or verify path |
 | `Budget exceeded after ...` | Page/token/dollar cap hit | Increase budget caps or reduce input |
+| `missing_binary: ...` | `pdftoppm` or `tesseract` not on `PATH` | Install the package the message names, or run `pageledger doctor` |
+| `missing_language_pack: ...` | A `lang` code has no traineddata | Install it, or change `run.adapter_options.lang` to an installed language the message lists |
+| `render_limit: ...` | A page is too large to render at 72 DPI within `max_render_pixels` | Raise `run.adapter_options.max_render_pixels`, or split the page |
+| `missing_crypto_dependency: ...` | An AES-encrypted PDF, and the `cryptography` package is missing | Reinstall `pageledger[pdf]`, which includes it |
+| `unsupported_encryption: ...` | The PDF needs a password, or uses a non-standard encryption handler | Use an unprotected or unencrypted copy |
+| `malformed_pdf: ...` | pypdf cannot parse the file | Check the file; a PDF tool such as qpdf can often write a readable copy |
+| `engine_timeout: ...` | `pdftoppm` or `tesseract` ran past its time limit on a page (120 s to render, 300 s to OCR) | Look at the page; very large or damaged pages are slow. Lowering `dpi` or `max_render_pixels` helps |
 | `Adapter 'X' failed for ...` | Adapter exception | Check the redacted `run.log` envelope, then inspect or debug the adapter locally |
 | `usage must be JSON-serializable` | Adapter returned non-serializable usage | Fix adapter `usage` dict |
 | `usage.pages must be exactly 1` | Adapter misreported page count | Adapter must set `usage.pages = 1` |

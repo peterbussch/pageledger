@@ -43,7 +43,7 @@ The built-in text adapter needs no OCR engine or provider. This example creates
 two source pages; the replacement character on page 2 deliberately triggers a
 review warning.
 
-```bash
+```bash pageledger-tutorial
 printf 'first page\fsecond page with a replacement character �\n' > sample.txt
 pageledger init-config --out pageledger.yml
 pageledger run sample.txt --config pageledger.yml --out runs/first
@@ -60,7 +60,7 @@ source to judge transcription accuracy.
 
 Rerun the flagged pages into a new directory and compare the results:
 
-```bash
+```bash pageledger-tutorial
 pageledger rerun runs/first --config pageledger.yml --out runs/second
 pageledger compare-runs runs/first runs/second
 ```
@@ -88,8 +88,6 @@ Create `processing.yml`:
 
 ```yaml
 schema_version: "0.1"
-run:
-  adapter: pdf_text
 processing:
   local_ocr:
     adapter: pdf_ocr
@@ -152,7 +150,8 @@ supported states and recovery limits.
 Built-in adapters cover text files, PDF text layers, and Tesseract OCR. The
 [adapter protocol](docs/adapter-protocol.md) supports other engines; the
 [Docling example](examples/docling_adapter.py) supplies local layout and VLM
-conversion. Core depends on PyYAML, with pypdf in the PDF extra.
+conversion. Core depends on PyYAML, with pypdf and its AES support in the PDF
+extra.
 
 `classify` produces a separate route map for review before `run --routes`.
 `align` can revise structured records without re-extracting. Bundle replay

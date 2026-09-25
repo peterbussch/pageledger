@@ -2,6 +2,119 @@
 
 Release changes follow the [artifact compatibility policy](docs/run-manifest-spec.md#compatibility-policy).
 
+## Unreleased
+
+### Added
+
+- Warnings for text layers that exist but carry little of the page:
+  `digits_only_text` (a table layer that kept its digits and lost its words),
+  `mixed_script_tokens` (Latin look-alikes inside Cyrillic words, or the
+  reverse), `private_use_characters` (characters lost to font-specific code
+  points, such as old-style digits) and, across a run, `repeated_page_text`
+  (the same short stamp on three or more pages). Quality lines gain
+  `letter_count`, `digit_count`, `mixed_script_token_ratio` and
+  `private_use_count`. The thresholds were measured on 5,702 sampled pages
+  from a research library before they were set, and `process` treats these
+  warnings as coverage defects, so such a page moves on to OCR.
+- A page type can set `review: true` to be extracted and still held for
+  review: after extraction the page joins the review queue with reason
+  `route_review:<type>`. `classify` copies the flag into route maps; route
+  maps without it behave as before.
+
+### Changed
+
+- `init-config` now extracts `sparse`, `table_likely` and `unknown` pages with
+  `review: true`. They were previously routed to review without extraction,
+  so a first `classify` and `run --routes` on a statistical volume extracted
+  none of its tables.
+
+- `run` now stops with "No extraction route" when a config has no
+  `taxonomy.page_types` and neither `--routes` nor `--adapter` is given.
+  Such a run previously sent every page to review, extracted nothing and
+  exited successfully. Dry runs and deliberate review-only taxonomies still
+  work. Documentation and example configs that omitted the taxonomy now
+  include it or say where to paste them.
+- `process` rejects `run` settings that a document job would ignore: budget,
+  pricing, grading, `rerun_if`, `quarantine_if`, adapter options, rerun depth
+  and consecutive-failure limits. A `run.budget.max_pages: 1` previously let a
+  job process every page without a warning. A leftover `run.adapter` or
+  `taxonomy` now produces a warning, and the processing examples drop both.
+- The `pdf` extra now installs `pypdf[crypto]`, which adds the `cryptography`
+  package. AES-encrypted PDFs that open without a password, typically files
+  that only restrict printing or copying, previously failed in `pdf_text`, in
+  PDF page counting and in `process`; 20 of the library PDFs in our test
+  collection were such files. `process` now accepts them too.
+- In document jobs, a page with the `low_confidence` warning now gets its own
+  hold, reported as "The engine was unsure of some words". It previously
+  shared the `coverage_defect` hold and the wording "Possible missing or
+  incomplete content", which claimed more than an engine's doubt shows. New
+  jobs record `hold_policy: "0.6"`; jobs written by earlier versions keep
+  their original holds and still verify.
+- A document job that reaches a processing limit now pauses instead of
+  halting. A `max_attempt_pages` smaller than the first batch previously
+  stopped the job before any page ran, and a halted job could not continue.
+  The job now processes the pages the limit allows and ends `paused_budget`;
+  `pageledger resume JOB_DIR --raise-limit max_attempt_pages=N` records the
+  higher limit in `limits_history` and continues. Unknown paid usage under a
+  token or cost limit still halts.
+
+### Fixed
+
+- Encrypted and damaged PDFs stop with a typed message that names the file:
+  `unsupported_encryption` for a file that needs a password or uses a
+  non-standard handler such as an Internet Archive lending copy,
+  `malformed_pdf` for one pypdf cannot parse, and `missing_crypto_dependency`
+  when AES support is missing. Previously a password-protected or non-PDF file
+  ended `run` with a Python traceback, and a 3.4 GB file with a corrupt
+  cross-reference offset failed with "negative seek value" after `pdf_text`
+  had read the whole file into memory. `pdf_text` now reads PDFs from disk as
+  it parses them. A `process` job halted by such a file records the code, for
+  example `source_container_invalid:unsupported_encryption`, and says what to
+  do next.
+
+- `pdf_ocr` no longer renders oversized pages at full DPI. Some scans declare
+  pages far larger than the paper: an Internet Archive scan of a 1911
+  provincial memorial book declares pages 1.75 by 2.47 metres, about 600
+  megapixels each at 300 DPI.
+  Each page is now measured first and rendered at the highest DPI that fits
+  within the new `max_render_pixels` adapter option (default 60,000,000). A
+  lowered page carries the warning `render_dpi_capped`, and its provenance
+  records both values, for example `dpi=94 (requested 300)`. A page that would
+  need less than 72 DPI stops with `render_limit`.
+- A missing `pdftoppm`, `tesseract` or Tesseract language pack now stops a
+  `pdf_ocr` run before any page is read, with a message such as
+  `missing_language_pack: ... Installed: eng, osd`. Previously the run started,
+  failed on the first page, and showed only `RuntimeError: <redacted>`.
+  PageLedger's own setup diagnostics carry a typed code and are shown in full;
+  messages from adapters stay redacted.
+- Directory inputs skip hidden files such as macOS `.DS_Store` and `._*`
+  sidecars. A `.DS_Store` file previously became the first document of a run
+  and shifted every document number; on PDF adapters it failed the run. Skipped
+  names are reported as `skipped_inputs` in the run result and manifest.
+- Replay no longer fails as an incompatible environment when the replay worker
+  reports the same text encoding with different capitalization ("UTF-8"
+  versus "utf-8"). This happened wherever no `LANG` was set, because Python's
+  locale coercion changes the child process's report. Profiles now record
+  canonical codec names, and bundles recorded before the fix still replay.
+
+### Maintenance
+
+- Documentation tests: every complete config in the docs and in
+  `docs/examples/` loads, every relative link and heading anchor resolves,
+  version strings in the README, docs index, skill and route-map
+  specification match the package, and the README's first run executes.
+
+### Compatibility
+
+- New artifact fields are optional, so artifacts written by earlier versions
+  still validate: `skipped_inputs` in manifests and checkpoints, the four new
+  `text_quality` counts in quality lines, and `hold_policy` and
+  `limits_history` in jobs and document reports. Job and report `status` may
+  now be `paused_budget`. Eight retained 0.5.1 document jobs, seven of them with
+  `low_confidence` pages, pass `verify-job` unchanged.
+- The `pdf` extra adds `cryptography` (through `pypdf[crypto]`). Core still
+  depends only on PyYAML.
+
 ## 0.5.2 - 2026-09-12
 
 ### Fixed

@@ -12,17 +12,21 @@ dataset_citation:
 taxonomy:
   # The built-in classifier can emit exactly these five structural types.
   # Domain types require a classify.hook (see docs/classifier.md).
+  # review: true extracts the page and still keeps it in the review queue.
   page_types:
     blank:
       default_action: skip
     sparse:
-      default_action: review
+      default_action: transcribe_text
+      review: true
     prose:
       default_action: transcribe_text
     table_likely:
-      default_action: review
+      default_action: transcribe_text
+      review: true
     unknown:
-      default_action: review
+      default_action: transcribe_text
+      review: true
 
 classify:
   # Omit for per-suffix defaults: pdf_text for PDF, text otherwise.

@@ -81,7 +81,7 @@ results. Check again before publishing through the protected release environment
 Passing checks do not mean reviews are complete or their findings resolved.
 
 ## Constraints for changes
-- Core stays dependency-light: PyYAML only; `pypdf` behind the `[pdf]` extra.
+- Core stays dependency-light: PyYAML only; `pypdf[crypto]` behind the `[pdf]` extra.
 - Adapters are thin wrappers; PageLedger owns the process around extraction,
   not extraction itself. No OCR engines, provider SDKs, or pricing catalogs
   in core.

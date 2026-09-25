@@ -9,7 +9,7 @@ called. `pageledger run --routes` executes the reviewed map.
 
 ```yaml
 schema_version: "0.1"
-pageledger_version: "0.5.1"
+pageledger_version: "0.5.2"
 run_id: classify-20260717T193000000000Z
 generated_at: "2026-07-17T19:30:00Z"
 classifier:
@@ -31,7 +31,8 @@ documents:
         page_number: 2
         type: table_likely
         confidence: 0.6
-        action: review
+        action: transcribe_text
+        review: true
         reason: column_digit_density
       - page_id: doc_0001_page_0003
         page_number: 3
@@ -46,7 +47,7 @@ documents:
 
 | Field | Type | Required | Nullable | Meaning |
 |---|---|---|---|---|
-| `schema_version` | string | ✅ | no | Artifact schema version. It remains `"0.1"` in PageLedger 0.5.1. |
+| `schema_version` | string | ✅ | no | Artifact schema version, `"0.1"` in every release so far. |
 | `pageledger_version` | string | ✅ for new maps | no | PageLedger package version that generated the map. Missing only on legacy schema-0.1 maps. |
 | `run_id` | string | ✅ | no | Identifier of the classification or planning operation. An extraction run rebinds this to its own run ID. |
 | `generated_at` | string | ✅ | no | UTC ISO 8601 timestamp. |
@@ -81,6 +82,7 @@ readable.
 | Field | Type | Meaning |
 |---|---|---|
 | `prompt` | string | Prompt string passed to the extraction adapter. |
+| `review` | boolean | `true` extracts the page and also queues it for review with reason `route_review:<type>`. `classify` writes it for page types marked `review: true` in the taxonomy. Route maps without it behave as before. |
 
 ## Design notes
 

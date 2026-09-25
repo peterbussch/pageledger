@@ -55,7 +55,7 @@ dev = [
   "types-PyYAML>=6.0",
 ]
 pdf = [
-  "pypdf>=6",
+  "pypdf[crypto]>=6",
 ]
 
 [project.urls]

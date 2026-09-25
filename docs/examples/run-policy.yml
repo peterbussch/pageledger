@@ -1,4 +1,9 @@
-# Example PageLedger run policy.
+# fragment: an example PageLedger run policy, not a complete config.
+#
+# Paste the sections you need into the pageledger.yml that
+# `pageledger init-config` writes. On its own this file has no taxonomy,
+# so `pageledger run` refuses it: without taxonomy.page_types every page
+# would go to review and nothing would be extracted.
 
 schema_version: "0.1"  # Config file format version.
 
@@ -66,5 +71,6 @@ run:
 #   run_log: run.log
 #   rerun_manifest: rerun-manifest.yml
 
-# The current loader reads runtime settings under `run.*`. Top-level `budget`,
-# `pricing`, and `max_rerun_depth` are rejected to avoid split-source drift.
+# The loader reads runtime settings under `run.*`. A top-level `budget` or
+# `pricing` section is ignored with a warning; a top-level `max_rerun_depth`,
+# `adapter`, `adapter_order` or `page_types` is an error.

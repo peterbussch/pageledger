@@ -1,7 +1,5 @@
 # Document job: local PDF text followed by OCR for weak pages.
 schema_version: '0.1'
-run:
-  adapter: pdf_text
 processing:
   local_text:
     adapter: pdf_text

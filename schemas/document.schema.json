@@ -12,6 +12,25 @@
       "const": "0.5.1",
       "description": "Current human report rendering format. Absent on 0.5.0 reports, which use the legacy rendering."
     },
+    "limits_history": {
+      "type": "array",
+      "description": "Limits raised on resume after a budget pause, oldest first. Absent until a limit is raised.",
+      "items": {
+        "type": "object",
+        "required": ["at", "limit", "previous", "value"],
+        "properties": {
+          "at": {"type": "string", "minLength": 1},
+          "limit": {"enum": ["max_attempt_pages", "max_image_pages", "max_tokens", "max_cost_usd"]},
+          "previous": {"type": "number"},
+          "value": {"type": "number"}
+        },
+        "additionalProperties": false
+      }
+    },
+    "hold_policy": {
+      "const": "0.6",
+      "description": "Warning-to-hold mapping the job used. Absent on reports written before 0.6, whose jobs filed low_confidence under coverage_defect."
+    },
     "job_id": {
       "type": "string",
       "minLength": 1
@@ -83,7 +102,8 @@
       "enum": [
         "processing",
         "completed",
-        "halted"
+        "halted",
+        "paused_budget"
       ]
     },
     "pages": {
@@ -231,6 +251,7 @@
             "enum": [
               "unreviewed_text",
               "coverage_defect",
+              "low_confidence",
               "numeric_column_conflict",
               "blank_candidate",
               "provider_failure",

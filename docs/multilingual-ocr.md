@@ -28,7 +28,16 @@ Those names are the valid `lang:` values. If you configure a language that
 is not installed, the run refuses before extracting anything and prints
 the installed list. Set DPI and language in the config:
 
+Save this as `ocr-rus.yml`. The `taxonomy` section tells PageLedger to
+extract every page; without one, every page would go to review and
+nothing would be extracted.
+
 ```yaml
+schema_version: "0.1"
+taxonomy:
+  page_types:
+    prose:
+      default_action: transcribe_text
 run:
   adapter: pdf_ocr
   adapter_options:

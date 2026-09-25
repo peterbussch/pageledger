@@ -171,7 +171,8 @@ Confidence/coverage/pass-rate thresholds are overridable under
 coverage below `minimum_required_column_coverage` forces the schema axis
 to F, and page confidence under `low_confidence_threshold` caps the final
 grade at C. The structured-format prose heuristics
-(`suspicious_symbol_density`, `fragmented_text`, `joined_text`) do not fire on
+(`suspicious_symbol_density`, `fragmented_text`, `joined_text`,
+`digits_only_text`) do not fire on
 `markdown_table`/`json`/`csv` pages: pipes and braces are construction,
 not garble.
 
@@ -191,6 +192,12 @@ not garble.
 | `latin_letter_ratio` | number (0–1) | Share of Unicode letters identified as Latin-script letters; used only as a conservative joined-text guard. |
 | `prereform_letter_count` | integer | Cyrillic letters abolished by the 1918 Russian reform (ѣ, ѳ, ѵ). Modern Ukrainian/Belarusian і is deliberately not counted. |
 | `terminal_hard_sign_count` | integer | Word-final hard signs (ъ): mandatory before 1918, absent from modern Russian. This is the pre-reform signal that survives OCR: engines trained on modern text destroy the abolished letters but keep ъ. |
+| `letter_count` | integer | Unicode letters. |
+| `digit_count` | integer | Decimal digits. |
+| `mixed_script_token_ratio` | number (0–1) | Share of letter tokens that mix Latin, Cyrillic or Greek letters, as look-alike substitutions do (`пpoдoлжoние` with Latin `p` and `o`). |
+| `private_use_count` | integer | Private Use Area code points, except one that opens a line before a space: that is a bullet or icon glyph from a symbol font. |
+
+The last four fields are new in 0.6; older quality lines omit them.
 
 ### Warning taxonomy
 
@@ -208,6 +215,26 @@ not garble.
 | `low_confidence` | `confidence_detail.below_60_ratio >= 0.25` over ≥10 words. A quarter of the words under engine confidence 60 marks the page for review; a mean can hide one illegible paragraph on an otherwise clean page. |
 | `instruction_echo` | Output contains one of the high-specificity chat-template markers `<think>`, `</think>`, `<|channel`, `<|im_start|>`, `<|im_end|>`, `[INST]`, or `[/INST]`. Generic words such as “instructions” or “channel” do not trigger it. |
 | `output_inflation` | On a rerun, output is at least 4× and at least 1,000 characters longer than the same parent page. Parent counts, delta, and ratio are recorded in `output_integrity`; this is review evidence, not proof of hallucination. |
+| `digits_only_text` | `digit_count >= 20` and letters under 5% of `letter_count + digit_count`. A table whose text layer kept the digits and lost the words. Not raised for `markdown_table`, `json` or `csv` output. |
+| `mixed_script_tokens` | `mixed_script_token_ratio >= 0.05` over ≥20 alphabetic tokens. Look-alike letters from another script inside words: search and alignment miss them. |
+| `private_use_characters` | `private_use_count >= 3`. Characters the text layer lost to font-specific code points, such as old-style digits or ligatures. |
+| `repeated_page_text` | The page's whole text, under 200 characters after whitespace is collapsed, is identical on at least three pages of the run. A stamp-only text layer repeats a scanner's or website's mark on every page and none of the content. |
+
+The four warnings above were measured before their thresholds were set: on
+5,702 sampled pages from 1,500 PDFs in a research library, and on 24 pages with
+reference transcriptions. Transcribed pages raised none of them. On the
+sample, `digits_only_text` fired only on one Internet Archive derivative
+format (56 pages, 27 files) and `mixed_script_tokens` on 60 pages of 18
+files. Private-use characters appeared in 44 files, mostly as bullets;
+`private_use_characters` fired on 19 pages of 12 files. A layer in the wrong script
+entirely, such as Latin-letter OCR of a Cyrillic book, contains no mixed
+tokens and raises none of these warnings.
+
+Adapter-native warnings appear in the same `warnings` list. The built-in
+`pdf_ocr` adapter adds `render_dpi_capped` when it rendered a page below the
+requested DPI to stay within `run.adapter_options.max_render_pixels`; the
+page's `model` string then records both values, for example
+`dpi=94 (requested 300)`. See [oversized pages](ocr-options.md#oversized-pages).
 
 ### output_integrity fields
 

@@ -980,3 +980,90 @@ def test_clean_page_gets_signals_only_a(tmp_path):
     assert entry["grade"] == "A"
     assert entry["grade_basis"] == "signals_only"
     assert entry["grade_detail"]["confidence_band"] is None
+
+
+# =========================================================================
+# Text layers that are present but empty of content
+# =========================================================================
+
+
+def _page_warnings(tmp_path, text):
+    source = tmp_path / "page.txt"
+    source.write_text(text, encoding="utf-8")
+    return _quality_entries(_run([source], _TEXT_CONFIG, tmp_path))[0]
+
+
+@pytest.mark.parametrize(
+    "text,digits",
+    [("Итого " + "1 084 598 12 345 6 789 " * 40, 640), ("12 34 56 78 90 " * 2, 20)],
+    ids=["dense-table", "sparse-page"],
+)
+def test_digits_only_text_layer_warns(tmp_path, text, digits):
+    # Internet Archive LuraDocument derivatives of Cyrillic tables keep the
+    # digits and drop almost every letter.
+    entry = _page_warnings(tmp_path, text)
+    assert "digits_only_text" in entry["warnings"]
+    assert entry["text_quality"]["digit_count"] == digits
+
+
+def test_numeric_table_with_labels_is_not_digits_only(tmp_path):
+    row = "Бирюченскій уѣздъ | 512 | 2 | 39 | 34 | 110 | 117\nИтого | 1 084 598 | 1 012 345\n"
+    entry = _page_warnings(tmp_path, row * 20)
+    assert "digits_only_text" not in entry["warnings"]
+
+
+def test_mixed_script_tokens_warn(tmp_path):
+    # Latin o, p, C, K standing in for Cyrillic letters inside words.
+    entry = _page_warnings(tmp_path, "Таблица пpoдoлжoние губерніи уѣздъ Poccія " * 10)
+    assert "mixed_script_tokens" in entry["warnings"]
+    assert entry["text_quality"]["mixed_script_token_ratio"] == 0.4
+
+
+def test_separate_latin_words_in_cyrillic_prose_are_not_mixed_script(tmp_path):
+    entry = _page_warnings(
+        tmp_path,
+        "Статья вышла в журнале Nature, а рецензия в The Times и в Revue des deux Mondes. " * 5,
+    )
+    assert "mixed_script_tokens" not in entry["warnings"]
+    assert entry["text_quality"]["mixed_script_token_ratio"] == 0.0
+
+
+def test_private_use_characters_warn(tmp_path):
+    # Old-style figures that a 1990s PDF mapped to the Private Use Area: the
+    # year 1830 is unreadable in the text layer.
+    entry = _page_warnings(tmp_path, "Въ  году было обоего пола много душъ въ уѣздѣ.")
+    assert "private_use_characters" in entry["warnings"]
+    assert entry["text_quality"]["private_use_count"] == 4
+
+
+def test_bullet_glyphs_are_not_private_use_warnings(tmp_path):
+    entry = _page_warnings(tmp_path, " first point\n second point\n" * 5)
+    assert "private_use_characters" not in entry["warnings"]
+    assert entry["text_quality"]["private_use_count"] == 0
+
+
+def test_identical_short_text_on_many_pages_is_repeated_page_text(tmp_path):
+    # Stamp-only text layers: every page yields only the scanner's watermark.
+    source = tmp_path / "stamp.txt"
+    source.write_text("\f".join(["Для сайта BOOK-OLDS.RU"] * 5), encoding="utf-8")
+    out_dir = _run([source], _TEXT_CONFIG, tmp_path)
+    entries = _quality_entries(out_dir)
+    assert all("repeated_page_text" in entry["warnings"] for entry in entries)
+    audit = json.loads((out_dir / "audit.json").read_text(encoding="utf-8"))
+    assert len(audit["review_queue"]) == 5
+
+
+@pytest.mark.parametrize(
+    "pages",
+    [
+        ["Для сайта BOOK-OLDS.RU"] * 2,
+        ["Глава первая. " * 20] * 3,
+        ["Страница 1", "Страница 2", "Страница 3"],
+    ],
+    ids=["two-pages", "long-text", "different-text"],
+)
+def test_repeated_page_text_needs_three_identical_short_pages(tmp_path, pages):
+    source = tmp_path / "pages.txt"
+    source.write_text("\f".join(pages), encoding="utf-8")
+    entries = _quality_entries(_run([source], _TEXT_CONFIG, tmp_path))
+    assert not any("repeated_page_text" in entry["warnings"] for entry in entries)

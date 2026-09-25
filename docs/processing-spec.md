@@ -14,8 +14,6 @@ Install `"pageledger[pdf]==0.5.2"`, Poppler, and Tesseract for a PDF job. Create
 
 ```yaml
 schema_version: "0.1"
-run:
-  adapter: pdf_text
 processing:
   local_text:
     adapter: pdf_text
@@ -43,8 +41,13 @@ for the full document. The output directory must be new. Open
 source links, attempts, and unresolved review work. A completed job means its
 configured processing finished; human review may still be needed.
 
-For text files, set `run.adapter` and `processing.local_text.adapter` to `text`
-and set `processing.local_ocr` to `null`. Form-feed characters separate pages.
+For text files, set `processing.local_text.adapter` to `text` and set
+`processing.local_ocr` to `null`. Form-feed characters separate pages.
+
+A document job reads only the `processing` section. Budget, pricing, grading
+and rerun settings under `run` would be ignored, so `process` rejects them and
+names the replacement (for budgets, `processing.limits`). A leftover
+`run.adapter` or `taxonomy` section is harmless and produces a warning.
 Selections such as `--pages "2-5,19"` preserve source page numbers and record both
 the selected count and full document count.
 
@@ -109,10 +112,27 @@ an alternate source and prevents further automatic extraction.
 
 | Field | Enforcement |
 |---|---|
-| `max_attempt_pages` | Before scheduling: every attempted source page across all stages counts, including failed/uncertain attempts. A local batch must fit in full. |
+| `max_attempt_pages` | Before scheduling: every attempted source page across all stages counts, including failed/uncertain attempts. A local batch larger than the remaining allowance is cut to fit; the job then pauses. |
 | `max_image_pages` | Required positive limit when image processing is enabled. Counts both image and second-opinion attempts; checked before every call. |
 | `max_tokens` | Accumulates reported usage across stages. Stops at the cap before new work and after a response crosses it. A response can exceed the remaining amount; this is not a provider billing ceiling. Unknown paid token usage prevents another image attempt when this cap is configured. |
 | `max_cost_usd` | Accumulates reported dollar charges. Stops at the cap before new work and after a response crosses it. Unknown paid cost stops another image attempt. The first charge can be unknown or exceed the remaining amount; use a provider-side spending limit for a hard monetary ceiling. |
+
+A job that reaches `max_attempt_pages`, `max_image_pages`, `max_tokens` or
+`max_cost_usd` ends with status `paused_budget`, keeping everything it has
+done. It continues only when resumed with a higher limit:
+
+```bash
+pageledger resume jobs/book --raise-limit max_attempt_pages=200
+```
+
+`resume` checks the retained attempts before it records the raise. Each raise
+is appended to `limits_history` in `job.json` and the report, with its time and
+the previous value, and `verify-job` checks that the history leads from the
+configured limits to the current ones. Limits cannot be lowered. Money and
+token limits are thresholds checked between calls, not reservations: a call
+already under way can take usage past them. Unknown paid usage while a token or
+cost limit is set still halts the job, because a higher limit cannot make that
+usage known.
 
 Unknown cost stays `null`; `known_cost_usd` is only the available subtotal.
 Local execution is not assigned an invented dollar price. Image calls are
@@ -156,12 +176,18 @@ The incomplete directory is retained for inspection rather than overwritten.
 Source bytes are hashed before work and rechecked before each publication and
 resume. PDF page-tree counts must match the actual inventory. Container failure
 produces a halted report with an unknown page count and no invented pages.
+Its `halt_reason` names the cause, such as
+`source_container_invalid:unsupported_encryption` for a PDF that needs a
+password, and `next_action` says what to do. An encrypted PDF that opens
+without a password (one that restricts only printing or copying) is processed
+normally.
 Annotation counts are recorded without copying annotation contents; annotation
 presence does not establish recovery of comments, body text, notes or citations.
 
 A `completed` job means its configured processing work finished. It does not
-mean its pages have passed human review. A `halted` job retains its evidence;
-`resume` reports it without retrying. Reconcile uncertain requests externally
+mean its pages have passed human review. A `paused_budget` job continues when
+resumed with a higher limit. A `halted` job retains its evidence; `resume`
+reports it without retrying. Reconcile uncertain requests externally
 before explicitly starting any new job. `verify-job` is read-only and binds the
 report back to validated job/child evidence.
 

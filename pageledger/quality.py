@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 import re
 import unicodedata
+from collections import Counter
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
@@ -19,6 +21,9 @@ _INSTRUCTION_MARKERS = (
     "[INST]",
     "[/INST]",
 )
+_PROSE_ONLY_WARNINGS = frozenset(
+    {"suspicious_symbol_density", "fragmented_text", "joined_text", "digits_only_text"}
+)
 
 
 def _build_quality_entry(
@@ -32,7 +37,8 @@ def _build_quality_entry(
 ) -> dict[str, Any]:
     text = _quality_text(result.content)
     character_count = len(text)
-    token_lengths = _alphabetic_token_lengths(text)
+    tokens = _alphabetic_tokens(text)
+    token_lengths = [len(token) for token in tokens]
     word_count = len(token_lengths)
     # Adapter-native warnings are quality evidence, not provenance-only notes.
     # Preserve them verbatim so a backend can surface partial or structurally
@@ -47,15 +53,14 @@ def _build_quality_entry(
         character_count=character_count,
         token_lengths=token_lengths,
     )
+    text_quality.update(_content_coverage_metrics(text, tokens))
     shape_warnings = _text_quality_warnings(text_quality)
     if result.format in ALIGNABLE_FORMATS:
         # The symbol/shape heuristics are calibrated on prose. Structured
         # payloads are full of pipes, braces, and short numeric tokens by
         # construction — flagging them would be noise, not evidence.
         shape_warnings = [
-            warning
-            for warning in shape_warnings
-            if warning not in {"suspicious_symbol_density", "fragmented_text", "joined_text"}
+            warning for warning in shape_warnings if warning not in _PROSE_ONLY_WARNINGS
         ]
     warnings.extend(shape_warnings)
     output_integrity, integrity_warnings = _output_integrity(text, parent_quality)
@@ -164,27 +169,72 @@ _PREREFORM_LETTERS = frozenset("\u0463\u0462\u0473\u0472\u0475\u0474")
 _TERMINAL_HARD_SIGN = re.compile(r"[\u044a\u042a](?![^\W\d_])")
 
 
-def _alphabetic_token_lengths(text: str) -> list[int]:
-    r"""Lengths of Unicode letter tokens, including combining marks.
+def _alphabetic_tokens(text: str) -> list[str]:
+    r"""Unicode letter tokens, including combining marks.
 
     Python's ``\w`` does not include combining marks, so it splits many Indic
-    words into one-character fragments. Join controls preserve a token but do
-    not contribute to its measured length.
+    words into one-character fragments. Join controls preserve a token but are
+    left out of it, so they do not count toward its length.
     """
-    lengths: list[int] = []
-    current_length = 0
+    tokens: list[str] = []
+    current: list[str] = []
     for char in text:
         category = unicodedata.category(char)
-        if category.startswith("L") or (category.startswith("M") and current_length):
-            current_length += 1
-        elif char in {"\u200c", "\u200d"} and current_length:
+        if category.startswith("L") or (category.startswith("M") and current):
+            current.append(char)
+        elif char in {"\u200c", "\u200d"} and current:
             continue
-        elif current_length:
-            lengths.append(current_length)
-            current_length = 0
-    if current_length:
-        lengths.append(current_length)
-    return lengths
+        elif current:
+            tokens.append("".join(current))
+            current = []
+    if current:
+        tokens.append("".join(current))
+    return tokens
+
+
+def _alphabetic_token_lengths(text: str) -> list[int]:
+    return [len(token) for token in _alphabetic_tokens(text)]
+
+
+_LOOKALIKE_SCRIPTS = ("LATIN", "CYRILLIC", "GREEK")
+_PRIVATE_USE = re.compile("[\ue000-\uf8ff\U000f0000-\U000ffffd\U00100000-\U0010fffd]")
+
+
+@lru_cache(maxsize=4096)
+def _lookalike_script(char: str) -> str | None:
+    name = unicodedata.name(char, "")
+    return next((script for script in _LOOKALIKE_SCRIPTS if name.startswith(script)), None)
+
+
+def _private_use_count(text: str) -> int:
+    """Private Use Area code points, except one opening a line before a space.
+
+    That exception is a bullet or icon glyph from a symbol font, common and
+    harmless in word-processor PDFs. Elsewhere a private-use code point is a
+    character the text layer lost, such as an old-style digit or a ligature.
+    """
+    count = 0
+    for line in text.splitlines():
+        stripped = line.lstrip()
+        for match in _PRIVATE_USE.finditer(stripped):
+            bullet = match.start() == 0 and not stripped[1:2].strip()
+            count += not bullet
+    return count
+
+
+def _content_coverage_metrics(text: str, tokens: list[str]) -> dict[str, Any]:
+    """Counts for text layers that are present but carry little of the page."""
+    mixed = sum(
+        1
+        for token in tokens
+        if len({script for char in token if (script := _lookalike_script(char))}) > 1
+    )
+    return {
+        "letter_count": sum(1 for char in text if unicodedata.category(char).startswith("L")),
+        "digit_count": sum(1 for char in text if char.isdecimal()),
+        "mixed_script_token_ratio": 0.0 if not tokens else round(mixed / len(tokens), 4),
+        "private_use_count": _private_use_count(text),
+    }
 
 
 def _text_quality_metrics(
@@ -280,7 +330,47 @@ def _text_quality_warnings(metrics: dict[str, Any]) -> list[str]:
         # mismatched with the page. Measured on an 1850 gubernia review:
         # 21 terminal hard signs per 100 tokens vs 0.00 in modern text.
         warnings.append("historical_orthography")
+    # The three rules below were measured on 5,702 sampled pages from 1,500
+    # PDFs and on 24 transcribed pages; see the warning table in
+    # docs/provenance-spec.md.
+    letters, digits = metrics["letter_count"], metrics["digit_count"]
+    if digits >= 20 and letters < 0.05 * (letters + digits):
+        # A table whose text layer kept the digits and lost the words. In the
+        # survey every such page came from one Internet Archive derivative
+        # (LuraDocument); transcribed tables have at least 20% letters.
+        warnings.append("digits_only_text")
+    if metrics["alpha_token_count"] >= 20 and metrics["mixed_script_token_ratio"] >= 0.05:
+        # Latin look-alikes inside Cyrillic words, or the reverse.
+        warnings.append("mixed_script_tokens")
+    if metrics["private_use_count"] >= 3:
+        warnings.append("private_use_characters")
     return warnings
+
+
+_REPEATED_TEXT_MAX_CHARACTERS = 200
+_REPEATED_TEXT_MIN_PAGES = 3
+
+
+def repeated_text_key(content: Any) -> str | None:
+    """A short page's normalized text, for finding text repeated across pages."""
+    text = " ".join(unicodedata.normalize("NFC", _quality_text(content)).split())
+    if len(text) >= _REPEATED_TEXT_MAX_CHARACTERS or not any(char.isalnum() for char in text):
+        return None
+    return text
+
+
+def mark_repeated_page_text(entries: list[dict[str, Any]], keys: dict[str, str]) -> None:
+    """Warn on pages whose entire short text recurs on three or more pages of a run.
+
+    Stamp-only text layers repeat a scanner's or website's watermark on every
+    page and none of the page's content. Each such page alone looks clean.
+    """
+    counts = Counter(keys.values())
+    for entry in entries:
+        key = keys.get(entry["page_id"])
+        if key is not None and counts[key] >= _REPEATED_TEXT_MIN_PAGES:
+            if "repeated_page_text" not in entry["warnings"]:
+                entry["warnings"].append("repeated_page_text")
 
 
 def _is_suspicious_symbol(char: str) -> bool:

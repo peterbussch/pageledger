@@ -22,7 +22,10 @@ stages. `--config` and `--out` are required, and the output directory must be
 new. Use the [processing guide](processing-spec.md) to create the config.
 Document jobs retain checkpoints automatically. Stages use `processing`
 profiles; `run.adapter_order` is reserved for explicit rerun generations and
-is rejected here.
+is rejected here. So are `run` budget, pricing, grading, rerun and retry
+settings, which a job would otherwise ignore; set limits under
+`processing.limits`. A leftover `run.adapter` or `taxonomy` produces a
+warning.
 
 | Flag | Effect |
 |---|---|
@@ -32,7 +35,10 @@ is rejected here.
 | `--json` | Print the job result as JSON. |
 
 A job can finish with unresolved pages. `completed` means processing finished,
-while `halted` records a stop that will not be retried automatically.
+`paused_budget` means a processing limit was reached (continue with
+`resume --raise-limit`), and `halted` records a stop that will not be retried
+automatically. `process` and `resume` exit 0 for a paused job, which is an
+expected outcome of a configured limit, and 1 for a halted or failed one.
 
 ## inspect-job, verify-job, and review-job
 
@@ -59,8 +65,11 @@ pageledger run scan.pdf --config pageledger.yml --routes reviewed-routes.yml --o
 ```
 
 Extracts every routed page of the inputs into a new run directory. Inputs
-are files or directories (directories expand to their direct child files).
-`--out` must not already exist.
+are files or directories. A directory expands to its direct child files in
+name order; subfolders are not searched. Hidden files, whose names start with
+`.` (such as macOS `.DS_Store` files and `._*` sidecars), are skipped and
+listed as `skipped_inputs` in the run result and manifest. A hidden file named
+explicitly on the command line is still read. `--out` must not already exist.
 
 Exactly one of `--config` or `--adapter` is required:
 
@@ -114,7 +123,11 @@ pageledger verify-run runs/book/
 
 Continues a run created with `run --resumable`, or a document job created with
 `process`, in its existing directory. For a job, use `pageledger resume jobs/book`;
-see [job recovery](processing-spec.md#resume-an-interrupted-job).
+see [job recovery](processing-spec.md#resume-an-interrupted-job). A job paused
+by a processing limit continues only with `--raise-limit LIMIT=VALUE`
+(repeatable), for example `--raise-limit max_attempt_pages=200`; see
+[one budget for the job](processing-spec.md#one-budget-for-the-job). The flag is
+refused for runs and for jobs that are not paused.
 
 For an individual run, resume retains the run id. The retained config snapshot, source identities, page
 selection, routes and adapter identity are the execution authority. There are
@@ -384,16 +397,23 @@ The recommended starting point is one `pageledger.yml` with optional
 `classify`, plus `taxonomy`, `schema`, and `run` sections; `init-config` writes
 the minimal form and
 [`examples/pageledger.yml`](examples/pageledger.yml) is a commented copy.
+
+`run` needs an extraction route. Without `taxonomy.page_types`, `--routes` or
+`--adapter`, every page would go to review and nothing would be extracted, so
+the command stops with "No extraction route" and names the fixes. A dry run
+needs no route. For a deliberate review-only run, map a page type to
+`default_action: review`.
+
 Common `run` settings:
 
 ```yaml
 taxonomy:
   page_types:
     blank: {default_action: skip}
-    sparse: {default_action: review}
+    sparse: {default_action: transcribe_text, review: true}
     prose: {default_action: transcribe_text}
-    table_likely: {default_action: review}
-    unknown: {default_action: review}
+    table_likely: {default_action: transcribe_text, review: true}
+    unknown: {default_action: transcribe_text, review: true}
 
 classify:
   min_confidence: 0.5

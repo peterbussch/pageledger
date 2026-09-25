@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 import json
 from pathlib import Path
 
@@ -131,9 +132,15 @@ def test_shared_image_budget_stops_queue(setup):
     data = yaml.safe_load(setup[1].read_text())
     data["processing"]["limits"]["max_image_pages"] = 1
     setup[1].write_text(yaml.safe_dump(data))
-    assert launch(setup)["status"] == "halted"
+    assert launch(setup)["status"] == "paused_budget"
     assert [call for call in setup[3]["calls"] if call[0] == "image"] == [("image", 2)]
     assert read_record(setup[2] / "job.json")["usage"]["image_calls"] == 1
+    assert resume_job(setup[2], raise_limits={"max_image_pages": 2})["status"] == "completed"
+    assert [call for call in setup[3]["calls"] if call[0] == "image"] == [
+        ("image", 2),
+        ("image", 3),
+    ]
+    assert verify_job(setup[2])["status"] == "pass"
 
 
 def test_source_mutation_stops_resume_before_calls(setup, monkeypatch):
@@ -210,6 +217,110 @@ def test_invalid_pdf_gets_failed_container_report_without_invented_pages(setup):
     assert job["pages"] == []
     assert setup[3]["calls"] == []
     assert "source_container_invalid" in job["halt_reason"]
+
+
+def _encrypted_pdf(path, *, algorithm, user_password=""):
+    from pypdf import PdfWriter
+
+    writer = PdfWriter()
+    writer.add_blank_page(width=100, height=100)
+    writer.encrypt(user_password=user_password, owner_password="owner", algorithm=algorithm)
+    writer.write(path)
+    return path
+
+
+def test_source_inspection_reads_pdf_with_only_an_owner_password(tmp_path):
+    pytest.importorskip("pypdf")
+    pytest.importorskip("cryptography")
+    from pageledger.processing_source import inspect_source
+
+    source = _encrypted_pdf(tmp_path / "restricted.pdf", algorithm="AES-256")
+    assert inspect_source(source) == (1, {"status": "none", "count": 0})
+
+
+def test_pdf_that_needs_a_password_halts_with_a_typed_reason(setup):
+    pytest.importorskip("pypdf")
+    pdf = _encrypted_pdf(setup[0].with_suffix(".pdf"), algorithm="RC4-128", user_password="s3cret")
+    result = process(source=pdf, config_path=setup[1], out_dir=setup[2])
+    assert result["status"] == "halted"
+    job = read_record(setup[2] / "job.json")
+    assert job["halt_reason"] == "source_container_invalid:unsupported_encryption"
+    assert "password" in job["next_action"]
+    assert "s3cret" not in (setup[2] / "job.json").read_text(encoding="utf-8")
+    assert setup[3]["calls"] == []
+
+
+def test_uncertain_ocr_page_is_reported_as_uncertain_not_incomplete(setup, monkeypatch):
+    from pageledger.processing_policy import HOLD_POLICY
+
+    extract = StageAdapter.extract
+
+    def uncertain(self, source, **kwargs):
+        result = extract(self, source, **kwargs)
+        return dataclasses.replace(result, warnings=["low_confidence"] if result.warnings else [])
+
+    monkeypatch.setattr(StageAdapter, "extract", uncertain)
+    result = launch(setup, pages="2")
+    job = read_record(setup[2] / "job.json")
+    assert job["hold_policy"] == HOLD_POLICY
+    assert job["pages"][0]["disposition"] == "low_confidence"
+    report = (setup[2] / "report.md").read_text(encoding="utf-8")
+    assert "The engine was unsure of some words" in report
+    assert "Possible missing or incomplete content" not in report
+    assert verify_job(setup[2])["status"] == "pass", result
+
+
+def _limit_attempts(setup, max_attempt_pages):
+    source, config, out, shared = setup
+    data = yaml.safe_load(config.read_text())
+    data["processing"]["limits"]["max_attempt_pages"] = max_attempt_pages
+    config.write_text(yaml.safe_dump(data))
+    shared["defective"] = set()
+    return process(source=source, config_path=config, out_dir=out)
+
+
+def test_attempt_limit_processes_a_prefix_then_pauses(setup):
+    result = _limit_attempts(setup, 2)
+    assert result["status"] == "paused_budget"
+    job = read_record(setup[2] / "job.json")
+    assert job["usage"]["attempt_pages"] == 2
+    assert job["halt_reason"] == "budget:max_attempt_pages"
+    assert "--raise-limit max_attempt_pages=" in job["next_action"]
+    assert verify_job(setup[2])["status"] == "pass"
+
+    resumed = resume_job(setup[2], raise_limits={"max_attempt_pages": 3})
+
+    assert resumed["status"] == "completed"
+    job = read_record(setup[2] / "job.json")
+    assert job["usage"]["attempt_pages"] == 3
+    assert job["limits"]["max_attempt_pages"] == 3
+    raised = [(h["limit"], h["previous"], h["value"]) for h in job["limits_history"]]
+    assert raised == [("max_attempt_pages", 2, 3)]
+    assert verify_job(setup[2])["status"] == "pass"
+
+
+def test_paused_job_stays_paused_without_a_higher_limit(setup):
+    _limit_attempts(setup, 2)
+    assert resume_job(setup[2])["status"] == "paused_budget"
+    for bad in ({"max_attempt_pages": 2}, {"max_attempt_pages": 1}, {"max_retries": 5}):
+        with pytest.raises(ValueError):
+            resume_job(setup[2], raise_limits=bad)
+    assert read_record(setup[2] / "job.json")["usage"]["attempt_pages"] == 2
+
+
+def test_limits_can_only_be_raised_on_a_paused_job(setup):
+    assert launch(setup)["status"] == "completed"
+    with pytest.raises(ValueError, match="paused"):
+        resume_job(setup[2], raise_limits={"max_attempt_pages": 50})
+
+
+def test_resume_cli_raises_a_limit(setup, capsys):
+    from pageledger.cli import main
+
+    _limit_attempts(setup, 1)
+    code = main(["resume", str(setup[2]), "--raise-limit", "max_attempt_pages=3", "--json"])
+    assert code == 0
+    assert json.loads(capsys.readouterr().out)["status"] == "completed"
 
 
 def test_unknown_paid_cost_stops_before_second_image(setup):
@@ -626,3 +737,43 @@ def test_resume_rejects_child_using_a_different_config(setup, monkeypatch, tmp_p
     with pytest.raises(ValueError, match="configuration"):
         resume_job(setup[2])
     assert setup[3]["calls"] == before
+
+
+@pytest.mark.parametrize(
+    "key,value",
+    [
+        ("budget", {"max_pages": 1}),
+        ("pricing", {"cost_per_page": 5}),
+        ("grading", {"review_below_grade": "C"}),
+        ("rerun_if", [{"grade_below": "C"}]),
+        ("quarantine_if", [{"grade_below": "D"}]),
+        ("adapter_options", {"dpi": 400}),
+        ("max_rerun_depth", 2),
+        ("max_consecutive_failures", 3),
+    ],
+)
+def test_process_rejects_run_controls_it_would_ignore(setup, key, value):
+    data = yaml.safe_load(setup[1].read_text())
+    data["run"][key] = value
+    setup[1].write_text(yaml.safe_dump(data))
+    with pytest.raises(ValueError, match=rf"run\.{key} is ignored by process"):
+        launch(setup)
+    assert not setup[2].exists()
+
+
+def test_process_warns_about_redundant_run_adapter_and_taxonomy(setup):
+    result = launch(setup)
+    assert result["status"] == "completed"
+    warnings = result["config_warnings"]
+    assert any("run.adapter is ignored by process" in w for w in warnings)
+    assert any("taxonomy is ignored by process" in w for w in warnings)
+
+
+def test_process_without_run_section_has_no_config_warnings(setup):
+    data = yaml.safe_load(setup[1].read_text())
+    del data["run"]
+    del data["taxonomy"]
+    setup[1].write_text(yaml.safe_dump(data))
+    result = launch(setup)
+    assert result["status"] == "completed"
+    assert "config_warnings" not in result

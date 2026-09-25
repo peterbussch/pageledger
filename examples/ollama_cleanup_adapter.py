@@ -10,6 +10,11 @@ dependency.
 
 with cleanup.yml:
 
+    schema_version: "0.1"
+    taxonomy:
+      page_types:
+        prose:
+          default_action: transcribe_text
     run:
       adapter: ollama_cleanup_adapter:OllamaCleanupAdapter
       adapter_options:

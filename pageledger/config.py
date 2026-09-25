@@ -300,6 +300,11 @@ class PageLedgerConfig:
         )
 
     @property
+    def has_page_types(self) -> bool:
+        """True when the config declares at least one page type to route pages by."""
+        return bool(_mapping_at(self.data, "taxonomy", "page_types"))
+
+    @property
     def default_action(self) -> str:
         page_types = _mapping_at(self.data, "taxonomy", "page_types")
 
@@ -307,6 +312,11 @@ class PageLedgerConfig:
         if isinstance(page_config, dict) and page_config.get("default_action"):
             return str(page_config["default_action"])
         return "review"
+
+    def review_after_extraction(self, page_type: str) -> bool:
+        """True when the taxonomy extracts pages of this type and still holds them for review."""
+        page_config = _mapping_at(self.data, "taxonomy", "page_types").get(page_type)
+        return isinstance(page_config, dict) and page_config.get("review") is True
 
     @property
     def default_prompt(self) -> str | None:
@@ -476,6 +486,11 @@ def _validate_taxonomy(config: PageLedgerConfig) -> None:
                 "taxonomy.page_types is empty — every page will be classified as "
                 "'unclassified' and routed to 'review'"
             )
+        for name, page_config in page_types.items():
+            if isinstance(page_config, dict) and not isinstance(
+                page_config.get("review", False), bool
+            ):
+                raise ValueError(f"taxonomy.page_types.{name}.review must be true or false")
 
 
 def _reject_flat_keys(config: PageLedgerConfig) -> None:

@@ -67,6 +67,11 @@ limits of the recorded evidence. Artifact schemas remain at version 0.1.
 - Conservative output-integrity signals: `instruction_echo` detects leaked
   chat-template markers, and reruns record parent character evidence with an
   `output_inflation` warning at the fixed 4× / 1,000-character boundary.
+- Warnings for text layers that exist but carry little of the page:
+  `digits_only_text`, `mixed_script_tokens`, `private_use_characters` and,
+  across a run, `repeated_page_text`. Their thresholds were measured on a
+  research-library sample before they were set; see the
+  [warning taxonomy](provenance-spec.md#warning-taxonomy).
 - Unicode-category lexical metrics keep combining marks attached to their
   base-letter tokens. Clean-prose regression fixtures cover Latin, Cyrillic,
   Arabic, Devanagari, Bengali, Gujarati, Gurmukhi, Tamil, Telugu, Kannada, and
@@ -204,6 +209,14 @@ Details and examples live in [`design.md`](design.md).
   missing, and refuses to start when `run.adapter_options.lang` names a
   language pack that is not installed. OCR quality is Tesseract's, at the
   DPI and language you configure.
+- Encrypted PDFs are read when they open without a password, which covers
+  files that only restrict printing or copying. `pageledger[pdf]` includes
+  the `cryptography` package that pypdf needs for AES. PageLedger does not
+  take passwords: a file that needs one, or that uses a non-standard
+  encryption handler such as an Internet Archive lending copy, stops the run
+  before any page with `unsupported_encryption`. A damaged file stops it with
+  `malformed_pdf`; PageLedger never repairs a source. One unreadable file
+  stops the whole run, so remove it from the inputs or run it on its own.
 - The built-in classifier is structural, not semantic. It has no image model,
   language model, document-domain labels, or region-level routing. Domain types
   require a project hook.
@@ -254,6 +267,9 @@ Details and examples live in [`design.md`](design.md).
   adapter's job (see
   [`examples/tesseract_tsv_table_adapter.py`](../examples/tesseract_tsv_table_adapter.py)
   for a deliberately naive demonstration).
+- A text layer in the wrong script throughout, such as Latin-letter OCR of a
+  Cyrillic book, raises no warning: its words are consistent, just wrong.
+  Compare a few pages with the images when a collection's language is known.
 - Born-digital text layers carry their own defects. Mid-word space
   artifacts («С анкционная» for «Санкционная») pass every shape heuristic;
   they come from the source PDF, not from extraction.

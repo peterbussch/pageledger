@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import codecs
 import copy
 import hashlib
 import inspect
@@ -156,6 +157,33 @@ def profile_sha256(profile: Mapping[str, object]) -> str:
     return hashlib.sha256(encoded).hexdigest()
 
 
+def _codec_name(name: str) -> str:
+    """Canonical codec name, so "UTF-8" and "utf-8" record the same runtime.
+
+    Python's locale coercion (PEP 538) can make a parent process report
+    "utf-8" and its isolated child "UTF-8" on the same machine.
+    """
+    try:
+        return codecs.lookup(name).name
+    except LookupError:
+        return name
+
+
+def profiles_match(local: Mapping[str, Any], recorded: Mapping[str, Any]) -> bool:
+    """Compare two profiles, treating equivalent encoding spellings as equal."""
+
+    def comparable(profile: Mapping[str, Any]) -> dict[str, Any]:
+        payload = copy.deepcopy(dict(profile))
+        runtime = payload.get("runtime")
+        if isinstance(runtime, dict):
+            for key in ("preferred_encoding", "filesystem_encoding"):
+                if isinstance(runtime.get(key), str):
+                    runtime[key] = _codec_name(runtime[key])
+        return payload
+
+    return profile_sha256(comparable(local)) == profile_sha256(comparable(recorded))
+
+
 def build_reproducibility_profile(adapter: Any) -> dict[str, Any] | None:
     """Build PageLedger's strict, path-free profile envelope for *adapter*."""
     hook = getattr(adapter, "reproducibility_profile", None)
@@ -191,8 +219,8 @@ def build_reproducibility_profile(adapter: Any) -> dict[str, Any] | None:
             "system": platform.system(),
             "release": platform.release(),
             "machine": platform.machine(),
-            "preferred_encoding": locale.getpreferredencoding(False),
-            "filesystem_encoding": sys.getfilesystemencoding(),
+            "preferred_encoding": _codec_name(locale.getpreferredencoding(False)),
+            "filesystem_encoding": _codec_name(sys.getfilesystemencoding()),
         },
         "materials": sorted(materials, key=lambda item: (item["kind"], item["name"])),
     }
@@ -672,7 +700,7 @@ def _replay_bundle_in_process(
                 "incompatible_environment",
                 "Local reproducibility profile does not match the baseline",
             )
-        if profile_sha256(local_profile) != profile_sha256(recorded_profile):
+        if not profiles_match(local_profile, recorded_profile):
             raise ReplayError(
                 "incompatible_environment",
                 "Local reproducibility profile does not match the baseline",

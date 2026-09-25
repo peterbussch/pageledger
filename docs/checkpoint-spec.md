@@ -94,6 +94,7 @@ All of these `checkpoint.json.payload` fields are required:
 | `route_warnings` | List of routing warnings. |
 | `routing` | Original imported route reference (`source_path`, `sha256`, `source_run_id`), or null. |
 | `log_level` | One of DEBUG, INFO, WARNING or ERROR. |
+| `skipped_inputs` | Optional. Names of hidden files skipped while expanding input directories, carried so a resumed run reports the same list. |
 
 `identity.metadata` contains `input_types`, `output_types`, `capabilities`
 and `deterministic`. The config snapshot pins adapter options, prompt, grading and budget

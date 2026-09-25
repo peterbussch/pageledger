@@ -97,11 +97,20 @@ plausible but clipped; this policy does not reliably detect that failure without
 additional evidence. Sparse/unknown structural output is a reason to inspect or
 escalate, not a claim that content is definitely missing.
 Existing `replacement_characters`, `control_characters`,
-`suspicious_symbol_density`, `low_confidence`, and `instruction_echo` quality
-warnings also create coverage holds even when the output is classified as prose
-or has a high grade. An explicit quality warning is evidence requiring review;
-numeric model confidence does not rank candidates. `historical_orthography`
-alone does not force a rewrite or extraction escalation.
+`suspicious_symbol_density`, `instruction_echo`, `digits_only_text`,
+`mixed_script_tokens`, `private_use_characters`, and `repeated_page_text`
+quality warnings also create coverage holds even when the output is classified
+as prose or has a high grade. `low_confidence` creates its own hold, reported
+as "The engine was unsure of some words": the engine doubted its reading, which
+is not evidence of missing content. Both kinds of hold escalate to the next
+stage. An explicit quality warning is evidence requiring review; numeric model
+confidence does not rank candidates. `historical_orthography` alone does not
+force a rewrite or extraction escalation.
+
+Jobs record the mapping they used as `hold_policy: "0.6"`. Jobs and reports
+written before 0.6 have no `hold_policy`; they filed `low_confidence` under
+`coverage_defect`, and verification rebuilds them that way, so they still
+verify unchanged.
 
 Numeric comparison uses records from alignment or explicitly structured JSON,
 CSV, and Markdown tables. It compares numeric cells under the same named columns
@@ -112,7 +121,7 @@ multisets cannot clear changed column associations. A successful comparison is
 not proof of fidelity to the source.
 
 Dispositions are `pending`, `unreviewed_text`, `coverage_defect`,
-`numeric_column_conflict`, `blank_candidate`, `reviewed_blank`, `reviewed_text`,
+`low_confidence`, `numeric_column_conflict`, `blank_candidate`, `reviewed_blank`, `reviewed_text`,
 `illustration`, `handwriting`, `unreadable`, `source_defect`, `provider_failure`,
 and `outcome_unknown`. Empty extraction is a `blank_candidate`, not confirmed
 visual blankness. A latest failed/unknown attempt takes precedence in the

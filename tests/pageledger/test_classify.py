@@ -532,3 +532,60 @@ def test_duplicate_classification_sources_fail_before_emission(tmp_path: Path) -
             out_path=tmp_path / "rm.yml",
         )
     assert not (tmp_path / "rm.yml").exists()
+
+
+def test_generated_config_extracts_table_pages_and_keeps_them_in_review(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from pageledger.cli import main
+
+    config = tmp_path / "pageledger.yml"
+    assert main(["init-config", "--out", str(config)]) == 0
+    source = tmp_path / "table.txt"
+    source.write_text("Губернія | 1897 | 1,084,598\n" * 30, encoding="utf-8")
+    routes = tmp_path / "routes.yml"
+    assert main(["classify", str(source), "--config", str(config), "--out", str(routes)]) == 0
+    route = yaml.safe_load(routes.read_text(encoding="utf-8"))["documents"][0]["pages"][0]
+    assert (route["type"], route["action"], route["review"]) == (
+        "table_likely",
+        "transcribe_text",
+        True,
+    )
+    capsys.readouterr()
+
+    out_dir = tmp_path / "out"
+    args = ["run", str(source), "--config", str(config), "--routes", str(routes)]
+    assert main([*args, "--out", str(out_dir), "--json"]) == 0
+
+    assert json.loads(capsys.readouterr().out)["summary"]["pages_extracted"] == 1
+    audit = json.loads((out_dir / "audit.json").read_text(encoding="utf-8"))
+    assert "route_review:table_likely" in [entry["reason"] for entry in audit["review_queue"]]
+    assert verify_run(out_dir)["status"] == "pass"
+
+
+def test_review_flag_on_the_default_type_holds_extracted_pages(tmp_path: Path) -> None:
+    config = _write_config(
+        tmp_path,
+        'schema_version: "0.1"\ntaxonomy:\n  page_types:\n    prose:\n'
+        "      default_action: transcribe_text\n      review: true\nrun:\n  adapter: text\n",
+    )
+    source = tmp_path / "prose.txt"
+    source.write_text("Ordinary prose on a page.\fA second page of prose.", encoding="utf-8")
+    run(inputs=[source], config_path=config, out_dir=tmp_path / "out", dry_run=False)
+
+    audit = json.loads((tmp_path / "out" / "audit.json").read_text(encoding="utf-8"))
+    held = [entry for entry in audit["review_queue"] if entry["reason"] == "route_review:prose"]
+    assert [entry["page_number"] for entry in held] == [1, 2]
+    assert (tmp_path / "out" / "raw" / "doc_0001_page_0002.txt").exists()
+
+
+def test_review_flag_must_be_boolean(tmp_path: Path) -> None:
+    from pageledger.config import load_config
+
+    config = _write_config(
+        tmp_path,
+        'schema_version: "0.1"\ntaxonomy:\n  page_types:\n    prose:\n'
+        "      default_action: transcribe_text\n      review: yes please\n",
+    )
+    with pytest.raises(ValueError, match=r"taxonomy.page_types.prose.review"):
+        load_config(config)

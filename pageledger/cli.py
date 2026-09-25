@@ -27,14 +27,18 @@ MINIMAL_CONFIG = textwrap.dedent("""\
       page_types:
         blank:
           default_action: skip
+        # review: true extracts these pages and still keeps them for review.
         sparse:
-          default_action: review
+          default_action: transcribe_text
+          review: true
         prose:
           default_action: transcribe_text
         table_likely:
-          default_action: review
+          default_action: transcribe_text
+          review: true
         unknown:
-          default_action: review
+          default_action: transcribe_text
+          review: true
     # For tabular work, add a schema section (columns, aliases, checks) so
     # structured adapter output lands in normalized/ with graded evidence,
     # and a run.grading section to act on grades. Commented reference:
@@ -140,6 +144,13 @@ def build_parser() -> argparse.ArgumentParser:
     resume_parser = subparsers.add_parser("resume", help="Resume verified pending work in place")
     resume_parser.add_argument("run_dir", type=Path)
     resume_parser.add_argument("--adapter-path", type=Path, default=None)
+    resume_parser.add_argument(
+        "--raise-limit",
+        action="append",
+        default=[],
+        metavar="LIMIT=VALUE",
+        help="Raise a processing limit of a document job paused by it, e.g. max_attempt_pages=50",
+    )
     resume_parser.add_argument("--json", action="store_true", dest="json_output")
 
     rerun_parser = subparsers.add_parser(
@@ -570,6 +581,9 @@ def _cmd_run(args: argparse.Namespace) -> int:
         print(f"PageLedger run {result['run_id']} wrote {result['out_dir']}")
         summary = result["summary"]
         print(f"Pages: {summary['pages_extracted']} extracted / {summary['pages_total']} total")
+        skipped = result.get("skipped_inputs", [])
+        if skipped:
+            print(f"Skipped hidden files ({len(skipped)}): {', '.join(skipped)}")
         print(f"Raw artifacts: {result['raw_artifact_count']}")
         print(f"Quality warning pages: {result['quality_warning_pages']}")
         _print_run_cost(args.out, dry_run=result["dry_run"])
@@ -612,11 +626,26 @@ def _cmd_classify(args: argparse.Namespace) -> int:
     return 0
 
 
+def _parse_limit_raises(items: list[str]) -> dict[str, int | float]:
+    raised: dict[str, int | float] = {}
+    for item in items:
+        name, _, text = item.partition("=")
+        try:
+            value: int | float = int(text) if text.strip().isdigit() else float(text)
+        except ValueError:
+            raise ValueError(f"--raise-limit expects LIMIT=NUMBER, got {item!r}") from None
+        raised[name.strip()] = value
+    return raised
+
+
 def _cmd_resume(args: argparse.Namespace) -> int:
+    raised = _parse_limit_raises(args.raise_limit)
     if (args.run_dir / "job.json").exists():
         from .processing import resume_job
 
-        result = resume_job(args.run_dir, adapter_path=args.adapter_path)
+        result = resume_job(args.run_dir, adapter_path=args.adapter_path, raise_limits=raised)
+    elif raised:
+        raise ValueError("--raise-limit applies to document jobs made by pageledger process")
     else:
         result = resume(args.run_dir, adapter_path=args.adapter_path)
     if args.json_output:
@@ -624,6 +653,8 @@ def _cmd_resume(args: argparse.Namespace) -> int:
     else:
         print(f"PageLedger {result.get('job_id', result.get('run_id'))} wrote {result['out_dir']}")
         print(f"Status: {result['status']}")
+        if result.get("next_action"):
+            print(result["next_action"])
     return 1 if result["status"] in {"failed", "halted"} else 0
 
 
@@ -656,6 +687,8 @@ def _cmd_job(args: argparse.Namespace) -> int:
             print(f"Report: {result['report']}")
         if result.get("next_action"):
             print(result["next_action"])
+        for warning in result.get("config_warnings", []):
+            print(f"Config warning: {warning}")
         if result.get("error"):
             print(result["error"], file=sys.stderr)
     return 1 if result.get("status") in {"halted", "failed", "fail"} else 0

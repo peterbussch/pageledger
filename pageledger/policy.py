@@ -91,7 +91,7 @@ def rebuild_policy_queues(
         reason = str(item.get("reason", ""))
         if reason in {"quality_warning", "grade_below_threshold"}:
             continue
-        if reason.startswith("rerun_if:"):
+        if reason.startswith(("rerun_if:", "route_review:")):
             continue
         review.append(_refresh_grade(item, grades))
     quarantine = [
@@ -110,6 +110,15 @@ def rebuild_policy_queues(
             "grade": entry["grade"],
             "grade_basis": entry["grade_basis"],
         }
+        if route.get("review") is True:
+            # The taxonomy asked for extraction and review of this page type.
+            review.append(
+                {
+                    **queue_entry,
+                    "action": "review",
+                    "reason": f"route_review:{queue_entry['type']}",
+                }
+            )
         if entry.get("warnings"):
             review.append(
                 {

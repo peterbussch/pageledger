@@ -45,12 +45,6 @@ Path("sample-document.txt").write_text(
 PY
 cat > document-job.yml <<'YAML'
 schema_version: "0.1"
-taxonomy:
-  page_types:
-    prose:
-      default_action: transcribe_text
-run:
-  adapter: text
 processing:
   local_text:
     adapter: text

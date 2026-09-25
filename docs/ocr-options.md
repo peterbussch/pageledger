@@ -11,7 +11,7 @@ The examples below show local, hosted, and mixed extraction paths.
 | Tier | Example path | Runs local | Typical cost | Good fit | PageLedger integration |
 |---|---|---:|---|---|---|
 | Born-digital PDF | `pdf_text` | yes | free | PDFs with a real embedded text layer | Built-in adapter via `pageledger[pdf]`. |
-| Scanned PDF, plain text | `pdf_ocr` (Tesseract) | yes | free, plus compute | Image-only or noisy-layer scans where plain text is enough | Built-in adapter; needs poppler + Tesseract installed. `dpi`/`lang` via `run.adapter_options`. |
+| Scanned PDF, plain text | `pdf_ocr` (Tesseract) | yes | free, plus compute | Image-only or noisy-layer scans where plain text is enough | Built-in adapter; needs poppler + Tesseract installed. `dpi`, `lang` and `max_render_pixels` via `run.adapter_options`. |
 | Baseline OCR preprocessing | OCRmyPDF + Tesseract | yes | free, plus compute | Producing a searchable PDF for other tools too | External preprocessing, then `pdf_text`. |
 | Local-LLM cleanup | Tesseract + local model (mlx_lm, llama.cpp, Ollama) | yes | free, plus compute | Fixing character-level OCR errors without sending pages anywhere | Custom adapter; see [`local_llm_cleanup_adapter.py`](../examples/local_llm_cleanup_adapter.py) or [`ollama_cleanup_adapter.py`](../examples/ollama_cleanup_adapter.py). |
 | Local document conversion | Docling | yes | free/open, plus compute | PDF/document conversion with layout-aware output | Functional machine-level example in [`docling_adapter.py`](../examples/docling_adapter.py), returning page-level Markdown. |
@@ -42,6 +42,18 @@ New runs record the concrete built-in backend identity in per-page provenance:
 `pdf_text` includes the installed pypdf version; `pdf_ocr` includes Tesseract,
 Poppler/pdftoppm, DPI, and language. A custom OCR/VLM adapter should put the
 equivalent model/revision and material runtime settings in `ExtractionResult.model`.
+
+### Oversized pages
+
+`pdf_ocr` measures each page before rendering it. Some scans declare pages far
+larger than the paper, and at 300 DPI one such page can need hundreds of
+megapixels. When a page would exceed `max_render_pixels` (60,000,000 by
+default; an A2 sheet at 300 DPI is about 35 million), that page is rendered at
+the highest DPI that fits. Its quality line gets the warning
+`render_dpi_capped`, and its `model` string records both values, for example
+`dpi=94 (requested 300)`. The DPI is never raised. A page that would need less
+than 72 DPI stops the run with `render_limit`; raise `max_render_pixels` or
+split the page.
 
 ### Docling: standard first, VLM selectively
 

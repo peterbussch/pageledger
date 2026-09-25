@@ -89,7 +89,8 @@
           "enum": [
             "processing",
             "completed",
-            "halted"
+            "halted",
+            "paused_budget"
           ]
         },
         "pages": {
@@ -237,6 +238,7 @@
                 "enum": [
                   "unreviewed_text",
                   "coverage_defect",
+                  "low_confidence",
                   "numeric_column_conflict",
                   "blank_candidate",
                   "provider_failure",
@@ -672,6 +674,25 @@
         },
         "policy": {
           "type": "object"
+        },
+        "limits_history": {
+          "type": "array",
+          "description": "Limits raised on resume after a budget pause, oldest first. Absent until a limit is raised.",
+          "items": {
+            "type": "object",
+            "required": ["at", "limit", "previous", "value"],
+            "properties": {
+              "at": {"type": "string", "minLength": 1},
+              "limit": {"enum": ["max_attempt_pages", "max_image_pages", "max_tokens", "max_cost_usd"]},
+              "previous": {"type": "number"},
+              "value": {"type": "number"}
+            },
+            "additionalProperties": false
+          }
+        },
+        "hold_policy": {
+          "const": "0.6",
+          "description": "Warning-to-hold mapping for this job. Absent on jobs written before 0.6, which filed low_confidence under coverage_defect."
         },
         "package_sha256": {
           "type": "string",

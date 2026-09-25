@@ -9,7 +9,7 @@ from pathlib import Path
 from urllib.parse import quote
 
 from .checkpoint import atomic_bytes
-from .processing_policy import _WARNING_HOLDS, _attempt_holds, validate_review
+from .processing_policy import _attempt_holds, validate_review, warning_holds
 
 _CURRENT_REPORT_FORMAT = "0.5.1"
 
@@ -23,6 +23,7 @@ _STAGE_LABELS = {
 _DISPOSITION_LABELS = {
     "unreviewed_text": "Text selected; source review pending",
     "coverage_defect": "Possible missing or incomplete content",
+    "low_confidence": "The engine was unsure of some words",
     "numeric_column_conflict": "Numbers need checking",
     "blank_candidate": "Candidate blank",
     "provider_failure": "Extraction failed",
@@ -144,20 +145,20 @@ def _current_output(page: dict) -> str:
     return _link(label, selected["path"])
 
 
-def _explicit_attempt_hold(attempt: dict, reason: str) -> str | None:
+def _explicit_attempt_hold(attempt: dict, reason: str, holds_for: dict[str, str]) -> str | None:
     """Return explicit evidence tying a hold to one attempt, if present."""
     for warning in attempt.get("warnings") or []:
         code = warning.get("type", warning.get("code")) if isinstance(warning, dict) else warning
-        if isinstance(code, str) and _WARNING_HOLDS.get(code) == reason:
+        if isinstance(code, str) and holds_for.get(code) == reason:
             return str(code)
     classification = (attempt.get("classification") or {}).get("type")
     classification_reason = (attempt.get("classification") or {}).get("reason")
     if isinstance(classification, str) and (
         classification != "unknown" or classification_reason != "empty_pdf_text_ambiguous"
     ):
-        if _WARNING_HOLDS.get(classification) == reason:
+        if holds_for.get(classification) == reason:
             return str(classification)
-    if reason not in _attempt_holds(attempt):
+    if reason not in _attempt_holds(attempt, holds_for):
         return None
     # The shared policy helper has already established an alignment hold; its
     # detailed structure remains in the linked attempt evidence.
@@ -166,7 +167,7 @@ def _explicit_attempt_hold(attempt: dict, reason: str) -> str | None:
     return None
 
 
-def _recorded_concerns(page: dict) -> str:
+def _recorded_concerns(page: dict, holds_for: dict[str, str]) -> str:
     reasons = page.get("review_reasons") or []
     if not reasons:
         return "None recorded"
@@ -174,7 +175,7 @@ def _recorded_concerns(page: dict) -> str:
     for reason in reasons:
         evidence = []
         for attempt in page["attempts"]:
-            code = _explicit_attempt_hold(attempt, reason)
+            code = _explicit_attempt_hold(attempt, reason, holds_for)
             if code is None:
                 continue
             stage = _stage_label(attempt["stage"])
@@ -233,7 +234,7 @@ def render_document_report(report: dict) -> str:
             row = (
                 f"| {_link(str(page['page_number']), page['source_link'])} | "
                 f"{_current_output(page)} | {_review_status(page)} | "
-                f"{_recorded_concerns(page)} |"
+                f"{_recorded_concerns(page, warning_holds(report))} |"
             )
         else:
             selected = page["selected_output"]
@@ -312,6 +313,9 @@ def build_document_report(
         "next_action",
     )
     report = {field: copy.deepcopy(job[field]) for field in fields}
+    for optional in ("hold_policy", "limits_history"):
+        if optional in job:
+            report[optional] = copy.deepcopy(job[optional])
     if report_format is not None:
         if report_format != _CURRENT_REPORT_FORMAT:
             raise ValueError(f"Unsupported document report format: {report_format}")
