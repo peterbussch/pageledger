@@ -18,3 +18,4 @@ docs/autoresearch.md
 dist/
 build/
 *.egg-info/
+corpus/manifest.local.yml

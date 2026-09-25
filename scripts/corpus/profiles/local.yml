@@ -1,0 +1,14 @@
+schema_version: "0.1"
+processing:
+  local_text:
+    adapter: pdf_text
+  local_ocr:
+    adapter: pdf_ocr
+    adapter_options:
+      lang: rus
+      dpi: 300
+  image: null
+  second_opinion: null
+  limits:
+    max_attempt_pages: 10000
+    max_image_pages: 0
