@@ -47,7 +47,7 @@ documents:
 
 | Field | Type | Required | Nullable | Meaning |
 |---|---|---|---|---|
-| `schema_version` | string | ✅ | no | Artifact schema version, `"0.1"` in every release so far. |
+| `schema_version` | string | ✅ | no | Artifact schema version, `"0.1"`. |
 | `pageledger_version` | string | ✅ for new maps | no | PageLedger package version that generated the map. Missing only on legacy schema-0.1 maps. |
 | `run_id` | string | ✅ | no | Identifier of the classification or planning operation. An extraction run rebinds this to its own run ID. |
 | `generated_at` | string | ✅ | no | UTC ISO 8601 timestamp. |
@@ -122,7 +122,7 @@ readable.
 
 - Each route map entry's `page_id` joins to the matching `provenance.jsonl`
   line's `page_id`.
-- Route map page `confidence` should be copied to provenance as
+- Route map page `confidence` is copied to provenance as
   `route.route_confidence`.
 - Per-page `prompt` routing is allowed in v0.1. Per-page schema routing is not;
   v0.1 uses one primary schema per run.
@@ -145,9 +145,8 @@ readable.
   Invalid inventories stop the command before classification or output writes.
   Missing raw evidence still produces an `unknown` classification; it does not
   remove that page from the new map.
-- Since route-map.yml is YAML, its field contract is documented in this spec
-  rather than a JSON Schema file. These field tables define the v0.1 artifact
-  contract even when the PageLedger package version is 0.5.2.
+- Since `route-map.yml` is YAML, its field contract is documented in this spec
+  rather than a JSON Schema file. These field tables define its v0.1 contract.
 - Schema validation tests (manual YAML assertions) are in
   `tests/pageledger/test_schemas.py`.
 

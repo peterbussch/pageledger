@@ -84,7 +84,7 @@ items:
 | Field | Type | Required | Meaning |
 |---|---|---|---|
 | `schema_version` | string | ✅ | Rerun manifest schema version. `"0.1"`. |
-| `run_id` | string | ✅ | Identifier for the proposed rerun (`<parent>-rerun`). |
+| `run_id` | string | ✅ | Label for this rerun plan. The child run creates and uses its own fresh run ID. |
 | `parent_run_id` | string | ✅ | Run that produced this queue. |
 | `parent_manifest` | string | ✅ | Relative path to the parent `manifest.json`. |
 | `rerun_depth` | integer | ✅ | Depth of the generating run: 0 for an original run, N for its Nth rerun generation. |
@@ -201,7 +201,7 @@ manifest and rerun plan together cannot substitute an unconfigured adapter.
 - The optional `escalation` block and `chain_exhausted` status shipped in
   PageLedger 0.2.0 as additive 0.1 contract extensions; `schema_version`
   remains `"0.1"`.
-- Since rerun-manifest.yml is YAML, its field contract is documented here
+- Since `rerun-manifest.yml` is YAML, its field contract is documented here
   rather than a JSON Schema file.
 - Schema validation tests are in `tests/pageledger/test_schemas.py` and
   `tests/pageledger/test_rerun.py`.

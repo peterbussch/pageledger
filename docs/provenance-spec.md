@@ -68,20 +68,10 @@ actual returned model/provider. `result.raw_sha256` continues to hash output;
 `input_evidence.sha256` hashes the transmitted input. Existing records may omit
 the field or use null. Final verification checks non-null image evidence.
 
-Normalized records should preserve links back to provenance lines:
-
-```json
-{
-  "record_id": "run-20260619-001:doc_0001_page_0002:row_0017",
-  "place_name": "Example",
-  "population_total": 1234,
-  "produced_by": {
-    "run_id": "run-20260619-001",
-    "page_id": "doc_0001_page_0002",
-    "raw_artifact": "raw/doc_0001_page_0002.markdown_table"
-  }
-}
-```
+Normalized output is linked at file level, not per record. Each
+`normalized/{page_id}.json` carries `run_id`, `page_id`, and `raw_artifact`;
+individual records do not carry provenance identifiers. See the
+[`normalized` specification](normalized-spec.md).
 
 ## Required fields
 
@@ -102,14 +92,12 @@ Normalized records should preserve links back to provenance lines:
 
 ## Design notes
 
-- `record_id` should join `run_id`, `page_id`, and a row or record index with
-  colon separators.
 - Confidence values may be heuristic. Preserve raw route, extractor, and
   alignment confidence values rather than collapsing them too early.
-- `usage.pages` is required. Optional usage fields should serialize unknown
+- `usage.pages` is required. Optional usage fields serialize unknown
   values as JSON `null`, not disappear from generated artifacts.
 - `prompt_hash` is required whenever a prompt influenced output.
-- `deterministic` should be `false` unless the adapter can actually guarantee
+- `deterministic` is `false` unless the adapter can actually guarantee
   stable output for the same input and config.
 - `usage` is the authoritative adapter-facing record. `metrics` is retained in
   schema version `"0.1"` as a compatibility copy for spreadsheet and JSONL
@@ -146,10 +134,10 @@ not a calibrated accuracy score. Fields:
 | `warnings` | array of strings | ✅ | no | Adapter-native warnings plus PageLedger-derived quality warnings (see taxonomy below). Adapter warnings are also retained in the provenance result. |
 | `text_quality` | object | ✅ | no | Sub-metrics (see below). |
 | `embedded_text_comparison` | object | ❌ | yes | Comparison with PDF embedded text layer. Null for non-PDF sources. |
-| `output_integrity` | object | ❌ | no | Conservative chat-template-marker and parent-rerun size evidence. Present on new 0.1.4 quality lines; optional so older lines remain valid. |
-| `grade` | string | ❌ | no | `A`–`F`. Emitted by current runs; absent from pre-0.1.3 lines. |
-| `grade_basis` | string | ❌ | no | `signals_only` or `schema_aware`. Emitted by current runs; absent from pre-0.1.3 lines. |
-| `grade_detail` | object | ❌ | no | Grade evidence detail. Emitted by current runs; absent from pre-0.1.3 lines. |
+| `output_integrity` | object | ❌ | no | Conservative chat-template-marker and parent-rerun size evidence. Optional for older lines. |
+| `grade` | string | ❌ | no | `A`–`F`. Optional for older lines. |
+| `grade_basis` | string | ❌ | no | `signals_only` or `schema_aware`. Optional for older lines. |
+| `grade_detail` | object | ❌ | no | Grade evidence detail. Optional for older lines. |
 
 ### Grade bands
 
@@ -203,6 +191,9 @@ not garble.
 The last seven fields are new in 0.6; older quality lines omit them.
 
 ### Warning taxonomy
+
+Meanings and suggested next steps for warnings are in the
+[warnings reference](warnings.md). The table here defines trigger conditions.
 
 | Warning | Trigger |
 |---|---|

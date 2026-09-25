@@ -8,6 +8,11 @@ Schema version: `0.1`. The schemas are
 `transcript.md` are deterministic renderings of that JSON. The saved job state
 and retained attempt evidence are the sources for reconstructing the report. A report does not certify transcription accuracy or source preservation.
 
+The report shows the selected text, each extraction attempt, review status,
+concerns, and the next action. `unresolved_pages` counts pages not explicitly
+reviewed as text or blank. For meanings and suggested actions, see the
+[warnings reference](warnings.md).
+
 ## Document fields
 
 | Field | Meaning |
@@ -77,11 +82,6 @@ It also lists pages without selected text. The transcript hash covers that whole
 Markdown serialization, including the added material and final newlines.
 
 ## Selection and escalation
-
-`assess_page(page, review=None)` returns `selected_attempt`, `disposition`,
-`review_reasons`, and `next_action`. The caller supplies decoded raw text as the
-transient `text` field when assessing completed attempts; it is not persisted in
-job attempt metadata. Report generation reads and verifies raw files separately.
 
 The first usable completed candidate without recognized blocking defects is
 selected. If none qualifies, the earliest usable completed output is retained
@@ -181,8 +181,8 @@ pageledger verify-job jobs/book
 digest. Other dispositions allow a null selection, including preflight confirmation
 of blankness, illustration, or source damage before any extraction call. A nonnull
 selection always requires the exact completed artifact hash. A receipt cannot
-bind a failed or unknown partial response. `validate_review(review, page)` checks
-the source, page, output, and required reviewer fields; the job layer validates
+bind a failed or unknown partial response. The report checks the source, page,
+output, and required reviewer fields; the job layer validates
 the complete envelope and duplicate-page inventory. `page.review` stores this
 envelope, commonly with only the decision for that page.
 
@@ -224,6 +224,15 @@ needs. Reports marked `"0.5.1"` keep the absolute path and still verify.
 Reports without `report_format` use the 0.5.0 renderer. `verify_document_report`
 and `verify_job` select that renderer for those reports so existing report bytes
 remain verifiable; marked reports select their versioned renderer.
+
+## For adapter authors
+
+`assess_page(page, review=None)` returns `selected_attempt`, `disposition`,
+`review_reasons`, and `next_action`. The caller supplies decoded raw text as the
+transient `text` field when assessing completed attempts; it is not persisted in
+job attempt metadata. Report generation reads and verifies raw files separately.
+
+`validate_review(review, page)` checks source, page, output, and reviewer fields.
 
 ## Integrity and rendering APIs
 

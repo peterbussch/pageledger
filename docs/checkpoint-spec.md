@@ -175,8 +175,8 @@ not establish the cause of an earlier failure.
 - The frozen config and code must remain compatible. Resume cannot account
   for unreported provider state, undeclared adapter dependencies or hidden
   adapter retry loops.
-- Recovery data is operational history outside `ARTIFACT_PATHS`. A bundle
-  transports the finalized legacy artifact set and its ordinary replay
+- Recovery records are operational history, separate from the files included
+  in a bundle. A bundle transports the finalized run artifacts and its ordinary replay
   behavior, not the live recovery journal.
 - Checks detect inconsistent evidence, not maliciously rewritten complete
   histories. Advisory locks coordinate cooperating recovery writers; they

@@ -1,9 +1,9 @@
 # Page image input evidence
 
-`ExtractionResult.input_evidence` is an optional dictionary, defaulting to
-`None`. Successful extraction provenance includes the descriptor as a top-level
-`input_evidence` field. Older results and checkpoints without the field remain
-readable. See the [image evidence schema](../schemas/image-evidence.schema.json).
+For a reader, image input evidence identifies the exact page image sent to an
+image model. PageLedger retains that JPEG in the job and verifies its hash and
+source-page binding. Older runs without image evidence remain readable. See
+the [image evidence schema](../schemas/image-evidence.schema.json).
 
 | Field | Meaning |
 |---|---|
@@ -36,14 +36,9 @@ Artifact traversal, absolute paths, nonregular files, and symlinks inside the
 evidence path are rejected. A root path supplied to validation must itself be
 a real directory.
 
-Call `pageledger.image_evidence.validate_input_evidence(evidence, root=run_root,
-source_sha256=source_hash, page_number=n, prompt_sha256=prompt_hash)` before
-submitting a paid request. The same helper runs before a successful checkpoint
-response is saved, when a retained response or partial failure is read, and
-during final `verify-run`. It checks the bindings and retained JPEG hash,
-byte count, and dimensions. Output content hashes and usage remain in ordinary
-provenance; input evidence does not replace them. Completed checkpoint
-provenance must agree with its saved input descriptor.
+The authoring adapter must retain input evidence for an image request. PageLedger
+checks its source, page, prompt, and JPEG bindings when saving and verifying
+results. Output hashes and usage remain separate provenance evidence.
 
 Image-evidence bundles and replay are currently unsupported. `pageledger bundle`
 rejects them explicitly with `image_evidence_unsupported`; it never emits a
@@ -53,6 +48,17 @@ behavior.
 
 ## Optional OpenAI-compatible example
 
+### For adapter authors
+
+`ExtractionResult.input_evidence` is an optional dictionary, defaulting to
+`None`. Successful extraction provenance includes it as a top-level field.
+Older results and checkpoints without the field remain readable.
+Call `pageledger.image_evidence.validate_input_evidence(evidence,
+root=run_root, source_sha256=source_hash, page_number=n,
+prompt_sha256=prompt_hash)` before submitting a paid request. The same check
+runs before checkpointing and during verification. It checks the bindings and
+retained JPEG hash, byte count, and dimensions.
+
 `examples/openai_image_adapter.py:OpenAIImageAdapter` is a thin optional
 adapter. Install Poppler and Pillow separately; no provider SDK is required.
 The controller supplies `evidence_dir` as the absolute child run root followed
@@ -61,8 +67,8 @@ adapter options are:
 
 ```yaml
 model: gemini-your-explicit-model
-base_url: http://127.0.0.1:20128/v1
-env_key: OMNIROUTE_API_KEY
+base_url: https://your-openai-compatible-endpoint/v1
+env_key: YOUR_GATEWAY_API_KEY
 evidence_dir: /absolute/path/to/child-run/evidence
 max_output_tokens: 8192
 timeout: 120
@@ -73,7 +79,9 @@ max_image_bytes: 3145728
 max_image_dimension: 4096
 ```
 
-The model's final slash-separated component must begin with `gemini-`,
+The example accepts Gemini and DeepSeek model families only. This is a deliberate
+allow-list in the adapter, not a claim that every OpenAI-compatible endpoint
+supports those models. The model's final slash-separated component must begin with `gemini-`,
 `gemini_`, `deepseek-`, or `deepseek_`. An optional `allowed_models` list further
 restricts those families. The adapter performs one `GET /models` availability
 check per successful adapter instance check, followed by one nonstreaming
@@ -86,6 +94,9 @@ Authentication is read only from the named environment variable. Use
 `env_key: null` only for a gateway configured without authentication. No vault,
 credential file, or local auth scaffold is read. Constructors and page-count
 hooks make no network requests. Redirects and environment proxies are disabled.
+`pageledger doctor` checks the standard provider key names; it does not check
+`YOUR_GATEWAY_API_KEY` or other custom environment-variable names. Check that
+the configured variable is set in the environment that runs the job.
 
 Rendering supports `pdftoppm` and `pdftocairo`, DPI 50–300, and a 4096-pixel
 ceiling. Pillow converts to RGB and encodes the retained JPEG. The renderer

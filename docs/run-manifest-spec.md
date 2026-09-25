@@ -1,6 +1,6 @@
 # Run manifest specification
 
-Every PageLedger run should produce a canonical `manifest.json`. The manifest
+Every completed PageLedger run produces a canonical `manifest.json`. The manifest
 is the durable pointer to every other artifact in the run directory.
 
 ## Minimal shape
@@ -109,15 +109,15 @@ Current writers emit `pages_total`, `pages_extracted`, `pages_skipped`,
 `pages_routed_review`, `pages_quarantined`, `records_normalized` (rows written
 to `normalized/` by the schema aligner), `estimated_cost_usd`, and
 `quality_warning_pages`. `pages_routed_review` remains optional in the schema
-so pre-hardening schema-0.1 manifests can still be read; `verify-run` warns
-when that legacy evidence is absent.
+so older schema-0.1 manifests can still be read; `verify-run` warns when the
+field is absent.
 
 Current writers also emit top-level `pageledger_version`. It remains optional
-in the schema solely so pre-hardening schema-0.1 manifests remain readable;
+in the schema only so older schema-0.1 manifests remain readable;
 `verify-run` warns when that generator identity is absent.
 
-Current writers emit `run_depth` on every manifest. For original legacy runs
-without it, generation 0 can be inferred from `parent_run_id: null`. A legacy
+Current writers emit `run_depth` on every manifest. For older original runs
+without it, generation 0 can be inferred from `parent_run_id: null`. An older
 rerun whose manifest lacks `run_depth` remains readable, but PageLedger will
 not execute another generation because its lineage depth is ambiguous.
 
@@ -326,14 +326,21 @@ canonical signal that PageLedger finished writing every artifact it points to;
 
 ### Common errors and user action
 
+For quality warnings and document-job dispositions, see the
+[warnings reference](warnings.md).
+
 | Error | Likely cause | Action |
 |---|---|---|
-| `No configured adapter` | Missing `run.adapter` in config | Add `run.adapter: text` or `run.adapter: pdf_text` |
+| `No configured adapter` | Missing adapter selection | Add a supported `run.adapter` or pass `--adapter` |
 | `Output directory is not empty` | Reusing a previous run dir | Use a new empty directory |
-| `PDF support requires optional dependency` | `pageledger[pdf]` not installed | `pip install "pageledger[pdf]"` |
-| `Adapter 'X' does not support action 'Y'` | Adapter/action mismatch | Check `adapter.supports(action)` |
-| `Cannot read input file` | Permission error or missing file | `chmod +r` or verify path |
-| `Budget exceeded after ...` | Page/token/dollar cap hit | Increase budget caps or reduce input |
+| `PDF support requires the optional dependency: install pageledger[pdf]` | PDF support is not installed | Run `pip install "pageledger[pdf]"` in the environment running PageLedger |
+| Adapter does not support the requested action | Configured route and adapter are incompatible | Choose an adapter that supports the route action, or revise the route map |
+| `Cannot read input file` | Permission error or missing file | Check that the path exists and that your account can read it |
+| `Budget exceeded after ...` / `Budget reached before ...` | A page, token, or cost limit stopped work | Reduce the input or raise the relevant configured limit; check provider limits for a hard spending cap |
+| `--pages requires a single input file` | Page selection was used with multiple inputs | Pass one input file or omit `--pages` |
+| `Adapter 'text' cannot read PDF input: ...` | The text adapter was selected for a PDF | Use `pdf_text` or `pdf_ocr` |
+| `Adapter 'X' only reads PDF inputs: ...` | A PDF-only adapter was given another file type | Supply a PDF or choose an adapter for that input |
+| `Output path exists and is not a directory: ...` | The requested run path is an existing file | Choose a new directory path |
 | `missing_binary: ...` | `pdftoppm` or `tesseract` not on `PATH` | Install the package the message names, or run `pageledger doctor` |
 | `missing_language_pack: ...` | A `lang` code has no traineddata | Install it, or change `run.adapter_options.lang` to an installed language the message lists |
 | `render_limit: ...` | A page is too large to render at 72 DPI within `max_render_pixels` | Raise `run.adapter_options.max_render_pixels`, or split the page |
@@ -341,6 +348,6 @@ canonical signal that PageLedger finished writing every artifact it points to;
 | `unsupported_encryption: ...` | The PDF needs a password, or uses a non-standard encryption handler | Use an unprotected or unencrypted copy |
 | `malformed_pdf: ...` | pypdf cannot parse the file | Check the file; a PDF tool such as qpdf can often write a readable copy |
 | `engine_timeout: ...` | `pdftoppm` or `tesseract` ran past its time limit on a page (120 s to render, 300 s to OCR) | Look at the page; very large or damaged pages are slow. Lowering `dpi` or `max_render_pixels` helps |
-| `Adapter 'X' failed for ...` | Adapter exception | Check the redacted `run.log` envelope, then inspect or debug the adapter locally |
-| `usage must be JSON-serializable` | Adapter returned non-serializable usage | Fix adapter `usage` dict |
-| `usage.pages must be exactly 1` | Adapter misreported page count | Adapter must set `usage.pages = 1` |
+| `Adapter 'X' failed for ...` / `<redacted>` | Adapter exception details may contain private data, so ordinary run output hides them | Inspect the failure code and safe `run.log` fields; debug the adapter locally without sharing secrets |
+| `usage must be JSON-serializable` | Adapter returned usage data that cannot be saved | Contact the adapter maintainer or use a compatible adapter |
+| `usage.pages must be exactly 1` | Adapter returned an invalid page count | Use a compatible adapter and report the issue to its maintainer |

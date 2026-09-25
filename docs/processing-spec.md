@@ -191,16 +191,16 @@ or prevent deliberate rewriting.
 
 Child plans are saved before launch; their exact YAML snapshots are under
 `.job/`. Runs under `attempts/` retain the ordinary generation-zero artifacts
-and the resumable checkpoints. `run_id` plus child path, attempt ID and source
-page identify an attempt. This does not overload rerun lineage. Existing run
-commands, selected denominators and generation-zero text replay keep their
-contracts.
+and the resumable checkpoints. An attempt is identified by its run ID, child
+path, attempt ID and source page; these are separate from rerun lineage IDs.
+Existing run commands, selected denominators and generation-zero text replay
+keep their contracts.
 
 Before further calls, resume checks all retained child records, outputs,
 source/page identities and configuration snapshots. Each child's configuration
-digest must match its saved stage plan. Refresh hashes the shared source once,
-then checks every child's source identity against that digest while still
-verifying all retained child artifacts. A child completed before
+digest must match its saved stage plan. Resume hashes the source once and
+confirms that every child still refers to that source, and that its retained
+artifacts are intact, before reusing its work. A child completed before
 the job index was saved is adopted without extraction. A response saved before
 publication is recovered by the child runner. A started request without a
 response becomes `outcome_unknown`; no automatic retry or fallback is allowed.
@@ -284,6 +284,26 @@ formula, and still match the evidence it was written from, which
 job's evidence changed is refused; write a new one. `--dry-run` checks and
 counts the decisions without recording them. Scripts can keep writing JSON
 receipts.
+
+### Review at scale
+
+See the [warnings reference](warnings.md) for warning and disposition meanings
+and suggested next steps.
+
+`unresolved_pages` counts pages whose disposition is not `reviewed_text` or
+`reviewed_blank`. A page remains unresolved when it is labeled `illustration`,
+`handwriting`, `unreadable`, or `source_defect`: those decisions describe the
+page, but do not establish that its text was checked or recover missing source
+content. A completed job can therefore have unresolved pages.
+
+For a long document, define and record a sampling policy before review. For
+example, review every page with a warning or disagreement, then inspect a
+fixed sample from each remaining section, including the first and last pages.
+Record the section boundaries, sample rule, reviewer, and pages checked in the
+review notes or project records. A sample does not make uninspected pages
+reviewed; their dispositions and unresolved count remain unchanged. Use a
+review sheet to collect decisions for sampled pages, but keep other rows with
+blank decisions so those pages remain unreviewed.
 
 ## Image adapter boundary
 

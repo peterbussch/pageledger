@@ -36,14 +36,17 @@
 
 ## Design notes
 
-- `review_queue` should contain the pages or records a human should inspect
+For warning, disposition, and next-action guidance, see the
+[warnings reference](warnings.md).
+
+- `review_queue` contains the pages or records a human should inspect
   before trusting the run.
 - `quarantine_queue` contains pages excluded from rerun because they matched
   a `quarantine_if` rule. The rerun depth cap changes the rerun manifest,
   not this queue. Adapter-chain exhaustion behaves the same way: candidates
   remain here for human review even when the rerun manifest reports
   `chain_exhausted` and clears its executable items.
-- `audit.md` should be generated from `audit.json`.
+- `audit.md` is generated from `audit.json`.
 - Current runs queue dry-run pages, pages explicitly configured with
   `default_action: review`, pages with quality warnings, and optionally pages
   below `run.grading.review_below_grade`, and pages matching `run.rerun_if`.
