@@ -47,8 +47,9 @@ Release changes follow the [artifact compatibility policy](docs/run-manifest-spe
   `numeric_disagreement`. A reading from a generative adapter, such as
   `vision`, stays in review as `unconfirmed_model_output` until another engine
   agrees with it. A plain `run` holds every page a generative adapter read in
-  its review queue, with the same reason. `processing.benchmark` runs a stage on every Nth page even
-  when it is not needed, to compare engines on a sample.
+  its review queue, with the same reason. `processing.benchmark` runs a stage
+  on every Nth page even when it is not needed, to compare engines on a
+  sample.
 - A page type can set `review: true` to be extracted and still held for
   review: after extraction the page joins the review queue with reason
   `route_review:<type>`. `classify` copies the flag into route maps; route
@@ -103,7 +104,6 @@ Release changes follow the [artifact compatibility policy](docs/run-manifest-spe
   `review: true`. They were previously routed to review without extraction,
   so a first `classify` and `run --routes` on a statistical volume extracted
   none of its tables.
-
 - `run` now stops with "No extraction route" when a config has no
   `taxonomy.page_types` and neither `--routes` nor `--adapter` is given.
   Such a run previously sent every page to review, extracted nothing and
@@ -157,16 +157,15 @@ Release changes follow the [artifact compatibility policy](docs/run-manifest-spe
   it parses them. A `process` job halted by such a file records the code, for
   example `source_container_invalid:unsupported_encryption`, and says what to
   do next.
-
 - `pdf_ocr` no longer renders oversized pages at full DPI. Some scans declare
   pages far larger than the paper: an Internet Archive scan of a 1911
   provincial memorial book declares pages 1.75 by 2.47 metres, about 600
-  megapixels each at 300 DPI.
-  Each page is now measured first and rendered at the highest DPI that fits
-  within the new `max_render_pixels` adapter option (default 60,000,000). A
-  lowered page carries the warning `render_dpi_capped`, and its provenance
-  records both values, for example `dpi=94 (requested 300)`. A page that would
-  need less than 72 DPI stops with `render_limit`.
+  megapixels each at 300 DPI. Each page is now measured first and rendered at
+  the highest DPI that fits within the new `max_render_pixels` adapter option
+  (default 60,000,000). A lowered page carries the warning
+  `render_dpi_capped`, and its provenance records both values, for example
+  `dpi=94 (requested 300)`. A page that would need less than 72 DPI stops with
+  `render_limit`.
 - `pdf_ocr` no longer downsamples scans filed on undersized pages. An 1872
   volume declares 18 by 29 mm pages holding scans about 440 pixels wide, which
   300 DPI rendered at half their resolution. When pypdf is installed, a page
