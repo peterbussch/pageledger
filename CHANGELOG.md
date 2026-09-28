@@ -2,7 +2,7 @@
 
 Release changes follow the [artifact compatibility policy](docs/run-manifest-spec.md#compatibility-policy).
 
-## 0.6.0 - 2026-09-25
+## 0.6.0 - 2026-09-28
 
 ### Added
 
