@@ -1481,9 +1481,7 @@ def test_strip_thought_blocks_variants() -> None:
 
 
 def _one_page_pdf(path: Path) -> Path:
-    from pypdf import PdfWriter
-
-    writer = PdfWriter()
+    writer = pytest.importorskip("pypdf").PdfWriter()
     writer.add_blank_page(width=200, height=200)
     with path.open("wb") as fh:
         writer.write(fh)

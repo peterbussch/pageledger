@@ -46,6 +46,7 @@ def image_descriptor(root, source, page_number=1, prompt=""):
 
 
 def test_pdf_document_text_is_cached_and_changed_source_rejected(tmp_path, monkeypatch):
+    pytest.importorskip("pypdf")  # the reader is faked, but pypdf.errors is imported for real
     source = tmp_path / "book.pdf"
     source.write_bytes(b"PDF fixture")
     reads = []
