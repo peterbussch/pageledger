@@ -15,8 +15,7 @@ python examples/run_first_run.py \
   --document "$PWD/docs/document-first-run.md" \
   --work-dir /tmp/pageledger-document-first-run \
   --python "$(command -v python)" \
-  --source-root "$PWD" \
-  --expected-version 0.5.2
+  --source-root "$PWD"
 ```
 
 The helper supplies the recovery helper path as
@@ -45,12 +44,6 @@ Path("sample-document.txt").write_text(
 PY
 cat > document-job.yml <<'YAML'
 schema_version: "0.1"
-taxonomy:
-  page_types:
-    prose:
-      default_action: transcribe_text
-run:
-  adapter: text
 processing:
   local_text:
     adapter: text

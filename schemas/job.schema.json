@@ -89,7 +89,8 @@
           "enum": [
             "processing",
             "completed",
-            "halted"
+            "halted",
+            "paused_budget"
           ]
         },
         "pages": {
@@ -209,6 +210,12 @@
                         "object",
                         "null"
                       ]
+                    },
+                    "adapter_capabilities": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
                     }
                   },
                   "required": [
@@ -237,7 +244,11 @@
                 "enum": [
                   "unreviewed_text",
                   "coverage_defect",
+                  "low_confidence",
                   "numeric_column_conflict",
+                  "engine_disagreement",
+                  "numeric_disagreement",
+                  "unconfirmed_model_output",
                   "blank_candidate",
                   "provider_failure",
                   "outcome_unknown",
@@ -539,6 +550,53 @@
                   ],
                   "additionalProperties": false
                 }
+              },
+              "comparisons": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "left_attempt": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "right_attempt": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "agreement_ratio": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 1
+                    },
+                    "spans": {
+                      "type": "array",
+                      "maxItems": 20,
+                      "items": {
+                        "type": "object"
+                      }
+                    },
+                    "number_differences": {
+                      "type": "array",
+                      "maxItems": 20,
+                      "items": {
+                        "type": "object"
+                      }
+                    },
+                    "truncated": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "left_attempt",
+                    "right_attempt",
+                    "agreement_ratio",
+                    "spans",
+                    "number_differences",
+                    "truncated"
+                  ],
+                  "additionalProperties": false
+                }
               }
             },
             "required": [
@@ -672,6 +730,25 @@
         },
         "policy": {
           "type": "object"
+        },
+        "limits_history": {
+          "type": "array",
+          "description": "Limits raised on resume after a budget pause, oldest first. Absent until a limit is raised.",
+          "items": {
+            "type": "object",
+            "required": ["at", "limit", "previous", "value"],
+            "properties": {
+              "at": {"type": "string", "minLength": 1},
+              "limit": {"enum": ["max_attempt_pages", "max_image_pages", "max_tokens", "max_cost_usd"]},
+              "previous": {"type": "number"},
+              "value": {"type": "number"}
+            },
+            "additionalProperties": false
+          }
+        },
+        "hold_policy": {
+          "const": "0.6",
+          "description": "Warning-to-hold mapping for this job. Absent on jobs written before 0.6, which filed low_confidence under coverage_defect."
         },
         "package_sha256": {
           "type": "string",

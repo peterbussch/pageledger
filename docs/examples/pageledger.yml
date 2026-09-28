@@ -1,7 +1,7 @@
-# Combined PageLedger config (artifact/config schema 0.1, package 0.5.2).
+# Combined PageLedger config (artifact and config schema 0.1).
 #
-# The split files in this examples directory are easier to read in docs. This
-# single-file form is the recommended first-use shape.
+# This is a complete config. The other YAML files in this directory are
+# annotated excerpts to paste into one config, not files to combine at load time.
 
 schema_version: "0.1"  # Config file format version.
 
@@ -9,20 +9,30 @@ dataset_citation:
   label: Example source collection
   text: Replace this with the archive, collection, DOI, or source-image citation.
 
+# Optional: the script and spelling the pages should have, which enables the
+# script_mismatch and historical_letters_lost warnings.
+# language:
+#   script: Cyrillic
+#   orthography: prereform
+
 taxonomy:
   # The built-in classifier can emit exactly these five structural types.
   # Domain types require a classify.hook (see docs/classifier.md).
+  # review: true extracts the page and still keeps it in the review queue.
   page_types:
     blank:
       default_action: skip
     sparse:
-      default_action: review
+      default_action: transcribe_text
+      review: true
     prose:
       default_action: transcribe_text
     table_likely:
-      default_action: review
+      default_action: transcribe_text
+      review: true
     unknown:
-      default_action: review
+      default_action: transcribe_text
+      review: true
 
 classify:
   # Omit for per-suffix defaults: pdf_text for PDF, text otherwise.

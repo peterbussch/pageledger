@@ -36,14 +36,17 @@
 
 ## Design notes
 
-- `review_queue` should contain the pages or records a human should inspect
+For warning, disposition, and next-action guidance, see the
+[warnings reference](warnings.md).
+
+- `review_queue` contains the pages or records a human should inspect
   before trusting the run.
 - `quarantine_queue` contains pages excluded from rerun because they matched
   a `quarantine_if` rule. The rerun depth cap changes the rerun manifest,
   not this queue. Adapter-chain exhaustion behaves the same way: candidates
   remain here for human review even when the rerun manifest reports
   `chain_exhausted` and clears its executable items.
-- `audit.md` should be generated from `audit.json`.
+- `audit.md` is generated from `audit.json`.
 - Current runs queue dry-run pages, pages explicitly configured with
   `default_action: review`, pages with quality warnings, and optionally pages
   below `run.grading.review_below_grade`, and pages matching `run.rerun_if`.
@@ -78,7 +81,7 @@
 | `type` | string | ✅ | no | Page type from taxonomy. |
 | `confidence` | number | ❌ | yes | Route classifier confidence from `route-map.yml`, between 0 and 1 when available. Emitted by current runs; optional for older 0.1 artifacts and null for unknown/unclassified routes. |
 | `action` | string | ✅ | no | `review` for review entries; `quarantine` for policy quarantine entries. |
-| `reason` | string | ✅ | no | Queue reason. A route sent directly to review can retain a classifier reason such as `prose_text`; policy reasons include `quality_warning`, `grade_below_threshold`, `rerun_if:*`, and `quarantine_if:*`. |
+| `reason` | string | ✅ | no | Queue reason. A route sent directly to review can retain a classifier reason such as `prose_text`; policy reasons include `quality_warning`, `grade_below_threshold`, `unconfirmed_model_output` (a page a generative adapter such as `vision` read), `rerun_if:*`, and `quarantine_if:*`. |
 | `grade` | string | ❌ | yes | Page grade at queue time (`A`–`F`). Absent on entries queued before grading (configured-review pages). |
 | `grade_basis` | string | ❌ | yes | `signals_only` or `schema_aware`. |
 
@@ -88,5 +91,5 @@ also written to `provenance.jsonl` as `route.route_confidence`; later quality
 or policy processing copies it into any audit entries it creates.
 
 The classifier and confidence fields are additive within the 0.1 artifact
-contract. PageLedger 0.5.2 therefore continues to write
+contract. PageLedger therefore continues to write
 `schema_version: "0.1"`.

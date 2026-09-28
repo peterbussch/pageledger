@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 import json
 from pathlib import Path
 
@@ -27,14 +28,30 @@ class StageAdapter(TextAdapter):
         self.calls.append((self.stage, page_number))
         if self.failure and self.stage == "image":
             raise self.failure
-        warnings = ["coverage_defect"] if page_number in self.defective else []
+        defective = page_number in self.defective and not (
+            getattr(self, "text_only_defective", False) and self.stage != "local_text"
+        )
+        warnings = ["coverage_defect"] if defective else []
         evidence = (
             image_descriptor(Path(self.evidence_dir).parent, source, page_number, prompt)
             if self.stage in {"image", "second_opinion"}
             else None
         )
+        content = TEXT
+        if self.stage == "local_text" and getattr(self, "numeric", False):
+            content = TEXT.replace("source page", "source page 13")
+        if self.stage == "local_ocr" and getattr(self, "different", False):
+            content = (
+                TEXT.replace("source page", "source page 14")
+                if getattr(self, "numeric", False)
+                else "Unrelated OCR result with entirely different words. " * 8
+            )
+        if self.stage in {"local_text", "local_ocr"} and getattr(self, "generative_only", False):
+            content = ""
+        if self.stage == "image" and getattr(self, "generative_only", False):
+            content = TEXT
         return ExtractionResult(
-            TEXT,
+            content,
             "text",
             1.0,
             "gemini-test-returned" if evidence else "synthetic",
@@ -65,6 +82,15 @@ def setup(tmp_path, monkeypatch):
         object.__setattr__(value, "stage", name)
         object.__setattr__(value, "failure", shared["failure"])
         object.__setattr__(value, "defective", shared["defective"])
+        object.__setattr__(value, "different", shared.get("different", False))
+        object.__setattr__(value, "numeric", shared.get("numeric", False))
+        object.__setattr__(value, "generative_only", shared.get("generative_only", False))
+        object.__setattr__(value, "text_only_defective", shared.get("text_only_defective", False))
+        object.__setattr__(
+            value,
+            "capabilities",
+            ("generative",) if name == "image" and shared.get("generative_only") else (),
+        )
         object.__setattr__(value, "evidence_dir", args[0].get("evidence_dir") if args else None)
         return value
 
@@ -95,6 +121,140 @@ def test_serial_escalation_preserves_exact_denominator_and_review_holds(setup):
     assert all(len(page["attempts"]) == 3 for page in job["pages"])
     assert verify_job(setup[2])["status"] == "pass"
     assert (setup[2] / "report.md").is_file()
+
+
+def test_job_language_config_reaches_child_quality_lines(setup):
+    data = yaml.safe_load(setup[1].read_text())
+    data["language"] = {"script": "Cyrillic"}
+    data["processing"]["limits"]["max_image_pages"] = 3
+    setup[1].write_text(yaml.safe_dump(data))
+
+    assert launch(setup)["status"] == "completed"
+    job = read_record(setup[2] / "job.json")
+    first_stage = next(stage for stage in job["stages"] if stage["stage"] == "local_text")
+    lines = (setup[2] / first_stage["run_path"] / "quality.jsonl").read_text().splitlines()
+    quality = json.loads(lines[0])
+    assert "script_mismatch" in quality["warnings"]
+
+
+def test_cross_engine_disagreement_with_held_attempt_is_not_review_evidence(setup):
+    setup[3]["defective"] = {1}
+    setup[3]["text_only_defective"] = True
+    setup[3]["different"] = True
+    launch(setup, pages="1")
+    page = read_record(setup[2] / "job.json")["pages"][0]
+    assert "engine_disagreement" not in page["review_reasons"]
+    assert page["next_action"] == "review"
+
+
+def test_numeric_disagreement_with_held_attempt_is_not_review_evidence(setup):
+    setup[3]["defective"] = {1}
+    setup[3]["text_only_defective"] = True
+    setup[3]["numeric"] = True
+    setup[3]["different"] = True
+    launch(setup, pages="1")
+    page = read_record(setup[2] / "job.json")["pages"][0]
+    assert "numeric_disagreement" not in page["review_reasons"]
+
+
+def test_held_text_layer_is_not_comparison_evidence_against_clean_ocr(setup):
+    setup[3]["defective"] = {1}
+    setup[3]["text_only_defective"] = True
+    setup[3]["different"] = True
+    launch(setup, pages="1")
+    page = read_record(setup[2] / "job.json")["pages"][0]
+    assert page["selected_attempt"].startswith("local_ocr-")
+    assert "engine_disagreement" not in page["review_reasons"]
+    assert "numeric_disagreement" not in page["review_reasons"]
+
+
+def test_generative_only_selection_is_unconfirmed(setup):
+    setup[3]["defective"] = {1}
+    setup[3]["generative_only"] = True
+    launch(setup, pages="1")
+    page = read_record(setup[2] / "job.json")["pages"][0]
+    assert page["selected_attempt"].startswith("image-")
+    assert "unconfirmed_model_output" in page["review_reasons"]
+
+
+def test_clean_classic_selection_is_not_held_by_generative_second_opinion(setup):
+    from pageledger.processing_policy import assess_page
+
+    page = {
+        "attempts": [
+            {
+                "attempt_id": "classic",
+                "outcome": "completed",
+                "raw_artifact": "a",
+                "raw_sha256": "x",
+                "text": "same",
+                "adapter_capabilities": [],
+            },
+            {
+                "attempt_id": "model",
+                "outcome": "completed",
+                "raw_artifact": "b",
+                "raw_sha256": "y",
+                "text": "same",
+                "adapter_capabilities": ["generative"],
+            },
+        ],
+        "comparisons": [
+            {
+                "left_attempt": "classic",
+                "right_attempt": "model",
+                "agreement_ratio": 1.0,
+                "number_differences": [],
+            }
+        ],
+    }
+    assert "unconfirmed_model_output" not in assess_page(page)["review_reasons"]
+
+
+def test_agreeing_second_attempt_confirms_generative_selection():
+    from pageledger.processing_policy import assess_page
+
+    page = {
+        "attempts": [
+            {
+                "attempt_id": "classic",
+                "outcome": "completed",
+                "raw_artifact": "a",
+                "raw_sha256": "x",
+                "text": "same",
+                "adapter_capabilities": [],
+                "warnings": ["coverage_defect"],
+            },
+            {
+                "attempt_id": "model",
+                "outcome": "completed",
+                "raw_artifact": "b",
+                "raw_sha256": "y",
+                "text": "same",
+                "adapter_capabilities": ["generative"],
+            },
+        ],
+        "comparisons": [
+            {
+                "left_attempt": "classic",
+                "right_attempt": "model",
+                "agreement_ratio": 1.0,
+                "number_differences": [],
+            }
+        ],
+    }
+    assessed = assess_page(page)
+    assert assessed["selected_attempt"] == "model"
+    assert "unconfirmed_model_output" in assessed["review_reasons"]
+
+
+def test_benchmark_samples_source_page_numbers(setup):
+    data = yaml.safe_load(setup[1].read_text())
+    data["processing"]["benchmark"] = {"stage": "local_ocr", "every_nth_page": 2}
+    setup[1].write_text(yaml.safe_dump(data))
+    launch(setup)
+    assert ("local_ocr", 2) in setup[3]["calls"]
+    assert ("local_ocr", 1) not in setup[3]["calls"]
 
 
 def test_child_completion_before_job_commit_is_adopted_without_repeating(setup, monkeypatch):
@@ -131,9 +291,15 @@ def test_shared_image_budget_stops_queue(setup):
     data = yaml.safe_load(setup[1].read_text())
     data["processing"]["limits"]["max_image_pages"] = 1
     setup[1].write_text(yaml.safe_dump(data))
-    assert launch(setup)["status"] == "halted"
+    assert launch(setup)["status"] == "paused_budget"
     assert [call for call in setup[3]["calls"] if call[0] == "image"] == [("image", 2)]
     assert read_record(setup[2] / "job.json")["usage"]["image_calls"] == 1
+    assert resume_job(setup[2], raise_limits={"max_image_pages": 2})["status"] == "completed"
+    assert [call for call in setup[3]["calls"] if call[0] == "image"] == [
+        ("image", 2),
+        ("image", 3),
+    ]
+    assert verify_job(setup[2])["status"] == "pass"
 
 
 def test_source_mutation_stops_resume_before_calls(setup, monkeypatch):
@@ -210,6 +376,110 @@ def test_invalid_pdf_gets_failed_container_report_without_invented_pages(setup):
     assert job["pages"] == []
     assert setup[3]["calls"] == []
     assert "source_container_invalid" in job["halt_reason"]
+
+
+def _encrypted_pdf(path, *, algorithm, user_password=""):
+    from pypdf import PdfWriter
+
+    writer = PdfWriter()
+    writer.add_blank_page(width=100, height=100)
+    writer.encrypt(user_password=user_password, owner_password="owner", algorithm=algorithm)
+    writer.write(path)
+    return path
+
+
+def test_source_inspection_reads_pdf_with_only_an_owner_password(tmp_path):
+    pytest.importorskip("pypdf")
+    pytest.importorskip("cryptography")
+    from pageledger.processing_source import inspect_source
+
+    source = _encrypted_pdf(tmp_path / "restricted.pdf", algorithm="AES-256")
+    assert inspect_source(source) == (1, {"status": "none", "count": 0})
+
+
+def test_pdf_that_needs_a_password_halts_with_a_typed_reason(setup):
+    pytest.importorskip("pypdf")
+    pdf = _encrypted_pdf(setup[0].with_suffix(".pdf"), algorithm="RC4-128", user_password="s3cret")
+    result = process(source=pdf, config_path=setup[1], out_dir=setup[2])
+    assert result["status"] == "halted"
+    job = read_record(setup[2] / "job.json")
+    assert job["halt_reason"] == "source_container_invalid:unsupported_encryption"
+    assert "password" in job["next_action"]
+    assert "s3cret" not in (setup[2] / "job.json").read_text(encoding="utf-8")
+    assert setup[3]["calls"] == []
+
+
+def test_uncertain_ocr_page_is_reported_as_uncertain_not_incomplete(setup, monkeypatch):
+    from pageledger.processing_policy import HOLD_POLICY
+
+    extract = StageAdapter.extract
+
+    def uncertain(self, source, **kwargs):
+        result = extract(self, source, **kwargs)
+        return dataclasses.replace(result, warnings=["low_confidence"] if result.warnings else [])
+
+    monkeypatch.setattr(StageAdapter, "extract", uncertain)
+    result = launch(setup, pages="2")
+    job = read_record(setup[2] / "job.json")
+    assert job["hold_policy"] == HOLD_POLICY
+    assert job["pages"][0]["disposition"] == "low_confidence"
+    report = (setup[2] / "report.md").read_text(encoding="utf-8")
+    assert "The engine was unsure of some words" in report
+    assert "Possible missing or incomplete content" not in report
+    assert verify_job(setup[2])["status"] == "pass", result
+
+
+def _limit_attempts(setup, max_attempt_pages):
+    source, config, out, shared = setup
+    data = yaml.safe_load(config.read_text())
+    data["processing"]["limits"]["max_attempt_pages"] = max_attempt_pages
+    config.write_text(yaml.safe_dump(data))
+    shared["defective"] = set()
+    return process(source=source, config_path=config, out_dir=out)
+
+
+def test_attempt_limit_processes_a_prefix_then_pauses(setup):
+    result = _limit_attempts(setup, 2)
+    assert result["status"] == "paused_budget"
+    job = read_record(setup[2] / "job.json")
+    assert job["usage"]["attempt_pages"] == 2
+    assert job["halt_reason"] == "budget:max_attempt_pages"
+    assert "--raise-limit max_attempt_pages=" in job["next_action"]
+    assert verify_job(setup[2])["status"] == "pass"
+
+    resumed = resume_job(setup[2], raise_limits={"max_attempt_pages": 3})
+
+    assert resumed["status"] == "completed"
+    job = read_record(setup[2] / "job.json")
+    assert job["usage"]["attempt_pages"] == 3
+    assert job["limits"]["max_attempt_pages"] == 3
+    raised = [(h["limit"], h["previous"], h["value"]) for h in job["limits_history"]]
+    assert raised == [("max_attempt_pages", 2, 3)]
+    assert verify_job(setup[2])["status"] == "pass"
+
+
+def test_paused_job_stays_paused_without_a_higher_limit(setup):
+    _limit_attempts(setup, 2)
+    assert resume_job(setup[2])["status"] == "paused_budget"
+    for bad in ({"max_attempt_pages": 2}, {"max_attempt_pages": 1}, {"max_retries": 5}):
+        with pytest.raises(ValueError):
+            resume_job(setup[2], raise_limits=bad)
+    assert read_record(setup[2] / "job.json")["usage"]["attempt_pages"] == 2
+
+
+def test_limits_can_only_be_raised_on_a_paused_job(setup):
+    assert launch(setup)["status"] == "completed"
+    with pytest.raises(ValueError, match="paused"):
+        resume_job(setup[2], raise_limits={"max_attempt_pages": 50})
+
+
+def test_resume_cli_raises_a_limit(setup, capsys):
+    from pageledger.cli import main
+
+    _limit_attempts(setup, 1)
+    code = main(["resume", str(setup[2]), "--raise-limit", "max_attempt_pages=3", "--json"])
+    assert code == 0
+    assert json.loads(capsys.readouterr().out)["status"] == "completed"
 
 
 def test_unknown_paid_cost_stops_before_second_image(setup):
@@ -296,16 +566,63 @@ def test_verify_job_rejects_selected_output_without_its_attempt(setup):
 
 
 def test_verify_job_accepts_a_legacy_report_without_format_marker(setup):
-    from pageledger.document_report import render_document_report
+    from pageledger.checkpoint import read_record
+    from pageledger.document_report import (
+        build_document_report,
+        render_document_report,
+        render_transcript,
+    )
 
     launch(setup)
-    path = setup[2] / "document.json"
-    report = json.loads(path.read_text())
-    report.pop("report_format")
-    path.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n")
+    report = build_document_report(read_record(setup[2] / "job.json"), setup[2], report_format=None)
+    (setup[2] / "document.json").write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n")
+    (setup[2] / "transcript.md").write_text(render_transcript(report))
     (setup[2] / "report.md").write_text(render_document_report(report))
 
     assert verify_job(setup[2])["status"] == "pass"
+
+
+def test_verify_job_rebuilds_legacy_hold_policy_artifacts(setup):
+    from pageledger.checkpoint import write_record
+    from pageledger.document_report import (
+        build_document_report,
+        render_document_report,
+        render_transcript,
+    )
+
+    launch(setup)
+    job_path = setup[2] / "job.json"
+    job = read_record(job_path)
+    job.pop("hold_policy", None)
+    for page in job["pages"]:
+        page.pop("comparisons", None)
+        for attempt in page["attempts"]:
+            attempt.pop("adapter_capabilities", None)
+    write_record(job_path, job)
+    report = build_document_report(job, setup[2], report_format="0.5.1")
+    (setup[2] / "document.json").write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n")
+    (setup[2] / "transcript.md").write_text(render_transcript(report))
+    (setup[2] / "report.md").write_text(render_document_report(report))
+    assert verify_job(setup[2])["status"] == "pass"
+
+
+@pytest.mark.parametrize(
+    "reason,label",
+    [
+        ("engine_disagreement", "Engines disagree"),
+        ("numeric_disagreement", "Engines read numbers differently"),
+        ("unconfirmed_model_output", "Model output not confirmed by another engine"),
+    ],
+)
+def test_new_review_dispositions_render_in_report(setup, reason, label):
+    from pageledger.document_report import build_document_report, render_document_report
+
+    launch(setup, pages="1")
+    job = read_record(setup[2] / "job.json")
+    job["pages"][0]["disposition"] = reason
+    job["pages"][0]["review_reasons"] = [reason]
+    rendered = render_document_report(build_document_report(job, setup[2]))
+    assert label in rendered
 
 
 def test_read_only_source_inspection_counts_annotations_without_exposing_contents(tmp_path):
@@ -626,3 +943,43 @@ def test_resume_rejects_child_using_a_different_config(setup, monkeypatch, tmp_p
     with pytest.raises(ValueError, match="configuration"):
         resume_job(setup[2])
     assert setup[3]["calls"] == before
+
+
+@pytest.mark.parametrize(
+    "key,value",
+    [
+        ("budget", {"max_pages": 1}),
+        ("pricing", {"cost_per_page": 5}),
+        ("grading", {"review_below_grade": "C"}),
+        ("rerun_if", [{"grade_below": "C"}]),
+        ("quarantine_if", [{"grade_below": "D"}]),
+        ("adapter_options", {"dpi": 400}),
+        ("max_rerun_depth", 2),
+        ("max_consecutive_failures", 3),
+    ],
+)
+def test_process_rejects_run_controls_it_would_ignore(setup, key, value):
+    data = yaml.safe_load(setup[1].read_text())
+    data["run"][key] = value
+    setup[1].write_text(yaml.safe_dump(data))
+    with pytest.raises(ValueError, match=rf"run\.{key} is ignored by process"):
+        launch(setup)
+    assert not setup[2].exists()
+
+
+def test_process_warns_about_redundant_run_adapter_and_taxonomy(setup):
+    result = launch(setup)
+    assert result["status"] == "completed"
+    warnings = result["config_warnings"]
+    assert any("run.adapter is ignored by process" in w for w in warnings)
+    assert any("taxonomy is ignored by process" in w for w in warnings)
+
+
+def test_process_without_run_section_has_no_config_warnings(setup):
+    data = yaml.safe_load(setup[1].read_text())
+    del data["run"]
+    del data["taxonomy"]
+    setup[1].write_text(yaml.safe_dump(data))
+    result = launch(setup)
+    assert result["status"] == "completed"
+    assert "config_warnings" not in result

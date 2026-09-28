@@ -20,6 +20,7 @@ from .adapters import (
     PDF_ADAPTER_NAMES,
     PDF_ONLY_ADAPTER_NAMES,
     AdapterFailure,
+    PageLedgerDiagnostic,
     adapter_page_count,
     load_adapter,
     ocr_pdf_page_count,
@@ -36,6 +37,7 @@ from .artifacts import (
     render_audit_markdown,
     write_json,
     write_jsonl,
+    write_text_atomic,
     write_yaml,
 )
 from .budget import (
@@ -51,8 +53,8 @@ from .budget import (
 )
 from .config import load_config
 from .grading import grade_page
-from .policy import rebuild_policy_queues
-from .quality import _build_quality_entry
+from .policy import generative_page_ids, rebuild_policy_queues
+from .quality import _build_quality_entry, mark_repeated_page_text, repeated_text_key
 from .replay import build_reproducibility_profile
 from .reports import inspect_run as inspect_run
 from .reports import run_pages_csv as run_pages_csv
@@ -100,11 +102,14 @@ class AdapterExecutionError(RuntimeError):
         message: str,
         stdout: str | None = None,
         stderr: str | None = None,
+        trusted: bool = False,
     ) -> None:
+        # Only PageLedger-authored diagnostics from built-in adapters keep their
+        # text; anything else an adapter says may hold secrets or source text.
         error_type = message.partition(":")[0].strip()
         if not ERROR_TYPE_NAME.fullmatch(error_type):
             error_type = "AdapterError"
-        redacted_message = f"{error_type}: <redacted>"
+        redacted_message = message if trusted else f"{error_type}: <redacted>"
         super().__init__(f"Adapter '{adapter}' {status} for {page_id}: {redacted_message}")
         self.adapter = adapter
         self.page_id = page_id
@@ -181,14 +186,25 @@ def _extract_adapter_page(
             extraction_seconds = round(time.perf_counter() - attempt_started, 3)
             break
         except Exception as exc:
-            final_attempt = isinstance(exc, AdapterFailure) or attempt > config.max_retries
+            trusted = isinstance(exc, PageLedgerDiagnostic) and _is_built_in(adapter)
+            message = str(exc) if trusted else f"{type(exc).__name__}: {exc}"
+            if isinstance(exc, AdapterFailure):
+                # Its code and HTTP status were checked against an allowlist, so they
+                # are safe to show whichever adapter raised it.
+                status_text = "" if exc.http_status is None else f" (HTTP {exc.http_status})"
+                message, trusted = f"AdapterFailure: {exc.code}{status_text}", True
+            final_attempt = (
+                isinstance(exc, (AdapterFailure, PageLedgerDiagnostic))
+                or attempt > config.max_retries
+            )
             adapter_error = AdapterExecutionError(
                 adapter=adapter.name,
                 page_id=page_id,
                 status="failed" if final_attempt else "retry",
-                message=f"{type(exc).__name__}: {exc}",
+                message=message,
                 stdout=getattr(exc, "stdout", None),
                 stderr=getattr(exc, "stderr", None),
+                trusted=trusted,
             )
             log_entries.append(
                 _make_log_entry(
@@ -405,6 +421,14 @@ def _run(
         if effective_adapter_name is not None:
             adapter = load_adapter(effective_adapter_name, effective_adapter_options)
     recovery_job = _checkpoint.job if _checkpoint is not None else None
+    if not dry_run and routes_path is None and recovery_job is None and not config.has_page_types:
+        raise ValueError(
+            "No extraction route: this config has no taxonomy.page_types, so every page "
+            "would go to review and nothing would be extracted. Add taxonomy.page_types "
+            "(pageledger init-config writes a working example), pass --routes with a "
+            "reviewed route map, or use --adapter for a quick run. For an intentional "
+            "review-only run, map a page type to default_action: review."
+        )
     if (
         not dry_run
         and routes_path is None
@@ -436,8 +460,9 @@ def _run(
     started_at = recovery_job["started_at"] if recovery_job else _utc_now()
     run_id = recovery_job["run_id"] if recovery_job else f"run-{_utc_now_compact()}"
     selection_by_source: dict[Path, list[dict[str, Any]]] | None = None
+    skipped_inputs: list[Path] = []
     if page_selection is None:
-        input_paths = _expand_inputs(inputs)
+        input_paths, skipped_inputs = _expand_inputs(inputs)
     else:
         selection_by_source = _group_selection(page_selection)
         input_paths = list(selection_by_source)
@@ -447,6 +472,8 @@ def _run(
             raise ValueError("--pages requires a single input file")
         selected_page_numbers = _parse_pages_expression(pages)
     _validate_adapter_inputs(input_paths, adapter_name=effective_adapter_name)
+    if adapter is not None and not dry_run and callable(getattr(adapter, "preflight", None)):
+        adapter.preflight(input_paths)
     if _checkpoint is None:
         _validate_out_dir(out_dir)
 
@@ -489,6 +516,7 @@ def _run(
     log_entries: list[dict[str, Any]] = []
     usage_entries: list[dict[str, Any]] = []
     quality_entries: list[dict[str, Any]] = []
+    repeated_text_keys: dict[str, str] = {}
     schema_spec = load_schema_spec(config.data)
     alignments: dict[str, dict[str, Any]] = {}
     pages_extracted = 0
@@ -573,6 +601,10 @@ def _run(
                     }
                     if prompt is not None:
                         page["prompt"] = prompt
+                    if _requires_adapter(action) and config.review_after_extraction(
+                        config.default_review_type
+                    ):
+                        page["review"] = True
                     routed_pages.append(page)
             try:
                 source_sha256 = _sha256_path(source)
@@ -643,33 +675,39 @@ def _run(
             from .checkpoint import atomic_bytes
 
             atomic_bytes(config_snapshot, config_path.read_bytes())
+    skipped_input_names = (
+        list(recovery_job.get("skipped_inputs", []))
+        if recovery_job is not None
+        else [path.name for path in skipped_inputs]
+    )
     if _checkpoint is not None and recovery_job is None:
         from .checkpoint import adapter_identity
 
-        _checkpoint.initialize(
-            {
-                "run_id": run_id,
-                "started_at": started_at,
-                "root": str(out_dir),
-                "config_sha256": _sha256_path(config_snapshot),
-                "config_source_path": str(config_path.resolve()),
-                "identity": adapter_identity(adapter, adapter_profile),
-                "inputs": input_entries,
-                "documents": documents,
-                "imported_routes": imported_routes,
-                "route_warnings": route_warnings,
-                "routing": (
-                    {
-                        "source_path": str(routes_path.expanduser().resolve()),
-                        "sha256": _sha256_path(routes_path),
-                        "source_run_id": imported_routes["run_id"],
-                    }
-                    if routes_path is not None and imported_routes is not None
-                    else None
-                ),
-                "log_level": log_level,
-            }
-        )
+        job_plan: dict[str, Any] = {
+            "run_id": run_id,
+            "started_at": started_at,
+            "root": str(out_dir),
+            "config_sha256": _sha256_path(config_snapshot),
+            "config_source_path": str(config_path.resolve()),
+            "identity": adapter_identity(adapter, adapter_profile),
+            "inputs": input_entries,
+            "documents": documents,
+            "imported_routes": imported_routes,
+            "route_warnings": route_warnings,
+            "routing": (
+                {
+                    "source_path": str(routes_path.expanduser().resolve()),
+                    "sha256": _sha256_path(routes_path),
+                    "source_run_id": imported_routes["run_id"],
+                }
+                if routes_path is not None and imported_routes is not None
+                else None
+            ),
+            "log_level": log_level,
+        }
+        if skipped_input_names:
+            job_plan["skipped_inputs"] = skipped_input_names
+        _checkpoint.initialize(job_plan)
 
     # One metadata template serves extracted and route-only runs.
     adapter_input_types: list[str] = []
@@ -787,7 +825,7 @@ def _run(
             if _checkpoint.records[page_id]["state"] != "completed":
                 atomic_bytes(out_dir / raw_artifact, raw_text.encode("utf-8"))
         else:
-            (out_dir / raw_artifact).write_text(raw_text, encoding="utf-8")
+            write_text_atomic(out_dir / raw_artifact, raw_text)
         raw_sha256 = _sha256_path(out_dir / raw_artifact)
         phase_clock.switch("usage_budget_provenance")
         usage = _canonical_usage(result.usage)
@@ -870,8 +908,12 @@ def _run(
                 result=result,
                 adapter=adapter,
                 parent_quality=(parent_quality_by_page or {}).get(page_id),
+                language=config.language,
             )
         )
+        repeat_key = repeated_text_key(result.content)
+        if repeat_key is not None:
+            repeated_text_keys[page_id] = repeat_key
         phase_clock.switch("alignment")
         if schema_spec is not None and result.format in ALIGNABLE_FORMATS:
             alignment = align_page(
@@ -959,6 +1001,7 @@ def _run(
     write_yaml(out_dir / "route-map.yml", route_map)
 
     phase_clock.switch("grading")
+    mark_repeated_page_text(quality_entries, repeated_text_keys)
     for entry in quality_entries:
         entry.update(
             grade_page(
@@ -991,6 +1034,7 @@ def _run(
         routes=routes,
         review_queue=review_queue,
         quarantine_queue=quarantine_queue,
+        generative_pages=generative_page_ids(provenance_entries),
     )
 
     phase_clock.switch("models")
@@ -1031,6 +1075,7 @@ def _run(
         quality_warning_pages=quality_warning_pages,
         status=status,
         extractors=extractor_entries,
+        skipped_inputs=skipped_input_names,
         routing=(
             _checkpoint.job["routing"]
             if _checkpoint is not None
@@ -1055,10 +1100,7 @@ def _run(
     phase_clock.switch("audit_write")
     write_json(out_dir / "audit.json", audit)
 
-    (out_dir / "audit.md").write_text(
-        render_audit_markdown(audit),
-        encoding="utf-8",
-    )
+    write_text_atomic(out_dir / "audit.md", render_audit_markdown(audit))
     phase_clock.switch("ledger_jsonl_write")
     write_jsonl(out_dir / "provenance.jsonl", provenance_entries)
     write_jsonl(out_dir / "quality.jsonl", quality_entries)
@@ -1175,6 +1217,8 @@ def _run(
         result["escalation"] = escalation
     if budget_alerts:
         result["budget_alerts"] = budget_alerts
+    if skipped_input_names:
+        result["skipped_inputs"] = skipped_input_names
     if parent_run_id is not None:
         result["parent_run_id"] = parent_run_id
         result["rerun_depth"] = run_depth
@@ -1387,6 +1431,10 @@ def _review_queue_entry(page: dict[str, Any], reason: str | None = None) -> dict
     }
 
 
+def _is_built_in(adapter: Any) -> bool:
+    return type(adapter).__module__ == "pageledger.adapters"
+
+
 def _requires_adapter(action: str) -> bool:
     return action not in {"review", "skip"}
 
@@ -1395,7 +1443,7 @@ def _planned_page_count(source: Path, *, adapter: Any, adapter_name: str | None)
     if adapter is not None:
         return adapter_page_count(adapter, source)
     if source.suffix.lower() == ".pdf":
-        if adapter_name == "pdf_ocr":
+        if adapter_name in {"pdf_ocr", "vision"}:
             return ocr_pdf_page_count(source)
         if adapter_name in PDF_ADAPTER_NAMES or adapter_name is None:
             return pdf_page_count(source)
@@ -1427,18 +1475,27 @@ def _should_log(event_level: str, configured_level: str) -> bool:
     return LOG_LEVELS[event_level] >= LOG_LEVELS[configured_level]
 
 
-def _expand_inputs(inputs: list[Path]) -> list[Path]:
+def _expand_inputs(inputs: list[Path]) -> tuple[list[Path], list[Path]]:
+    """Expand directories to their direct, non-hidden child files.
+
+    Hidden entries (names starting with ".") include macOS .DS_Store files and
+    AppleDouble "._*" sidecars. They are skipped and returned separately so the
+    run can report them. Files named explicitly are always kept.
+    """
     expanded: list[Path] = []
+    skipped: list[Path] = []
     for path in inputs:
         if not path.exists():
             raise ValueError(f"Input path does not exist: {path}")
         if path.is_dir():
-            expanded.extend(sorted(child for child in path.iterdir() if child.is_file()))
+            for child in sorted(path.iterdir()):
+                if child.is_file():
+                    (skipped if child.name.startswith(".") else expanded).append(child)
         else:
             expanded.append(path)
     if not expanded:
         raise ValueError("No input files found")
-    return expanded
+    return expanded, skipped
 
 
 def _validate_adapter_inputs(inputs: list[Path], *, adapter_name: str | None) -> None:

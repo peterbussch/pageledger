@@ -275,6 +275,14 @@
             "WARNING",
             "ERROR"
           ]
+        },
+        "skipped_inputs": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "description": "Hidden files (names starting with '.', such as .DS_Store and AppleDouble '._*' sidecars) found while expanding input directories and skipped. Present only when something was skipped."
         }
       },
       "required": [

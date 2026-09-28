@@ -234,16 +234,16 @@ def test_review_rejects_other_source_and_partial_output():
 
 
 @pytest.mark.parametrize(
-    "warning",
+    "warning,hold",
     [
-        "replacement_characters",
-        "control_characters",
-        "suspicious_symbol_density",
-        "low_confidence",
-        "instruction_echo",
+        ("replacement_characters", "coverage_defect"),
+        ("control_characters", "coverage_defect"),
+        ("suspicious_symbol_density", "coverage_defect"),
+        ("low_confidence", "low_confidence"),
+        ("instruction_echo", "coverage_defect"),
     ],
 )
-def test_existing_quality_warning_overrides_prose_grade_and_survives_clean_retry(warning):
+def test_existing_quality_warning_overrides_prose_grade_and_survives_clean_retry(warning, hold):
     native = attempt(
         grade="A",
         confidence=1,
@@ -251,12 +251,12 @@ def test_existing_quality_warning_overrides_prose_grade_and_survives_clean_retry
         classification={"type": "prose", "reason": "prose_text"},
     )
     result = assess_page(page(native))
-    assert result["disposition"] == "coverage_defect"
+    assert result["disposition"] == hold
     assert result["next_action"] == "local_ocr"
     retried = assess_page(page(native, attempt("a2", "local_ocr")))
     assert retried["selected_attempt"] == "a2"
-    assert retried["disposition"] == "coverage_defect"
-    assert "coverage_defect" in retried["review_reasons"]
+    assert retried["disposition"] == hold
+    assert hold in retried["review_reasons"]
     assert retried["next_action"] == "review"
 
 
@@ -266,3 +266,32 @@ def test_historical_orthography_is_preserved_without_forcing_extraction_rewrite(
     assert result["selected_attempt"] == "a1"
     assert result["disposition"] == "unreviewed_text"
     assert result["next_action"] == "review"
+
+
+@pytest.mark.parametrize(
+    "warning",
+    ["digits_only_text", "mixed_script_tokens", "private_use_characters", "repeated_page_text"],
+)
+def test_hollow_text_layer_escalates_to_ocr(warning):
+    result = assess_page(page(attempt(warnings=[warning])))
+    assert result["disposition"] == "coverage_defect"
+    assert result["next_action"] == "local_ocr"
+
+
+def test_low_confidence_is_its_own_hold():
+    result = assess_page(page(attempt(stage="local_ocr", warnings=["low_confidence"])))
+    assert result["review_reasons"] == ["low_confidence"]
+    assert result["disposition"] == "low_confidence"
+    assert result["next_action"] == "image"
+
+
+def test_jobs_without_a_hold_policy_keep_filing_low_confidence_as_coverage():
+    # Jobs written before 0.6 recorded this mapping; verification rebuilds them with it.
+    from pageledger.processing_policy import warning_holds
+
+    legacy = warning_holds({})
+    result = assess_page(
+        page(attempt(stage="local_ocr", warnings=["low_confidence"])), holds_for=legacy
+    )
+    assert result["review_reasons"] == ["coverage_defect"]
+    assert result["disposition"] == "coverage_defect"

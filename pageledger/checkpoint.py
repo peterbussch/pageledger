@@ -592,7 +592,8 @@ class Checkpoint:
                     error["cost_usd"] = cost
             self.save(page_id, failed)
             raise RuntimeError(
-                f"Adapter {error['type']} (HTTP {error['http_status']}); outcome retained, queued work stopped"
+                f"Adapter {error['type']} {error['code']} (HTTP {error['http_status']}); "
+                "outcome retained, queued work stopped"
             ) from None
         # Persistence failures remain started/outcome_unknown; never label them provider failures.
         self.save(

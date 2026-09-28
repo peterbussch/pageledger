@@ -30,12 +30,18 @@ REVIEW_DISPOSITIONS = frozenset(
 _HOLD_ORDER = (
     "source_defect",
     "numeric_column_conflict",
+    "numeric_disagreement",
+    "engine_disagreement",
+    "unconfirmed_model_output",
     "coverage_defect",
+    "low_confidence",
     "handwriting",
     "unreadable",
     "illustration",
     "blank_candidate",
 )
+_DISAGREEMENTS = ("engine_disagreement", "numeric_disagreement")
+_COMPARISON_REASONS = (*_DISAGREEMENTS, "unconfirmed_model_output")
 _WARNING_HOLDS = {
     "coverage_defect": "coverage_defect",
     "clipped_text": "coverage_defect",
@@ -62,10 +68,29 @@ _WARNING_HOLDS = {
     "replacement_characters": "coverage_defect",
     "control_characters": "coverage_defect",
     "suspicious_symbol_density": "coverage_defect",
-    "low_confidence": "coverage_defect",
+    "low_confidence": "low_confidence",
     "instruction_echo": "coverage_defect",
+    "digits_only_text": "coverage_defect",
+    "mixed_script_tokens": "coverage_defect",
+    "private_use_characters": "coverage_defect",
+    "repeated_page_text": "coverage_defect",
+    "repetition_loop": "coverage_defect",
+    "script_mismatch": "coverage_defect",
+    "historical_letters_lost": "coverage_defect",
 }
+# Jobs written before 0.6 carry no hold_policy and filed an engine's low
+# confidence under coverage_defect; verification rebuilds them that way.
+_LEGACY_WARNING_HOLDS = {**_WARNING_HOLDS, "low_confidence": "coverage_defect"}
+HOLD_POLICY = "0.6"
+# Word agreement below which two engines disagree. On the 24 calibration pages it
+# flags 9 for RapidOCR/Apple Vision, 14 for Surya/RapidOCR, 22 for Tesseract/RapidOCR.
+ENGINE_AGREEMENT_THRESHOLD = 0.60
 _HASH = re.compile(r"[0-9a-f]{64}\Z")
+
+
+def warning_holds(record: dict) -> dict[str, str]:
+    """The warning-to-hold mapping that a job or its report was written with."""
+    return _WARNING_HOLDS if record.get("hold_policy") == HOLD_POLICY else _LEGACY_WARNING_HOLDS
 
 
 def validate_review(review: dict, page: dict) -> None:
@@ -132,18 +157,18 @@ def validate_review(review: dict, page: dict) -> None:
         raise ValueError("Review output binding is invalid")
 
 
-def _attempt_holds(attempt: dict) -> list[str]:
+def _attempt_holds(attempt: dict, holds_for: dict[str, str] = _WARNING_HOLDS) -> list[str]:
     holds = []
     warnings = attempt.get("warnings") or []
     for warning in warnings:
         code = warning.get("type", warning.get("code")) if isinstance(warning, dict) else warning
-        if isinstance(code, str) and code in _WARNING_HOLDS:
-            holds.append(_WARNING_HOLDS[code])
+        if isinstance(code, str) and code in holds_for:
+            holds.append(holds_for[code])
     classification = (attempt.get("classification") or {}).get("type")
-    if classification in _WARNING_HOLDS:
+    if classification in holds_for:
         reason = (attempt.get("classification") or {}).get("reason", "")
         if reason != "empty_pdf_text_ambiguous":
-            holds.append(_WARNING_HOLDS[classification])
+            holds.append(holds_for[classification])
     alignment = attempt.get("alignment") or {}
     metrics = alignment.get("metrics") or {}
     if (
@@ -262,26 +287,74 @@ def _numeric_conflict(left: dict, right: dict) -> bool:
     )
 
 
-def assess_page(page: dict, review: dict | None = None) -> dict:
+def _usable(attempts: list[dict]) -> list[dict]:
+    """Completed attempts whose retained output is not empty."""
+    return [
+        item
+        for item in attempts
+        if item.get("outcome") == "completed"
+        and item.get("raw_artifact")
+        and item.get("raw_sha256")
+        and ("text" not in item or bool(item["text"].strip()))
+    ]
+
+
+def selected_clean_comparisons(
+    page: dict, selected_attempt: str, holds_for: dict[str, str]
+) -> list[dict]:
+    """Comparisons of the selected attempt with an attempt that has no hold of its own.
+
+    A held attempt is why the page moved on to another engine, so its
+    disagreement with that engine is expected and is not evidence.
+    """
+    clean = {
+        item["attempt_id"]
+        for item in _usable(page["attempts"])
+        if not _attempt_holds(item, holds_for)
+    }
+    return [
+        item
+        for item in page.get("comparisons", [])
+        if (item["left_attempt"] == selected_attempt and item["right_attempt"] in clean)
+        or (item["right_attempt"] == selected_attempt and item["left_attempt"] in clean)
+    ]
+
+
+def assess_page(
+    page: dict, review: dict | None = None, *, holds_for: dict[str, str] = _WARNING_HOLDS
+) -> dict:
     """Select evidence deterministically while keeping all recorded review holds."""
     attempts = page.get("attempts", [])
     reasons = list(dict.fromkeys(page.get("review_reasons") or []))
     completed = [item for item in attempts if item.get("outcome") == "completed"]
-    holds_by_id = {item["attempt_id"]: _attempt_holds(item) for item in attempts}
+    holds_by_id = {item["attempt_id"]: _attempt_holds(item, holds_for) for item in attempts}
     for holds in holds_by_id.values():
         reasons.extend(hold for hold in holds if hold not in reasons)
     numeric_conflict = any(_numeric_conflict(a, b) for a, b in combinations(completed, 2))
     if numeric_conflict and "numeric_column_conflict" not in reasons:
         reasons.append("numeric_column_conflict")
-    usable = [
-        item
-        for item in completed
-        if item.get("raw_artifact")
-        and item.get("raw_sha256")
-        and ("text" not in item or bool(item["text"].strip()))
-    ]
+    usable = _usable(completed)
     clean = [item for item in usable if not holds_by_id[item["attempt_id"]]]
-    selected = (clean or usable or [None])[0]
+    selected = next(iter(clean or usable), None)
+    selected_comparisons = (
+        selected_clean_comparisons(page, selected["attempt_id"], holds_for)
+        if selected and holds_for is _WARNING_HOLDS
+        else []
+    )
+    if any(item["agreement_ratio"] < ENGINE_AGREEMENT_THRESHOLD for item in selected_comparisons):
+        reasons.append("engine_disagreement")
+    if any(item["number_differences"] for item in selected_comparisons):
+        reasons.append("numeric_disagreement")
+    if (
+        holds_for is _WARNING_HOLDS
+        and selected
+        and "generative" in selected.get("adapter_capabilities", ())
+    ):
+        confirmed = any(
+            item["agreement_ratio"] >= ENGINE_AGREEMENT_THRESHOLD for item in selected_comparisons
+        )
+        if not confirmed:
+            reasons.append("unconfirmed_model_output")
     disposition = next((hold for hold in _HOLD_ORDER if hold in reasons), None)
     if disposition is None:
         if selected:
@@ -304,6 +377,7 @@ def assess_page(page: dict, review: dict | None = None) -> dict:
     )
     if (
         clean
+        or any(reason in reasons for reason in _COMPARISON_REASONS)
         or numeric_conflict
         or disposition in {"source_defect", "outcome_unknown", "provider_failure", "illustration"}
         or stage_index == len(STAGES) - 1

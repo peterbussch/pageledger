@@ -5,13 +5,23 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
+import os
 from pathlib import Path
 from urllib.parse import quote
 
 from .checkpoint import atomic_bytes
-from .processing_policy import _WARNING_HOLDS, _attempt_holds, validate_review
+from .processing_policy import (
+    _DISAGREEMENTS,
+    ENGINE_AGREEMENT_THRESHOLD,
+    _attempt_holds,
+    selected_clean_comparisons,
+    validate_review,
+    warning_holds,
+)
 
-_CURRENT_REPORT_FORMAT = "0.5.1"
+_CURRENT_REPORT_FORMAT = "0.6"
+# 0.6 names the source by a path relative to the job; 0.5.1 kept the absolute path.
+_REPORT_FORMATS = {"0.5.1", _CURRENT_REPORT_FORMAT}
 
 _STAGE_LABELS = {
     "local_text": "Local text",
@@ -23,7 +33,11 @@ _STAGE_LABELS = {
 _DISPOSITION_LABELS = {
     "unreviewed_text": "Text selected; source review pending",
     "coverage_defect": "Possible missing or incomplete content",
+    "low_confidence": "The engine was unsure of some words",
     "numeric_column_conflict": "Numbers need checking",
+    "engine_disagreement": "Engines disagree",
+    "numeric_disagreement": "Engines read numbers differently",
+    "unconfirmed_model_output": "Model output not confirmed by another engine",
     "blank_candidate": "Candidate blank",
     "provider_failure": "Extraction failed",
     "outcome_unknown": "Extraction outcome unknown",
@@ -55,6 +69,14 @@ def _artifact_bytes(root: Path, relative: str, expected_hash: str) -> bytes:
     if hashlib.sha256(content).hexdigest() != expected_hash:
         raise ValueError(f"Report artifact hash mismatch: {relative}")
     return content
+
+
+def relative_path(path: str, start: Path) -> str:
+    """`path` relative to `start`, or only its name when it is on another Windows drive."""
+    try:
+        return Path(os.path.relpath(path, start)).as_posix()
+    except ValueError:
+        return Path(path).name
 
 
 def _link(label: str, target: str) -> str:
@@ -144,20 +166,52 @@ def _current_output(page: dict) -> str:
     return _link(label, selected["path"])
 
 
-def _explicit_attempt_hold(attempt: dict, reason: str) -> str | None:
+def _agreement(page: dict, holds_for: dict[str, str]) -> str:
+    selected = page.get("selected_attempt")
+    if selected is None:
+        return "not compared"
+    comparisons = selected_clean_comparisons(page, selected, holds_for)
+    if not comparisons:
+        return "not compared"
+    ratio = min(item["agreement_ratio"] for item in comparisons)
+    return f"{'agree' if ratio >= ENGINE_AGREEMENT_THRESHOLD else 'disagree'} ({ratio:.0%})"
+
+
+def _human_review(page: dict) -> str:
+    review = page.get("review")
+    if review is None:
+        return "not reviewed"
+    decision = next(item for item in review["decisions"] if item["page_id"] == page["page_id"])
+    detail = f"{_escape(decision['reviewer'])} at {_escape(decision['reviewed_at'])}"
+    if decision["selected_attempt"] is None:
+        detail = f"Source-only review: {detail}: {_escape(decision['reason'])}"
+    return f"{detail}; {_disposition_label(decision['disposition'])}"
+
+
+def _needs_person(page: dict) -> bool:
+    return page.get("review") is None and bool(
+        page.get("review_reasons") or page.get("selected_output") is None
+    )
+
+
+def _selected_text(page: dict) -> str:
+    return _current_output(page) if page.get("selected_output") is not None else "none"
+
+
+def _explicit_attempt_hold(attempt: dict, reason: str, holds_for: dict[str, str]) -> str | None:
     """Return explicit evidence tying a hold to one attempt, if present."""
     for warning in attempt.get("warnings") or []:
         code = warning.get("type", warning.get("code")) if isinstance(warning, dict) else warning
-        if isinstance(code, str) and _WARNING_HOLDS.get(code) == reason:
+        if isinstance(code, str) and holds_for.get(code) == reason:
             return str(code)
     classification = (attempt.get("classification") or {}).get("type")
     classification_reason = (attempt.get("classification") or {}).get("reason")
     if isinstance(classification, str) and (
         classification != "unknown" or classification_reason != "empty_pdf_text_ambiguous"
     ):
-        if _WARNING_HOLDS.get(classification) == reason:
+        if holds_for.get(classification) == reason:
             return str(classification)
-    if reason not in _attempt_holds(attempt):
+    if reason not in _attempt_holds(attempt, holds_for):
         return None
     # The shared policy helper has already established an alignment hold; its
     # detailed structure remains in the linked attempt evidence.
@@ -166,15 +220,28 @@ def _explicit_attempt_hold(attempt: dict, reason: str) -> str | None:
     return None
 
 
-def _recorded_concerns(page: dict) -> str:
+def _recorded_concerns(page: dict, holds_for: dict[str, str]) -> str:
     reasons = page.get("review_reasons") or []
     if not reasons:
         return "None recorded"
     concerns = []
     for reason in reasons:
         evidence = []
+        if reason in _DISAGREEMENTS and page["selected_attempt"] is not None:
+            comparisons = selected_clean_comparisons(page, page["selected_attempt"], holds_for)
+            for comparison in comparisons:
+                applies = (
+                    comparison["agreement_ratio"] < ENGINE_AGREEMENT_THRESHOLD
+                    if reason == "engine_disagreement"
+                    else bool(comparison["number_differences"])
+                )
+                if applies:
+                    evidence.append(
+                        f"comparison of {_escape(comparison['left_attempt'])} and "
+                        f"{_escape(comparison['right_attempt'])}"
+                    )
         for attempt in page["attempts"]:
-            code = _explicit_attempt_hold(attempt, reason)
+            code = _explicit_attempt_hold(attempt, reason, holds_for)
             if code is None:
                 continue
             stage = _stage_label(attempt["stage"])
@@ -194,13 +261,14 @@ def _recorded_concerns(page: dict) -> str:
 def render_document_report(report: dict) -> str:
     """Render a report, retaining the 0.5.0 format when its marker is absent."""
     current = "report_format" in report
-    if current and report["report_format"] != _CURRENT_REPORT_FORMAT:
+    if current and report["report_format"] not in _REPORT_FORMATS:
         raise ValueError(f"Unsupported document report format: {report['report_format']}")
     source, counts = report["source"], report["counts"]
     annotations, retention = source["annotations"], report["source_retention"]
     annotation_count = "unknown" if annotations["count"] is None else str(annotations["count"])
     source_count = "unknown" if counts["source_pages"] is None else str(counts["source_pages"])
     usage = report["usage"]
+    format_06 = report.get("report_format") == "0.6"
     cost = "unknown" if not usage["cost_known"] else f"${usage['cost_usd']}"
     tokens = str(usage["tokens"]) if usage["tokens"] is not None else "unknown"
     if usage.get("tokens_known") is False:
@@ -221,19 +289,39 @@ def render_document_report(report: dict) -> str:
         f"Attempt pages: {usage['attempt_pages']}; image calls: {usage['image_calls']}; tokens: {tokens}; cost: {cost}.",
         "",
         *(["Current page results", ""] if current else []),
-        (
-            "| Page | Current output | Review status | Recorded concerns |"
-            if current
-            else "| Page | Disposition | Selected output | Review evidence |"
+        *(
+            [
+                f"Pages needing a person: {sum(_needs_person(page) for page in report['pages'])}",
+                "",
+                "| Page | Selected text | Engine agreement | Human review | Recorded concerns |",
+                "| --- | --- | --- | --- | --- |",
+            ]
+            if format_06
+            else [
+                (
+                    "| Page | Current output | Review status | Recorded concerns |"
+                    if current
+                    else "| Page | Disposition | Selected output | Review evidence |"
+                ),
+                "| --- | --- | --- | --- |",
+            ]
         ),
-        "| --- | --- | --- | --- |",
     ]
-    for page in report["pages"]:
-        if current:
+    pages, holds = report["pages"], warning_holds(report)
+    if format_06:
+        pages = sorted(pages, key=lambda page: (not _needs_person(page), page["page_number"]))
+    for page in pages:
+        if format_06:
+            row = (
+                f"| {_link(str(page['page_number']), page['source_link'])} | "
+                f"{_selected_text(page)} | {_agreement(page, holds)} | "
+                f"{_human_review(page)} | {_recorded_concerns(page, holds)} |"
+            )
+        elif current:
             row = (
                 f"| {_link(str(page['page_number']), page['source_link'])} | "
                 f"{_current_output(page)} | {_review_status(page)} | "
-                f"{_recorded_concerns(page)} |"
+                f"{_recorded_concerns(page, warning_holds(report))} |"
             )
         else:
             selected = page["selected_output"]
@@ -251,6 +339,8 @@ def render_document_report(report: dict) -> str:
                 f"{selected_link} | {_escape(reasons)} |"
             )
         lines.append(row)
+    if format_06:
+        lines.extend(["", "Engine agreement is evidence, not proof: engines can share a mistake."])
     lines.extend(["", "Attempt evidence:", ""])
     for page in report["pages"]:
         for attempt in page["attempts"]:
@@ -312,10 +402,16 @@ def build_document_report(
         "next_action",
     )
     report = {field: copy.deepcopy(job[field]) for field in fields}
+    for optional in ("hold_policy", "limits_history"):
+        if optional in job:
+            report[optional] = copy.deepcopy(job[optional])
     if report_format is not None:
-        if report_format != _CURRENT_REPORT_FORMAT:
+        if report_format not in _REPORT_FORMATS:
             raise ValueError(f"Unsupported document report format: {report_format}")
         report["report_format"] = report_format
+    if report_format == "0.6":
+        report["source"]["path"] = relative_path(job["source"]["path"], root)
+    quoted_source = quote(report["source"]["path"], safe="/")
     pages = []
     for original in job["pages"]:
         page = copy.deepcopy(original)
@@ -361,7 +457,7 @@ def build_document_report(
                 "format": chosen["format"],
                 "text": text,
             }
-        page["source_link"] = f"{quote(job['source']['path'], safe='/')}#page={page['page_number']}"
+        page["source_link"] = f"{quoted_source}#page={page['page_number']}"
         pages.append(page)
     report["pages"] = pages
     report["counts"] = {

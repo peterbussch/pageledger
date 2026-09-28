@@ -24,6 +24,7 @@ _KNOWN_TOP_LEVEL = frozenset(
         "schema_version",
         "classify",
         "dataset_citation",
+        "language",
         "taxonomy",
         "schema",
         "run",
@@ -300,6 +301,11 @@ class PageLedgerConfig:
         )
 
     @property
+    def has_page_types(self) -> bool:
+        """True when the config declares at least one page type to route pages by."""
+        return bool(_mapping_at(self.data, "taxonomy", "page_types"))
+
+    @property
     def default_action(self) -> str:
         page_types = _mapping_at(self.data, "taxonomy", "page_types")
 
@@ -307,6 +313,11 @@ class PageLedgerConfig:
         if isinstance(page_config, dict) and page_config.get("default_action"):
             return str(page_config["default_action"])
         return "review"
+
+    def review_after_extraction(self, page_type: str) -> bool:
+        """True when the taxonomy extracts pages of this type and still holds them for review."""
+        page_config = _mapping_at(self.data, "taxonomy", "page_types").get(page_type)
+        return isinstance(page_config, dict) and page_config.get("review") is True
 
     @property
     def default_prompt(self) -> str | None:
@@ -364,6 +375,11 @@ class PageLedgerConfig:
             return {"label": label or "", "text": text or ""}
         return None
 
+    @property
+    def language(self) -> dict[str, str] | None:
+        value = self.data.get("language")
+        return value if isinstance(value, dict) else None
+
 
 def load_config(path: Path, *, validate_adapter: bool = True) -> PageLedgerConfig:
     if not path.exists():
@@ -388,6 +404,7 @@ def load_config(path: Path, *, validate_adapter: bool = True) -> PageLedgerConfi
 def _validate_config(config: PageLedgerConfig, *, validate_adapter: bool) -> None:
     _validate_mapping_sections(config.data)
     _validate_dataset_citation(config.data)
+    _validate_language(config.data)
     _validate_taxonomy(config)
     load_schema_spec(config.data)
     _reject_flat_keys(config)
@@ -462,6 +479,23 @@ def _validate_dataset_citation(data: dict[str, Any]) -> None:
             raise ValueError(f"dataset_citation.{key} must be a string")
 
 
+def _validate_language(data: dict[str, Any]) -> None:
+    language = data.get("language")
+    if language is None:
+        return
+    if not isinstance(language, dict):
+        raise ValueError("language must be a mapping")
+    unknown = sorted(set(language) - {"script", "orthography"})
+    if unknown:
+        raise ValueError(f"language.{unknown[0]} is not supported")
+    if language.get("script") not in {"Cyrillic", "Latin", "Greek", "Arabic", "Devanagari"}:
+        raise ValueError(
+            "language.script must be one of: Cyrillic, Latin, Greek, Arabic, Devanagari"
+        )
+    if "orthography" in language and language["orthography"] != "prereform":
+        raise ValueError("language.orthography must be 'prereform'")
+
+
 def _validate_taxonomy(config: PageLedgerConfig) -> None:
     taxonomy = config.data.get("taxonomy")
     if taxonomy is not None and not isinstance(taxonomy, dict):
@@ -476,6 +510,11 @@ def _validate_taxonomy(config: PageLedgerConfig) -> None:
                 "taxonomy.page_types is empty — every page will be classified as "
                 "'unclassified' and routed to 'review'"
             )
+        for name, page_config in page_types.items():
+            if isinstance(page_config, dict) and not isinstance(
+                page_config.get("review", False), bool
+            ):
+                raise ValueError(f"taxonomy.page_types.{name}.review must be true or false")
 
 
 def _reject_flat_keys(config: PageLedgerConfig) -> None:

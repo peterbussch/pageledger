@@ -19,7 +19,7 @@ scope list.
 | `schemas/` | JSON Schemas for every generated artifact — the output contract |
 | `docs/` | User docs and per-artifact specs (`*-spec.md`), adapter protocol |
 | `docs/examples/` | Config examples (`pageledger.yml` is the recommended starting point) |
-| `examples/` | Custom adapter examples (Tesseract, OCRmyPDF preprocessing, cloud-VLM skeleton) |
+| `examples/` | Custom adapter examples (RapidOCR, Apple Vision, Docling, Tesseract variants, a cloud-VLM skeleton) and the tutorial runner |
 | `tests/pageledger/` | Test suite; fixtures under `tests/fixtures/` |
 | `skills/pageledger/SKILL.md` | Claude Code skill for operating PageLedger |
 
@@ -30,16 +30,16 @@ pip install -e ".[dev,pdf]"
 pageledger init-config --out pageledger.yml
 printf 'first page\fsecond page\n' > sample.txt
 pageledger classify sample.txt --config pageledger.yml --out routes.yml --json
-pageledger run sample.txt --config pageledger.yml --out runs/demo --json
-pageledger run sample.txt --config pageledger.yml --routes routes.yml --out runs/routed
+pageledger run sample.txt --config pageledger.yml --routes routes.yml --out runs/demo
 pageledger inspect-run runs/demo
-pageledger rerun runs/demo --config pageledger.yml --out runs/demo-2  # if flagged pages exist
-pageledger compare-runs runs/demo runs/demo-2
+pageledger verify-run runs/demo
 pageledger doctor --json
 ```
 
 `--dry-run` writes the route map and planning artifacts without extracting.
-Output directories must not already exist.
+Output directories must not already exist. Neither page of this sample is
+flagged, so there is nothing to rerun; the tested first run in `README.md`
+flags a page and continues with `rerun` and `compare-runs`.
 
 ## Test and verify
 
@@ -57,9 +57,11 @@ together — the spec docs and runtime output must agree exactly.
 Three assertions that bite during routine changes:
 
 - The release version is pinned in `test_dry_run.py`
-  (`test_package_exports_release_version`) — bump it with
-  `pyproject.toml`, `pageledger/_version.py`, `CITATION.cff`, and the editable
-  package entry in `uv.lock`.
+  (`test_package_exports_release_version`), `test_release.py`,
+  `test_reader_journey.py`, `test_document_journey.py` and
+  `.github/workflows/{ci,publish}.yml` — bump them with `pyproject.toml`,
+  `pageledger/_version.py`, `CITATION.cff`, and the editable package entry in
+  `uv.lock`.
 - `test_docs_examples_smoke_without_heavy_ocr_installs` pins strings in
   README, `docs/ocr-options.md`, `MANIFEST.in`, and `examples/` — docs
   restructuring can fail the suite.
@@ -81,7 +83,7 @@ results. Check again before publishing through the protected release environment
 Passing checks do not mean reviews are complete or their findings resolved.
 
 ## Constraints for changes
-- Core stays dependency-light: PyYAML only; `pypdf` behind the `[pdf]` extra.
+- Core stays dependency-light: PyYAML only; `pypdf[crypto]` behind the `[pdf]` extra.
 - Adapters are thin wrappers; PageLedger owns the process around extraction,
   not extraction itself. No OCR engines, provider SDKs, or pricing catalogs
   in core.

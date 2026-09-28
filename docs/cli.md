@@ -5,11 +5,43 @@ adapter. `rerun` extracts flagged pages into a new run; `resume` recovers pendin
 work in place. `classify` prepares routes, and `align` revises structured records
 from retained output.
 
-`pageledger --version` prints the installed release. Execution errors return
-exit code 1 with a diagnostic on stderr. Commands with `--json` also emit the
-error as JSON on stdout. Invalid command-line syntax returns exit code 2.
+`pageledger --version` prints the installed release. Invalid command-line
+syntax returns exit code 2. Runtime errors return 1; commands can also return 1
+for a failed result as shown below. Commands with `--json` emit runtime errors
+as JSON on stdout and a diagnostic on stderr.
 
 For a complete text-only example, follow [First run](first-run.md).
+
+## Command index
+
+Each command below accepts `-h`/`--help`. Required arguments and options are
+shown in the synopsis; optional path flags have no implicit path default. Terms
+such as stage, route and disposition are defined in the
+[glossary](glossary.md).
+
+| Command | Synopsis and options | Exit code 0 | Exit code 1 |
+|---|---|---|---|
+| `process` | `process SOURCE --config FILE --out DIR [--pages RANGE] [--adapter-path DIR] [--review FILE] [--json]` | Job completed or paused by a limit. | Job halted or failed, or runtime error. |
+| `inspect-job` | `inspect-job JOB_DIR [--json]` | Report read. | Runtime error, or with `--json`, the job is halted or failed. |
+| `verify-job` | `verify-job JOB_DIR [--json]` | Job verifies. | Verification fails or runtime error. |
+| `review-sheet` | `review-sheet JOB_DIR --out FILE [--json]` | Sheet written. | Runtime error. |
+| `review-job` | `review-job JOB_DIR --review FILE [--reviewer NAME] [--dry-run] [--json]` | Decisions checked or recorded. | Job halted/failed or runtime error. |
+| `export` | `export JOB_DIR --format txt|md|jsonl|tei --out FILE [--reviewed-only]` | Verified export written. | Runtime error or refused export. |
+| `run` | `run INPUT... (--config FILE | --adapter text|pdf_text|pdf_ocr) --out DIR [--pages RANGE] [--routes FILE] [--resumable] [--dry-run] [--json] [--log-level LEVEL] [--adapter-path DIR]` | Run completed, including partial results without failed or unattempted pages. | Partial run with failed or unattempted pages, or runtime error. |
+| `resume` | `resume RUN_DIR [--adapter-path DIR] [--raise-limit LIMIT=VALUE] [--json]` | Work resumed, paused, or already finalized. | Halted/failed result or runtime error. |
+| `rerun` | `rerun PARENT_DIR --config FILE --out DIR [--dry-run] [--json] [--log-level LEVEL] [--adapter-path DIR]` | Rerun completed. | Any partial execution result or runtime error. |
+| `classify` | `classify [INPUT...] --out FILE [--config FILE] [--from-run DIR] [--adapter SPEC] [--adapter-path DIR] [--json]` | Route map written. | Runtime error. |
+| `doctor` | `doctor [--json]` | Diagnostics reported; findings do not change the exit code. | Runtime error. |
+| `init-config` | `init-config [--out FILE] [--adapter text|pdf_text|pdf_ocr]` | Config written or printed. | Runtime error. |
+| `inspect-run` | `inspect-run RUN_DIR [--json | --csv]` | Summary written. | Runtime error. `--json` and `--csv` are mutually exclusive (usage error 2). |
+| `align` | `align RUN_DIR [--schema FILE] [--json] [--dry-run]` | Alignment applied or previewed. | Runtime error. |
+| `compare-runs` | `compare-runs RUN_A RUN_B [--json]` | Comparison written, including when changes are unranked. | Runtime error. |
+| `verify-run` | `verify-run RUN_DIR [--json]` | Verification passes. | Verification fails or runtime error. |
+| `bundle` | `bundle RUN_DIR --out DIR [--json]` | Bundle written. | Runtime error. |
+| `replay` | `replay BUNDLE_DIR --out DIR [--adapter-path DIR] [--json]` | Outcome is `exact` or `evidence_compared`. | `deterministic_mismatch` or runtime error. |
+
+Any command-line syntax error, including a missing required argument or an
+unrecognized option, exits 2. `--version` exits 0.
 
 ## process
 
@@ -22,7 +54,10 @@ stages. `--config` and `--out` are required, and the output directory must be
 new. Use the [processing guide](processing-spec.md) to create the config.
 Document jobs retain checkpoints automatically. Stages use `processing`
 profiles; `run.adapter_order` is reserved for explicit rerun generations and
-is rejected here.
+is rejected here. So are `run` budget, pricing, grading, rerun and retry
+settings, which a job would otherwise ignore; set limits under
+`processing.limits`. A leftover `run.adapter` or `taxonomy` produces a
+warning.
 
 | Flag | Effect |
 |---|---|
@@ -32,23 +67,46 @@ is rejected here.
 | `--json` | Print the job result as JSON. |
 
 A job can finish with unresolved pages. `completed` means processing finished,
-while `halted` records a stop that will not be retried automatically.
+`paused_budget` means a processing limit was reached (continue with
+`resume --raise-limit`), and `halted` records a stop that will not be retried
+automatically. `process` and `resume` exit 0 for a paused job, which is an
+expected outcome of a configured limit, and 1 for a halted or failed one.
 
-## inspect-job, verify-job, and review-job
+## inspect-job, verify-job, review-sheet and review-job
 
 ```bash
 pageledger inspect-job jobs/book
 pageledger inspect-job jobs/book --json
 pageledger verify-job jobs/book
+pageledger review-sheet jobs/book --out review.csv
+pageledger review-job jobs/book --review review.csv --reviewer "Name"
+pageledger review-job jobs/book --review review.csv --dry-run
 pageledger review-job jobs/book --review reviewed-pages.json
 ```
 
 `inspect-job` displays `report.md`, or `document.json` with `--json`.
 `verify-job` checks the source, retained attempts, selections, and report.
-`review-job` applies human decisions without extraction and preserves previous
-receipts. Create the review file using the
-[review receipt contract](document-report-spec.md#human-review-receipt).
-All three commands accept `--json`.
+`review-sheet` writes a CSV of the job's pages to fill in with a spreadsheet.
+`review-job` records human decisions from that sheet, or from a JSON file
+following the [review receipt contract](document-report-spec.md#human-review-receipt),
+without extracting anything and keeping earlier receipts. Decisions from a sheet
+need `--reviewer NAME` or the `PAGELEDGER_REVIEWER` variable; `--dry-run` checks
+and counts them without recording any. See
+[Review in a spreadsheet](processing-spec.md#review-in-a-spreadsheet).
+All four commands accept `--json`.
+
+## export
+
+```bash
+pageledger export jobs/book --format txt --out book.txt
+pageledger export jobs/book --format jsonl --out book.jsonl --reviewed-only
+```
+
+Writes a job's selected text page by page as `txt`, `md`, `jsonl` or `tei`,
+with each page's review state and the attempt that produced it. A job that does
+not verify is refused. `--reviewed-only` keeps only pages with a human review
+receipt. See [Export document text](export.md) for the formats and for citing an
+export.
 
 ## run
 
@@ -58,9 +116,27 @@ pageledger run scan.pdf --adapter pdf_ocr --out runs/run-001/
 pageledger run scan.pdf --config pageledger.yml --routes reviewed-routes.yml --out runs/run-002/
 ```
 
-Extracts every routed page of the inputs into a new run directory. Inputs
-are files or directories (directories expand to their direct child files).
-`--out` must not already exist.
+Extracts every routed page of the inputs into a new run directory. Inputs are
+files or directories. Each input directory expands to its direct child files
+in name order; subfolders are not searched. Hidden children, whose
+names start with `.` (such as macOS `.DS_Store` files and `._*` sidecars), are
+skipped and listed as `skipped_inputs` in the run result and manifest. An
+explicitly named hidden file is still read. Document numbers follow the sorted
+expanded input set, so skipped hidden files do not shift numbering. `--out`
+must not already exist.
+
+To process a collection as separate document jobs, run once per file. This
+shell loop uses direct child files and skips hidden names:
+
+```bash
+mkdir -p jobs
+for source in collection/*; do
+  [ -f "$source" ] || continue
+  case "$(basename "$source")" in .*) continue ;; esac
+  name=$(basename "$source")
+  pageledger process "$source" --config processing.yml --out "jobs/$name"
+done
+```
 
 Exactly one of `--config` or `--adapter` is required:
 
@@ -78,7 +154,7 @@ Other flags:
 | `--pages "1-8,81,100-110"` | Extract only these source pages (single input). Page ids keep the source numbering, so provenance stays truthful when you sample a large volume. Recorded in `manifest.inputs[].pages`. |
 | `--routes FILE` | Execute a complete route map from `pageledger classify`, a human, or an external classifier. Requires `--config`; cannot be combined with `--adapter` or `--pages`. |
 | `--dry-run` | Write the route map and planning artifacts without calling extractors. Inspect routing before spending money. |
-| `--resumable` | Retain durable page attempts so an interrupted generation-zero execution can resume in the same directory. Requires zero automatic retries and stop-on-error policy; cannot be combined with `--dry-run`. |
+| `--resumable` | Keep page attempts so an interrupted run can be resumed in place. Needs zero automatic retries and `on_page_error: stop`; cannot be combined with `--dry-run`. See the [checkpoint contract](checkpoint-spec.md). |
 | `--json` | Machine-readable result on stdout; errors as JSON too. |
 | `--log-level LEVEL` | Minimum `run.log` event level: DEBUG, INFO, WARNING, ERROR. |
 | `--adapter-path DIR` | Add a directory to `sys.path` so custom adapters named by `run.adapter` or `run.adapter_order` can be imported. |
@@ -91,7 +167,7 @@ accepted with warnings and the current values are recorded.
 `--dry-run --routes` preserves the proposed decisions without calling
 `extract()`.
 
-Human run summaries read the persisted `cost.json` evidence. `Cost USD:
+Human run summaries read `cost.json`. `Cost USD:
 unknown` means no complete dollar total was established; known zero remains
 `0.0`, and a known subtotal with unknown pages is explicitly labeled partial.
 Adapter-reported totals are labeled as such; configured-rate totals are called
@@ -99,7 +175,7 @@ estimates and explicitly distinguished from provider charges; mixed-basis
 totals name both evidence sources.
 Dry-run output says that no extraction was performed, so its zero is not
 presented as a provider charge or projected bill. `--json` result mappings are
-unchanged; use `cost.json` for the authoritative `cost_known`, `cost_usd`, and
+unchanged; use `cost.json` for the `cost_known`, `cost_usd`, and
 `cost_basis` fields.
 
 ## resume
@@ -112,37 +188,13 @@ pageledger inspect-run runs/book/
 pageledger verify-run runs/book/
 ```
 
-Continues a run created with `run --resumable`, or a document job created with
-`process`, in its existing directory. For a job, use `pageledger resume jobs/book`;
-see [job recovery](processing-spec.md#resume-an-interrupted-job).
-
-For an individual run, resume retains the run id. The retained config snapshot, source identities, page
-selection, routes and adapter identity are the execution authority. There are
-no replacement-input, config, adapter, budget or page-selection flags.
-`--adapter-path DIR` loads a trusted custom adapter; `--json` emits a
-machine-readable result.
-
-Before further extraction, resume verifies saved page evidence and source
-bytes. Verified completed pages and durably saved responses are reused without
-another adapter call. A raw text file alone is insufficient. Costs and budgets
-include the retained successful pages; unknown dollar costs remain unknown.
-Source hashes are checked again before final publication.
-
-An interrupted request with no durable outcome is `outcome_unknown`. Resume
-refuses to retry it or start queued calls: the provider might already have
-processed and charged for the request. A recorded adapter failure also stops
-queued work. Retain the evidence and resolve the request outcome with the
-provider or adapter operator before deliberately starting new work. Resume
-does not promise exactly-once remote execution.
-
-Run recovery supports generation-zero execute runs. Ordinary
-runs without a recovery journal, dry runs and interrupted rerun generations
-cannot be resumed. `run.adapter_order` retains its generation semantics;
-resume does not advance it. Resume refuses finalized failed runs. For other
-finalized runs, it verifies and returns the existing result without reconstructing
-it or loading the extraction adapter. Valid later alignment changes are preserved. Use the
-audit queue and separate `rerun` command for quality-driven re-extraction.
-See the [checkpoint contract](checkpoint-spec.md).
+Continues an individual run created with `run --resumable`, or a document job
+created with `process`, in its existing directory. For document-job recovery
+and processing limits, see [document processing](processing-spec.md). For
+individual-run recovery rules, see the [checkpoint contract](checkpoint-spec.md).
+`--adapter-path DIR` adds a trusted adapter import directory; `--json` emits a
+machine-readable result. `--raise-limit LIMIT=VALUE` applies only to a paused
+document job; see [one budget for the job](processing-spec.md#one-budget-for-the-job).
 
 ## classify
 
@@ -247,26 +299,23 @@ the multi-file update is deliberately not described as a transaction.
 pageledger compare-runs runs/run-001/ runs/run-002/
 ```
 
-Page-by-page diff of two runs: character, word, and extraction-time deltas;
-warning and grade transitions; adapters; provenance identity; and cost.
-Directional totals such as “improved” and “resolved” are counted only when
-source bytes, source page, and the effective extractor identity match. That
-identity includes the adapter and version, model, prompt hash, determinism,
-input/output types, capabilities, and a SHA-256 identity of the recorded
-adapter options (the comparison report does not copy their values). Grade
-direction has a second gate: both grades must come from the
-same PageLedger version and effective grading policy (merged thresholds plus
-the low-confidence floor from the retained config or external alignment
-schema), have the same evidence basis, and (for schema-aware grades) have the
-same recorded schema identity.
-Changed-source, cross-adapter,
-same-adapter/different-extractor, and legacy-unknown transitions are shown but
-unranked. When no pages clear a comparability gate, the human report labels
-warning or grade changes `not assessed` instead of presenting zero as an
-improvement result. `--json` exposes extraction and grade comparability
-separately for every shared page id. Comparison reads its manifest, quality, provenance, and
-optional cost evidence only from contained regular files; symlinks are rejected
-instead of followed.
+Compares shared pages by character and word counts, extraction time, warnings,
+grades, adapters, provenance, and cost. Directional totals such as “improved”
+and “resolved” are counted only when the stated comparison gates pass.
+`--json` reports extraction and grade comparability separately for each shared
+page id.
+
+| Is a directional improvement counted? | Rule |
+|---|---|
+| Extraction and warning changes | Only when source bytes, source page, and effective extractor identity match. Identity includes adapter/version, model, prompt hash, determinism, input/output types, capabilities, and adapter-options hash. |
+| Grade changes | Also requires the same PageLedger version, grading policy, grade basis, and—when schema-aware—the same schema identity. |
+| Different or unknown identities | Changes are shown but unranked. If no page qualifies, the report says `not assessed`, not zero improvement. |
+
+Grade policy includes merged grade thresholds and the low-confidence floor
+from the retained config or external alignment schema.
+
+Adapter option values are not copied into the comparison report. Inputs must
+be contained regular files; symbolic links are rejected.
 
 ## verify-run
 
@@ -300,12 +349,12 @@ paths; replay evidence records the exact `bundle.json` index hash. The output
 directory must not already exist; no archive is created.
 
 The only accepted flags are `--out DIR` (required) and `--json`. There are no
-config, adapter, or source override flags. Credential protection is limited to
-the normalized exact denylist keys in mappings under `adapter_options` or
-`hook_options` in the config snapshot and in persisted manifest extractor
-options. Values, arbitrary fields or text, sources, raw artifacts, and logs are
-not scanned, so this cannot prove that sensitive data is absent. A missing
-optional reproducibility profile does not block ordinary runs, but it means
+config, adapter, or source override flags. Credential filtering checks only
+normalized exact denylist keys in mappings under `adapter_options` or
+`hook_options` in the config snapshot and persisted extractor options. It does
+not scan values, arbitrary fields or text, sources, raw artifacts, or logs.
+Warning: do not treat a bundle as scrubbed of secrets or personal data. A
+missing optional reproducibility profile does not block ordinary runs, but it means
 deterministic replay cannot claim exactness.
 
 ## replay
@@ -318,21 +367,17 @@ pageledger replay BUNDLE_DIR --out RUN_DIR --adapter-path TRUSTED_DIR --json
 Validates the untrusted directory bundle, checks its baseline and inventory,
 loads the locally available adapter named by the bundle, and runs the ordinary
 PageLedger extraction path against the bundled sources. `--adapter-path DIR`
-is the only optional override and is a locally trusted import path; a trusted
-path must not be equal to, inside, or above the bundle. `--out DIR` is required and must not already
-exist. `--json` emits the result and `replay.json` records baseline/local
+is the only optional override and is a locally trusted import path; it must
+not be equal to, inside, or above the bundle. `--out DIR` is required and must
+not already exist. `--json` emits the result and `replay.json` records baseline/local
 extractor linkage, profile match, raw equal/different/missing counts, and the
 comparison object.
 Human output also prints `Raw comparison: N equal / N different / N missing`;
 these counts are evidence, not an authenticity claim. See the [replay
 boundary](capabilities-and-limits.md#verified-replay-boundary).
 
-Exit codes are consistent across these commands: 0 means bundle creation or a
-successful replay (`exact` or `evidence_compared`); 1 means a verified-run,
-bundle, adapter, source, or replay-integrity failure (including
-`deterministic_mismatch`); 2 is argparse usage failure such as a missing
-required flag or an unapproved flag. Human replay output names the outcome;
-`--json` includes `outcome` and structured `error`/`code` fields on failure.
+See the [command index](#command-index) for exit codes. `--json` includes
+replay `outcome` and structured `error`/`code` fields on failure.
 
 ## inspect-run
 
@@ -344,7 +389,7 @@ pageledger inspect-run runs/run-001/ --csv > pages.csv
 Summarizes a run directory: status, page counts, warnings, failures,
 review-queue size, records normalized, grade distributions grouped by evidence
 basis, cost, and artifact presence. Human output labels each distribution as
-`Grades (signals)`, `Grades (schema)`, or `Grades (unknown)` for legacy graded
+`Grades (signals)`, `Grades (schema)`, or `Grades (unknown)` for older graded
 entries; it never merges these into an unlabeled headline. JSON retains the
 aggregate `grade_distribution` for compatibility and adds
 `grade_distribution_by_basis`. `--csv` writes one row per page (page id,
@@ -384,16 +429,69 @@ The recommended starting point is one `pageledger.yml` with optional
 `classify`, plus `taxonomy`, `schema`, and `run` sections; `init-config` writes
 the minimal form and
 [`examples/pageledger.yml`](examples/pageledger.yml) is a commented copy.
+
+`run` needs an extraction route. Without `taxonomy.page_types`, `--routes` or
+`--adapter`, every page would go to review and nothing would be extracted, so
+the command stops with "No extraction route" and names the fixes. A dry run
+needs no route. For a deliberate review-only run, map a page type to
+`default_action: review`.
+
+Configuration sections and defaults:
+
+| Key | Type | Default / allowed values |
+|---|---|---|
+| `schema_version` | string | `0.1` |
+| `dataset_citation.label`, `.text` | strings | Optional citation label and text. |
+| `language.script` | string | Optional: `Cyrillic`, `Latin`, `Greek`, `Arabic`, `Devanagari`. |
+| `language.orthography` | string | Optional: `prereform`. |
+| `taxonomy.page_types` | mapping | Optional; entries may have `default_action` (`transcribe_text`, `skip`, `review`), `prompt` (string), and `review` (boolean, default false). |
+| `classify.adapter` | string | No default; absent means suffix-based probe (`pdf_text` for PDF, `text` otherwise). |
+| `classify.adapter_options` | mapping | Empty; passed to the probe adapter. |
+| `classify.hook`, `classify.hook_options` | string, mapping | Optional hook import and options. |
+| `classify.min_confidence` | number 0–1 | `0.5`. |
+| `classify.thresholds` | mapping | Classifier threshold overrides; omitted values use built-in defaults. |
+| `run.adapter` | string | Optional: `text`, `pdf_text`, `pdf_ocr`, `rapidocr`, `vision`, or a custom adapter's `module:object` import path. |
+| `run.adapter_options` | mapping | Empty; adapter-specific. Cannot accompany `adapter_order`. |
+| `run.adapter_order` | non-empty list | Optional chain; entries are adapter strings or `{adapter, adapter_options}` mappings. Mutually exclusive with `adapter` and top-level `adapter_options`. |
+| `run.budget.max_pages`, `max_tokens`, `max_usd` | non-negative integer, integer, number | No cap unless set; these limits are also used by `process` only when placed under `processing.limits`. |
+| `run.budget.warn_pages`, `warn_tokens`, `warn_usd` | non-negative integer, integer, number | No absolute warning unless set. |
+| `run.budget.warn_at_percent` | number 0–100 | No percentage warning unless set; relative to a configured cap. |
+| `run.pricing.cost_per_page`, `cost_per_1k_tokens` | non-negative numbers | No configured rate. Used only when adapter-reported cost is absent. |
+| `run.retry.max_retries` | non-negative integer | `0`. |
+| `run.retry.backoff` | string | `none`; `exponential` is also allowed. |
+| `run.on_page_error` | string | `stop`; or `continue`. |
+| `run.max_consecutive_failures` | non-negative integer | `0` disables the circuit breaker. |
+| `run.grading.review_below_grade` | string | Off; one of `A`, `B`, `C`, `D`, `F`. |
+| `run.grading.thresholds` | mapping | Optional overrides for `confidence` (`A`, `B`, `C`, `D`), `required_column_coverage` (`A`, `B`, `C`), and `arithmetic_pass_rate` (`A`, `B`, `C`); numeric values merge over built-in thresholds. |
+| `run.rerun_if`, `run.quarantine_if` | list of single-key mappings | Empty. Rules support `grade_below`, `missing_required_columns: true`, `arithmetic_failure_rate_above` (0–1). |
+| `run.max_rerun_depth` | non-negative integer | `2`. |
+| `schema.name` | string | Required when `schema` exists. |
+| `schema.columns[].name` | string | Required. `type` is `string` (default), `integer`, or `number`; `required` is boolean (default false); `aliases` is a list of strings (default empty). |
+| `schema.checks[]` | list | Optional entries require `name` and `expression`; `tolerance` is a non-negative number (default 0). Expressions allow one `==` and `+`, `-`, `*` over declared numeric columns and numeric constants. |
+| `schema.quality.minimum_required_column_coverage`, `low_confidence_threshold` | numbers 0–1 | Optional grading floors. |
+| `processing.local_text`, `local_ocr`, `image`, `second_opinion` | stage mappings or null | `local_text` required; OCR and image stages default disabled. Each stage has `adapter`, `adapter_options` (mapping, empty by default), and `prompt` (non-empty string). `second_opinion` requires `image`; image requires `local_ocr` and positive `max_image_pages`. |
+| `processing.limits.max_attempt_pages`, `max_tokens`, `max_cost_usd` | non-negative integer, integer, number | No limit unless set. |
+| `processing.limits.max_image_pages` | non-negative integer | `0`. Must be positive to enable image stage. |
+| `processing.links.article`, `.custody` | non-empty strings | Optional caller-supplied links; PageLedger does not verify them. |
+| `processing.benchmark` | mapping | Optional; `{stage, every_nth_page}` requires an enabled stage and positive integer interval. |
+
+Built-in `pdf_ocr` adapter options are `dpi` (integer 50–1200, default 300),
+`lang` (Tesseract language codes separated by `+`, default `eng`) and
+`max_render_pixels` (integer 1,000,000–400,000,000, default 60,000,000).
+Rendering has a 120-second per-page timeout and OCR a 300-second per-page
+timeout. Adapter-specific options are passed through; custom adapters define
+their own options.
+
 Common `run` settings:
 
 ```yaml
 taxonomy:
   page_types:
     blank: {default_action: skip}
-    sparse: {default_action: review}
+    sparse: {default_action: transcribe_text, review: true}
     prose: {default_action: transcribe_text}
-    table_likely: {default_action: review}
-    unknown: {default_action: review}
+    table_likely: {default_action: transcribe_text, review: true}
+    unknown: {default_action: transcribe_text, review: true}
 
 classify:
   min_confidence: 0.5

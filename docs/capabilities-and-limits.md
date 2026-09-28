@@ -1,157 +1,68 @@
-# Capabilities and limits (PageLedger 0.5.2)
+# Capabilities and limits
 
-This page lists the supported workflows, the adapters you supply, and the
-limits of the recorded evidence. Artifact schemas remain at version 0.1.
+This page lists supported workflows, adapters you supply, and limits on what
+the recorded files can establish. See the [glossary](glossary.md) for terms
+used across the reference.
+
+## Supported workflows
+
+| Task | Built-in support | What remains your responsibility |
+|---|---|---|
+| Extract pages | `text`, `pdf_text`, `pdf_ocr`, `rapidocr` and `vision`; custom adapters use the adapter protocol. | Select the extractor, configure it, and judge its output. |
+| Route pages | `classify` assigns structural types and writes a route map and text-free sidecar. | Review decisions; domain labels require a classifier hook. |
+| Process a document | `process` manages local text, OCR and optional image stages with shared limits and retained attempts. | Supply stage config, adapter code and credentials where needed. |
+| Review and export | Job reports, source-bound review receipts, review sheets and verified `txt`, `md`, `jsonl`, or `tei` exports. | A human makes and records review decisions. |
+| Align structured output | Schema alignment supports `markdown_table`, `json`, and `csv` output. | Produce structured output and declare columns/checks. Plain text is not aligned. |
+| Compare or replay | Compare-runs reports page differences; bundles and replay check transport and recorded identities. | Comparison is conditional; replay does not reproduce external services or certify accuracy. |
 
 ## Built in and tested
 
-- `process` jobs manage local text, OCR, and bounded image attempts with
-  shared budgets, source/page identities, persistent review holds and a
-  JSON-derived document report. `review-job` applies source/output-bound human
-  receipts without extraction; `verify-job` checks the retained evidence.
-  Structural checks cannot prove text completeness or numeric fidelity.
-  See [processing-spec.md](processing-spec.md) for the workflow and limits.
+### Extract pages
 
-- Opt-in `run --resumable` and `resume RUN_DIR` retain durable page attempts,
-  verify source/config/adapter/output identities, reuse saved responses, and
-  reconstruct an interrupted generation-zero run without repeating completed
-  adapter calls. Requests with no durable outcome are held as
-  `outcome_unknown`; failures stop queued work. Automatic retry and
-  continue-on-error configurations are refused in this mode. Recovery and
-  extraction quality are separate: a completed page can still need review.
-  See [`checkpoint-spec.md`](checkpoint-spec.md) for the precise boundary.
-- `pageledger run` for text fixtures (form-feed pagination), born-digital
-  PDF text layers (`pdf_text`, via `pageledger[pdf]`), and scanned PDFs
-  (`pdf_ocr`, using locally installed `pdftoppm` + `tesseract`).
-  Per-page provenance identifies the installed pypdf backend for `pdf_text`,
-  or the Tesseract and Poppler versions plus DPI/language for `pdf_ocr`.
-- `pageledger run --adapter text|pdf_text|pdf_ocr` runs a built-in adapter
-  without a YAML config. The generated defaults are recorded in
-  `config-snapshot.yml`; PageLedger never reads a config file it was not
-  explicitly given.
-- `--pages "1-8,81,100-110"` extracts a page selection from one source
-  while keeping the source page numbering in every artifact. Sampling a
-  large volume keeps the original page identity without splitting the PDF.
-- `--routes route-map.yml` executes complete, reviewed per-page decisions from
-  `pageledger classify`, a human, or an external classifier. It validates
-  source coverage, page identity, taxonomy types, confidence, prompts, and
-  adapter action support before extraction, then records the source route-map
-  hash.
-- `pageledger classify` probes source pages or reuses retained evidence with
-  `--from-run`, assigns the structural types `blank`, `sparse`, `prose`,
-  `table_likely`, and `unknown`, maps types to configured actions, and emits an
-  executable schema-0.1 route map plus a text-free evidence sidecar. The tested
-  workflow is `classify` followed by `run --routes`; see
-  [`classifier.md`](classifier.md).
-- User-supplied classifier hooks can replace the built-in type decision through
-  a `module.path:Object` import string. Hooks declare their page types and
-  return a type, confidence, reason, and optional action or prompt. Hook output
-  is validated before either artifact is written.
-- Adapter options (`run.adapter_options`) passed to built-in and custom
-  adapter constructors, and `--adapter-path` for loading custom adapter
-  modules without touching PYTHONPATH.
-- Dry-run mode that writes full planning artifacts without calling
-  extractors.
-- Per-page provenance (`provenance.jsonl`), quality diagnostics
-  (`quality.jsonl`), cost rollups (`cost.json`), structured run logs
-  (`run.log`), and review queues (`audit.json`, `audit.md`).
-- Word-level OCR confidence: `pdf_ocr` reads Tesseract's per-word
-  confidences and records mean, minimum, and the low-confidence tail in
-  `quality.jsonl`. Pages where a quarter of the words fall under engine
-  confidence 60 get a `low_confidence` warning.
-- Historical-orthography detection for pre-1918 Russian: counts of
-  abolished letters (ѣ, ѳ, ѵ) and word-final hard signs, with a
-  `historical_orthography` warning when a page is orthographically
-  mismatched with a modern OCR model. See
-  [`multilingual-ocr.md`](multilingual-ocr.md).
-- Conservative output-integrity signals: `instruction_echo` detects leaked
-  chat-template markers, and reruns record parent character evidence with an
-  `output_inflation` warning at the fixed 4× / 1,000-character boundary.
-- Unicode-category lexical metrics keep combining marks attached to their
-  base-letter tokens. Clean-prose regression fixtures cover Latin, Cyrillic,
-  Arabic, Devanagari, Bengali, Gujarati, Gurmukhi, Tamil, Telugu, Kannada, and
-  Malayalam scripts; this guards against known shape-warning false positives,
-  not OCR errors or language-specific accuracy.
-- Page-denominated budget enforcement (pages, tokens, dollars) with preflight
-  refusal and per-page caps. Absolute `warn_pages`, `warn_tokens`, and
-  `warn_usd` thresholds can alert without a cap; `cost.json` records each
-  unit's first crossing and provenance-derived rollups by adapter and page
-  type.
-- Retry with configurable `max_retries` and optional exponential backoff.
-- Optional continuation after exhausted page failures, with a consecutive-
-  failure circuit breaker and failed/not-attempted pages added to rerun work.
-- `pageledger rerun`: re-extracts exactly the pages listed in a previous
-  run's rerun manifest (typically with a stronger adapter), preserving page
-  ids, recording parent lineage, enforcing `max_rerun_depth`, re-deriving the
-  queue from parent evidence, and refusing changed source bytes or edited
-  executable plans before creating the child run.
-- Multi-adapter escalation chains through `run.adapter_order`. Generation zero
-  uses the first adapter, each explicit `pageledger rerun` advances to the next,
-  and manifests record the selected step and planned next adapter. Exhausting
-  the chain leaves unresolved pages in review and makes the rerun plan
-  non-executable; it does not silently quarantine them.
-- Schema alignment: the config `schema` section (columns, aliases, types,
-  required fields, arithmetic `checks` with tolerance) maps structured
-  extraction output (`markdown_table`, `json`, `csv`) to normalized
-  records in `normalized/{page_id}.json`. Header matching is exact
-  (casefold + collapsed whitespace) against declared names and aliases.
-  It is never fuzzy. Coercion failures and failed checks are recorded evidence,
-  never silent fixes. Plain-text pages are not aligned.
-- Per-page quality grades (A–F) in `quality.jsonl`, `audit.json`/`audit.md`,
-  `inspect-run`, its CSV, and `compare-runs`. Grades combine text signals
-  (confidence bands, warning counts) with schema evidence (required-column
-  coverage, arithmetic pass rate) and always carry their basis:
-  `A (signals)` and `A (schema)` are different claims. Thresholds are
-  configurable under `run.grading.thresholds`.
-- `run.grading.review_below_grade: C` adds pages graded below the
-  threshold to the review queue (reason `grade_below_threshold`) and the
-  rerun manifest, which now records `previous_grade`. Off by default.
-- `run.rerun_if` and `run.quarantine_if` evaluate page grades and
-  schema-alignment evidence after grading. Rerun rules add review reasons.
-  Quarantine rules keep their audit evidence and exclude matching pages from
-  `rerun-manifest.yml`.
-- `pageledger align <run-dir> [--schema file.yml]`: re-align and regrade
-  an existing run from its raw pages without re-extracting. Iterate on a
-  schema without paying for OCR/VLM again. The manifest records the
-  re-alignment (`alignment` block, schema hash); external schemas are
-  snapshotted into the run directory. `--dry-run` previews the complete
-  grade/audit/normalized change without mutating the ledger.
-- `pageledger compare-runs`: page-by-page diff of two runs. Character and
-  word deltas, warning and grade transitions, adapters, and cost. Directional
-  improvement/resolution totals are reported only when source identity and
-  the complete effective extractor identity (including a hash of adapter
-  options) match. Grade direction additionally requires the same PageLedger
-  version, effective grading policy, evidence basis, and (for schema-aware
-  grades) the same schema identity. Changed-source,
-  cross-adapter, and same-adapter/different-extractor transitions are unranked.
-- `pageledger verify-run`: checks cross-artifact ledger coherence, identifiers,
-  route-action/page-bucket counts, hashes, and references without claiming OCR
-  correctness or requiring a runtime JSON Schema dependency. Current manifests
-  count review-only routes separately so incomplete extraction coverage cannot
-  hide behind extracted/skipped totals. Current provenance also hashes exact
-  raw-output bytes, and the verifier checks that `audit.md` is the deterministic
-  rendering of `audit.json`. A missing raw hash is always an integrity error;
-  legacy manifests also receive an incomplete-evidence warning and remain
-  readable, but do not receive a verifier PASS without byte-integrity evidence.
-- `pageledger bundle RUN --out DIR`: creates a verified directory bundle with
-  the unchanged baseline run, copied source bytes, inventory, and portable
-  route map. `pageledger replay BUNDLE --out RUN` validates that transport,
-  runs the locally available adapter, and writes `replay.json` with profile,
-  extractor-linkage, raw comparison, and `exact`, `evidence_compared`, or
-  `deterministic_mismatch` outcome evidence.
-- Optional adapter reproducibility profiles can report exact hashes for
-  binaries, packages, models, and assets. Profiles contain no paths or secrets;
-  absent material evidence limits deterministic exactness but does not block
-  ordinary extraction runs.
-- `pageledger inspect-run --csv`: one row per page (counts, confidence,
-  warnings, grade, cost, timing) for spreadsheet triage.
-- Cost provenance: `cost.json` records `cost_basis` (`adapter_reported`,
-  `configured_rate`, `mixed`, or `none`) so derived accounting rates are
-  never mistaken for provider-billed spend, plus measured
-  `extraction_seconds` per page and in total.
-- `pageledger doctor`: optional-dependency diagnostics, installed Tesseract
-  language packs, and redacted cloud-key status.
-- Custom adapters via `module.path:object` import strings.
+| Supported | What to rely on | Limit |
+|---|---|---|
+| `run` with `text`, `pdf_text`, `pdf_ocr`, `rapidocr` or `vision`; custom adapters follow the adapter protocol. | Page-level attempts and recorded source, extractor, quality and cost details. `--pages` preserves source page numbers. | `pdf_text` reads a text layer; `pdf_ocr` needs locally installed Poppler and Tesseract. Quality signals do not establish accuracy. See [PDF first run](pdf-ocr-first-run.md) and [quality warnings](provenance-spec.md#warning-taxonomy). |
+| Built-in adapter defaults, `adapter_options`, `--adapter-path`, and dry-run planning. | Defaults are recorded; dry runs do not call extractors. | Only explicitly supplied configuration is read. See [CLI](cli.md), [adapter protocol](adapter-protocol.md), and [OCR options](ocr-options.md). |
+| Page budgets, retries and optional continue-on-error. | Page, token and dollar limits; failed or unattempted pages can enter rerun work. | Cost may be unknown or estimated, not provider-billed spend. See [plan time and cost](plan-time-and-cost.md) and [warnings](warnings.md). |
+| Text-quality warnings, OCR confidence, historical-orthography signals and grades. | Diagnostics identify some risks and can guide review. | They are not calibrated accuracy measures. See [warnings](warnings.md) and [multilingual OCR](multilingual-ocr.md). |
+
+### Route pages
+
+| Supported | What to rely on | Limit |
+|---|---|---|
+| `classify` followed by `run --routes`; built-in structural types or a user classifier hook. | Route maps can be reviewed before extraction and are checked against the source and configured actions. | Built-in labels are structural, not semantic; probe mode has no run budget or cost ledger. See [classifier](classifier.md). |
+
+### Process a document
+
+`process` manages configured local-text, OCR and optional image stages, shared
+limits, retained attempts and review holds. It keeps the attempts available for
+inspection; completion does not mean that the text is accurate or reviewed.
+See [document processing](processing-spec.md) for stages and limits.
+
+### Review and export
+
+| Supported | What to rely on | Limit |
+|---|---|---|
+| Job reports, human review receipts, review sheets, `verify-job`, and verified `txt`, `md`, `jsonl`, or `tei` exports. | A receipt binds a human decision to the page and selected output; exports preserve page boundaries and review state. | A person makes the review decision. Verification and export do not certify transcription accuracy. See [review](processing-spec.md#review-in-a-spreadsheet), [report and receipt](document-report-spec.md), and [export](export.md). |
+
+### Align structured output
+
+Schema alignment maps `markdown_table`, `json`, or `csv` output to declared
+columns and checks. It records failed coercions and checks rather than silently
+correcting them. Plain text is not aligned. See [normalized records](normalized-spec.md)
+and [CLI alignment](cli.md#align).
+
+### Compare or replay
+
+| Supported | What to rely on | Limit |
+|---|---|---|
+| `compare-runs`, verified bundles and replay. | Comparisons show changes; replay records the locally available extractor and compares output bytes. | Directional comparisons require matching identities. Replay does not recreate external services or certify accuracy. See [comparison](cli.md#compare-runs) and [the replay boundary](#verified-replay-boundary). |
+
+### Recover interrupted work
+
+`run --resumable` and `pageledger resume` recover an interrupted run from its
+saved outcomes. A request with no saved outcome is not retried; it is reported
+as `outcome_unknown`. See [checkpoint specification](checkpoint-spec.md).
 
 ## Adapter-supported, user-supplied
 
@@ -171,51 +82,64 @@ limits of the recorded evidence. Artifact schemas remain at version 0.1.
 
 ## Verified replay boundary
 
-Verified replay is a transport and evidence contract, not environment
-installation or hermetic reproduction. Its trust boundaries are:
+Verified replay checks a bundle's files and compares a run made with the
+locally available adapter. It does not install or recreate the original
+environment. Its limits are:
 
-- Bundle hashes prove internal consistency, not authenticity/authorship.
-- A reproducibility profile attests to PageLedger's recorded evidence and the
-  adapter-declared materials; it does not cover every imported dependency or
-  prove that those materials are authentic.
-- The replay worker is not a credential/network/cloud-side-effect sandbox. It
-  does not bundle credentials, establish cloud identity, or make external
-  services deterministic.
-- Integrity checks are at-rest observations, not a lock or snapshot against
-  concurrent mutation while files are being read.
-- `exact` with `raw.equal == 0` proves no extraction bytes were produced for
-  comparison; it does not prove that the source contains no bytes.
-- Isolated startup does not process editable-install `.pth` hooks. Adapter code
-  must be normally installed or supplied through `--adapter-path`.
+- Bundle hashes show that files agree with the bundle's recorded hashes. They
+  do not establish who made the bundle or whether it is authentic.
+- A reproducibility profile covers PageLedger's recorded details and materials
+  declared by the adapter. It may omit dependencies, and does not establish
+  that the listed materials are authentic.
+- Replay does not isolate network access, credentials or other external effects.
+  Credentials are not bundled, cloud identity is not established, and external
+  services may change.
+- File checks happen as files are read. They do not prevent another process
+  changing files during the check.
+- `exact` means the replay produced the same bytes as the original on every
+  page. When `raw.equal` is 0, no page produced any output (every page was
+  skipped, for example), so `exact` shows nothing about the engine.
+- Replay startup does not process editable-install `.pth` hooks. Install adapter
+  code normally or supply it through `--adapter-path`.
 
-Replay still validates the locally available adapter identity and rejects
-baseline, source, route, config, profile, and inventory tampering. A successful
-`evidence_compared` result is linkage evidence, not an accuracy claim. PageLedger
-does not perform licensing, privacy, or legal review.
-
-Details and examples live in [`design.md`](design.md).
+Replay checks the locally available adapter identity and rejects changed
+baseline, source, route, config, profile or inventory files. Cloud adapters,
+and adapters not declared deterministic, always get `evidence_compared`: the
+outputs were compared, but identical bytes were not expected. No outcome is a
+claim about accuracy. PageLedger does not perform licensing, privacy or legal
+review. [Verified replay](design.md#verified-replay) in the design notes shows
+the commands.
 
 ## Known limits
 
+### Inputs and routing
+
 - `pdf_text` reads existing text layers. It does not OCR. For scanned PDFs
   use `pdf_ocr` or wrap a stronger engine as a custom adapter.
-- `pdf_ocr` needs poppler and Tesseract installed. PageLedger never
+- `pdf_ocr` needs Poppler and Tesseract installed. PageLedger never
   installs OCR engines; it fails with an install hint when they are
   missing, and refuses to start when `run.adapter_options.lang` names a
   language pack that is not installed. OCR quality is Tesseract's, at the
   DPI and language you configure.
+- Encrypted PDFs are read when they open without a password, which covers
+  files that only restrict printing or copying. `pageledger[pdf]` includes
+  the `cryptography` package that pypdf needs for AES. PageLedger does not
+  take passwords: a file that needs one, or that uses a non-standard
+  encryption handler such as an Internet Archive lending copy, stops the run
+  before any page with `unsupported_encryption`. A damaged file stops it with
+  `malformed_pdf`; PageLedger never repairs a source. One unreadable file
+  stops the whole run, so remove it from the inputs or run it on its own.
 - The built-in classifier is structural, not semantic. It has no image model,
   language model, document-domain labels, or region-level routing. Domain types
   require a project hook.
-- Classifier confidences are fixed, uncalibrated evidence scores. They rank the
+- Classifier confidences are fixed, uncalibrated scores. They rank the
   built-in rule outcomes but are not probabilities, and they are not directly
   comparable with a hook's confidence scale.
 - Table classification uses structured-result format, pipe density, or the
-  combination of column spacing and digit density. The tuned
+  combination of column spacing and digit density. The
   `table_column_line_ratio: 0.015` default recovered six known OCR table
-  spreads in a small census dogfood while its digit guard kept the sampled
-  prose pages out. This is not broad accuracy calibration; layout loss and
-  digit-heavy prose can still produce false negatives or positives.
+  spreads in a small census test. This is not broad accuracy testing; layout
+  loss and digit-heavy prose can still produce false negatives or positives.
 - An empty `pdf_text` probe cannot distinguish a visually blank PDF page from
   an image-only page. It emits `unknown` with null confidence and routes to
   review. An OCR or text probe can emit `blank`, but that remains a text-output
@@ -223,15 +147,18 @@ Details and examples live in [`design.md`](design.md).
 - `classify` probe mode has no retry, budget enforcement, cost ledger, or run
   directory. A `pdf_ocr` probe still spends OCR time per page. Probe failures
   become `unknown`/`review`; classifier-hook failures abort the command.
-- `classify --from-run` accepts only a full-coverage, non-dry-run
-  generation-zero parent. Missing retained evidence for an individual page
-  becomes `unknown`/`review`; reruns and `--pages` partial runs are rejected
+- `classify --from-run` accepts only a full-coverage, non-dry-run original run.
+  Missing retained data for an individual page becomes `unknown`/`review`;
+  reruns and `--pages` partial runs are rejected
   rather than emitting an incomplete map.
 - A custom classification probe and the later run adapter may count pages
   differently. `run --routes` fails its complete-coverage check in that case;
   PageLedger does not renumber or reconcile the map silently.
+
+### Extraction quality and review
+
 - Quality signals are diagnostic, not calibrated. `quality.jsonl` records
-  per-page evidence a human should weigh, not accuracy scores. Shape-based
+  per-page details a human should weigh, not accuracy scores. Shape-based
   heuristics cannot detect word-level misrecognition ("matericl" for
   "material"); Tesseract's own word confidence (`low_confidence`) is the
   closest built-in signal, and it reflects the engine's opinion of
@@ -239,21 +166,22 @@ Details and examples live in [`design.md`](design.md).
 - Output-integrity signals are deliberately conservative heuristics. A marker
   or large rerun expansion queues review; it does not prove that an adapter
   hallucinated, and absence of a warning does not prove faithful output.
-- Grades are deterministic summaries of that same evidence, not accuracy.
-  A grade is only comparable when the effective extractor identity, PageLedger
-  version, effective grading policy, evidence basis, and any schema-aware
-  schema identity match:
-  confidence is uncalibrated across engines, versions, models, and prompts, so
-  an `A` from one extractor and a `B` from another are not orderable claims. A
-  `signals_only` grade from an
-  adapter that reports no confidence rests on warning counts alone. The
-  `(signals)`/`(schema)` label exists so that weaker evidence is never
-  mistaken for schema-checked records.
+- Grades are deterministic summaries of the quality signals and, for
+  structured output, the schema checks. They do not measure accuracy.
+  Confidence is uncalibrated across engines, versions, models and prompts, so
+  an `A` from one extractor and a `B` from another cannot be ranked. Two
+  grades are comparable only when the extractor, PageLedger version, grading
+  policy, grade basis and, for schema-checked grades, the schema all match. A
+  grade from an adapter that reports no confidence rests on warning counts
+  alone. The `(signals)` or `(schema)` label says which basis a grade has.
 - Schema alignment consumes structured output only. `pdf_ocr` and other
   plain-text adapters grade on signals alone; producing tables is the
   adapter's job (see
   [`examples/tesseract_tsv_table_adapter.py`](../examples/tesseract_tsv_table_adapter.py)
   for a deliberately naive demonstration).
+- A text layer in the wrong script throughout, such as Latin-letter OCR of a
+  Cyrillic book, raises no warning: its words are consistent, just wrong.
+  Compare a few pages with the images when a collection's language is known.
 - Born-digital text layers carry their own defects. Mid-word space
   artifacts («С анкционная» for «Санкционная») pass every shape heuristic;
   they come from the source PDF, not from extraction.
@@ -266,19 +194,28 @@ Details and examples live in [`design.md`](design.md).
   `quality_warning`. Dry-run review entries use route-based reasons.
 - `run` without `--routes` still sends every page to the configured
   `default_action` (`review` in dry-run mode). Classification is an explicit
-  `classify` then `run --routes` workflow so the map remains reviewable evidence.
+  `classify` then `run --routes` workflow so the map can be reviewed.
 - Adapter escalation chains advance only when the user runs `pageledger rerun`.
   They do not automatically call every adapter in one run, merge parent and
   child output, or remove unresolved pages from human review.
 - Reruns re-extract listed pages; they do not merge results. Combining
   parent and rerun outputs into one corpus is the project's decision, and
-  `pageledger compare-runs` shows the per-page evidence for making it.
+  `pageledger compare-runs` shows per-page differences for making it.
 - PageLedger does not make OCR or VLM output correct. It cannot calibrate
   confidence across unrelated extractors, guarantee accuracy, or make a
   right-to-left, mixed-script, tabular, or handwritten collection work
   without explicit adapter and schema configuration. Its job is narrower:
-  preserve enough evidence that a researcher can see what ran, what
+  preserve enough information that a researcher can see what ran, what
   failed, what is uncertain, and what should be reviewed or rerun.
+
+### Replay and custody
+
+- Replay and bundle limits are described in the
+  [verified replay boundary](#verified-replay-boundary).
+- A run recorded before PageLedger hashed raw output stays readable, but it
+  cannot pass `verify-run`, so it cannot be bundled or replayed. See
+  [verification](artifacts.md#verification).
+- Source custody, licensing, privacy and legal review remain with the project.
 
 ## Tested scale and documents
 
@@ -295,13 +232,13 @@ PageLedger has been exercised locally on:
   military-statistical review (178-page image-only scan, pre-reform
   orthography). Walkthrough: [`multilingual-ocr.md`](multilingual-ocr.md).
 - A 72-page born-digital PDF via `pageledger[pdf]`.
-- The 0.2.0 structural classifier was checked against retained OCR from five
+- The structural classifier was checked against retained OCR from five
   sampled pages of a 1916 Bessarabia address-calendar and seven sampled 1939
-  census spreads. That pass tuned the column-line threshold; it is evidence for
-  the default, not a general benchmark.
+  census spreads. That pass tuned the column-line threshold; it supports the
+  default, not a general benchmark.
 
 These historical checks describe the tested documents and workloads. They
-are not benchmarks of every 0.5.2 workflow; see [performance](performance.md)
+are not benchmarks of every current workflow; see [performance](maintainers/performance.md)
 for the measured serialization improvement and its limits. Stress
 tests are marked `@pytest.mark.stress` and skipped in default CI:
 

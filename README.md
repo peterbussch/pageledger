@@ -27,14 +27,14 @@ source and reconstruct how it was produced.
 
 ## Install
 
-PageLedger 0.5.2 requires Python 3.10 or later:
+PageLedger requires Python 3.10 or later:
 
 ```bash
-pip install pageledger==0.5.2
+pip install pageledger
 pageledger --version
 ```
 
-For PDFs, install `"pageledger[pdf]==0.5.2"`. Scanned PDFs also need Poppler and
+For PDFs, install `"pageledger[pdf]"`. Scanned PDFs also need Poppler and
 Tesseract installed separately. `pageledger doctor` checks the available tools.
 
 ## First run
@@ -43,7 +43,7 @@ The built-in text adapter needs no OCR engine or provider. This example creates
 two source pages; the replacement character on page 2 deliberately triggers a
 review warning.
 
-```bash
+```bash pageledger-tutorial
 printf 'first page\fsecond page with a replacement character �\n' > sample.txt
 pageledger init-config --out pageledger.yml
 pageledger run sample.txt --config pageledger.yml --out runs/first
@@ -60,7 +60,7 @@ source to judge transcription accuracy.
 
 Rerun the flagged pages into a new directory and compare the results:
 
-```bash
+```bash pageledger-tutorial
 pageledger rerun runs/first --config pageledger.yml --out runs/second
 pageledger compare-runs runs/first runs/second
 ```
@@ -69,28 +69,36 @@ This example uses the same adapter, so its output stays the same. Supply a
 stronger adapter config when needed. A rerun retains the parent linkage and
 source page numbers; you decide which outputs to use.
 
-The [text tutorial](docs/first-run.md) continues through CSV export, review
-notes, and bundle replay. For scans, follow the
-[PDF/OCR tutorial](docs/pdf-ocr-first-run.md).
+The [text tutorial](https://github.com/peterbussch/pageledger/blob/main/docs/first-run.md) continues through CSV export, review
+notes and bundle replay. For scans, follow the
+[PDF/OCR tutorial](https://github.com/peterbussch/pageledger/blob/main/docs/pdf-ocr-first-run.md).
+
+## Choose an engine
+
+Built-in adapters read plain text files (`text`), PDF text layers
+(`pdf_text`), scans with Tesseract (`pdf_ocr`) or RapidOCR (`rapidocr`, after
+`pip install 'pageledger[rapidocr]'`), and page images with a vision model
+behind an OpenAI-compatible endpoint, on your machine or hosted (`vision`). The
+[engine recipes](https://github.com/peterbussch/pageledger/blob/main/docs/engine-recipes.md)
+show how to set each up, with Tesseract's model for pre-1918 Russian print and
+Apple Vision, and what each did well and badly on 24 transcribed historical
+pages.
+[OCR options](https://github.com/peterbussch/pageledger/blob/main/docs/ocr-options.md)
+compares the approaches, and the
+[adapter protocol](https://github.com/peterbussch/pageledger/blob/main/docs/adapter-protocol.md)
+connects any other engine.
 
 ## Process a document
 
-For a small offline example, follow the [document-job tutorial](docs/document-first-run.md).
-It covers processing, recovery, and review with a synthetic text file.
-
-Document processing and resumable runs require a POSIX system such as macOS or
-Linux. Use `process` when you want one job to manage local text extraction, OCR for
-pages with defect evidence, and optional image-model attempts. The job retains
-every attempt and publishes a transcript with links to source pages and a
-report of unresolved work.
-
-Create `processing.yml`:
+Use `process` when one job should manage a whole document: it reads the text
+layer, sends pages with defects to OCR and, if you allow it, to a vision model,
+and keeps every attempt. Create `processing.yml`:
 
 ```yaml
 schema_version: "0.1"
-run:
-  adapter: pdf_text
 processing:
+  local_text:
+    adapter: pdf_text
   local_ocr:
     adapter: pdf_ocr
     adapter_options:
@@ -101,7 +109,7 @@ processing:
     max_image_pages: 0
 ```
 
-With the PDF extra, Poppler, and Tesseract installed, sample a document:
+With the PDF extra, Poppler and Tesseract installed, sample a document:
 
 ```bash
 pageledger process book.pdf --config processing.yml --pages "1-10" --out jobs/book
@@ -109,19 +117,24 @@ pageledger inspect-job jobs/book
 pageledger verify-job jobs/book
 ```
 
-Open `jobs/book/transcript.md` for the selected text and `jobs/book/report.md`
-for the source links, attempts, and review reasons. Image stages require an
-explicit adapter and a positive page limit. A completed job can still have
-pages awaiting human review; `review-job` records decisions bound to the source
-and selected output. See the [document processing guide](docs/processing-spec.md)
-for configuration, budgets, and review receipts.
+`jobs/book/report.md` lists first the pages that need a person, with the text
+the job selected, whether engines agree and any review so far. Review those
+pages in a spreadsheet with `pageledger review-sheet`, record the decisions with
+`review-job`, and write the text out as plain text, Markdown, JSONL or TEI with
+`pageledger export`. See [document processing](https://github.com/peterbussch/pageledger/blob/main/docs/processing-spec.md),
+[warnings and holds](https://github.com/peterbussch/pageledger/blob/main/docs/warnings.md) and
+[export](https://github.com/peterbussch/pageledger/blob/main/docs/export.md). The
+[document-job tutorial](https://github.com/peterbussch/pageledger/blob/main/docs/document-first-run.md) walks through a job from
+a source checkout, and [process a collection](https://github.com/peterbussch/pageledger/blob/main/docs/process-a-collection.md)
+through a folder of real documents.
 
-The [60-page validation report](docs/validation/0.5.1/README.md) shows what
-these checks caught and where source review is still needed.
+Document jobs and `resume` need POSIX file locks: use macOS, Linux or, on
+Windows, WSL. Plain `run` uses no such locks but is not tested on Windows. The
+tutorials use bash.
 
 ## Recover interrupted work
 
-Document jobs retain recovery evidence automatically. For an individual run,
+A document job keeps recovery records automatically. For an individual run,
 opt in when starting it:
 
 ```bash
@@ -130,62 +143,52 @@ pageledger run book.pdf --adapter pdf_ocr --resumable --out runs/book
 pageledger resume runs/book
 ```
 
-Use `pageledger resume jobs/book` for a document job. Keep the source files,
-output directory, and adapter environment in place. Resume verifies saved
-responses and reuses them without another extraction call. A request started
-without a saved outcome stops recovery because it may already have been
-processed. See the [checkpoint specification](docs/checkpoint-spec.md) for
-supported states and recovery limits.
+Use `pageledger resume jobs/book` for a document job. Resume reuses saved work
+and never repeats a request that may already have been processed. See the
+[checkpoint specification](https://github.com/peterbussch/pageledger/blob/main/docs/checkpoint-spec.md)
+for run recovery rules and the
+[processing specification](https://github.com/peterbussch/pageledger/blob/main/docs/processing-spec.md)
+for document-job recovery.
 
 ## What the ledger records
 
 | Record | Use |
 |---|---|
 | Source hashes and page IDs | Trace output to the original document and page, including samples and reruns. |
-| Adapter, model, options, and prompt | Identify how each page was extracted. |
-| Page, token, time, and cost totals | Check budgets and distinguish reported charges from configured estimates. |
-| Quality signals and grades | Find pages to inspect, with the evidence behind each warning. Grades are not accuracy scores. |
-| Normalized records | Align structured tables, JSON, or CSV to declared columns and arithmetic checks; retain failed checks and coercions. |
+| Adapter, model, options and prompt | Identify how each page was extracted. |
+| Page, token, time and cost totals | Check budgets and distinguish reported charges from configured estimates. |
+| Quality warnings | Find pages to inspect: hollow text layers, model loops, text in the wrong script, lost historical letters. Each warning keeps its evidence; none is an accuracy score. |
+| Normalized records | Align structured tables, JSON or CSV to declared columns and arithmetic checks; retain failed checks and coercions. |
 | Review and rerun queues | Re-extract selected pages or hold them for human review. |
-| Verified bundles and replay results | Transport a completed generation-zero run and its source bytes; compare output under the recorded adapter identity. |
+| Verified bundles and replay results | Carry a completed run and its source bytes elsewhere and compare output under the recorded adapter identity. |
 
-Built-in adapters cover text files, PDF text layers, and Tesseract OCR. The
-[adapter protocol](docs/adapter-protocol.md) supports other engines; the
-[Docling example](examples/docling_adapter.py) supplies local layout and VLM
-conversion. Core depends on PyYAML, with pypdf in the PDF extra.
-
-`classify` produces a separate route map for review before `run --routes`.
-`align` can revise structured records without re-extracting. Bundle replay
-requires a locally available compatible adapter; whole document jobs and runs
-with image-input evidence cannot yet be bundled. The
-[capabilities and limits](docs/capabilities-and-limits.md) describe these
-contracts in full.
+Core depends only on PyYAML; the PDF extra adds pypdf with AES support. The
+[capabilities and limits](https://github.com/peterbussch/pageledger/blob/main/docs/capabilities-and-limits.md) say what is and
+is not supported, and the [glossary](https://github.com/peterbussch/pageledger/blob/main/docs/glossary.md) defines the terms.
 
 ## Documentation
 
-| Start here | Reference |
+| Start here | Then |
 |---|---|
-| [Documentation index](docs/README.md) | All guides and artifact specifications |
-| [Text tutorial](docs/first-run.md) · [PDF/OCR tutorial](docs/pdf-ocr-first-run.md) | Run, inspect, review, and rerun |
-| [Document processing](docs/processing-spec.md) | Stages, shared budgets, reports, and human review |
-| [Checkpoint recovery](docs/checkpoint-spec.md) | Resume rules and uncertain requests |
-| [CLI and configuration](docs/cli.md) | Commands, flags, and settings |
-| [Run artifacts](docs/artifacts.md) | Files, identities, and verification |
-| [OCR options](docs/ocr-options.md) · [Multilingual OCR](docs/multilingual-ocr.md) | Engines, languages, and historical documents |
-| [Scanned archive example](docs/examples/jfk-scanned-archive.md) | Recorded OCR and escalation on a declassified document |
+| [Documentation index](https://github.com/peterbussch/pageledger/blob/main/docs/README.md) | Tutorials, how-to guides, reference and explanations |
+| [Text tutorial](https://github.com/peterbussch/pageledger/blob/main/docs/first-run.md) and [PDF/OCR tutorial](https://github.com/peterbussch/pageledger/blob/main/docs/pdf-ocr-first-run.md) | Run, inspect, review and rerun |
+| [Process a collection](https://github.com/peterbussch/pageledger/blob/main/docs/process-a-collection.md) | A folder of real documents, from sample to export |
+| [Troubleshooting](https://github.com/peterbussch/pageledger/blob/main/docs/troubleshooting.md) | What an error or odd result means and what to do |
+| [CLI reference](https://github.com/peterbussch/pageledger/blob/main/docs/cli.md) | Commands, options, exit codes and settings |
+| [Share and cite results](https://github.com/peterbussch/pageledger/blob/main/docs/share-and-cite.md) | Identifiers, deposits and absolute paths |
 
 ## Contributing
 
 Testing a collection we haven't seen? [Open a corpus
 report](https://github.com/peterbussch/pageledger/issues/new?template=corpus-report.yml)
-with the script, adapter, page count, and a redacted sample. New
-collections are how the quality signals improve. Development setup and
-guidelines are in [CONTRIBUTING.md](CONTRIBUTING.md).
+with the script, adapter, page count and a redacted sample. New collections
+are how the quality signals improve. Development setup and guidelines are in
+[CONTRIBUTING.md](https://github.com/peterbussch/pageledger/blob/main/CONTRIBUTING.md).
 
 ## Citing
 
-Software citation lives in [`CITATION.cff`](CITATION.cff). PageLedger
-keeps software and source-data citations separate; `dataset_citation` in
-the config records the latter into every manifest.
+Cite the software with [CITATION.cff](https://github.com/peterbussch/pageledger/blob/main/CITATION.cff). PageLedger keeps
+software and source-data citations separate: `dataset_citation` in the config
+records the latter in every manifest.
 
 MIT license.

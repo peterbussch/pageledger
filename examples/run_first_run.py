@@ -11,6 +11,7 @@ import argparse
 import json
 import os
 import shlex
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -75,6 +76,13 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--source-root", type=Path)
     parser.add_argument("--expected-version")
     parser.add_argument("--forbid-import-root", type=Path)
+    parser.add_argument(
+        "--fixture",
+        type=Path,
+        action="append",
+        default=[],
+        help="File to copy into the work directory before the journey runs; repeatable",
+    )
     args = parser.parse_args(argv)
 
     if args.source_root is not None and args.forbid_import_root is not None:
@@ -86,6 +94,8 @@ def main(argv: list[str] | None = None) -> int:
         raise FileNotFoundError(python)
     work_dir = args.work_dir.resolve()
     work_dir.mkdir(parents=True, exist_ok=False)
+    for fixture in args.fixture:
+        shutil.copy2(fixture, work_dir / fixture.name)
 
     env = os.environ.copy()
     if args.source_root is not None:
@@ -94,6 +104,8 @@ def main(argv: list[str] | None = None) -> int:
         env.pop("PYTHONPATH", None)
     env["PYTHON"] = str(python)
     tutorial_examples = document.parent.parent / "examples"
+    if document.name == "README.md":
+        tutorial_examples = document.parent / "examples"
     recovery_helper = tutorial_examples / "run_document_recovery.py"
     if "PAGELEDGER_TUTORIAL_RECOVERY_HELPER" not in env and recovery_helper.is_file():
         env["PAGELEDGER_TUTORIAL_RECOVERY_HELPER"] = str(recovery_helper)

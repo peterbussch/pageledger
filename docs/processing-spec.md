@@ -8,14 +8,12 @@ for inspection.
 ## Start with local text and OCR
 
 Document jobs require POSIX advisory locks, available on macOS and Linux.
-Install `"pageledger[pdf]==0.5.2"`, Poppler, and Tesseract for a PDF job. Create
+Install `"pageledger[pdf]"`, Poppler, and Tesseract for a PDF job. Create
 `processing.yml` with the following configuration, or copy the repository's
 [processing example](examples/processing.yml):
 
 ```yaml
 schema_version: "0.1"
-run:
-  adapter: pdf_text
 processing:
   local_text:
     adapter: pdf_text
@@ -43,8 +41,13 @@ for the full document. The output directory must be new. Open
 source links, attempts, and unresolved review work. A completed job means its
 configured processing finished; human review may still be needed.
 
-For text files, set `run.adapter` and `processing.local_text.adapter` to `text`
-and set `processing.local_ocr` to `null`. Form-feed characters separate pages.
+For text files, set `processing.local_text.adapter` to `text` and set
+`processing.local_ocr` to `null`. Form-feed characters separate pages.
+
+A document job reads only the `processing` section. Budget, pricing, grading
+and rerun settings under `run` would be ignored, so `process` rejects them and
+names the replacement (for budgets, `processing.limits`). A leftover
+`run.adapter` or `taxonomy` section is harmless and produces a warning.
 Selections such as `--pages "2-5,19"` preserve source page numbers and record both
 the selected count and full document count.
 
@@ -58,10 +61,11 @@ pageledger inspect-job jobs/book
 pageledger verify-job jobs/book
 ```
 
-Recovery validates retained attempts before scheduling pending work. Saved
+Job recovery checks retained attempts before scheduling pending work. Saved
 responses are reused. A request with no saved outcome, a recorded provider
-failure, or a halted job is not retried automatically. The
-[checkpoint specification](checkpoint-spec.md) describes the recovery records.
+failure, or a halted job is not retried automatically. Each attempt is a
+resumable run; the [checkpoint specification](checkpoint-spec.md) describes
+its recovery records.
 
 `--adapter-path DIR` on `process` or `resume` loads custom adapters. Use
 `process --review FILE` to supply source-bound human decisions before extraction,
@@ -103,16 +107,73 @@ can clear a hold only when they bind the source/page and, for reviewed text,
 the selected attempt and output hash. A known source defect directs the user to
 an alternate source and prevents further automatic extraction.
 
+## Compare engines on a page
+
+When a page has readings from more than one engine, the job compares them word
+by word, after NFC normalization and with whitespace collapsed. Each comparison
+records the two attempts, their word agreement from 0 to 1, up to 20 passages
+where they differ and up to 20 numbers that differ. Comparisons are stored with
+the page in `job.json` and the report.
+
+Only readings that are clean themselves count. A page moves on to OCR because
+its text layer was held, so that layer disagreeing with the OCR is expected and
+says nothing. Comparing the selected reading with another clean one:
+
+- word agreement below 0.60 adds the review reason `engine_disagreement`;
+- a number that differs adds `numeric_disagreement`;
+- a reading from a generative adapter, such as [`vision`](vision-adapter.md),
+  stays in review as `unconfirmed_model_output` unless another clean reading
+  agrees at 0.60 or above.
+
+These reasons hold a page for review; they never start another stage. Engine
+agreement is evidence, not truth: two engines can make the same mistake.
+
+The 0.60 threshold was set on 24 transcribed calibration pages, where it holds
+9 pages when RapidOCR is compared with Apple Vision, 14 for Surya with
+RapidOCR and 22 for Tesseract with RapidOCR: the weaker the engines, the more
+pages it holds. How many real number errors it catches has not been measured.
+Jobs created before 0.6 are not compared and keep their review reasons.
+
+To compare engines on pages that need no second reading, run one on a sample:
+
+```yaml
+processing:
+  benchmark:
+    stage: local_ocr
+    every_nth_page: 10
+```
+
+This runs `local_ocr` on source pages 10, 20, 30 and so on, even when their
+text layer is clean. The stage must be enabled, and its pages count against the
+job's limits.
+
 ## One budget for the job
 
 `processing.limits` accepts:
 
 | Field | Enforcement |
 |---|---|
-| `max_attempt_pages` | Before scheduling: every attempted source page across all stages counts, including failed/uncertain attempts. A local batch must fit in full. |
+| `max_attempt_pages` | Before scheduling: every attempted source page across all stages counts, including failed/uncertain attempts. A local batch larger than the remaining allowance is cut to fit; the job then pauses. |
 | `max_image_pages` | Required positive limit when image processing is enabled. Counts both image and second-opinion attempts; checked before every call. |
 | `max_tokens` | Accumulates reported usage across stages. Stops at the cap before new work and after a response crosses it. A response can exceed the remaining amount; this is not a provider billing ceiling. Unknown paid token usage prevents another image attempt when this cap is configured. |
 | `max_cost_usd` | Accumulates reported dollar charges. Stops at the cap before new work and after a response crosses it. Unknown paid cost stops another image attempt. The first charge can be unknown or exceed the remaining amount; use a provider-side spending limit for a hard monetary ceiling. |
+
+A job that reaches `max_attempt_pages`, `max_image_pages`, `max_tokens` or
+`max_cost_usd` ends with status `paused_budget`, keeping everything it has
+done. It continues only when resumed with a higher limit:
+
+```bash
+pageledger resume jobs/book --raise-limit max_attempt_pages=200
+```
+
+`resume` checks the retained attempts before it records the raise. Each raise
+is appended to `limits_history` in `job.json` and the report, with its time and
+the previous value, and `verify-job` checks that the history leads from the
+configured limits to the current ones. Limits cannot be lowered. Money and
+token limits are thresholds checked between calls, not reservations: a call
+already under way can take usage past them. Unknown paid usage while a token or
+cost limit is set still halts the job, because a higher limit cannot make that
+usage known.
 
 Unknown cost stays `null`; `known_cost_usd` is only the available subtotal.
 Local execution is not assigned an invented dollar price. Image calls are
@@ -125,29 +186,28 @@ budget before each pending call, including after recovering a saved response.
 `job.json` uses the checksummed envelope defined by `schemas/job.schema.json`.
 Its payload includes the absolute root, source SHA-256, full/selected page
 inventory, original configuration and hash, normalized policy, package hash,
-ordered child plans, attempt evidence, page selections/reviews, usage and status.
+ordered child plans, attempt records, page selections/reviews, usage and status.
 The checksum detects inconsistent content. It does not establish authorship
 or prevent deliberate rewriting.
 
 Child plans are saved before launch; their exact YAML snapshots are under
 `.job/`. Runs under `attempts/` retain the ordinary generation-zero artifacts
-and the resumable checkpoints. `run_id` plus child path, attempt ID and source
-page identify an attempt. This does not overload rerun lineage. Existing run
-commands, selected denominators and generation-zero text replay keep their
-contracts.
+and the resumable checkpoints. An attempt is identified by its run ID, child
+path, attempt ID and source page; these are separate from rerun lineage IDs.
+Existing run commands, selected denominators and generation-zero text replay
+keep their contracts.
 
-Before further calls, resume checks all retained child records, outputs,
-source/page identities and configuration snapshots. Each child's configuration
-digest must match its saved stage plan. Refresh hashes the shared source once,
-then checks every child's source identity against that digest while still
-verifying all retained child artifacts. A child completed before
-the job index was saved is adopted without extraction. A response saved before
-publication is recovered by the child runner. A started request without a
+Before further calls, resume checks retained child records, outputs,
+source/page identities and configuration snapshots. A child completed before
+the job index was saved is adopted without extraction. The child runner recovers
+a saved response that has not yet been published. A request without a saved
 response becomes `outcome_unknown`; no automatic retry or fallback is allowed.
-Typed provider failures, quota errors, and truncated output stop the whole
-queue. Failed partial output is retained under `partials/` and linked in the
-report, but cannot be selected as the transcript. Missing image input evidence
-also stops the job and excludes that response from selection.
+Typed provider failures, quota errors and truncated output stop the whole
+queue. Failed partial output is kept under
+`partials/` and linked in the report, but cannot be selected as the transcript.
+Missing image input evidence also stops the job and excludes that response from
+selection. The [checkpoint specification](checkpoint-spec.md) describes
+individual-run recovery checks and limits.
 
 An interruption before a child's durable plan exists produces an explicit
 `initialization_incomplete` halt. No extraction is scheduled without that plan.
@@ -156,14 +216,21 @@ The incomplete directory is retained for inspection rather than overwritten.
 Source bytes are hashed before work and rechecked before each publication and
 resume. PDF page-tree counts must match the actual inventory. Container failure
 produces a halted report with an unknown page count and no invented pages.
+Its `halt_reason` names the cause, such as
+`source_container_invalid:unsupported_encryption` for a PDF that needs a
+password, and `next_action` says what to do. An encrypted PDF that opens
+without a password (one that restricts only printing or copying) is processed
+normally.
 Annotation counts are recorded without copying annotation contents; annotation
 presence does not establish recovery of comments, body text, notes or citations.
 
 A `completed` job means its configured processing work finished. It does not
-mean its pages have passed human review. A `halted` job retains its evidence;
-`resume` reports it without retrying. Reconcile uncertain requests externally
-before explicitly starting any new job. `verify-job` is read-only and binds the
-report back to validated job/child evidence.
+mean its pages have passed human review. A `paused_budget` job continues when
+resumed with a higher limit. A `halted` job keeps its records, and `resume`
+reports it without retrying; settle any uncertain request with the provider
+before starting a new job.
+`verify-job` is read-only and binds the report back to validated job and child
+records.
 
 ## Reports and review
 
@@ -172,6 +239,8 @@ The job publishes `document.json`, `report.md` and `transcript.md`. See
 review receipt examples. `report.md` and the exact final UTF-8 transcript are
 rendered from JSON. The transcript digest covers its serialized bytes, including
 headings and source-page links; no implicit NFC conversion occurs.
+Reports name the source by its path relative to the job directory. To use the
+text elsewhere, [export it](export.md) as plain text, Markdown, JSONL or TEI.
 
 ```bash
 pageledger review-job jobs/book --review reviewed-pages.json
@@ -188,16 +257,79 @@ claims of preservation or publication. Source capture, preservation, removal
 eligibility and removal are separate fields. This implementation never moves,
 deletes, publishes or certifies preservation of source files.
 
+### Review in a spreadsheet
+
+```bash
+pageledger review-sheet jobs/book --out review.csv
+pageledger review-job jobs/book --review review.csv --reviewer "A. Reader" --dry-run
+pageledger review-job jobs/book --review review.csv --reviewer "A. Reader"
+```
+
+`review-sheet` writes one row per page: a link to the page in the source, its
+disposition, the start of its selected text, its review reasons, and empty
+`decision` and `note` columns. Fill those in a spreadsheet and save as CSV. A
+decision is one of:
+
+| Decision | Records |
+|---|---|
+| `accept` | The selected text, as `reviewed_text` |
+| `blank` | The page as blank, `reviewed_blank` |
+| `illustration`, `handwriting`, `unreadable`, `source_defect` | That disposition |
+| `use:ATTEMPT` | Another completed attempt's text, named by its attempt ID from the report |
+
+A blank decision, or a deleted row, leaves the page unreviewed; the note becomes
+the receipt's reason. `review-job` checks the whole sheet before recording
+anything: every row must belong to the job, appear once, hold no spreadsheet
+formula, and still match the saved job records it was written from, which
+`review.csv.binding.json` records beside the sheet. A sheet written before the
+job's records changed is refused; write a new one. `--dry-run` checks and
+counts the decisions without recording them. Scripts can keep writing JSON
+receipts.
+
+### Review at scale
+
+See the [warnings reference](warnings.md) for warning and disposition meanings
+and suggested next steps.
+
+`unresolved_pages` counts pages whose disposition is not `reviewed_text` or
+`reviewed_blank`. A page remains unresolved when it is labeled `illustration`,
+`handwriting`, `unreadable`, or `source_defect`: those decisions describe the
+page, but do not establish that its text was checked or recover missing source
+content. A completed job can therefore have unresolved pages.
+
+For a long document, define and record a sampling policy before review. For
+example, review every page with a warning or disagreement, then inspect a
+fixed sample from each remaining section, including the first and last pages.
+Record the section boundaries, sample rule, reviewer, and pages checked in the
+review notes or project records. A sample does not make uninspected pages
+reviewed; their dispositions and unresolved count remain unchanged. Use a
+review sheet to collect decisions for sampled pages, but keep other rows with
+blank decisions so those pages remain unreviewed.
+
 ## Image adapter boundary
 
-The optional [OpenAI-compatible example](../examples/openai_image_adapter.py)
-accepts explicit Gemini or DeepSeek model names, checks the live model list,
-sends one bounded JPEG request, and records returned identity and input-image
-provenance. Pillow and Poppler belong to that adapter environment. Core includes
-no provider SDK, OCR engine or pricing catalog. See
-[image-evidence-spec.md](image-evidence-spec.md).
+The built-in [vision adapter](vision-adapter.md) reads a page image with a
+model behind an OpenAI-compatible endpoint: on this machine, or over HTTPS
+with `allow_remote: true`. In the image and second-opinion stages it keeps the
+exact JPEG it sent, as described in [image evidence](image-evidence-spec.md):
+
+```yaml
+# fragment
+processing:
+  image:
+    adapter: vision
+    adapter_options:
+      base_url: http://127.0.0.1:8080/v1
+      model: YOUR_VISION_MODEL
+```
+
+A model writes its reading rather than reading it off the page. Unless a
+clean reading from another engine agrees with it, the job holds that text for
+review as `unconfirmed_model_output`; see [warnings and holds](warnings.md).
+
+Core includes no provider SDK, OCR engine or pricing catalog.
 
 Image-evidence runs currently refuse `bundle` with an explicit unsupported
-error. They remain verifiable and resumable in place. Ordinary generation-zero
-text bundles/replay remain supported. Whole-job portable bundles, synthesis, Zotero/Drive connectors, and file
+error. They remain verifiable and resumable in place. Original text runs (not
+reruns) can still be bundled and replayed. Whole-job portable bundles, synthesis, Zotero/Drive connectors, and file
 retirement are outside the processing workflow.

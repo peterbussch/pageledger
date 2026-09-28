@@ -5,11 +5,19 @@ OCR text to Ollama's '/api/generate' endpoint. It uses only the Python
 standard library. Ollama itself is optional software and is not a PageLedger
 dependency.
 
-    pageledger rerun runs/tesseract --config cleanup.yml \
+    pageledger rerun runs/tesseract --config cleanup.yml \\
         --out runs/cleaned --adapter-path examples
+
+``rerun`` applies this adapter only to the parent's flagged pages. For a
+whole-document cleanup, use ``pageledger run`` with the same config and source.
 
 with cleanup.yml:
 
+    schema_version: "0.1"
+    taxonomy:
+      page_types:
+        prose:
+          default_action: transcribe_text
     run:
       adapter: ollama_cleanup_adapter:OllamaCleanupAdapter
       adapter_options:

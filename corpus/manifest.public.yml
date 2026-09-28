@@ -1,0 +1,522 @@
+schema_version: "0.1"
+# Library items belong in the git-ignored corpus/manifest.local.yml with this shape.
+items:
+- id: OCR-01
+  title: 12_Harkovskaya_1850_text
+  year: 1850
+  source:
+    institution: Internet Archive
+    identifier: viysko_stat
+    url: https://archive.org/details/viysko_stat
+  path: Research_Data/07_Primary_Sources/military_reviews/gubernia_reviews_1848_1853/12_Harkovskaya_1850_text.pdf
+  sha256: 68e65932527675aebcef68009b8d30c0e2df6cd105cc68ff48ccb8aa9ccc3367
+  rights:
+    class: public_domain
+    note: Pre-1918 imprint (1850).
+    public: true
+  strata:
+  - scan_with_ocr
+  - prereform_prose
+  - dense_tables
+  - maps_figures
+  tiers:
+    S:
+      pages: 81-85
+      purpose: Same PDF positions as the 0.5.1 Kharkov pages; IA text derivative instead
+        of the image-only source.
+    M:
+      pages: 81-90,129-131
+      purpose: IA OCR layer on the 0.5.1 Kharkov pages plus foldouts.
+- id: OCR-04
+  title: vyp. 3 (RAW)_text
+  year: 1926
+  source:
+    institution: Internet Archive
+    identifier: perepis_naseleniia_1926
+    url: https://archive.org/details/perepis_naseleniia_1926
+  path: Research_Data/07_Primary_Sources/censuses/1926_census_main/vyp. 3 (RAW)_text.pdf
+  sha256: 36bdb600d7e2ce63fdf3f0f6d19e506087f93358cfbd054e0f8982b16feb0c8a
+  rights:
+    class: public_domain_1918_1930
+    note: '1926 publication: US public domain (≤1930); official statistics are also
+      not copyrightable in Russia.'
+    public: true
+  strata:
+  - scan_with_ocr
+  - soviet_cyrillic
+  - dense_tables
+  tiers:
+    S:
+      pages: 46-48
+      purpose: Digits-only OCR layer on census tables.
+    M:
+      pages: 9-13,45-49
+      purpose: Digits-only OCR layer; pages 9 and 11 have no text at all.
+- id: TRAP-01
+  title: 1888_Bessarabsk_kalendar
+  year: 1888
+  source:
+    institution: Internet Archive
+    identifier: MemorialBooksofBessarabiaGubernia
+    url: https://archive.org/details/MemorialBooksofBessarabiaGubernia
+  path: Research_Data/07_Primary_Sources/commemorative_books/bessarabia/1888_Bessarabsk_kalendar.pdf
+  sha256: d1fe6baf10f0070177ce814785472fce9fd49230dde2cd653bdb50ab2d4154c1
+  rights:
+    class: public_domain
+    note: Pre-1918 imprint (1888).
+    public: true
+  strata:
+  - structural_trap
+  - image_only
+  - prereform_prose
+  tiers:
+    S:
+      pages: 44-46
+      purpose: Stamp-only text layer on image pages (18 letters per page).
+    M:
+      pages: 44-48
+      purpose: Stamp-only text layer.
+- id: NEWS-01
+  title: Vitebskije_Gubernskije_Vedomosti_1851_N37
+  year: 1851
+  source:
+    institution: Internet Archive
+    identifier: vitebskije-gubernskije-vedomosti
+    url: https://archive.org/details/vitebskije-gubernskije-vedomosti
+  path: Research_Data/07_Primary_Sources/provincial_gazettes/vitebsk/Vitebskije_Gubernskije_Vedomosti_1851_N37.pdf
+  sha256: 1ed604e9386e4e90c30843334847f068db685b3fdae179ea1bbcce37fc2b0797
+  rights:
+    class: public_domain
+    note: Pre-1918 imprint (1851).
+    public: true
+  strata:
+  - newspapers
+  - scan_with_ocr
+  - prereform_prose
+  tiers:
+    S:
+      pages: 3-5
+      purpose: Pre-reform gazette with an OCR layer that keeps ѣ.
+    M:
+      pages: 1-12
+      purpose: Whole 1851 gazette issue.
+- id: OCR-11
+  title: '9781501707087'
+  year: null
+  source:
+    institution: OAPEN Library
+    identifier: ISBN 9781501707087
+    url: https://library.oapen.org/discover?query=9781501707087
+  path: Research_Data/07_Primary_Sources/reference_materials/oapen_academic/9781501707087.pdf
+  sha256: 066da3e09f5b61ae2e7b9c21e1f9804a398783cc8d1c852be13ed458c4621304
+  rights:
+    class: open_access
+    note: OAPEN/Cornell Open reissue (ISBN 9781501707087); verify the licence (probably
+      CC BY-NC-ND) and the byte identity of the OAPEN file.
+    public: true
+  strata:
+  - scan_with_ocr
+  - dense_tables
+  tiers:
+    M:
+      pages: 48-52,129-133,291-295
+      purpose: 'ClearScan: clean prose pages vs image-fallback table pages.'
+- id: IMG-02
+  title: 12_Harkovskaya_1850
+  year: 1850
+  source:
+    institution: Internet Archive
+    identifier: viysko_stat
+    url: https://archive.org/details/viysko_stat
+  path: Research_Data/07_Primary_Sources/military_reviews/gubernia_reviews_1848_1853/12_Harkovskaya_1850.pdf
+  sha256: f389bac53dbd4041a952cacf774c2d6d91ba1af9efa8dba88eee2570b061f2c6
+  rights:
+    class: public_domain
+    note: Pre-1918 imprint (1850).
+    public: true
+  strata:
+  - image_only
+  - prereform_prose
+  - maps_figures
+  - dense_tables
+  tiers:
+    M:
+      pages: 81-90,129-131
+      purpose: '0.5.1 Kharkov source, same pages: compare with OCR-01 and retained
+        0.5.1 output.'
+- id: OCR-03
+  title: libgen_00844848
+  year: 1900
+  source:
+    institution: Internet Archive
+    identifier: libgen_00844848
+    url: https://archive.org/details/libgen_00844848
+  path: Research_Data/07_Primary_Sources/gazetteers/kiev_1900/libgen_00844848.pdf
+  sha256: 2bdd609afa7fc83ba1c2d1677e17540a88bba613b28b22e55aa01a73ee3d7e53
+  rights:
+    class: public_domain
+    note: Pre-1918 imprint (1900).
+    public: true
+  strata:
+  - scan_with_ocr
+  - dense_tables
+  - prereform_prose
+  tiers:
+    M:
+      pages: 30-34
+      purpose: Wrong-script (all-Latin) OCR layer on a Cyrillic gazetteer.
+- id: OCR-05
+  title: 1916_AK_Bessarabsk_gub_text
+  year: 1916
+  source:
+    institution: Internet Archive
+    identifier: MemorialBooksofBessarabiaGubernia
+    url: https://archive.org/details/MemorialBooksofBessarabiaGubernia
+  path: Research_Data/07_Primary_Sources/commemorative_books/bessarabia/1916_AK_Bessarabsk_gub_text.pdf
+  sha256: 7ab35c534645110c1e6858ac97a6802d27d91bdccead1e7e138c5d89147621e7
+  rights:
+    class: public_domain
+    note: Pre-1918 imprint (1916).
+    public: true
+  strata:
+  - scan_with_ocr
+  - prereform_prose
+  - directories
+  tiers:
+    M:
+      pages: 213-217
+      purpose: 1916 Bessarabia IA derivative (digits-only layer).
+- id: IMG-08
+  title: 1916_AK_Bessarabsk_gub
+  year: 1916
+  source:
+    institution: Internet Archive
+    identifier: MemorialBooksofBessarabiaGubernia
+    url: https://archive.org/details/MemorialBooksofBessarabiaGubernia
+  path: Research_Data/07_Primary_Sources/commemorative_books/bessarabia/1916_AK_Bessarabsk_gub.pdf
+  sha256: 4a56a71f2675ed0a3cc2370c7715f4e8994d410ba3456be410774e3aa9139137
+  rights:
+    class: public_domain
+    note: Pre-1918 imprint (1916).
+    public: true
+  strata:
+  - image_only
+  - directories
+  - prereform_prose
+  tiers:
+    M:
+      pages: 213-217
+      purpose: 1916 Bessarabia plain scan, same pages as OCR-05.
+- id: OCR-06
+  title: Общий свод по Империи результатов ... переписи населения, произведенной
+    28 января 1897 года (том 1) - OCR
+  year: 1897
+  source:
+    institution: Internet Archive
+    identifier: russia-ussr-demography-census-1897
+    url: https://archive.org/details/russia-ussr-demography-census-1897
+  path: Research_Data/07_Primary_Sources/censuses/1897_census_empire_wide/Общий свод
+    по Империи результатов ... переписи населения, произведенной 28 января 1897 года
+    (том 1) - OCR.pdf
+  sha256: 6e2a789134281b0b13233fb5b78c09817c10a16e28381ea50ff27213b4de8e7a
+  rights:
+    class: public_domain
+    note: Pre-1918 imprint (1897).
+    public: true
+  strata:
+  - mixed_language
+  - scan_with_ocr
+  - dense_tables
+  - two_page_spreads
+  - prereform_prose
+  tiers:
+    M:
+      pages: 37-41,101-105,165-169
+      purpose: Russian/French 1897 summary tables, ABBYY layer.
+- id: OCR-07
+  title: 1928 (OCR)
+  year: 1928
+  source:
+    institution: Internet Archive
+    identifier: statisticheskoe_obozrenie_1927_1930
+    url: https://archive.org/details/statisticheskoe_obozrenie_1927_1930
+  path: Research_Data/07_Primary_Sources/yearbooks/statisticheskoe_obozrenie_1927_1930/1928
+    (OCR).pdf
+  sha256: 6121eedb031877f8e5caff560220861767c6bd47db93b18a8c1cb31aa5209dee
+  rights:
+    class: public_domain_1918_1930
+    note: '1928 publication: US public domain (≤1930); official statistics are also
+      not copyrightable in Russia.'
+    public: true
+  strata:
+  - soviet_cyrillic
+  - scan_with_ocr
+  - two_page_spreads
+  - dense_tables
+  tiers:
+    M:
+      pages: 110-114,248-252
+      purpose: Good ABBYY layer on a 1928 Soviet journal.
+- id: IMG-06
+  title: 1930 (RAW)
+  year: 1930
+  source:
+    institution: Internet Archive
+    identifier: statisticheskoe_obozrenie_1927_1930
+    url: https://archive.org/details/statisticheskoe_obozrenie_1927_1930
+  path: Research_Data/07_Primary_Sources/yearbooks/statisticheskoe_obozrenie_1927_1930/1930
+    (RAW).pdf
+  sha256: 152b09ff935fdf4e8109d372b0b8a643cb31410f22f03b9d1b0fcc18d5cdf483
+  rights:
+    class: public_domain_1918_1930
+    note: '1930 publication: US public domain (≤1930); official statistics are also
+      not copyrightable in Russia.'
+    public: true
+  strata:
+  - rotated_pages
+  - image_only
+  - two_page_spreads
+  - soviet_cyrillic
+  tiers:
+    M:
+      pages: 18-27
+      purpose: Every page /Rotate 270, image-only spreads.
+- id: PRE-01
+  title: Юбилейный сборник Центрального Статистического Комитета
+  year: 1904
+  source:
+    institution: Internet Archive
+    identifier: csk_ezhegodniki
+    url: https://archive.org/details/csk_ezhegodniki
+  path: Research_Data/07_Primary_Sources/yearbooks/imperial_yearbooks_1904_1916/Юбилейный
+    сборник Центрального Статистического Комитета.pdf
+  sha256: 7786c0c8bbeb71521ef4ff795e39f3e530bc0f6eb3183ac0347395aac5824de9
+  rights:
+    class: public_domain
+    note: Pre-1918 imprint (1904).
+    public: true
+  strata:
+  - prereform_prose
+  - scan_with_ocr
+  - two_page_spreads
+  tiers:
+    M:
+      pages: 24-28,108-112
+      purpose: Pre-reform prose and tables with ѣ kept in the OCR layer.
+- id: TAB-06
+  title: snmIX
+  year: 1859
+  source:
+    institution: Internet Archive
+    identifier: snmIX
+    url: https://archive.org/details/snmIX
+  path: Research_Data/07_Primary_Sources/gazetteers/voronezh_1859/snmIX.pdf
+  sha256: 82c5fa68f658d8101a8db9137ba84baba2e9875567030a002804a079130ee35a
+  rights:
+    class: public_domain
+    note: Pre-1918 imprint (1859).
+    public: true
+  strata:
+  - dense_tables
+  - scan_with_ocr
+  - prereform_prose
+  tiers:
+    M:
+      pages: 40-44
+      purpose: 1859 settlement register (IA), landscape tables.
+- id: DIR-01
+  title: 1894_Ves_SPb_Suvorin
+  year: 1894
+  source:
+    institution: Internet Archive
+    identifier: VesLeningrad
+    url: https://archive.org/details/VesLeningrad
+  path: Research_Data/07_Primary_Sources/directories/st_petersburg_1894_1940/1894_Ves_SPb_Suvorin.pdf
+  sha256: 7a18ced61ad63b228064bcfbcc5898445a58602afdb3599f5a89574aeff0f169
+  rights:
+    class: public_domain
+    note: Pre-1918 imprint (1894).
+    public: true
+  strata:
+  - directories
+  - scan_with_ocr
+  - prereform_prose
+  tiers:
+    M:
+      pages: 336-345
+      purpose: Dense multi-column directory (ABBYY layer).
+- id: DIR-02
+  title: 1897_Vsya_Rossiya_02_text
+  year: 1897
+  source:
+    institution: Internet Archive
+    identifier: vya-rossia-ves-ussr
+    url: https://archive.org/details/vya-rossia-ves-ussr
+  path: Research_Data/07_Primary_Sources/directories/vsya_rossia_1895_1931/1897_Vsya_Rossiya_02_text.pdf
+  sha256: 160f6f25f32ec27827cfde616fbc8da7d7da3655792b9e0d5ea4d03335b18713
+  rights:
+    class: public_domain
+    note: Pre-1918 imprint (1897).
+    public: true
+  strata:
+  - directories
+  - two_page_spreads
+  - scan_with_ocr
+  - prereform_prose
+  tiers:
+    M:
+      pages: 295-304
+      purpose: 'Densest pages on the drive: two-column spreads.'
+- id: NEWS-02
+  title: '1880_053'
+  year: 1880
+  source:
+    institution: Internet Archive
+    identifier: bel-arch-mogved
+    url: https://archive.org/details/bel-arch-mogved
+  path: Research_Data/07_Primary_Sources/provincial_gazettes/mogilev/1880/1880_053.pdf
+  sha256: 03117903e9529406485ca84afa753379331bd4bd455cdf43fec69127fb3b420d
+  rights:
+    class: public_domain
+    note: Pre-1918 imprint (1880).
+    public: true
+  strata:
+  - newspapers
+  - image_only
+  tiers:
+    M:
+      pages: 2-5
+      purpose: Camera-captured gazette issue, 72-dpi-declared giant pages.
+- id: NEWS-03
+  title: 1880_053_text
+  year: 1880
+  source:
+    institution: Internet Archive
+    identifier: bel-arch-mogved
+    url: https://archive.org/details/bel-arch-mogved
+  path: Research_Data/07_Primary_Sources/provincial_gazettes/mogilev/1880/1880_053_text.pdf
+  sha256: f543308fb4dda270c537efbc7d6c4d323fadfecff6ac57cc6cf642109d18ac68
+  rights:
+    class: public_domain
+    note: Pre-1918 imprint (1880).
+    public: true
+  strata:
+  - newspapers
+  - scan_with_ocr
+  - prereform_prose
+  tiers:
+    M:
+      pages: 2-5
+      purpose: IA OCR twin of NEWS-02.
+- id: SPR-01
+  title: 1850. Vilna Provincial Gazette for 1850_N1-52_-_неофиц_ч_с_прил_text
+  year: 1850
+  source:
+    institution: Internet Archive
+    identifier: VilnaProvincialGazette
+    url: https://archive.org/details/VilnaProvincialGazette
+  path: Research_Data/07_Primary_Sources/provincial_gazettes/vilna/1850. Vilna Provincial
+    Gazette for 1850_N1-52_-_неофиц_ч_с_прил_text.pdf
+  sha256: 4d05baf3b98be69f69f7e9dbbabad1d9db257c90796eda8cfbe2fcfed8a4d4b1
+  rights:
+    class: public_domain
+    note: Pre-1918 imprint (1850).
+    public: true
+  strata:
+  - two_page_spreads
+  - newspapers
+  - prereform_prose
+  - scan_with_ocr
+  tiers:
+    M:
+      pages: 307-316
+      purpose: Gazette spreads with IA layer.
+- id: TRAP-02
+  title: 1911_PK_Tulsk_gub_text
+  year: 1911
+  source:
+    institution: Internet Archive
+    identifier: CommemorativeBooksTulaGubernia
+    url: https://archive.org/details/CommemorativeBooksTulaGubernia
+  path: Research_Data/07_Primary_Sources/commemorative_books/tula/1911_PK_Tulsk_gub_text.pdf
+  sha256: 80cb97c1ca19436a96ea7fc6384df265654a1f759a3c040cfc4ab2094ce9c156
+  rights:
+    class: public_domain
+    note: Pre-1918 imprint (1911).
+    public: true
+  strata:
+  - structural_trap
+  - scan_with_ocr
+  - prereform_prose
+  tiers:
+    M:
+      pages: 58-60
+      purpose: 1749x2474 mm declared pages (render-size trap).
+- id: IMG-10
+  title: 1904 - Памятная книжка Гродненской губернии
+  year: 1904
+  source:
+    institution: Internet Archive
+    identifier: ostha_grodno
+    url: https://archive.org/details/ostha_grodno
+  path: Research_Data/07_Primary_Sources/commemorative_books/grodno/1904 - Памятная
+    книжка Гродненской губернии.pdf
+  sha256: b7726fc0d45b9c1160f5424b31e00f79800897165f7d051531889ada4652b76a
+  rights:
+    class: public_domain
+    note: Pre-1918 imprint (1904).
+    public: true
+  strata:
+  - image_only
+  - prereform_prose
+  - directories
+  - dense_tables
+  tiers:
+    L:
+      pages: all
+      purpose: '651-page image-only 1904 memorial book (IA item): whole-volume OCR,
+        interruption and resume.'
+- id: BIG-03
+  title: 1902_Vsya_Rossiya opt_text
+  year: 1902
+  source:
+    institution: Internet Archive
+    identifier: vya-rossia-ves-ussr
+    url: https://archive.org/details/vya-rossia-ves-ussr
+  path: Research_Data/07_Primary_Sources/directories/vsya_rossia_1895_1931/1902_Vsya_Rossiya
+    opt_text.pdf
+  sha256: da8472913a09019c9b4813b3ec70c7fc133daef6ee5357f4727d262d5a6b098c
+  rights:
+    class: public_domain
+    note: Pre-1918 imprint (1902).
+    public: true
+  strata:
+  - very_large_file
+  - directories
+  - scan_with_ocr
+  tiers:
+    L:
+      pages: all
+      purpose: '2,138-page IA text derivative under 200 MB: page-count scale, 1,853
+        page sizes.'
+- id: BIG-01
+  title: '1847'
+  year: 1847
+  source:
+    institution: Internet Archive
+    identifier: bel-arch-mogved
+    url: https://archive.org/details/bel-arch-mogved
+  path: Research_Data/07_Primary_Sources/provincial_gazettes/mogilev/1847.pdf
+  sha256: 7db2ecb0dabbdc975d53c2c2a5880d22d61a9b3370ccb9dae41395dd71fb2b0f
+  rights:
+    class: public_domain
+    note: Pre-1918 imprint (1847).
+    public: true
+  strata:
+  - very_large_file
+  - image_only
+  - newspapers
+  tiers:
+    L:
+      pages: all
+      purpose: '3.8 GB, 1,212-page gazette volume: large-file open, memory and I/O.'

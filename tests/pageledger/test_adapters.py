@@ -105,6 +105,8 @@ def test_pdf_ocr_run_without_profile_is_ordinary_but_not_bundleable(
         "_require_binary",
         lambda _name: (_ for _ in ()).throw(RuntimeError("tesseract unavailable")),
     )
+    # Extraction is mocked below, so the tool check that guards real runs is too.
+    monkeypatch.setattr(PdfOcrAdapter, "preflight", lambda self, sources: None)
     monkeypatch.setattr(PdfOcrAdapter, "page_count", lambda self, source: 1)
     monkeypatch.setattr(
         PdfOcrAdapter,
@@ -792,10 +794,13 @@ def test_pdf_ocr_extract_with_mocked_binaries(tmp_path: Path, monkeypatch) -> No
     assert result.usage["compute_seconds"] is not None
     assert result.usage["cost_usd"] is None
 
-    pdftoppm_call = calls[0]
-    assert "-r" in pdftoppm_call and "400" in pdftoppm_call
+    renders = [c for c in calls if Path(c[0]).name == "pdftoppm" and "-png" in c]
+    # The first render is the 10-DPI size probe; the last one is the OCR image.
+    assert renders[0][renders[0].index("-r") + 1] == "10"
+    pdftoppm_call = renders[-1]
+    assert pdftoppm_call[pdftoppm_call.index("-r") + 1] == "400"
     assert ["-f", "3", "-l", "3"] == pdftoppm_call[1:5]
-    tesseract_call = calls[1]
+    tesseract_call = next(c for c in calls if Path(c[0]).name == "tesseract" and "tsv" in c)
     assert tesseract_call[-4:] == ["-l", "eng+deu", "txt", "tsv"]
 
 
@@ -1089,7 +1094,7 @@ def test_pdf_ocr_reports_word_confidence_from_tsv(tmp_path: Path, monkeypatch) -
     calls = _fake_ocr_binaries(monkeypatch, tsv_body=tsv)
     result = _extract_one(PdfOcrAdapter(), tmp_path)
 
-    tesseract_call = calls[1]
+    tesseract_call = next(c for c in calls if Path(c[0]).name == "tesseract" and "tsv" in c)
     assert tesseract_call[-2:] == ["txt", "tsv"]
     assert result.confidence == pytest.approx(0.7653, abs=1e-4)
     detail = result.confidence_detail
@@ -1128,6 +1133,8 @@ def test_pdf_ocr_confidence_survives_malformed_tsv(tmp_path: Path, monkeypatch) 
 
 
 def _fake_binaries_with_langs(monkeypatch, langs: list[str]):
+    calls: list[list[str]] = []
+
     def fake_run(argv, **kwargs):  # noqa: ANN001, ANN003
         binary = Path(argv[0]).name
         if "--version" in argv:
@@ -1140,6 +1147,7 @@ def _fake_binaries_with_langs(monkeypatch, langs: list[str]):
             listed = "\n".join(langs)
             body = f'List of available languages in "/fake/tessdata/" ({len(langs)}):\n{listed}\n'
             return subprocess.CompletedProcess(argv, 0, stdout=body, stderr="")
+        calls.append(list(argv))
         if binary == "pdftoppm":
             prefix = Path(argv[-1])
             (prefix.parent / "page-1.png").write_bytes(b"png")
@@ -1150,6 +1158,7 @@ def _fake_binaries_with_langs(monkeypatch, langs: list[str]):
 
     monkeypatch.setattr(adapters_module.shutil, "which", lambda name: f"/fake/bin/{name}")
     monkeypatch.setattr(adapters_module.subprocess, "run", fake_run)
+    return calls
 
 
 def test_pdf_ocr_rejects_missing_language_pack(tmp_path: Path, monkeypatch) -> None:
@@ -1464,3 +1473,451 @@ def test_strip_thought_blocks_variants() -> None:
         for mod in list(sys.modules):
             if "local_llm" in mod.lower():
                 del sys.modules[mod]
+
+
+# ---------------------------------------------------------------------------
+# Typed diagnostics and preflight
+# ---------------------------------------------------------------------------
+
+
+def _one_page_pdf(path: Path) -> Path:
+    writer = pytest.importorskip("pypdf").PdfWriter()
+    writer.add_blank_page(width=200, height=200)
+    with path.open("wb") as fh:
+        writer.write(fh)
+    return path
+
+
+def test_pdf_ocr_preflight_reports_missing_language_pack(tmp_path: Path, monkeypatch) -> None:
+    from pageledger.adapters import PageLedgerDiagnostic
+
+    _fake_binaries_with_langs(monkeypatch, ["eng", "osd"])
+    with pytest.raises(PageLedgerDiagnostic) as excinfo:
+        PdfOcrAdapter(lang="eng+rus").preflight([_one_page_pdf(tmp_path / "scan.pdf")])
+    assert excinfo.value.code == "missing_language_pack"
+    assert "rus" in str(excinfo.value) and "eng" in str(excinfo.value)
+
+
+def test_pdf_ocr_preflight_reports_missing_binary(tmp_path: Path, monkeypatch) -> None:
+    from pageledger.adapters import PageLedgerDiagnostic
+
+    monkeypatch.setattr(
+        adapters_module.shutil, "which", lambda name: None if name == "pdftoppm" else f"/x/{name}"
+    )
+    with pytest.raises(PageLedgerDiagnostic) as excinfo:
+        PdfOcrAdapter().preflight([_one_page_pdf(tmp_path / "scan.pdf")])
+    assert excinfo.value.code == "missing_binary"
+    assert "pdftoppm" in str(excinfo.value) and "Poppler" in str(excinfo.value)
+
+
+def test_run_refuses_missing_language_pack_before_any_page(tmp_path: Path, monkeypatch) -> None:
+    from pageledger.adapters import PageLedgerDiagnostic
+    from pageledger.runner import run
+
+    _fake_binaries_with_langs(monkeypatch, ["eng", "osd"])
+    pdf = _one_page_pdf(tmp_path / "scan.pdf")
+    config = tmp_path / "ocr.yml"
+    config.write_text(
+        'schema_version: "0.1"\ntaxonomy:\n  page_types:\n    prose:\n'
+        "      default_action: transcribe_text\nrun:\n  adapter: pdf_ocr\n"
+        "  adapter_options:\n    lang: rus\n",
+        encoding="utf-8",
+    )
+    out_dir = tmp_path / "out"
+    with pytest.raises(PageLedgerDiagnostic) as excinfo:
+        run(inputs=[pdf], config_path=config, out_dir=out_dir, dry_run=False)
+    assert excinfo.value.code == "missing_language_pack"
+    assert not (out_dir / "raw").exists()
+
+
+def test_built_in_diagnostics_survive_redaction_but_custom_errors_do_not() -> None:
+    from pageledger.adapters import PageLedgerDiagnostic
+    from pageledger.runner import AdapterExecutionError
+
+    diagnostic = PageLedgerDiagnostic(
+        "missing_binary", "pdftoppm is not installed; install Poppler"
+    )
+    kept = AdapterExecutionError(
+        adapter="pdf_ocr",
+        page_id="doc_0001_page_0001",
+        status="failed",
+        message=str(diagnostic),
+        trusted=True,
+    )
+    assert "install Poppler" in str(kept)
+    redacted = AdapterExecutionError(
+        adapter="custom",
+        page_id="doc_0001_page_0001",
+        status="failed",
+        message="RuntimeError: token sk-secret",
+    )
+    assert "sk-secret" not in str(redacted)
+
+
+def test_diagnostic_codes_are_allowlisted() -> None:
+    from pageledger.adapters import PageLedgerDiagnostic
+
+    with pytest.raises(ValueError):
+        PageLedgerDiagnostic("made_up_code", "anything")
+
+
+# ---------------------------------------------------------------------------
+# Render safety
+# ---------------------------------------------------------------------------
+
+
+def test_render_dpi_caps_oversized_pages(monkeypatch) -> None:
+    # A 10-dpi probe of a 1.75 m x 2.47 m page (Internet Archive derivative) is ~689 x 972 px.
+    monkeypatch.setattr(adapters_module, "_probe_size_at_10dpi", lambda *a: (689, 972))
+    dpi, capped = adapters_module._render_dpi("pdftoppm", Path("x.pdf"), 1, 300, 60_000_000)
+    assert capped is True
+    assert 72 <= dpi < 100
+    assert (689 * dpi / 10) * (972 * dpi / 10) <= 60_000_000
+
+
+def test_render_dpi_never_raises_resolution(monkeypatch) -> None:
+    monkeypatch.setattr(adapters_module, "_probe_size_at_10dpi", lambda *a: (7, 11))
+    assert adapters_module._render_dpi("pdftoppm", Path("x.pdf"), 1, 300, 60_000_000) == (
+        300,
+        False,
+    )
+
+
+def test_render_below_minimum_dpi_is_a_typed_refusal(monkeypatch) -> None:
+    from pageledger.adapters import PageLedgerDiagnostic
+
+    monkeypatch.setattr(adapters_module, "_probe_size_at_10dpi", lambda *a: (4000, 4000))
+    with pytest.raises(PageLedgerDiagnostic) as excinfo:
+        adapters_module._render_dpi("pdftoppm", Path("x.pdf"), 1, 300, 60_000_000)
+    assert excinfo.value.code == "render_limit"
+
+
+def test_unreadable_probe_keeps_requested_dpi(monkeypatch) -> None:
+    monkeypatch.setattr(adapters_module, "_probe_size_at_10dpi", lambda *a: None)
+    assert adapters_module._render_dpi("pdftoppm", Path("x.pdf"), 1, 300, 60_000_000) == (
+        300,
+        False,
+    )
+
+
+def _image_pdf(path: Path, *, width: int = 440, height: int = 700, pages: int = 1) -> Path:
+    from pypdf import PdfWriter
+    from pypdf.generic import DecodedStreamObject, DictionaryObject, NameObject, NumberObject
+
+    writer = PdfWriter()
+    for _ in range(pages):
+        page = writer.add_blank_page(width=18 * 72 / 25.4, height=29 * 72 / 25.4)
+        image = DecodedStreamObject()
+        image.set_data(b"\x00" * width * height)
+        image.update(
+            {
+                NameObject("/Type"): NameObject("/XObject"),
+                NameObject("/Subtype"): NameObject("/Image"),
+                NameObject("/Width"): NumberObject(width),
+                NameObject("/Height"): NumberObject(height),
+                NameObject("/ColorSpace"): NameObject("/DeviceGray"),
+                NameObject("/BitsPerComponent"): NumberObject(8),
+            }
+        )
+        page[NameObject("/Resources")] = DictionaryObject(
+            {
+                NameObject("/XObject"): DictionaryObject(
+                    {NameObject("/Im0"): writer._add_object(image)}
+                )
+            }
+        )
+    writer.write(path)
+    return path
+
+
+def test_pdf_ocr_raises_render_dpi_to_embedded_image_resolution(
+    tmp_path: Path, monkeypatch
+) -> None:
+    pytest.importorskip("pypdf")
+    calls = _fake_binaries_with_langs(monkeypatch, ["eng"])
+    monkeypatch.setattr(adapters_module, "_probe_size_at_10dpi", lambda *args: (7, 12))
+    pdf = _image_pdf(tmp_path / "small-page.pdf")
+    result = PdfOcrAdapter().extract(
+        pdf, page_id="doc_0001_page_0001", page_number=1, action="transcribe_text"
+    )
+    render = [call for call in calls if Path(call[0]).name == "pdftoppm" and "-png" in call][-1]
+    dpi = render[render.index("-r") + 1]
+    assert int(dpi) == 621
+    assert "dpi=621 (requested 300, native image)" in result.model
+
+
+def test_pdf_ocr_born_digital_keeps_requested_dpi(tmp_path: Path, monkeypatch) -> None:
+    _fake_binaries_with_langs(monkeypatch, ["eng"])
+    monkeypatch.setattr(adapters_module, "_probe_size_at_10dpi", lambda *args: (7, 12))
+    pdf = _one_page_pdf(tmp_path / "digital.pdf")
+    result = PdfOcrAdapter(dpi=300).extract(
+        pdf, page_id="doc_0001_page_0001", page_number=1, action="transcribe_text"
+    )
+    assert result.model and "; dpi=300;" in result.model
+
+
+def test_pdf_ocr_without_pypdf_keeps_requested_dpi(tmp_path: Path, monkeypatch) -> None:
+    pytest.importorskip("pypdf")
+    calls = _fake_binaries_with_langs(monkeypatch, ["eng"])
+    monkeypatch.setattr(adapters_module, "_probe_size_at_10dpi", lambda *args: (7, 12))
+    pdf = _image_pdf(tmp_path / "small-page.pdf")
+    monkeypatch.setitem(sys.modules, "pypdf", None)
+    result = PdfOcrAdapter().extract(
+        pdf, page_id="doc_0001_page_0001", page_number=1, action="transcribe_text"
+    )
+    render = [call for call in calls if Path(call[0]).name == "pdftoppm" and "-png" in call][-1]
+    assert render[render.index("-r") + 1] == "300"
+    assert "; dpi=300;" in result.model
+
+
+def test_native_dpi_still_respects_pixel_cap(tmp_path: Path, monkeypatch) -> None:
+    pytest.importorskip("pypdf")
+    calls = _fake_binaries_with_langs(monkeypatch, ["eng"])
+    monkeypatch.setattr(adapters_module, "_probe_size_at_10dpi", lambda *args: (100, 100))
+    pdf = _image_pdf(tmp_path / "capped.pdf", width=1200, height=1200)
+    result = PdfOcrAdapter(max_render_pixels=1_000_000).extract(
+        pdf, page_id="doc_0001_page_0001", page_number=1, action="transcribe_text"
+    )
+    render = [call for call in calls if Path(call[0]).name == "pdftoppm" and "-png" in call][-1]
+    assert int(render[render.index("-r") + 1]) < 1200
+    assert "render_dpi_capped" in result.warnings
+
+
+def test_pdf_ocr_scans_a_source_once_for_all_its_pages(tmp_path: Path, monkeypatch) -> None:
+    pytest.importorskip("pypdf")
+    _fake_binaries_with_langs(monkeypatch, ["eng"])
+    monkeypatch.setattr(adapters_module, "_probe_size_at_10dpi", lambda *args: (7, 12))
+    pdf = _image_pdf(tmp_path / "volume.pdf", pages=2)
+    scans = []
+    scan = adapters_module._page_image_ppis
+    monkeypatch.setattr(
+        adapters_module, "_page_image_ppis", lambda path: scans.append(path) or scan(path)
+    )
+    adapter = PdfOcrAdapter()
+    for number in (1, 2):
+        result = adapter.extract(
+            pdf, page_id=f"doc_0001_page_{number:04d}", page_number=number, action="transcribe_text"
+        )
+        assert "native image" in result.model
+    assert len(scans) == 1
+
+
+def test_pdf_sources_are_read_once_and_refused_when_changed(tmp_path: Path) -> None:
+    source = tmp_path / "scan.pdf"
+    source.write_bytes(b"first")
+    reads = []
+    cache: dict = {}
+
+    def read(path: Path) -> str:
+        reads.append(path)
+        return path.read_text()
+
+    assert adapters_module._read_once(cache, source, read) == "first"
+    assert adapters_module._read_once(cache, source, read) == "first"
+    assert len(reads) == 1
+    source.write_bytes(b"changed")
+    with pytest.raises(ValueError, match="changed"):
+        adapters_module._read_once(cache, source, read)
+
+
+def test_pdf_ocr_records_capped_render(tmp_path: Path, monkeypatch) -> None:
+    _fake_binaries_with_langs(monkeypatch, ["eng"])
+    monkeypatch.setattr(adapters_module, "_probe_size_at_10dpi", lambda *a: (689, 972))
+    result = _extract_one(PdfOcrAdapter(), tmp_path)
+    assert "render_dpi_capped" in result.warnings
+    assert "(requested 300)" in result.model
+
+
+def test_max_render_pixels_is_validated() -> None:
+    with pytest.raises(ValueError, match="max_render_pixels"):
+        PdfOcrAdapter(max_render_pixels=10)
+
+
+# ---------------------------------------------------------------------------
+# Encrypted and damaged PDFs
+# ---------------------------------------------------------------------------
+
+
+def _text_pdf(path: Path, *, algorithm: str | None = None, user_password: str = "") -> Path:
+    """One page reading 'Hello PageLedger', optionally encrypted by pypdf."""
+    from pypdf import PdfWriter
+    from pypdf.generic import DecodedStreamObject, DictionaryObject, NameObject
+
+    writer = PdfWriter()
+    page = writer.add_blank_page(width=200, height=200)
+    font = DictionaryObject(
+        {
+            NameObject("/Type"): NameObject("/Font"),
+            NameObject("/Subtype"): NameObject("/Type1"),
+            NameObject("/BaseFont"): NameObject("/Helvetica"),
+        }
+    )
+    page[NameObject("/Resources")] = DictionaryObject(
+        {NameObject("/Font"): DictionaryObject({NameObject("/F1"): writer._add_object(font)})}
+    )
+    content = DecodedStreamObject()
+    content.set_data(b"BT /F1 12 Tf 10 100 Td (Hello PageLedger) Tj ET")
+    page[NameObject("/Contents")] = writer._add_object(content)
+    if algorithm is not None:
+        writer.encrypt(user_password=user_password, owner_password="owner", algorithm=algorithm)
+    writer.write(path)
+    return path
+
+
+def _lending_copy_pdf(path: Path) -> Path:
+    """A PDF whose /Encrypt names a non-Standard handler, as Internet Archive lending copies do."""
+    objects = [
+        b"<< /Type /Catalog /Pages 2 0 R >>",
+        b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+        b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 200] >>",
+        b"<< /Filter /FOPN_foweb /V 1 /Length 40 >>",
+    ]
+    data = bytearray(b"%PDF-1.4\n")
+    offsets = []
+    for number, body in enumerate(objects, start=1):
+        offsets.append(len(data))
+        data += b"%d 0 obj\n%s\nendobj\n" % (number, body)
+    xref = len(data)
+    data += b"xref\n0 %d\n0000000000 65535 f \n" % (len(objects) + 1)
+    data += b"".join(b"%010d 00000 n \n" % offset for offset in offsets)
+    file_id = b"<00112233445566778899aabbccddeeff>"
+    data += b"trailer\n<< /Size %d /Root 1 0 R /Encrypt 4 0 R /ID [%s %s] >>\n" % (
+        len(objects) + 1,
+        file_id,
+        file_id,
+    )
+    data += b"startxref\n%d\n%%%%EOF\n" % xref
+    path.write_bytes(bytes(data))
+    return path
+
+
+def _pdf_readers():
+    return [PdfTextAdapter().page_count, adapters_module.pdf_page_count]
+
+
+def test_pdf_extra_installs_aes_support() -> None:
+    root = Path(__file__).resolve().parents[2]
+    pyproject = (root / "pyproject.toml").read_text(encoding="utf-8")
+    assert '"pypdf[crypto]>=6"' in pyproject
+
+
+@pytest.mark.parametrize("algorithm", ["RC4-128", "AES-128", "AES-256"])
+def test_pdf_with_only_an_owner_password_is_read(tmp_path: Path, algorithm: str) -> None:
+    pytest.importorskip("pypdf")
+    pytest.importorskip("cryptography")
+    pdf = _text_pdf(tmp_path / "restricted.pdf", algorithm=algorithm)
+
+    result = PdfTextAdapter().extract(
+        pdf, page_id="doc_0001_page_0001", page_number=1, action="transcribe_text"
+    )
+
+    assert result.content.strip() == "Hello PageLedger"
+    assert adapters_module.pdf_page_count(pdf) == 1
+
+
+@pytest.mark.parametrize("failing_step", ["open", "pages"])
+def test_missing_aes_support_is_a_typed_diagnostic(
+    tmp_path: Path, monkeypatch, failing_step: str
+) -> None:
+    pypdf = pytest.importorskip("pypdf")
+    from pageledger.adapters import PageLedgerDiagnostic
+
+    def no_aes(*_args):
+        raise pypdf.errors.DependencyError("cryptography>=3.1 is required for AES algorithm")
+
+    class Reader:
+        def __init__(self, stream, strict=False):
+            if failing_step == "open":
+                no_aes()
+
+        pages = property(no_aes)
+
+    monkeypatch.setattr(adapters_module, "_load_pypdf", lambda: Reader)
+    pdf = _one_page_pdf(tmp_path / "aes.pdf")
+    for read in _pdf_readers():
+        with pytest.raises(PageLedgerDiagnostic) as excinfo:
+            read(pdf)
+        assert excinfo.value.code == "missing_crypto_dependency"
+        assert "pageledger[pdf]" in str(excinfo.value)
+
+
+def test_pdf_that_needs_a_password_is_refused(tmp_path: Path) -> None:
+    pytest.importorskip("pypdf")
+    from pageledger.adapters import PageLedgerDiagnostic
+
+    pdf = _text_pdf(tmp_path / "locked.pdf", algorithm="RC4-128", user_password="s3cret")
+    for read in _pdf_readers():
+        with pytest.raises(PageLedgerDiagnostic) as excinfo:
+            read(pdf)
+        assert excinfo.value.code == "unsupported_encryption"
+        assert "password" in str(excinfo.value)
+
+
+def test_unsupported_encryption_handler_is_refused(tmp_path: Path) -> None:
+    pytest.importorskip("pypdf")
+    from pageledger.adapters import PageLedgerDiagnostic
+
+    pdf = _lending_copy_pdf(tmp_path / "lending_encrypted.pdf")
+    for read in _pdf_readers():
+        with pytest.raises(PageLedgerDiagnostic) as excinfo:
+            read(pdf)
+        assert excinfo.value.code == "unsupported_encryption"
+        assert "lending" in str(excinfo.value)
+
+
+@pytest.mark.parametrize(
+    "content",
+    [
+        b"",
+        b"hello world, not a pdf at all\n",
+        b"%PDF-1.4\n1 0 obj<<>>endobj\nstartxref\n-926232656\n%%EOF\n",
+    ],
+    ids=["empty", "not-a-pdf", "negative-startxref"],
+)
+def test_damaged_pdf_is_a_typed_refusal(tmp_path: Path, monkeypatch, content: bytes) -> None:
+    pytest.importorskip("pypdf")
+    from pageledger.adapters import PageLedgerDiagnostic
+
+    monkeypatch.setattr(adapters_module.shutil, "which", lambda name: None)
+    pdf = tmp_path / "damaged.pdf"
+    pdf.write_bytes(content)
+    for read in [*_pdf_readers(), ocr_pdf_page_count]:
+        with pytest.raises(PageLedgerDiagnostic) as excinfo:
+            read(pdf)
+        assert excinfo.value.code == "malformed_pdf"
+        assert "damaged.pdf" in str(excinfo.value)
+
+
+def test_damaged_pdf_run_reports_the_code_without_a_traceback(tmp_path: Path, capsys) -> None:
+    pytest.importorskip("pypdf")
+    from pageledger.cli import main
+
+    pdf = tmp_path / "scan.pdf"
+    pdf.write_bytes(b"hello world, not a pdf at all\n")
+    out_dir = tmp_path / "out"
+
+    code = main(["run", str(pdf), "--adapter", "pdf_text", "--out", str(out_dir), "--json"])
+
+    captured = capsys.readouterr()
+    assert code == 1
+    assert json.loads(captured.out)["code"] == "malformed_pdf"
+    assert "Traceback" not in captured.err
+    assert not (out_dir / "raw").exists()
+
+
+def test_hung_ocr_engine_is_a_typed_timeout(tmp_path: Path, monkeypatch) -> None:
+    from pageledger.adapters import PageLedgerDiagnostic
+
+    _fake_binaries_with_langs(monkeypatch, ["eng"])
+    fake_run = adapters_module.subprocess.run
+
+    def hang(argv, **kwargs):  # noqa: ANN001, ANN003
+        if Path(argv[0]).name == "pdftoppm" and "-png" in argv:
+            raise subprocess.TimeoutExpired(argv, kwargs["timeout"])
+        return fake_run(argv, **kwargs)
+
+    monkeypatch.setattr(adapters_module.subprocess, "run", hang)
+    with pytest.raises(PageLedgerDiagnostic) as excinfo:
+        _extract_one(PdfOcrAdapter(), tmp_path)
+    assert excinfo.value.code == "engine_timeout"
+    assert "timed out after 120s" in str(excinfo.value)

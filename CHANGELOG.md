@@ -2,6 +2,223 @@
 
 Release changes follow the [artifact compatibility policy](docs/run-manifest-spec.md#compatibility-policy).
 
+## 0.6.0 - 2026-09-28
+
+### Added
+
+- Documentation for working with a real collection: a glossary; a reference of
+  every warning, hold and disposition with its likely cause and what to do;
+  how-to guides for processing a collection, choosing OCR settings, planning
+  time and cost, troubleshooting, and sharing and citing results; and engine
+  recipes. The documentation index is grouped into tutorials, how-to guides,
+  reference and explanation, and maintainer records moved to
+  `docs/maintainers/`. The PDF/OCR tutorial now runs in CI against a generated
+  scan, and README links work on PyPI. Capabilities and limits are grouped by
+  task, and each recovery rule is stated once: for runs in the checkpoint
+  specification, for document jobs in the processing specification.
+  `docs/examples/processing.yml` now matches the configs shown in the README
+  and processing specification (a job pauses after 100 attempted pages), a
+  test keeps them identical, and its optional image stage uses the built-in
+  `vision` adapter.
+- Warnings for text layers that exist but carry little of the page:
+  `digits_only_text` (a table layer that kept its digits and lost its words),
+  `mixed_script_tokens` (Latin look-alikes inside Cyrillic words, or the
+  reverse), `private_use_characters` (characters lost to font-specific code
+  points, such as old-style digits) and, across a run, `repeated_page_text`
+  (the same short stamp on three or more pages). Quality lines gain
+  `letter_count`, `digit_count`, `mixed_script_token_ratio` and
+  `private_use_count`. The thresholds were measured on 5,702 sampled pages
+  from a research library before they were set, and `process` treats these
+  warnings as coverage defects, so such a page moves on to OCR.
+- Warnings for the ways vision models fail. `repetition_loop` flags a model
+  stuck in a loop: one line on much of the page, an ending repeated 20 or more
+  times, or one letter repeated 40 times. On 287 outputs of 24 transcribed
+  pages by 11 engines it flagged 16 pages, every one a loop, and nothing from
+  classic OCR engines, hosted models or the reference. A new top-level
+  `language` block enables `script_mismatch`, for a page read mostly in another
+  script, and with `orthography: prereform`, `historical_letters_lost`, for
+  pre-reform text returned in modern spelling; PageLedger does not guess a
+  language. Quality lines gain `largest_identical_line_count`,
+  `longest_repeated_tail_length` and `longest_letter_run`, and document jobs
+  hold such pages as coverage defects.
+- Document jobs compare the engines' readings of each page. When the selected
+  reading and another clean one agree on fewer than 60% of words, the page is
+  held as `engine_disagreement`; when a number differs, as
+  `numeric_disagreement`. A reading from a generative adapter, such as
+  `vision`, stays in review as `unconfirmed_model_output` until another engine
+  agrees with it. A plain `run` holds every page a generative adapter read in
+  its review queue, with the same reason. `processing.benchmark` runs a stage
+  on every Nth page even when it is not needed, to compare engines on a
+  sample.
+- A page type can set `review: true` to be extracted and still held for
+  review: after extraction the page joins the review queue with reason
+  `route_review:<type>`. `classify` copies the flag into route maps; route
+  maps without it behave as before.
+- Engine recipes (`docs/engine-recipes.md`) for putting a stronger engine than
+  Tesseract behind PageLedger: a local vision model through `mlx_vlm.server`
+  or llama.cpp, RapidOCR with the PP-OCRv5 Cyrillic recognizer (the built-in
+  `rapidocr` adapter below), Tesseract's community `orus` model for
+  pre-reform print, Apple Vision on macOS (`examples/apple_vision_adapter.py`)
+  and hosted models through a gateway, each with what it was measured to do
+  well and badly on real pages.
+- A built-in `rapidocr` adapter reads scans with RapidOCR and a PP-OCRv5
+  recognizer you supply, such as the Cyrillic one that keeps pre-reform
+  letters. Install it with `pip install 'pageledger[rapidocr]'`; it runs on
+  the CPU and needs Poppler. `pageledger doctor` reports whether RapidOCR and
+  ONNX Runtime are installed.
+- A built-in `vision` adapter reads pages with a vision model behind an
+  OpenAI-compatible endpoint, on this machine (`llama-server`,
+  `mlx_vlm.server`) or hosted. It renders each page with Poppler within the
+  request's size limit, sends pages to another machine only over `https://`
+  with `allow_remote: true`, reads the key only from a named environment
+  variable, and refuses redirects. Finish states become typed failures,
+  including the new `MODEL_CONTENT_FILTERED` and `MODEL_RECITATION`. In
+  document jobs' image stages it keeps the exact JPEG sent as image evidence.
+  `reasoning_effort` asks a model that reasons before answering to reason
+  less, so its token budget goes to the reading.
+- `pageledger review-sheet JOB --out review.csv` writes a CSV for reviewing a
+  job in a spreadsheet: a link to each page, its disposition, the start of its
+  text and its review reasons, with empty `decision` and `note` columns.
+  `review-job --review review.csv --reviewer NAME` records the decisions after
+  checking the whole sheet against the evidence each row was written from,
+  which a binding file beside the sheet records. A stale, duplicated or
+  formula-bearing row stops the import before anything is recorded, and
+  `--dry-run` checks and counts the decisions without recording them.
+- `pageledger export JOB --format txt|md|jsonl|tei --out FILE` writes a
+  verified job's selected text page by page, with each page's review state,
+  the attempt and engine that produced its text, and the text's SHA-256.
+  `--reviewed-only` keeps only reviewed pages. The TEI is a minimal TEI P5
+  document with a `<pb>` for every source page and reviewed and unreviewed
+  pages marked apart. Links to the source are relative to the exported file.
+
+### Changed
+
+- Document reports list the pages that need a person first, then the rest, and
+  show separately the text the policy selected, whether engines agree on it,
+  and who reviewed it. Reports written before 0.6 keep their layout.
+- Document reports name the source by its path relative to the job directory,
+  so a shared `report.md`, `transcript.md` or `document.json` no longer shows
+  where its owner keeps files. New reports record `report_format: "0.6"`;
+  reports written by 0.5.1 keep their absolute paths and still verify.
+- `init-config` now extracts `sparse`, `table_likely` and `unknown` pages with
+  `review: true`. They were previously routed to review without extraction,
+  so a first `classify` and `run --routes` on a statistical volume extracted
+  none of its tables.
+- `run` now stops with "No extraction route" when a config has no
+  `taxonomy.page_types` and neither `--routes` nor `--adapter` is given.
+  Such a run previously sent every page to review, extracted nothing and
+  exited successfully. Dry runs and deliberate review-only taxonomies still
+  work. Documentation and example configs that omitted the taxonomy now
+  include it or say where to paste them.
+- `process` rejects `run` settings that a document job would ignore: budget,
+  pricing, grading, `rerun_if`, `quarantine_if`, adapter options, rerun depth
+  and consecutive-failure limits. A `run.budget.max_pages: 1` previously let a
+  job process every page without a warning. A leftover `run.adapter` or
+  `taxonomy` now produces a warning, and the processing examples drop both.
+- The `pdf` extra now installs `pypdf[crypto]`, which adds the `cryptography`
+  package. AES-encrypted PDFs that open without a password, typically files
+  that only restrict printing or copying, previously failed in `pdf_text`, in
+  PDF page counting and in `process`; 20 of the library PDFs in our test
+  collection were such files. `process` now accepts them too.
+- In document jobs, a page with the `low_confidence` warning now gets its own
+  hold, reported as "The engine was unsure of some words". It previously
+  shared the `coverage_defect` hold and the wording "Possible missing or
+  incomplete content", which claimed more than an engine's doubt shows. New
+  jobs record `hold_policy: "0.6"`; jobs written by earlier versions keep
+  their original holds and still verify.
+- A document job that reaches a processing limit now pauses instead of
+  halting. A `max_attempt_pages` smaller than the first batch previously
+  stopped the job before any page ran, and a halted job could not continue.
+  The job now processes the pages the limit allows and ends `paused_budget`;
+  `pageledger resume JOB_DIR --raise-limit max_attempt_pages=N` records the
+  higher limit in `limits_history` and continues. Unknown paid usage under a
+  token or cost limit still halts.
+
+### Removed
+
+- `examples/openai_image_adapter.py`, the example image adapter. The built-in
+  `vision` adapter reads pages in a document job's image and second-opinion
+  stages and keeps the same image evidence. To move a config, name
+  `adapter: vision` with `base_url`, `model` and `env_key`; a host other than
+  this machine also needs an `https://` address and `allow_remote: true`.
+  `vision` takes `max_tokens` where the example took `max_output_tokens`, and
+  does not limit models to the Gemini and DeepSeek families.
+
+### Fixed
+
+- Encrypted and damaged PDFs stop with a typed message that names the file:
+  `unsupported_encryption` for a file that needs a password or uses a
+  non-standard handler such as an Internet Archive lending copy,
+  `malformed_pdf` for one pypdf cannot parse, and `missing_crypto_dependency`
+  when AES support is missing. Previously a password-protected or non-PDF file
+  ended `run` with a Python traceback, and a 3.4 GB file with a corrupt
+  cross-reference offset failed with "negative seek value" after `pdf_text`
+  had read the whole file into memory. `pdf_text` now reads PDFs from disk as
+  it parses them. A `process` job halted by such a file records the code, for
+  example `source_container_invalid:unsupported_encryption`, and says what to
+  do next.
+- `pdf_ocr` no longer renders oversized pages at full DPI. Some scans declare
+  pages far larger than the paper: an Internet Archive scan of a 1911
+  provincial memorial book declares pages 1.75 by 2.47 metres, about 600
+  megapixels each at 300 DPI. Each page is now measured first and rendered at
+  the highest DPI that fits within the new `max_render_pixels` adapter option
+  (default 60,000,000). A lowered page carries the warning
+  `render_dpi_capped`, and its provenance records both values, for example
+  `dpi=94 (requested 300)`. A page that would need less than 72 DPI stops with
+  `render_limit`.
+- `pdf_ocr` no longer downsamples scans filed on undersized pages. An 1872
+  volume declares 18 by 29 mm pages holding scans about 440 pixels wide, which
+  300 DPI rendered at half their resolution. When pypdf is installed, a page
+  whose largest embedded image has a higher resolution than the requested DPI
+  is rendered at the image's resolution, up to 1200 DPI, and its provenance
+  says so, for example `dpi=621 (requested 300, native image)`. Image sizes
+  are read from the PDF without decoding the images, once per file.
+- A missing `pdftoppm`, `tesseract` or Tesseract language pack now stops a
+  `pdf_ocr` run before any page is read, with a message such as
+  `missing_language_pack: ... Installed: eng, osd`. Previously the run started,
+  failed on the first page, and showed only `RuntimeError: <redacted>`.
+  PageLedger's own setup diagnostics carry a typed code and are shown in full;
+  messages from adapters stay redacted. A page that fails with a typed
+  failure now names its code and HTTP status, for example
+  `AdapterFailure: MODEL_QUOTA (HTTP 429)`, on screen and in `run.log`,
+  whichever adapter raised it: the codes come from a fixed list.
+- Directory inputs skip hidden files such as macOS `.DS_Store` and `._*`
+  sidecars. A `.DS_Store` file previously became the first document of a run
+  and shifted every document number; on PDF adapters it failed the run. Skipped
+  names are reported as `skipped_inputs` in the run result and manifest.
+- Replay no longer fails as an incompatible environment when the replay worker
+  reports the same text encoding with different capitalization ("UTF-8"
+  versus "utf-8"). This happened wherever no `LANG` was set, because Python's
+  locale coercion changes the child process's report. Profiles now record
+  canonical codec names, and bundles recorded before the fix still replay.
+
+### Maintenance
+
+- A real-document harness for evaluating releases. `corpus/manifest.public.yml`
+  lists 23 public-domain scans with their source, SHA-256 and the pages each
+  tier runs. `scripts/corpus/run.py` runs a tier as verified document jobs,
+  `compare.py` shows what changed between two runs, `sweep.py` checks that every
+  PDF under a folder opens, and `score.py` scores a run, or one stage's engine
+  within it, against reference transcriptions, reproducing the calibration
+  grader's numbers.
+- Documentation tests: every complete config in the docs and in
+  `docs/examples/` loads, every relative link and heading anchor resolves,
+  version strings in the README, docs index, skill and route-map
+  specification match the package, and the README's first run executes.
+
+### Compatibility
+
+- New artifact fields are optional, so artifacts written by earlier versions
+  still validate: `skipped_inputs` in manifests and checkpoints, the seven new
+  `text_quality` counts in quality lines, and `hold_policy` and
+  `limits_history` in jobs and document reports. Job and report `status` may
+  now be `paused_budget`, and a report's `report_format` may be `"0.6"`. Eight
+  retained 0.5.1 document jobs, seven of them with `low_confidence` pages, pass
+  `verify-job` unchanged.
+- The `pdf` extra adds `cryptography` (through `pypdf[crypto]`), and the new
+  `rapidocr` extra installs RapidOCR and ONNX Runtime. Core still depends only
+  on PyYAML.
+
 ## 0.5.2 - 2026-09-12
 
 ### Fixed

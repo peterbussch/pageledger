@@ -41,7 +41,83 @@ require zero automatic retries and stop after a failed or uncertain request.
 See [checkpoint recovery](checkpoint-spec.md) and
 [image input evidence](image-evidence-spec.md) for durable response handling.
 
-## Python sketch
+## Write and check a small adapter
+
+This complete example reads a text file whose pages are separated by form
+feeds. Save it as
+`toy_adapter.py` beside `pageledger.yml`. It uses the actual result type from
+PageLedger, rather than defining a competing protocol type.
+
+```python
+from pathlib import Path
+from typing import ClassVar
+
+from pageledger.adapters import ExtractionResult, adapter_conformance_check
+
+
+class ToyAdapter:
+    name: ClassVar[str] = "toy"
+    version: ClassVar[str] = "1"
+    deterministic: ClassVar[bool] = True
+    input_types: ClassVar[tuple[str, ...]] = ("text",)
+    output_types: ClassVar[tuple[str, ...]] = ("text",)
+    capabilities: ClassVar[tuple[str, ...]] = ("embedded_text", "local")
+
+    def supports(self, action: str) -> bool:
+        return action == "transcribe_text"
+
+    def page_count(self, source: Path) -> int:
+        return source.read_text(encoding="utf-8").count("\f") + 1
+
+    def extract(
+        self,
+        source: Path,
+        *,
+        page_id: str,
+        page_number: int,
+        action: str,
+        prompt: str | None = None,
+    ) -> ExtractionResult:
+        if not self.supports(action):
+            raise ValueError(f"Toy adapter does not support action: {action}")
+        _ = page_id, prompt
+        pages = source.read_text(encoding="utf-8").split("\f")
+        return ExtractionResult(
+            content=pages[page_number - 1], format="text", confidence=None,
+            model="toy-1", warnings=[], usage={"pages": 1},
+        )
+
+
+if __name__ == "__main__":
+    issues = adapter_conformance_check(ToyAdapter())
+    if issues:
+        raise SystemExit("\n".join(issues))
+    print("ToyAdapter conforms")
+```
+
+Run `python toy_adapter.py`; an empty issue list prints `ToyAdapter conforms`.
+Then configure the adapter in a complete config (the taxonomy is required):
+
+```yaml
+schema_version: "0.1"
+taxonomy:
+  page_types:
+    prose:
+      default_action: transcribe_text
+run:
+  adapter: toy_adapter:ToyAdapter
+```
+
+For `sample.txt`, containing one or more form-feed-separated pages, run
+`pageledger run sample.txt --config pageledger.yml --out runs/toy
+--adapter-path .`. A conformance check validates declared shape; it does not
+prove extraction correctness. Add tests for supported actions, page numbering,
+input handling, and failures. An image adapter follows the same one-call,
+one-page contract: declare `input_types = ("image",)` and return
+`usage={"pages": 1}` for each image file. A directory of image files is a set
+of inputs, not one multi-page source.
+
+## Python protocol reference
 
 ```python
 from dataclasses import dataclass
@@ -106,45 +182,35 @@ not invent their own prompt hashes.
 
 ### Resumable execution
 
-`run --resumable` uses the same adapter protocol. It records a durable request
-start before calling `extract()`, saves the returned result before publishing
-page artifacts, and records completion only after the page evidence is ready.
-`resume` verifies and reuses retained responses without calling `extract()`
-again. Adapter construction and metadata/profile checks can still occur;
-constructors and page-count hooks should not perform extraction requests.
+Resumable runs and document jobs use the same adapter protocol. Resume reuses
+saved responses without calling `extract()` again, but it still constructs
+the adapter and checks its metadata, so constructors and page-count hooks must
+not make extraction requests. Resumable execution needs zero automatic retries
+and `on_page_error: stop`. Recovery cannot see retries made inside an adapter
+or know whether a provider processed a request twice; if your adapter
+retries, say so in its own documentation. The recovery rules are in the
+[checkpoint specification](checkpoint-spec.md).
 
-The initial resumable mode requires `run.retry.max_retries: 0` and
-`run.on_page_error: stop` (both are defaults). A request interrupted before a
-durable outcome is `outcome_unknown`, even if a text file survived. PageLedger
-does not infer whether a remote provider processed it and does not retry it
-automatically. A recorded failure also halts queued pages. Adapter exception
-messages and stdout/stderr remain redacted; safe typed outcome and available
-HTTP status are diagnostic evidence, not proof of the root cause.
+Use `pageledger.adapters.AdapterFailure(code, http_status=None,
+partial_result=None)` for a typed terminal failure. Codes are
+`MODEL_TIMEOUT`, `MODEL_HTTP_ERROR`, `MODEL_QUOTA`, `MODEL_OUTPUT_TRUNCATED`,
+`MODEL_NETWORK_ERROR`, `MODEL_INVALID_RESPONSE`, `MODEL_EMPTY_RESPONSE`,
+`MODEL_CONTENT_FILTERED`, `MODEL_RECITATION`,
+`MODEL_UNAVAILABLE`, `IMAGE_RENDER_ERROR`, and `IMAGE_EVIDENCE_INVALID`.
+`http_status` is an integer 100–599 or null. `partial_result` is an
+`ExtractionResult` or null. Resumable runs and document jobs validate a
+partial result and keep it, with its usage, in the failure record; they never
+complete or retry that page. A malformed partial result is discarded and the
+failure is reported as `IMAGE_EVIDENCE_INVALID`. An ordinary run keeps no
+partial result, and typed failures bypass its retries: use `--resumable` when
+partial output must survive. Adapter messages and stdout/stderr are redacted;
+failure codes and HTTP status do not prove a root cause.
 
 Adapters must report the actual returned model and usage when available.
 An optional `ExtractionResult.input_evidence` dictionary records an exact page
 JPEG and its rendering/request identity; see
 [`image-evidence-spec.md`](image-evidence-spec.md). It defaults to null, so old
 adapters remain compatible.
-
-Use `pageledger.adapters.AdapterFailure(code, http_status=None,
-partial_result=None)` for a typed terminal failure. Codes are
-`MODEL_TIMEOUT`, `MODEL_HTTP_ERROR`, `MODEL_QUOTA`, `MODEL_OUTPUT_TRUNCATED`,
-`MODEL_NETWORK_ERROR`, `MODEL_INVALID_RESPONSE`, `MODEL_EMPTY_RESPONSE`,
-`MODEL_UNAVAILABLE`, `IMAGE_RENDER_ERROR`, and `IMAGE_EVIDENCE_INVALID`.
-`http_status` is an integer 100–599 or null. `partial_result` is an
-`ExtractionResult` or null. The resumable runner validates and retains any
-partial result, including truncated text and reported usage, in the failed
-receipt. It never completes that page or retries it. A malformed partial
-result is discarded and the receipt reports `IMAGE_EVIDENCE_INVALID`.
-Typed failures also bypass ordinary runner retries; use resumable execution
-when durable partial output is required.
-
-Recovery preserves that evidence, including null monetary cost. It cannot
-observe retries hidden inside an adapter or establish provider-side
-idempotency. Keep such behavior explicit in the adapter's own contract.
-See [`checkpoint-spec.md`](checkpoint-spec.md) for persistence and identity
-checks.
 
 ## The `usage.pages` contract
 
@@ -196,9 +262,10 @@ missing metadata: doing so would make provenance claims the adapter did not
 make. Classes and factories are constructed once per execution.
 
 If the adapter can count pages before extraction, expose `page_count(source)`
-returning a positive integer. Adapters without this hook fall back to the
-generic paginator (form-feed for text, 1 page for unknown types, pypdf for PDFs
-when the adapter is in `PDF_ADAPTER_NAMES`).
+returning a positive integer. Without this hook, a text file is split at form
+feeds and any other file, a PDF included, counts as one page. A dry run does
+not load the adapter, so it plans one page per PDF for a custom adapter even
+when the adapter has this hook.
 
 ### Adapter options
 
@@ -252,7 +319,7 @@ only the materials the adapter declares, not every imported dependency or
 their authenticity. Cloud adapters are evidence-compared because cloud
 identity and service state are outside this contract. See the [replay
 boundary](capabilities-and-limits.md#verified-replay-boundary); this feature is
-intentionally non-hermetic.
+not isolated from external software, credentials, services, or machine state.
 
 ### Finding the adapter module
 
@@ -294,7 +361,7 @@ pageledger run report.pdf --config pageledger.yml \
 ```
 
 The standard pipeline performs local OCR, layout analysis, and table
-recognition. For the dogfooded local VLM pass, set `pipeline: vlm` and
+recognition. To run the example's local VLM pass, set `pipeline: vlm` and
 `vlm_model: smoldocling`. The example never enables
 Docling remote services or external plugins. Docling may download model assets
 on first use, so prewarm it before an offline run.
@@ -437,8 +504,14 @@ Adapters should return `ExtractionResult` instances with:
 | `model` | string or null | Model or OCR engine identifier. |
 | `warnings` | array | Non-fatal quality issues (empty list if none). Preserved in provenance and copied into `quality.jsonl`, so they affect grades and audit routing. |
 | `usage` | object | **`pages` must be 1**; `tokens`, `compute_seconds`, `cost_usd` optional/nullable. |
-| `confidence_detail` | object or null | Optional engine-native confidence evidence, adapter-defined shape; recorded into `quality.jsonl` verbatim. `pdf_ocr` fills Tesseract per-word statistics (`scale`, `word_count`, `mean`, `min`, `below_60_count`, `below_60_ratio`). |
+| `confidence_detail` | object or null | Optional engine-native confidence data, adapter-defined shape; recorded into `quality.jsonl` verbatim. `pdf_ocr` fills Tesseract per-word statistics (`scale`, `word_count`, `mean`, `min`, `below_60_count`, `below_60_ratio`). |
 | `input_evidence` | object or null | Optional exact page image descriptor; shape, file containment, hashes and dimensions follow [the image evidence contract](image-evidence-spec.md). |
+
+An adapter whose output a model generates, and so can contain text that is
+not on the page, should declare `generative` in `capabilities`. Document jobs
+keep such a reading in review until another engine agrees with it; see
+[Compare engines on a page](processing-spec.md#compare-engines-on-a-page).
+PageLedger never infers the capability from an adapter's name.
 
 ## Adapter candidates
 
@@ -449,18 +522,19 @@ Adapters should return `ExtractionResult` instances with:
 - olmOCR for LLM-oriented PDF extraction.
 - API VLMs through OpenAI-compatible clients.
 
-Built-in adapters: `text`, `pdf_text` (through `pageledger[pdf]`), and
-`pdf_ocr` (through locally installed poppler + Tesseract). Anything stronger
-is a custom adapter; the adapter contract matters more than adapter breadth.
+Built-in adapters: `text`, `pdf_text` (through `pageledger[pdf]`), `pdf_ocr`
+(through locally installed Poppler and Tesseract), and
+[`vision`](vision-adapter.md), which sends page images to a local or hosted
+vision model. Anything else is a custom adapter; the adapter contract matters
+more than adapter breadth.
 
-Copy-paste examples live in `examples/`:
+Runnable examples live in `examples/`:
 
-- `tesseract_pdftoppm_adapter.py`
+- `tesseract_pdftoppm_adapter.py`: compatibility import for existing configs;
+  new configs should use the built-in `pdf_ocr` adapter
 - `docling_adapter.py`: machine-level standard or local-VLM Docling conversion,
   document-batched into page-level Markdown
 - `cloud_vlm_adapter_skeleton.py`
-- `openai_image_adapter.py`: bounded image requests over an OpenAI-compatible
-  transport, restricted to explicit Gemini or DeepSeek model names
 - `prereform_normalizer_adapter.py`: OCR plus pre-1918 Russian orthography
   canonicalization, with the rewrite recorded as a result warning
 

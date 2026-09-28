@@ -1,0 +1,70 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/peterbussch/pageledger/schemas/review-sheet-binding.json",
+  "title": "PageLedger Review Sheet Binding",
+  "description": "Written beside a review sheet as <sheet>.binding.json. For each row it records the evidence the row was written from; importing the sheet refuses a row whose evidence has changed since.",
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "const": "0.1"
+    },
+    "bindings": {
+      "type": "object",
+      "propertyNames": {
+        "pattern": "^p[0-9]{4,}$"
+      },
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "job_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "source_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "page_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "page_number": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "selected_attempt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "output_sha256": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "job_id",
+          "source_sha256",
+          "page_id",
+          "page_number",
+          "selected_attempt",
+          "output_sha256"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": [
+    "schema_version",
+    "bindings"
+  ],
+  "additionalProperties": false
+}

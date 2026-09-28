@@ -13,6 +13,11 @@ Run it against a run produced by plain ``pdf_ocr`` — not instead of one:
 
 with ``normalized.yml`` naming this adapter:
 
+    schema_version: "0.1"
+    taxonomy:
+      page_types:
+        prose:
+          default_action: transcribe_text
     run:
       adapter: prereform_normalizer_adapter:PrereformNormalizerAdapter
       adapter_options:
@@ -21,8 +26,10 @@ with ``normalized.yml`` naming this adapter:
 
 That keeps the un-normalized parent run as the original evidence
 (canonicalization must preserve the original — Piotrowski, *NLP for
-Historical Texts*, 2012, ch. 4) and `pageledger compare-runs` shows every
-page the normalization touched. The character count of applied
+Historical Texts*, 2012, ch. 4). `rerun` normalizes only pages listed in the
+parent's rerun manifest; use a separate `run` with this adapter for a
+whole-document normalization. `pageledger compare-runs` shows changed pages.
+The character count of applied
 replacements is recorded as a result warning so the rewrite is visible in
 provenance, never silent.
 

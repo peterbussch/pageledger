@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 import yaml
 
@@ -50,8 +51,25 @@ def _safe_resolve(path: Path) -> Path | None:
             return resolved.joinpath(*reversed(unresolved))
 
 
+def write_text_atomic(path: Path, text: str) -> None:
+    """Write text in full or not at all.
+
+    The text goes to a hidden sibling file that then replaces path, so a
+    failed write (a full disk, say) never leaves a truncated artifact. Keep
+    to pathlib calls: the benchmark's mutation trace follows only those.
+    """
+    temporary = path.with_name(f".{path.name}.{uuid4().hex}.partial")
+    try:
+        temporary.write_text(text, encoding="utf-8")
+        temporary.replace(path)
+    except BaseException:
+        temporary.unlink(missing_ok=True)
+        raise
+
+
 def write_json(path: Path, data: dict[str, Any]) -> None:
-    path.write_text(
+    write_text_atomic(
+        path,
         json.dumps(
             data,
             ensure_ascii=False,
@@ -60,15 +78,14 @@ def write_json(path: Path, data: dict[str, Any]) -> None:
             allow_nan=False,
         )
         + "\n",
-        encoding="utf-8",
     )
 
 
 def write_jsonl(path: Path, entries: list[dict[str, Any]]) -> None:
     """Write a list of dicts as JSONL (one JSON object per line)."""
-    path.write_text(
+    write_text_atomic(
+        path,
         "".join(json.dumps(e, sort_keys=True, allow_nan=False) + "\n" for e in entries),
-        encoding="utf-8",
     )
 
 
@@ -126,14 +143,14 @@ def write_yaml(path: Path, data: dict[str, Any]) -> None:
     c_safe_dumper = getattr(yaml, "CSafeDumper", None)
     if c_safe_dumper is not None and _can_use_c_safe_dumper(data):
         dumper = c_safe_dumper
-    path.write_text(
+    write_text_atomic(
+        path,
         yaml.dump(
             data,
             Dumper=dumper,
             allow_unicode=True,
             sort_keys=False,
         ),
-        encoding="utf-8",
     )
 
 
@@ -187,6 +204,7 @@ def build_manifest(
     extractors: list[dict[str, Any]] | None = None,
     routing: dict[str, Any] | None = None,
     escalation: dict[str, Any] | None = None,
+    skipped_inputs: list[str] | None = None,
 ) -> dict[str, Any]:
     manifest: dict[str, Any] = {
         "schema_version": schema_version,
@@ -218,6 +236,8 @@ def build_manifest(
             "quality_warning_pages": quality_warning_pages,
         },
     }
+    if skipped_inputs:
+        manifest["skipped_inputs"] = skipped_inputs
     if pages_failed:
         manifest["summary"]["pages_failed"] = pages_failed
     if pages_not_attempted:

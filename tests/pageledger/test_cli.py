@@ -839,35 +839,53 @@ def test_json_error_on_missing_config(tmp_path: Path) -> None:
 # =========================================================================
 
 
-def test_config_empty_page_types_prints_warning(tmp_path: Path) -> None:
-    """Empty taxonomy.page_types triggers a config warning."""
+NO_TAXONOMY_CONFIG = 'schema_version: "0.1"\nrun:\n  adapter: text\n'
+
+
+@pytest.mark.parametrize("taxonomy", ["", "taxonomy:\n  page_types: {}\n"])
+def test_run_without_extraction_route_fails_with_guidance(tmp_path: Path, taxonomy: str) -> None:
+    """A config that would send every page to review extracts nothing; say so and stop."""
     source = tmp_path / "sample.txt"
-    source.write_text("test\n", encoding="utf-8")
+    source.write_text("one\ftwo\n", encoding="utf-8")
     config = tmp_path / "config.yml"
-    config.write_text(
-        textwrap.dedent("""\
-        schema_version: "0.1"
-        taxonomy:
-          page_types: {}
-        run:
-          adapter: text
-        """),
-        encoding="utf-8",
-    )
+    config.write_text(NO_TAXONOMY_CONFIG + taxonomy, encoding="utf-8")
     out_dir = tmp_path / "out"
     exit_code, stdout, stderr = _run_cli(
         ["run", str(source), "--config", str(config), "--out", str(out_dir)]
     )
-    assert exit_code == 0
-    assert "Config warnings" in stdout or True  # warning surfaces in human output
+    message = stdout + stderr
+    assert exit_code != 0
+    assert "No extraction route" in message
+    assert "taxonomy.page_types" in message and "--routes" in message
+    assert not (out_dir / "manifest.json").exists()
 
-    exit_code2, stdout2, stderr2 = _run_cli(
-        ["run", str(source), "--config", str(config), "--out", str(tmp_path / "out2"), "--json"]
+
+def test_explicit_review_only_taxonomy_still_runs(tmp_path: Path) -> None:
+    """Mapping a page type to review is an explicit choice, not a silent no-op."""
+    source = tmp_path / "sample.txt"
+    source.write_text("one\n", encoding="utf-8")
+    config = tmp_path / "config.yml"
+    config.write_text(
+        NO_TAXONOMY_CONFIG + "taxonomy:\n  page_types:\n    prose:\n      default_action: review\n",
+        encoding="utf-8",
     )
-    assert exit_code2 == 0
-    result = json.loads(stdout2)
-    config_warnings = result.get("config_warnings", [])
-    assert any("empty" in w.lower() for w in config_warnings)
+    exit_code, stdout, _ = _run_cli(
+        ["run", str(source), "--config", str(config), "--out", str(tmp_path / "out"), "--json"]
+    )
+    assert exit_code == 0
+    assert json.loads(stdout)["summary"]["pages_extracted"] == 0
+
+
+def test_dry_run_without_taxonomy_is_allowed(tmp_path: Path) -> None:
+    """A dry run extracts nothing by design, so it needs no extraction route."""
+    source = tmp_path / "sample.txt"
+    source.write_text("one\n", encoding="utf-8")
+    config = tmp_path / "config.yml"
+    config.write_text(NO_TAXONOMY_CONFIG, encoding="utf-8")
+    exit_code, _, _ = _run_cli(
+        ["run", str(source), "--config", str(config), "--out", str(tmp_path / "out"), "--dry-run"]
+    )
+    assert exit_code == 0
 
 
 def test_config_unknown_top_level_key_triggers_warning(tmp_path: Path) -> None:
@@ -1736,3 +1754,48 @@ def test_inspect_run_reports_grades_and_csv_columns(tmp_path: Path) -> None:
     assert exit_code == 0
     assert "Grades (schema): A=0 B=0 C=0 D=1 F=0" in stdout
     assert "\nGrades: " not in stdout
+
+
+def test_directory_input_skips_hidden_and_appledouble_files(tmp_path: Path) -> None:
+    """Hidden files such as .DS_Store and AppleDouble ._* sidecars are skipped and reported."""
+    indir = tmp_path / "inputs"
+    indir.mkdir()
+    (indir / "a.txt").write_text("page one\fpage two\n", encoding="utf-8")
+    (indir / ".DS_Store").write_bytes(b"x")
+    (indir / "._a.txt").write_bytes(b"\x00\x05\x16\x07")
+    config = tmp_path / "config.yml"
+    config.write_text(MINIMAL_CONFIG, encoding="utf-8")
+    out_dir = tmp_path / "out"
+    exit_code, stdout, _ = _run_cli(
+        ["run", str(indir), "--config", str(config), "--out", str(out_dir), "--json"]
+    )
+    assert exit_code == 0
+    result = json.loads(stdout)
+    manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
+    assert [Path(item["path"]).name for item in manifest["inputs"]] == ["a.txt"]
+    assert set(result["skipped_inputs"]) == {"._a.txt", ".DS_Store"}
+    assert set(manifest["skipped_inputs"]) == {"._a.txt", ".DS_Store"}
+
+
+def test_directory_with_only_hidden_files_is_an_error(tmp_path: Path) -> None:
+    """A folder holding nothing but hidden files is not a silent empty run."""
+    indir = tmp_path / "inputs"
+    indir.mkdir()
+    (indir / ".DS_Store").write_bytes(b"x")
+    config = tmp_path / "config.yml"
+    config.write_text(MINIMAL_CONFIG, encoding="utf-8")
+    exit_code, stdout, stderr = _run_cli(
+        ["run", str(indir), "--config", str(config), "--out", str(tmp_path / "out")]
+    )
+    assert exit_code != 0
+    assert "No input files found" in stdout + stderr
+
+
+def test_explicit_hidden_file_argument_is_honored(tmp_path: Path) -> None:
+    """A hidden file named on the command line is still processed."""
+    source = tmp_path / ".notes.txt"
+    source.write_text("kept\n", encoding="utf-8")
+    exit_code, _, _ = _run_cli(
+        ["run", str(source), "--adapter", "text", "--out", str(tmp_path / "out")]
+    )
+    assert exit_code == 0

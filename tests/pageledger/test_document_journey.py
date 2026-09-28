@@ -35,7 +35,7 @@ def test_document_first_run_journey_records_recovery_and_bounded_review(
             "--source-root",
             str(ROOT),
             "--expected-version",
-            "0.5.2",
+            "0.6.0",
         ],
         cwd=ROOT,
         env=environment,

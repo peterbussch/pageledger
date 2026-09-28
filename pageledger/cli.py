@@ -15,6 +15,7 @@ from .aligner import align_run
 from .classifier import classify
 from .compare import compare_runs, render_comparison
 from .doctor import build_doctor_report
+from .export import FORMATS, export_job
 from .grading import GRADES, grade_basis_label
 from .replay import bundle_run, replay_bundle
 from .reports import inspect_run, run_pages_csv
@@ -27,14 +28,18 @@ MINIMAL_CONFIG = textwrap.dedent("""\
       page_types:
         blank:
           default_action: skip
+        # review: true extracts these pages and still keeps them for review.
         sparse:
-          default_action: review
+          default_action: transcribe_text
+          review: true
         prose:
           default_action: transcribe_text
         table_likely:
-          default_action: review
+          default_action: transcribe_text
+          review: true
         unknown:
-          default_action: review
+          default_action: transcribe_text
+          review: true
     # For tabular work, add a schema section (columns, aliases, checks) so
     # structured adapter output lands in normalized/ with graded evidence,
     # and a run.grading section to act on grades. Commented reference:
@@ -82,12 +87,34 @@ def build_parser() -> argparse.ArgumentParser:
         ("inspect-job", "Show a document report"),
         ("verify-job", "Verify document source, attempts, selection and report"),
         ("review-job", "Apply source/output-bound human review without extraction"),
+        ("review-sheet", "Write a CSV for reviewing a document job in a spreadsheet"),
     ):
         job_parser = subparsers.add_parser(command, help=help_text)
         job_parser.add_argument("job_dir", type=Path)
         job_parser.add_argument("--json", action="store_true", dest="json_output")
         if command == "review-job":
             job_parser.add_argument("--review", type=Path, required=True)
+            job_parser.add_argument(
+                "--reviewer",
+                help="Name recorded with review-sheet decisions (or PAGELEDGER_REVIEWER)",
+            )
+            job_parser.add_argument(
+                "--dry-run", action="store_true", help="Check every decision without recording any"
+            )
+        elif command == "review-sheet":
+            job_parser.add_argument(
+                "--out", type=Path, required=True, help="CSV to write; its binding goes beside it"
+            )
+
+    export_parser = subparsers.add_parser(
+        "export", help="Write a verified document job's text as txt, md, jsonl or TEI"
+    )
+    export_parser.add_argument("job_dir", type=Path)
+    export_parser.add_argument("--format", choices=FORMATS, required=True)
+    export_parser.add_argument("--out", type=Path, required=True)
+    export_parser.add_argument(
+        "--reviewed-only", action="store_true", help="Only pages with a human review receipt"
+    )
 
     run_parser = subparsers.add_parser(
         "run",
@@ -140,6 +167,13 @@ def build_parser() -> argparse.ArgumentParser:
     resume_parser = subparsers.add_parser("resume", help="Resume verified pending work in place")
     resume_parser.add_argument("run_dir", type=Path)
     resume_parser.add_argument("--adapter-path", type=Path, default=None)
+    resume_parser.add_argument(
+        "--raise-limit",
+        action="append",
+        default=[],
+        metavar="LIMIT=VALUE",
+        help="Raise a processing limit of a document job paused by it, e.g. max_attempt_pages=50",
+    )
     resume_parser.add_argument("--json", action="store_true", dest="json_output")
 
     rerun_parser = subparsers.add_parser(
@@ -306,6 +340,8 @@ def main(argv: list[str] | None = None) -> int:
         "inspect-job": _cmd_job,
         "verify-job": _cmd_job,
         "review-job": _cmd_job,
+        "review-sheet": _cmd_job,
+        "export": _cmd_export,
         "init-config": _cmd_init_config,
         "inspect-run": _cmd_inspect_run,
         "compare-runs": _cmd_compare_runs,
@@ -570,6 +606,9 @@ def _cmd_run(args: argparse.Namespace) -> int:
         print(f"PageLedger run {result['run_id']} wrote {result['out_dir']}")
         summary = result["summary"]
         print(f"Pages: {summary['pages_extracted']} extracted / {summary['pages_total']} total")
+        skipped = result.get("skipped_inputs", [])
+        if skipped:
+            print(f"Skipped hidden files ({len(skipped)}): {', '.join(skipped)}")
         print(f"Raw artifacts: {result['raw_artifact_count']}")
         print(f"Quality warning pages: {result['quality_warning_pages']}")
         _print_run_cost(args.out, dry_run=result["dry_run"])
@@ -612,11 +651,26 @@ def _cmd_classify(args: argparse.Namespace) -> int:
     return 0
 
 
+def _parse_limit_raises(items: list[str]) -> dict[str, int | float]:
+    raised: dict[str, int | float] = {}
+    for item in items:
+        name, _, text = item.partition("=")
+        try:
+            value: int | float = int(text) if text.strip().isdigit() else float(text)
+        except ValueError:
+            raise ValueError(f"--raise-limit expects LIMIT=NUMBER, got {item!r}") from None
+        raised[name.strip()] = value
+    return raised
+
+
 def _cmd_resume(args: argparse.Namespace) -> int:
+    raised = _parse_limit_raises(args.raise_limit)
     if (args.run_dir / "job.json").exists():
         from .processing import resume_job
 
-        result = resume_job(args.run_dir, adapter_path=args.adapter_path)
+        result = resume_job(args.run_dir, adapter_path=args.adapter_path, raise_limits=raised)
+    elif raised:
+        raise ValueError("--raise-limit applies to document jobs made by pageledger process")
     else:
         result = resume(args.run_dir, adapter_path=args.adapter_path)
     if args.json_output:
@@ -624,11 +678,13 @@ def _cmd_resume(args: argparse.Namespace) -> int:
     else:
         print(f"PageLedger {result.get('job_id', result.get('run_id'))} wrote {result['out_dir']}")
         print(f"Status: {result['status']}")
+        if result.get("next_action"):
+            print(result["next_action"])
     return 1 if result["status"] in {"failed", "halted"} else 0
 
 
 def _cmd_job(args: argparse.Namespace) -> int:
-    from .processing import process, review_job, verify_job
+    from .processing import create_review_sheet, process, review_job, verify_job
 
     if args.command == "process":
         result = process(
@@ -640,7 +696,9 @@ def _cmd_job(args: argparse.Namespace) -> int:
             review_path=args.review,
         )
     elif args.command == "review-job":
-        result = review_job(args.job_dir, args.review)
+        result = review_job(args.job_dir, args.review, reviewer=args.reviewer, dry_run=args.dry_run)
+    elif args.command == "review-sheet":
+        result = create_review_sheet(args.job_dir, args.out)
     elif args.command == "verify-job":
         result = verify_job(args.job_dir)
     else:
@@ -652,13 +710,27 @@ def _cmd_job(args: argparse.Namespace) -> int:
         print(json.dumps(result, ensure_ascii=False, sort_keys=True))
     else:
         print(f"Status: {result['status']}")
+        if "decisions" in result:
+            counts = sorted(result["decisions"].items())
+            print("Decisions: " + (", ".join(f"{name} {n}" for name, n in counts) or "none"))
+        if "binding" in result:
+            print(f"Review sheet: {result['out']} ({result['rows']} pages)")
+            print(f"Binding: {result['binding']}")
         if result.get("report"):
             print(f"Report: {result['report']}")
         if result.get("next_action"):
             print(result["next_action"])
+        for warning in result.get("config_warnings", []):
+            print(f"Config warning: {warning}")
         if result.get("error"):
             print(result["error"], file=sys.stderr)
     return 1 if result.get("status") in {"halted", "failed", "fail"} else 0
+
+
+def _cmd_export(args: argparse.Namespace) -> int:
+    count = export_job(args.job_dir, args.out, format=args.format, reviewed_only=args.reviewed_only)
+    print(f"Exported {count} pages to {args.out}")
+    return 0
 
 
 # -- rerun ---------------------------------------------------------------------

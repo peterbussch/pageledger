@@ -228,7 +228,7 @@ def test_dry_run_writes_auditable_artifacts(tmp_path):
 
 
 def test_package_exports_release_version():
-    assert pageledger.__version__ == "0.5.2"
+    assert pageledger.__version__ == "0.6.0"
 
 
 def test_dry_run_expands_directory_inputs_in_stable_order(tmp_path):
@@ -1697,6 +1697,7 @@ def test_cli_doctor_json_redacts_environment_values(monkeypatch, capsys):
     report = json.loads(captured.out)
     assert report["pageledger_version"] == pageledger.__version__
     assert report["optional_packages"]["pypdf"]["available"] in {True, False}
+    assert set(report["optional_packages"]) == {"pypdf", "rapidocr", "onnxruntime"}
     assert report["external_commands"]["tesseract"]["available"] in {True, False}
     assert report["cloud_environment"]["GOOGLE_API_KEY"]["set"] is True
     assert report["cloud_environment"]["GOOGLE_API_KEY"]["value"] == "<redacted>"

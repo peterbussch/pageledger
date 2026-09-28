@@ -122,17 +122,17 @@ def test_source_links_preserve_filename_characters(tmp_path, filename):
     from urllib.parse import quote, unquote, urlsplit
 
     job = job_fixture(tmp_path)
-    job["source"]["path"] = f"/documents/{filename}"
+    job["source"]["path"] = str(tmp_path.parent / "documents" / filename)
     article = "https://example.org/article?q=synthetic%20draft#section"
     job["links"]["article"] = article
     report = write_document_report(job, tmp_path)
     source_link = report["pages"][0]["source_link"]
     parsed = urlsplit(source_link)
-    assert unquote(parsed.path) == job["source"]["path"]
+    assert unquote(parsed.path) == f"../documents/{filename}"
     assert parsed.query == ""
     assert parsed.fragment == "page=1"
     markdown = render_document_report(report)
-    assert f"(<{quote(job['source']['path'], safe='/')}>)" in markdown
+    assert f"(<{quote(f'../documents/{filename}', safe='/')}>)" in markdown
     assert f"(<{source_link}>)" in markdown
     assert f"(<{source_link}>)" in render_transcript(report)
     assert f"(<{article}>)" in markdown
@@ -160,6 +160,60 @@ def test_report_keeps_partial_evidence_without_selecting_it(tmp_path):
     job["pages"][0]["selected_attempt"] = "a2"
     with pytest.raises(ValueError, match="completed"):
         write_document_report(job, tmp_path)
+
+
+def test_report_lists_only_clean_selected_comparison_evidence():
+    from pageledger.document_report import _recorded_concerns
+
+    page = {
+        "selected_attempt": "ocr",
+        "review_reasons": ["engine_disagreement", "numeric_disagreement"],
+        "attempts": [
+            {
+                "attempt_id": "ocr",
+                "outcome": "completed",
+                "warnings": [],
+                "raw_artifact": "ocr.md",
+                "raw_sha256": "a" * 64,
+                "text": "ocr text",
+            },
+            {
+                "attempt_id": "clean",
+                "outcome": "completed",
+                "warnings": [],
+                "raw_artifact": "clean.md",
+                "raw_sha256": "b" * 64,
+                "text": "clean text",
+            },
+            {
+                "attempt_id": "held",
+                "outcome": "completed",
+                "warnings": ["coverage_defect"],
+                "raw_artifact": "held.md",
+                "raw_sha256": "c" * 64,
+                "text": "held text",
+            },
+        ],
+        "comparisons": [
+            {
+                "left_attempt": "ocr",
+                "right_attempt": "clean",
+                "agreement_ratio": 0.4,
+                "number_differences": [{"number": "12", "side": "left", "context": "row"}],
+            },
+            {
+                "left_attempt": "ocr",
+                "right_attempt": "held",
+                "agreement_ratio": 0.1,
+                "number_differences": [{"number": "99", "side": "right", "context": "row"}],
+            },
+        ],
+    }
+
+    concerns = _recorded_concerns(page, {"coverage_defect": "coverage_defect"})
+
+    assert "ocr and clean" in concerns
+    assert "ocr and held" not in concerns
 
 
 @pytest.mark.parametrize("mutation", ["tampered", "traversal", "absolute", "symlink", "non_utf8"])
@@ -411,13 +465,66 @@ def test_current_report_separates_selected_ocr_from_historical_blank_hold(tmp_pa
     report = build_document_report(job, tmp_path)
     rendered = render_document_report(report)
 
-    assert report["report_format"] == "0.5.1"
-    assert "| Page | Current output | Review status | Recorded concerns |" in rendered
+    assert report["report_format"] == "0.6"
+    assert (
+        "| Page | Selected text | Engine agreement | Human review | Recorded concerns |" in rendered
+    )
     assert "Local OCR" in rendered
     assert "Candidate blank" in rendered
-    assert "Review required" in rendered
+    assert "not reviewed" in rendered
     assert "empty text returned by Local text" in rendered
     assert "OCR recovered text" not in rendered
+
+
+def _compared(page, ratio):
+    page["attempts"].append({**page["attempts"][0], "attempt_id": "clean"})
+    page["comparisons"] = [
+        {"left_attempt": "a1", "right_attempt": "clean", "agreement_ratio": ratio}
+    ]
+
+
+def test_06_report_lists_pages_that_need_a_person_first(tmp_path):
+    job = job_fixture(tmp_path)
+    _compared(job["pages"][0], 0.91)
+    rendered = render_document_report(build_document_report(job, tmp_path))
+
+    table = rendered.split("| Page | Selected text |", 1)[1].split("\n\n", 1)[0]
+    assert "Pages needing a person: 1" in rendered
+    assert table.index("| [3]") < table.index("| [1]")
+    page_one = next(row for row in table.splitlines() if row.startswith("| [1]"))
+    assert "Local text attempt a1" in page_one and "agree (91%)" in page_one
+    page_three = next(row for row in table.splitlines() if row.startswith("| [3]"))
+    assert "| none | not compared | not reviewed |" in page_three
+    assert "Engine agreement is evidence, not proof: engines can share a mistake." in rendered
+
+
+def test_06_report_shows_engine_disagreement_with_its_ratio(tmp_path):
+    job = job_fixture(tmp_path)
+    page = job["pages"][0]
+    _compared(page, 0.42)
+    page["review_reasons"] = ["engine_disagreement"]
+    rendered = render_document_report(build_document_report(job, tmp_path))
+
+    assert "disagree (42%)" in rendered
+    assert "Pages needing a person: 2" in rendered
+
+
+@pytest.mark.parametrize("report_format", ["0.5.1", None])
+def test_older_report_formats_keep_exact_legacy_rendering(tmp_path, report_format):
+    job = job_fixture(tmp_path)
+
+    report = build_document_report(job, tmp_path, report_format=report_format)
+    expected = render_document_report(report)
+    if report_format is None:
+        assert "| Page | Disposition | Selected output | Review evidence |" in expected
+        assert hashlib.sha256(expected.encode()).hexdigest() == (
+            "b37e457e15753dd9001f7c99708a9d500e834ad2ac09f6a331bc9321f9eef6c9"
+        )
+    else:
+        assert "| Page | Current output | Review status | Recorded concerns |" in expected
+        assert hashlib.sha256(expected.encode()).hexdigest() == (
+            "66c8495558ae1dfc027bcd0ca9a8d825c9c969a0eaa55f0e3d71903dc580a864"
+        )
 
 
 def test_current_report_keeps_latest_failure_visible_with_previous_selected_text(tmp_path):
@@ -438,7 +545,7 @@ def test_current_report_keeps_latest_failure_visible_with_previous_selected_text
     assert "Local text" in rendered
     assert "Extraction failed" in rendered
     assert "MODEL_OUTPUT_TRUNCATED" in rendered
-    assert "Review required: extraction failed" in rendered
+    assert "not reviewed" in rendered
 
 
 def test_current_report_labels_numeric_hold_without_hiding_selected_output(tmp_path):
@@ -450,7 +557,7 @@ def test_current_report_labels_numeric_hold_without_hiding_selected_output(tmp_p
 
     assert "Numbers need checking" in rendered
     assert "Local text" in rendered
-    assert "Review required" in rendered
+    assert "not reviewed" in rendered
 
 
 def test_current_report_attributes_explicit_selected_attempt_warning_only_to_that_attempt(tmp_path):
@@ -573,7 +680,7 @@ def test_current_report_explains_source_only_human_review(tmp_path):
     rendered = render_document_report(build_document_report(job, tmp_path))
 
     assert "Source problem confirmed" in rendered
-    assert "No selected output" in rendered
+    assert "| none |" in rendered
     assert "Source page is damaged" in rendered
     assert "Peter" in rendered
 

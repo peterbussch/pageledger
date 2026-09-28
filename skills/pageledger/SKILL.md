@@ -11,9 +11,10 @@ does not extract anything itself: it routes pages to an adapter
 page/token/dollar budgets, and records provenance, quality signals, cost,
 review queues, and rerun plans as plain files in a run directory.
 
-Use `pageledger --version` to check the installed release. This guide covers
-0.5.0; `docs/capabilities-and-limits.md` is the
-authoritative scope list.
+Use `pageledger --version` to check the installed release. The
+[`docs/capabilities-and-limits.md`](../../docs/capabilities-and-limits.md)
+page lists supported workflows and limits; the
+[`docs/glossary.md`](../../docs/glossary.md) defines shared terms.
 
 ## Command quick reference
 
@@ -25,11 +26,12 @@ authoritative scope list.
 | Start a resumable run | `pageledger run scan.pdf --adapter pdf_ocr --resumable --out runs/a` |
 | Recover pending work in place | `pageledger resume runs/a` or `pageledger resume jobs/book` |
 | OCR a scan, no config | `pageledger run scan.pdf --adapter pdf_ocr --out runs/a` |
+| Read pages with a vision model | a config with `run.adapter: vision`, `base_url` and `model`; try `--pages 1` first ([vision adapter](../../docs/vision-adapter.md)) |
 | Born-digital PDF | `pageledger run doc.pdf --adapter pdf_text --out runs/a` (needs `pageledger[pdf]`) |
 | Sample pages first | add `--pages "1-10,50-60"` (page ids keep source numbering) |
 | Plan without extracting | add `--dry-run` |
 | Classify pages into a route map | `pageledger classify inputs/ --config pageledger.yml --out routes.yml` |
-| Reclassify retained run evidence | `pageledger classify --from-run runs/a --config pageledger.yml --out routes-v2.yml` |
+| Reclassify a saved run | `pageledger classify --from-run runs/a --config pageledger.yml --out routes-v2.yml` |
 | Full config run | `pageledger run inputs/ --config pageledger.yml --out runs/a` |
 | Execute classified/reviewed routes | add `--routes route-map.yml` to a config run |
 | Re-extract flagged pages | `pageledger rerun runs/a --config stronger.yml --out runs/b` |
@@ -57,7 +59,7 @@ classifier after validating complete coverage and adapter action support.
 replay output must be new directories. `replay --adapter-path` is a locally
 trusted import directory; a trusted path must not be equal to, inside, or above
 the bundle. Replay preserves
-source bytes and records profile, extractor, and raw-comparison evidence; it
+source bytes and records profile, extractor, and raw-comparison details; it
 does not install environments or adapter/model materials. Human replay output
 also prints raw equal/different/missing counts. Read the [replay
 boundary](../../docs/capabilities-and-limits.md#verified-replay-boundary) for
@@ -71,11 +73,11 @@ zero-byte evidence, and editable-install hooks.
    map unchanged to `run --routes`. Classification is explicit; `run` does
    not invoke it automatically.
 2. Run cheap extraction first (`pdf_text` or `pdf_ocr`).
-3. Read the evidence: `inspect-run` (grade distribution, records
+3. Read the run: `inspect-run` (grade distribution, records
    normalized), then `quality.jsonl` warnings and grades (`empty_text`,
    `low_confidence`, `historical_orthography`, `instruction_echo`,
    `output_inflation`, and others; grades A–F with
-   a basis label; `A (signals)` and `A (schema)` describe different evidence),
+   a basis label; `A (signals)` and `A (schema)` describe different checks),
    `cost.json` (check `cost_basis` for reported versus estimated cost), and `audit.json`'s
    review queue.
 4. For tabular work, declare a `schema` section (columns, aliases,
@@ -88,16 +90,16 @@ zero-byte evidence, and editable-install hooks.
    used by rerun generation N. Exhausted chains leave pages in review.
    `compare-runs` ranks improvement only when source and effective extractor
    identities match. Grade comparisons also require matching PageLedger
-   versions, grading policies, evidence bases, and schema identities.
+   versions, grading policies, grade bases, and schema identities.
 6. Run `verify-run` before publishing or archiving a ledger. It checks
    cross-artifact coherence, not OCR correctness.
-7. For transport, run `bundle` on a verified generation-zero execute run,
+7. For transport, run `bundle` on a verified original run (not a rerun or dry run),
    then run `replay` and `verify-run` on the new run. The bundle includes its
    source copy; moving or deleting the original is unnecessary.
-   Treat `exact`, `evidence_compared`, and `deterministic_mismatch` as evidence
+   Treat `exact`, `evidence_compared`, and `deterministic_mismatch` as comparison
    outcomes, not accuracy claims.
 8. The project chooses which parent and rerun outputs belong in its corpus.
-   Present the compare-runs evidence rather than deciding silently.
+   Present the compare-runs results rather than deciding silently.
 
 ## Document jobs and recovery
 
@@ -115,12 +117,12 @@ review hold remains. Only source/output-bound human receipts establish reviewed
 text; never create a receipt claiming a human review that did not happen.
 
 `process` retains checkpoints automatically; individual runs require
-`--resumable` at creation. Both require zero retries and stop-on-error policy.
-`resume DIR` verifies saved evidence and continues pending work in place. Keep
-source paths, output paths, configuration, and compatible code unchanged. A
-started request without a saved response becomes `outcome_unknown` and stops
-queued calls. Do not retry or delete that evidence automatically. Jobs and
-image-evidence runs cannot be bundled in this version.
+`--resumable` at creation. Use `resume DIR` to recover work in place. If it
+reports `outcome_unknown`, stop: do not retry the request or delete the
+recovery files, and ask the user to check with the provider. See the
+[processing specification](../../docs/processing-spec.md) for jobs and the
+[checkpoint specification](../../docs/checkpoint-spec.md) for individual runs.
+Jobs and image-evidence runs cannot be bundled in this version.
 
 ## Configuration essentials
 
@@ -148,13 +150,13 @@ domain types belong in a hook.
 - Record uncertainty; never silently correct it. Uncertain output gets
   flagged, reviewed, or rerun. Transforms that rewrite text (like the
   pre-reform orthography normalizer in `examples/`) run as their own
-  recorded run so the original remains evidence.
-- Confidence values are evidence, not calibrated probability.
+  recorded run so the original remains available for comparison.
+- Confidence values are signals, not calibrated probabilities.
 - Core stays PyYAML-only (`pypdf` behind the `[pdf]` extra). Domain
   taxonomies, provider pricing catalogs, header dictionaries, CV heuristics,
   exporters (TEI/PAGE/ALTO/GIS), dashboards, and ensemble
   voting stay out of core.
-- Grades are deterministic evidence summaries, never calibrated accuracy;
+- Grades are deterministic summaries, never calibrated accuracy;
   do not compare grades across adapters or drop the basis label.
 - Still out of scope: classification invoked implicitly inside `run`, region-
   level routing, same-run adapter fallback, environment installation, adapter
@@ -169,7 +171,7 @@ domain types belong in a hook.
 | Recovery and image input evidence | `docs/checkpoint-spec.md`, `docs/image-evidence-spec.md` |
 | Exact scope of this version | `docs/capabilities-and-limits.md` |
 | Classifier signals, hooks, and evidence | `docs/classifier.md` |
-| All flags and config keys | `docs/cli.md` |
+| Commands, options, exit codes and configuration | `docs/cli.md` |
 | What each run artifact means | `docs/artifacts.md`, `docs/*-spec.md`, `schemas/` |
 | Writing an adapter | `docs/adapter-protocol.md`, `examples/*.py` |
 | Choosing an engine or escalation tier | `docs/ocr-options.md`, `docs/examples/jfk-scanned-archive.md` |

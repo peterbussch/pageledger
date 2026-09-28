@@ -718,3 +718,98 @@ def test_run_log_does_not_contain_environment_secrets(tmp_path, monkeypatch):
     assert log_text.count("<redacted>") == 3
     manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
     assert manifest["status"] == "failed"
+
+
+# =========================================================================
+# Silent-failure hunt: disk full, non-finite usage, Unicode
+# =========================================================================
+
+_TEXT_CONFIG = textwrap.dedent("""\
+    schema_version: "0.1"
+    taxonomy:
+      page_types:
+        prose:
+          default_action: transcribe_text
+    run:
+      adapter: text
+    """)
+
+
+@pytest.mark.parametrize("artifact", ["quality.jsonl", "cost.json", "manifest.json"])
+def test_disk_full_never_leaves_a_truncated_artifact(tmp_path, monkeypatch, artifact):
+    import errno
+    from pathlib import Path
+
+    source = tmp_path / "pages.txt"
+    source.write_text("First page of prose.\fSecond page of prose.", encoding="utf-8")
+    config = tmp_path / "config.yml"
+    config.write_text(_TEXT_CONFIG, encoding="utf-8")
+    out_dir = tmp_path / "out"
+    write_text = Path.write_text
+
+    def fill_disk(self, data, *args, **kwargs):  # noqa: ANN001, ANN002, ANN003
+        if self.parent == out_dir and artifact in self.name:
+            write_text(self, data[: len(data) // 2], *args, **kwargs)
+            raise OSError(errno.ENOSPC, "No space left on device", str(self))
+        return write_text(self, data, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "write_text", fill_disk)
+    with pytest.raises(OSError, match="No space left"):
+        run(inputs=[source], config_path=config, out_dir=out_dir, dry_run=False)
+    monkeypatch.undo()
+
+    assert not (out_dir / artifact).exists()
+    assert [path.name for path in out_dir.iterdir() if path.name.startswith(".")] == []
+    for path in out_dir.rglob("*.json"):
+        json.loads(path.read_text(encoding="utf-8"))
+    for path in out_dir.rglob("*.jsonl"):
+        [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
+
+
+@pytest.mark.parametrize(
+    "usage",
+    [
+        {"pages": 1, "tokens": float("nan")},
+        {"pages": 1, "tokens": float("inf")},
+        {"pages": 1, "cost_usd": float("inf")},
+        {"pages": 1, "compute_seconds": float("nan")},
+    ],
+)
+def test_non_finite_usage_is_rejected(usage):
+    from types import SimpleNamespace
+
+    from pageledger import runner as runner_module
+
+    result = SimpleNamespace(
+        content="text",
+        format="text",
+        confidence=None,
+        confidence_detail=None,
+        model=None,
+        warnings=[],
+        usage=usage,
+    )
+    with pytest.raises(ValueError, match="usage"):
+        runner_module._validate_extraction_result("adapter", result)
+
+
+def test_decomposed_unicode_survives_byte_for_byte(tmp_path):
+    import unicodedata
+
+    composed = "Свѣдѣнія о населеніи уѣзда: Йошкар-Ола, café."
+    decomposed = unicodedata.normalize("NFD", composed)
+    assert decomposed != composed
+    entries = []
+    for name, text in (("nfd", decomposed), ("nfc", composed)):
+        source = tmp_path / f"{name}.txt"
+        source.write_bytes(text.encode("utf-8"))
+        config = tmp_path / "config.yml"
+        config.write_text(_TEXT_CONFIG, encoding="utf-8")
+        out_dir = tmp_path / name
+        run(inputs=[source], config_path=config, out_dir=out_dir, dry_run=False)
+        raw = (out_dir / "raw" / "doc_0001_page_0001.txt").read_bytes()
+        assert raw == text.encode("utf-8")
+        entries.append(json.loads((out_dir / "quality.jsonl").read_text(encoding="utf-8")))
+    nfd, nfc = entries
+    assert nfd["word_count"] == nfc["word_count"]
+    assert nfd["warnings"] == nfc["warnings"]

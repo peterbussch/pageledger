@@ -11,14 +11,15 @@ The examples below show local, hosted, and mixed extraction paths.
 | Tier | Example path | Runs local | Typical cost | Good fit | PageLedger integration |
 |---|---|---:|---|---|---|
 | Born-digital PDF | `pdf_text` | yes | free | PDFs with a real embedded text layer | Built-in adapter via `pageledger[pdf]`. |
-| Scanned PDF, plain text | `pdf_ocr` (Tesseract) | yes | free, plus compute | Image-only or noisy-layer scans where plain text is enough | Built-in adapter; needs poppler + Tesseract installed. `dpi`/`lang` via `run.adapter_options`. |
+| Scanned PDF, plain text | `pdf_ocr` (Tesseract) | yes | free, plus compute | Image-only or noisy-layer scans where plain text is enough | Built-in adapter; needs poppler + Tesseract installed. `dpi`, `lang` and `max_render_pixels` via `run.adapter_options`. |
+| Scanned PDF, CPU OCR | `rapidocr` (RapidOCR, PP-OCRv5) | yes | free, plus compute | Printed scans, including Cyrillic with pre-reform letters, where Tesseract is weak | Built-in adapter via `pageledger[rapidocr]`; needs Poppler and a PP-OCRv5 recognizer. See [engine recipes](engine-recipes.md). |
+| Scanned PDF, read by a vision model | `vision` | yes, or hosted | free locally, plus compute; provider rates when hosted | Tables, mixed scripts and damaged print that Tesseract misreads; every page needs review | Built-in adapter; needs Poppler and an OpenAI-compatible endpoint. See [Read pages with a vision model](vision-adapter.md). |
 | Baseline OCR preprocessing | OCRmyPDF + Tesseract | yes | free, plus compute | Producing a searchable PDF for other tools too | External preprocessing, then `pdf_text`. |
-| Local-LLM cleanup | Tesseract + local model (mlx_lm, llama.cpp, Ollama) | yes | free, plus compute | Fixing character-level OCR errors without sending pages anywhere | Custom adapter; see [`local_llm_cleanup_adapter.py`](../examples/local_llm_cleanup_adapter.py) or [`ollama_cleanup_adapter.py`](../examples/ollama_cleanup_adapter.py). |
+| Local-LLM cleanup | Tesseract + local model (mlx_lm, llama.cpp, Ollama) | yes | free, plus compute | Fixing character-level OCR errors without sending pages anywhere | Custom adapter; see [`local_llm_cleanup_adapter.py`](../examples/local_llm_cleanup_adapter.py) or [`ollama_cleanup_adapter.py`](../examples/ollama_cleanup_adapter.py). `rerun` handles flagged pages only. |
 | Local document conversion | Docling | yes | free/open, plus compute | PDF/document conversion with layout-aware output | Functional machine-level example in [`docling_adapter.py`](../examples/docling_adapter.py), returning page-level Markdown. |
 | Markdown/JSON extraction | Marker | yes | free/open, plus compute | Markdown, JSON, tables, equations, forms, images | Custom adapter returning Markdown or JSON. |
 | Local OCR/layout/tables | Surya | yes | free/open, often heavier compute | OCR, reading order, layout, table recognition | Custom adapter with `capabilities=("ocr", "layout", "tables", "local")`. |
 | Cloud OCR/document AI | User-chosen provider | no | provider-defined | Managed OCR, forms, tables, enterprise pipelines | Custom adapter with redacted env checks and configured pricing. |
-| Cloud VLM | User-chosen model/API | no | provider-defined | Hard pages, multimodal reasoning, messy forms/tables | Custom adapter, usually capped by page/token/dollar budgets. |
 | Hybrid | Local first, cloud only for weak pages | mixed | controlled | Large collections with a small hard subset | Use `quality.jsonl` and review queues to decide reruns. |
 
 ## Recommended workflow
@@ -29,8 +30,11 @@ The examples below show local, hosted, and mixed extraction paths.
 3. Use `pdf_ocr` for scans when plain text is enough.
 4. Use Docling, Marker, or Surya through a custom adapter when layout, tables,
    Markdown, or richer JSON matter.
-5. Use a cloud OCR/VLM adapter only when local output is weak, the document is
-   especially complex, or managed infrastructure is required.
+5. Use the [`vision` adapter](vision-adapter.md) with a local or hosted model
+   when Tesseract's reading is weak, as it often is on historical print; the
+   [engine recipes](engine-recipes.md) compare the models measured. Every
+   reading it makes needs review, and a hosted model sends the pages off the
+   machine.
 6. Inspect `quality.jsonl`, `provenance.jsonl`, `run.log`, and `cost.json`
    before deciding whether to rerun pages with a stronger adapter.
 
@@ -42,6 +46,30 @@ New runs record the concrete built-in backend identity in per-page provenance:
 `pdf_text` includes the installed pypdf version; `pdf_ocr` includes Tesseract,
 Poppler/pdftoppm, DPI, and language. A custom OCR/VLM adapter should put the
 equivalent model/revision and material runtime settings in `ExtractionResult.model`.
+
+### Page size and rendering
+
+`pdf_ocr` checks each page's size before rendering it, because scanned PDFs
+often declare page sizes that have little to do with the paper.
+
+- **Too large.** An Internet Archive scan of a 1911 memorial book declares
+  pages 1.75 by 2.47 metres, about 600 megapixels each at 300 DPI. When a page
+  would exceed `max_render_pixels` (60,000,000 by default; an A2 sheet at 300
+  DPI is about 35 million), it is rendered at the highest DPI that fits. Its
+  quality line gets the warning `render_dpi_capped`, and its `model` string
+  records both values, for example `dpi=94 (requested 300)`. A page that would
+  need less than 72 DPI stops the run with `render_limit`; raise
+  `max_render_pixels` or split the page.
+- **Too small.** An 1872 volume declares 18 by 29 mm pages holding scans about
+  440 pixels wide. At 300 DPI such a page renders about 217 pixels wide, half
+  the scan's own resolution. When pypdf is installed, `pdf_ocr` reads the pixel
+  size of each page's embedded images, without decoding them, and renders at
+  the largest image's own resolution instead, up to 1200 DPI. The `model`
+  string records the reason, for example `dpi=621 (requested 300, native image)`.
+  The pixel cap still applies afterwards.
+
+Born-digital pages, pages without images, and installations without pypdf keep
+the requested DPI.
 
 ### Docling: standard first, VLM selectively
 
@@ -57,7 +85,7 @@ prohibitively expensive. In VLM mode it passes a one-page range for each page
 PageLedger actually requests; this makes selective reruns possible without
 converting the entire source. Start with `pipeline: standard` for local OCR,
 layout, and tables. Escalate selected difficult pages with `pipeline: vlm` and
-the dogfooded local preset (`smoldocling`). Remote services
+the tested local preset (`smoldocling`). Remote services
 and external plugins remain disabled. Both lanes are uncalibrated extractors:
 inspect PageLedger's warnings and the rendered source rather than assuming that
 richer layout output is automatically more accurate. The VLM lane always emits
@@ -134,3 +162,7 @@ evidence:
 
 The best default is usually hybrid: run cheap local extraction first, then route
 only suspicious or high-value pages to a stronger OCR/VLM path.
+
+For symptom-based recovery, see [Troubleshooting](troubleshooting.md). To
+assemble and share usable job text, see [Export document text](export.md) and
+[Share and cite results](share-and-cite.md).

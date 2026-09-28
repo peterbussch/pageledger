@@ -68,7 +68,7 @@ provides usable text.
 The review queue therefore still contains all 60 pages. We have not measured
 how many of those reviews are unnecessary, how long they take, or how many
 errors the checks miss. Those questions require people checking the source
-and recording their decisions. The [reader trial](../../reader-trial.md)
+and recording their decisions. The [reader trial](../../maintainers/reader-trial.md)
 provides a separate test of whether newcomers can use and explain the workflow.
 Its results are still pending.
 

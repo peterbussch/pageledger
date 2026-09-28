@@ -17,7 +17,7 @@ def processing_config(data: dict[str, Any], *, pdf: bool) -> dict[str, Any]:
     value = data.get("processing", {})
     if not isinstance(value, dict):
         raise ValueError("processing must be a mapping")
-    unknown = set(value) - {*STAGES, "limits", "links"}
+    unknown = set(value) - {*STAGES, "limits", "links", "benchmark"}
     if unknown:
         raise ValueError(f"Unknown processing key: {sorted(unknown)[0]}")
     result: dict[str, Any] = {}
@@ -80,4 +80,19 @@ def processing_config(data: dict[str, Any], *, pdf: bool) -> dict[str, Any]:
     if any(not isinstance(v, str) or not v for v in links.values()):
         raise ValueError("processing.links values must be nonempty strings")
     result["links"] = {"article": links.get("article"), "custody": links.get("custody")}
+    benchmark = value.get("benchmark")
+    if benchmark is not None:
+        if (
+            not isinstance(benchmark, dict)
+            or set(benchmark) != {"stage", "every_nth_page"}
+            or benchmark.get("stage") not in STAGES
+            or type(benchmark.get("every_nth_page")) is not int
+            or benchmark["every_nth_page"] < 1
+        ):
+            raise ValueError(
+                "processing.benchmark must contain a configured stage and a positive integer every_nth_page"
+            )
+        if result[benchmark["stage"]] is None:
+            raise ValueError("processing.benchmark.stage must name an enabled stage")
+        result["benchmark"] = dict(benchmark)
     return result

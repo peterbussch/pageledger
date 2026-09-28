@@ -1813,3 +1813,35 @@ def test_bundle_positive_raw_log_citation_and_ordinary_option_values_are_not_sca
     )
     _refresh_manifest_metadata(bundle_dir)
     assert validate_bundle(bundle_dir)["baseline"]["run_id"] == manifest["run_id"]
+
+
+def test_profile_encoding_names_are_normalized(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Locale coercion can report "UTF-8" in a child process and "utf-8" in its parent."""
+    import locale
+
+    from pageledger.adapters import load_adapter
+    from pageledger.replay import build_reproducibility_profile
+
+    adapter = load_adapter("text", {})
+    monkeypatch.setattr(locale, "getpreferredencoding", lambda do_setlocale=True: "UTF-8")
+    upper = build_reproducibility_profile(adapter)
+    monkeypatch.setattr(locale, "getpreferredencoding", lambda do_setlocale=True: "utf-8")
+    lower = build_reproducibility_profile(adapter)
+    assert upper == lower
+    assert upper is not None and upper["runtime"]["preferred_encoding"] == "utf-8"
+
+
+def test_recorded_profile_with_other_encoding_spelling_still_matches() -> None:
+    """Bundles recorded before normalization remain replayable."""
+    from pageledger.adapters import load_adapter
+    from pageledger.replay import build_reproducibility_profile, profile_sha256, profiles_match
+
+    local = build_reproducibility_profile(load_adapter("text", {}))
+    assert local is not None
+    recorded = json.loads(json.dumps(local))
+    recorded["runtime"]["preferred_encoding"] = "UTF-8"
+    recorded["profile_sha256"] = profile_sha256(recorded)
+    assert profiles_match(local, recorded)
+    recorded["runtime"]["python_version"] = "0.0.0"
+    recorded["profile_sha256"] = profile_sha256(recorded)
+    assert not profiles_match(local, recorded)

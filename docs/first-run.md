@@ -6,12 +6,12 @@ scratch directory after installing PageLedger. You will inspect the raw text
 and audit, export CSV, and verify the run before trying selective reruns and
 optional bundle replay.
 
-Install 0.5.2 in a virtual environment:
+Install PageLedger in a virtual environment:
 
 ```bash
-python -m venv /tmp/pageledger-0.5.2
-. /tmp/pageledger-0.5.2/bin/activate
-python -m pip install pageledger==0.5.2
+python -m venv /tmp/pageledger-tutorial
+. /tmp/pageledger-tutorial/bin/activate
+python -m pip install pageledger
 pageledger --version
 mkdir /tmp/pageledger-reader-tutorial
 cd /tmp/pageledger-reader-tutorial
@@ -56,7 +56,20 @@ sed -n '1,5p' runs/first/raw/doc_0001_page_0002.txt
 sed -n '1,80p' runs/first/audit.md
 grep 'replacement_characters' pages.csv
 pageledger verify-run runs/first
+pageledger inspect-run runs/first --json
 ```
+
+Among other lines, the run and `inspect-run` print:
+
+```text
+Pages: 3 extracted / 3 total
+Quality warning pages: 1
+Status: completed
+Review queue: 1
+Grades (signals): A=2 B=1 C=0 D=0 F=0
+```
+
+and `verify-run` ends with `Run verification: PASS`.
 
 `quality.jsonl` contains observable signals, not a correctness verdict.
 Likewise, an A signals grade means the configured heuristics did not fire; it
@@ -78,6 +91,14 @@ does any extraction. The parent `rerun-manifest.yml` selects only page 2.
 pageledger rerun runs/first --config pageledger.yml --out runs/second
 pageledger compare-runs runs/first runs/second
 pageledger verify-run runs/second
+```
+
+`compare-runs` reports, among other lines:
+
+```text
+Pages compared: 1 (only in A: 2, only in B: 0)
+Raw output: equal 1 / different 0 / missing 0
+Warnings resolved in B: 0
 ```
 
 This deliberately uses the same deterministic adapter on unchanged source, so
@@ -118,6 +139,7 @@ pageledger verify-run runs/second
 test -f review/decisions.csv
 ```
 
+
 For document jobs, use [review-job](processing-spec.md#reports-and-review) to
 record source-bound human decisions. The CSV above is for ordinary runs.
 
@@ -145,77 +167,4 @@ An exact replay proves equality under PageLedger's documented deterministic
 replay checks. It does not recreate a hermetic operating system, certify text
 accuracy, or replace source review.
 
-## Maintainer verification
-
-<details>
-<summary>Automated receipts for the documented journey</summary>
-
-The maintained test executes every designated tutorial block in one shell, then
-runs these behavior checks. Readers do not need this assertion code to follow
-the journey.
-
-```bash pageledger-tutorial
-"$PYTHON" - <<'PY'
-import csv
-import json
-from pathlib import Path
-
-first_quality = [
-    json.loads(line)
-    for line in Path("runs/first/quality.jsonl").read_text().splitlines()
-]
-flagged = [row for row in first_quality if row["warnings"]]
-assert [(row["page_id"], row["warnings"]) for row in flagged] == [
-    ("doc_0001_page_0002", ["replacement_characters"])
-]
-rows = list(csv.DictReader(Path("pages.csv").open(newline="", encoding="utf-8")))
-assert rows[1]["page_number"] == "2"
-assert rows[1]["warnings"] == "replacement_characters"
-print("TUTORIAL_WARNING_OK")
-
-second_manifest = json.loads(Path("runs/second/manifest.json").read_text())
-second_quality = [
-    json.loads(line)
-    for line in Path("runs/second/quality.jsonl").read_text().splitlines()
-]
-assert second_manifest["summary"]["pages_total"] == 1
-assert [row["page_id"] for row in second_quality] == ["doc_0001_page_0002"]
-assert second_quality[0]["warnings"] == ["replacement_characters"]
-assert sorted(path.name for path in Path("runs/second/raw").iterdir()) == [
-    "doc_0001_page_0002.txt"
-]
-print("TUTORIAL_RERUN_SELECTION_OK")
-
-assert Path("review/decisions.csv").is_file()
-print("TUTORIAL_EXTERNAL_REVIEW_INTEGRITY_OK")
-
-replay = json.loads(Path("runs/replayed/replay.json").read_text())
-assert replay["outcome"] == "exact"
-assert replay["raw"]["equal"] == 3
-assert replay["raw"]["different"] == 0
-assert replay["raw"]["missing"] == 0
-assert Path("relocated/original-source.moved").is_file()
-assert not Path("sample.txt").exists()
-print("TUTORIAL_REPLAY_RELOCATION_OK")
-PY
-```
-
-</details>
-
-Release verification can drive the same blocks through the standard-library
-helper. Its exact-wheel mode clears `PYTHONPATH`, asserts that both the imported
-module and installed distribution metadata have the intended version, and fails
-if the import comes from the checkout:
-
-```bash
-PYTHONPATH= /path/to/wheel-venv/bin/python /path/to/checkout/examples/run_first_run.py \
-  --document /path/to/checkout/docs/first-run.md \
-  --work-dir /tmp/pageledger-first-run \
-  --python /path/to/wheel-venv/bin/python \
-  --expected-version 0.5.2 \
-  --forbid-import-root /path/to/checkout
-```
-
-The helper and document may be read by absolute path from the checkout; the
-product import and every `pageledger` command come from the isolated wheel
-environment.
+The optional bundle and replay steps are explained below. See [maintainer verification](maintainers/tutorial-verification.md).

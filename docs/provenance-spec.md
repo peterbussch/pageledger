@@ -68,20 +68,10 @@ actual returned model/provider. `result.raw_sha256` continues to hash output;
 `input_evidence.sha256` hashes the transmitted input. Existing records may omit
 the field or use null. Final verification checks non-null image evidence.
 
-Normalized records should preserve links back to provenance lines:
-
-```json
-{
-  "record_id": "run-20260619-001:doc_0001_page_0002:row_0017",
-  "place_name": "Example",
-  "population_total": 1234,
-  "produced_by": {
-    "run_id": "run-20260619-001",
-    "page_id": "doc_0001_page_0002",
-    "raw_artifact": "raw/doc_0001_page_0002.markdown_table"
-  }
-}
-```
+Normalized output is linked at file level, not per record. Each
+`normalized/{page_id}.json` carries `run_id`, `page_id`, and `raw_artifact`;
+individual records do not carry provenance identifiers. See the
+[`normalized` specification](normalized-spec.md).
 
 ## Required fields
 
@@ -102,18 +92,16 @@ Normalized records should preserve links back to provenance lines:
 
 ## Design notes
 
-- `record_id` should join `run_id`, `page_id`, and a row or record index with
-  colon separators.
 - Confidence values may be heuristic. Preserve raw route, extractor, and
   alignment confidence values rather than collapsing them too early.
-- `usage.pages` is required. Optional usage fields should serialize unknown
+- `usage.pages` is required. Optional usage fields serialize unknown
   values as JSON `null`, not disappear from generated artifacts.
 - `prompt_hash` is required whenever a prompt influenced output.
-- `deterministic` should be `false` unless the adapter can actually guarantee
+- `deterministic` is `false` unless the adapter can actually guarantee
   stable output for the same input and config.
-- `usage` is the authoritative adapter-facing record. `metrics` is retained in
-  schema version `"0.1"` as a compatibility copy for spreadsheet and JSONL
-  analysis workflows that flatten page-level rows. If these fields diverge in a
+- PageLedger reads `usage`, the adapter-facing record. `metrics` is a copy
+  kept in schema version `"0.1"` for spreadsheet and JSONL analysis workflows
+  that flatten page-level rows. If these fields diverge in a
   future artifact schema, the schema version must change.
 - `usage.cost_usd` remains adapter-reported evidence. `cost.usd` is the value
   PageLedger actually uses after applying adapter-reported cost first and then
@@ -123,8 +111,8 @@ Normalized records should preserve links back to provenance lines:
   always emit it. `verify-run` fails if raw bytes differ or if any digest is
   absent. Older evidence remains parseable and receives an incomplete-evidence
   warning, but it cannot receive an integrity PASS without a raw digest. This
-  detects accidental or local modification; it is not authenticity without an
-  externally trusted or signed manifest/provenance set.
+  detects accidental or local modification; it does not establish
+  authenticity without an externally trusted or signed manifest/provenance set.
 - The JSON Schema for this artifact is at `schemas/provenance-line.schema.json`.
 - Schema validation tests are in `tests/pageledger/test_schemas.py`.
 
@@ -146,10 +134,10 @@ not a calibrated accuracy score. Fields:
 | `warnings` | array of strings | ✅ | no | Adapter-native warnings plus PageLedger-derived quality warnings (see taxonomy below). Adapter warnings are also retained in the provenance result. |
 | `text_quality` | object | ✅ | no | Sub-metrics (see below). |
 | `embedded_text_comparison` | object | ❌ | yes | Comparison with PDF embedded text layer. Null for non-PDF sources. |
-| `output_integrity` | object | ❌ | no | Conservative chat-template-marker and parent-rerun size evidence. Present on new 0.1.4 quality lines; optional so older lines remain valid. |
-| `grade` | string | ❌ | no | `A`–`F`. Emitted by current runs; absent from pre-0.1.3 lines. |
-| `grade_basis` | string | ❌ | no | `signals_only` or `schema_aware`. Emitted by current runs; absent from pre-0.1.3 lines. |
-| `grade_detail` | object | ❌ | no | Grade evidence detail. Emitted by current runs; absent from pre-0.1.3 lines. |
+| `output_integrity` | object | ❌ | no | Conservative chat-template-marker and parent-rerun size evidence. Optional for older lines. |
+| `grade` | string | ❌ | no | `A`–`F`. Optional for older lines. |
+| `grade_basis` | string | ❌ | no | `signals_only` or `schema_aware`. Optional for older lines. |
+| `grade_detail` | object | ❌ | no | Grade evidence detail. Optional for older lines. |
 
 ### Grade bands
 
@@ -171,7 +159,8 @@ Confidence/coverage/pass-rate thresholds are overridable under
 coverage below `minimum_required_column_coverage` forces the schema axis
 to F, and page confidence under `low_confidence_threshold` caps the final
 grade at C. The structured-format prose heuristics
-(`suspicious_symbol_density`, `fragmented_text`, `joined_text`) do not fire on
+(`suspicious_symbol_density`, `fragmented_text`, `joined_text`,
+`digits_only_text`) do not fire on
 `markdown_table`/`json`/`csv` pages: pipes and braces are construction,
 not garble.
 
@@ -191,8 +180,20 @@ not garble.
 | `latin_letter_ratio` | number (0–1) | Share of Unicode letters identified as Latin-script letters; used only as a conservative joined-text guard. |
 | `prereform_letter_count` | integer | Cyrillic letters abolished by the 1918 Russian reform (ѣ, ѳ, ѵ). Modern Ukrainian/Belarusian і is deliberately not counted. |
 | `terminal_hard_sign_count` | integer | Word-final hard signs (ъ): mandatory before 1918, absent from modern Russian. This is the pre-reform signal that survives OCR: engines trained on modern text destroy the abolished letters but keep ъ. |
+| `letter_count` | integer | Unicode letters. |
+| `digit_count` | integer | Decimal digits. |
+| `mixed_script_token_ratio` | number (0–1) | Share of letter tokens that mix Latin, Cyrillic or Greek letters, as look-alike substitutions do (`пpoдoлжoние` with Latin `p` and `o`). |
+| `private_use_count` | integer | Private Use Area code points, except one that opens a line before a space: that is a bullet or icon glyph from a symbol font. |
+| `largest_identical_line_count` | integer | How often the most repeated non-empty line occurs, ignoring dot leaders and rules. |
+| `longest_repeated_tail_length` | integer | Length in characters of the longest ending made of one unit of up to 200 characters repeated at least 20 times; 0 when there is none. |
+| `longest_letter_run` | integer | Longest run of one repeated letter; 0 when no letter repeats. |
+
+The last seven fields are new in 0.6; older quality lines omit them.
 
 ### Warning taxonomy
+
+Meanings and suggested next steps for warnings are in the
+[warnings reference](warnings.md). The table here defines trigger conditions.
 
 | Warning | Trigger |
 |---|---|
@@ -208,6 +209,42 @@ not garble.
 | `low_confidence` | `confidence_detail.below_60_ratio >= 0.25` over ≥10 words. A quarter of the words under engine confidence 60 marks the page for review; a mean can hide one illegible paragraph on an otherwise clean page. |
 | `instruction_echo` | Output contains one of the high-specificity chat-template markers `<think>`, `</think>`, `<|channel`, `<|im_start|>`, `<|im_end|>`, `[INST]`, or `[/INST]`. Generic words such as “instructions” or “channel” do not trigger it. |
 | `output_inflation` | On a rerun, output is at least 4× and at least 1,000 characters longer than the same parent page. Parent counts, delta, and ratio are recorded in `output_integrity`; this is review evidence, not proof of hallucination. |
+| `digits_only_text` | `digit_count >= 20` and letters under 5% of `letter_count + digit_count`. A table whose text layer kept the digits and lost the words. Not raised for `markdown_table`, `json` or `csv` output. |
+| `mixed_script_tokens` | `mixed_script_token_ratio >= 0.05` over ≥20 alphabetic tokens. Look-alike letters from another script inside words: search and alignment miss them. |
+| `private_use_characters` | `private_use_count >= 3`. Characters the text layer lost to font-specific code points, such as old-style digits or ligatures. |
+| `repeated_page_text` | The page's whole text, under 200 characters after whitespace is collapsed, is identical on at least three pages of the run. A stamp-only text layer repeats a scanner's or website's mark on every page and none of the content. |
+| `repetition_loop` | A line other than dot leaders or rules occurs at least 20 times and makes up at least 30% of the page's non-empty lines; or the text ends in one unit of up to 200 characters repeated at least 20 times; or one letter repeats at least 40 times in a row. These are the shapes of a model stuck in a loop; a table that repeats a label on some of its rows stays below them. |
+| `script_mismatch` | Only when the config declares `language.script`: the page has at least 200 letters and fewer than half are in that script. |
+| `historical_letters_lost` | Only when the config declares `language.orthography: prereform`: at least 300 Cyrillic letters, none of ѣ, ѳ or ѵ, and a word-final ъ on at most 1% of words (or on one word). і is not counted, because modern Ukrainian and Belarusian use it. |
+
+`digits_only_text`, `mixed_script_tokens`, `private_use_characters` and
+`repeated_page_text` were measured before their thresholds were set: on
+5,702 sampled pages from 1,500 PDFs in a research library, and on 24 pages with
+reference transcriptions. Transcribed pages raised none of them. On the
+sample, `digits_only_text` fired only on one Internet Archive derivative
+format (56 pages, 27 files) and `mixed_script_tokens` on 60 pages of 18
+files. Private-use characters appeared in 44 files, mostly as bullets;
+`private_use_characters` fired on 19 pages of 12 files. A layer in the wrong script
+entirely, such as Latin-letter OCR of a Cyrillic book, contains no mixed
+tokens and raises none of these warnings.
+
+`repetition_loop` was set on 287 outputs of the same 24 transcribed pages by 11
+engines. It flags 16 pages, all from local vision models and every one a loop on
+inspection: a line repeated up to 1,684 times, dot leaders running for 11,000
+characters, a single letter repeated 5,897 times. It flags nothing from the
+classic OCR engines, the hosted models or the reference transcriptions. The two
+language checks run only when a config declares the language, because
+PageLedger does not guess a collection's script or spelling; they have not yet
+been measured on a corpus.
+
+Adapter-native warnings appear in the same `warnings` list. The built-in
+`pdf_ocr` adapter adds `render_dpi_capped` when it rendered a page below the
+requested DPI to stay within `run.adapter_options.max_render_pixels`; the
+page's `model` string then records both values, for example
+`dpi=94 (requested 300)`. When a page is rendered above the requested DPI to
+preserve embedded image resolution, its `model` string records that reason,
+for example `dpi=621 (requested 300, native image)`. See
+[page size and rendering](ocr-options.md#page-size-and-rendering).
 
 ### output_integrity fields
 
