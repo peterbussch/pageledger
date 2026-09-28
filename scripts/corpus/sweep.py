@@ -1,6 +1,6 @@
 """Check that every PDF under a folder opens and yields text, one child process each.
 
-    python scripts/corpus/sweep.py --root /Volumes/Kinodrive/Research_Data --out sweep.json
+    python scripts/corpus/sweep.py --root /path/to/pdfs --out sweep.json
 
 Each file is read in its own process with a time limit, so a hang or a crash
 is recorded instead of stopping the sweep. Outcomes use PageLedger's

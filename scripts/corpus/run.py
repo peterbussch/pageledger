@@ -1,11 +1,11 @@
 """Run one tier of a corpus manifest through PageLedger document jobs.
 
     python scripts/corpus/run.py --manifest corpus/manifest.public.yml --tier S \\
-        --profile scripts/corpus/profiles/local.yml --corpus-root /Volumes/Kinodrive
+        --profile scripts/corpus/profiles/local.yml --corpus-root /path/to/corpus
 
-Each item's source is checked against its manifest SHA-256 before it runs. The
-output directory holds one job per item, `results.jsonl` (one line per page),
-`summary.md` and `run.json`.
+Each item's `path` is read under `--corpus-root` and checked against its
+manifest SHA-256 before it runs. The output directory holds one job per item,
+`results.jsonl` (one line per page), `summary.md` and `run.json`.
 """
 
 from __future__ import annotations

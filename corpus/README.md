@@ -19,13 +19,14 @@ shape and is git-ignored.
 
 ```bash
 python scripts/corpus/run.py --manifest corpus/manifest.public.yml --tier S \
-  --profile scripts/corpus/profiles/local.yml --corpus-root /Volumes/Kinodrive
+  --profile scripts/corpus/profiles/local.yml --corpus-root /path/to/corpus
 ```
 
-The runner checks each source against its SHA-256 before running it, runs one
-`pageledger process` job per document, verifies each job, and writes
-`results.jsonl` (one line per page, with every attempt's engine, time, failure
-and output file), `summary.md` and `run.json` to
+Each item's `path` is relative to `--corpus-root`. The runner checks each
+source against its SHA-256 before running it, runs one `pageledger process`
+job per document, verifies each job, and writes `results.jsonl` (one line per
+page, with every attempt's engine, time, failure and output file),
+`summary.md` and `run.json` to
 `~/pageledger-corpus-runs/<time>-<tier>-<profile>/`. Repeat `--manifest` to
 add the local manifest; `--only ID ...` runs selected documents. To measure a
 baseline, point `--pageledger` at another installed version, for example
