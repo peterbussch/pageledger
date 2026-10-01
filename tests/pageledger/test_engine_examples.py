@@ -232,6 +232,87 @@ def test_rapidocr_column_order_finds_a_gutter_hidden_by_padded_boxes() -> None:
     ]
 
 
+def _line(text: str, x0: float, y0: float, x1: float, y1: float) -> dict:
+    return {
+        "text": text,
+        "x0": x0,
+        "x1": x1,
+        "y0": y0,
+        "y1": y1,
+        "cx": (x0 + x1) / 2,
+        "cy": (y0 + y1) / 2,
+        "h": y1 - y0,
+    }
+
+
+def _single_column(pattern: list[str]) -> list[dict]:
+    """One column of prose: full lines, short paragraph tails, indented dialogue, very short lines."""
+    spans = {"full": (0, 1000), "tail": (0, 380), "dlg": (60, 420), "short": (0, 70)}
+    return [
+        _line(f"{kind}{i}", *(spans[kind][0], i * 40, spans[kind][1], i * 40 + 30))
+        for i, kind in enumerate(pattern)
+    ]
+
+
+@pytest.mark.parametrize(
+    "pattern",
+    [
+        [
+            "dlg",
+            "tail",
+            "dlg",
+            "full",
+            "full",
+            "tail",
+            "dlg",
+            "tail",
+            "dlg",
+            "tail",
+            "dlg",
+            "full",
+            "tail",
+            "dlg",
+            "tail",
+            "dlg",
+            "tail",
+        ],
+        [
+            "dlg",
+            "tail",
+            "dlg",
+            "full",
+            "full",
+            "short",
+            "dlg",
+            "tail",
+            "dlg",
+            "short",
+            "dlg",
+            "full",
+            "tail",
+            "dlg",
+            "short",
+            "dlg",
+            "tail",
+        ],
+    ],
+)
+def test_rapidocr_column_order_reads_a_single_column_with_dialogue_in_order(pattern) -> None:
+    from pageledger.rapidocr_adapter import assemble
+
+    lines = _single_column(pattern)
+    assert assemble(lines, reading_order="columns").splitlines() == [line["text"] for line in lines]
+
+
+def test_rapidocr_column_order_reads_alternating_verse_indents_in_order() -> None:
+    from pageledger.rapidocr_adapter import assemble
+
+    lines = [
+        _line(f"verse{i}", 30 * (i % 2), i * 16, 30 * (i % 2) + 200, i * 16 + 12) for i in range(12)
+    ]
+    assert assemble(lines, reading_order="columns").splitlines() == [line["text"] for line in lines]
+
+
 def test_rapidocr_rejects_an_unknown_reading_order(tmp_path: Path, monkeypatch) -> None:
     from pageledger.adapters import load_adapter
 

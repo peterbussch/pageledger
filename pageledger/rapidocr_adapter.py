@@ -253,7 +253,10 @@ def _column_starts(lines: list[dict[str, Any]], gap: float) -> list[float]:
     """Gutters a detector's padded boxes hide: where many lines begin again to the right.
 
     Justified columns start their lines at one x position. A second cluster of
-    starts, holding at least a fifth of the lines, marks another column.
+    starts, holding at least a fifth of the lines, marks another column, but only
+    if nearly all the lines that start to its left also end at it. Indented
+    dialogue or verse in a single column starts further right too, yet the lines
+    beside it run on past that point, so it is not taken for a column.
     """
     if len(lines) < 10:
         return []
@@ -265,7 +268,13 @@ def _column_starts(lines: list[dict[str, Any]], gap: float) -> list[float]:
         else:
             clusters.append([x])
     columns = [c for c in clusters if len(c) >= max(3, len(lines) // 5)]
-    return [c[0] - gap / 2 for c in columns[1:]] if len(columns) > 1 else []
+    cuts = []
+    for column in columns[1:]:
+        start = column[0]
+        left = [line for line in lines if line["x0"] < start - gap / 2]
+        if left and sum(line["x1"] <= start + gap for line in left) >= 0.8 * len(left):
+            cuts.append(start - gap / 2)
+    return cuts
 
 
 def _columns(
@@ -288,7 +297,9 @@ def _columns(
         rest = [line for line in rest if line["cy"] >= limit]
         for i in range(len(edges) - 1):
             column = [line for line in segment if edges[i] < line["cx"] <= edges[i + 1]]
-            if column:
+            if len(column) == len(lines):  # no progress: read these lines as one block
+                blocks.append(column)
+            elif column:
                 blocks.extend(_xy_cut(column, gap))
         if wide and limit == wide[0]["cy"]:
             blocks.append([wide.pop(0)])
