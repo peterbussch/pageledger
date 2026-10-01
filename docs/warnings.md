@@ -57,7 +57,7 @@ the source evidence. The built-in PDF OCR currently reports
 | `engine_disagreement` | Independent readings disagree substantially. | Review the source and both attempts. |
 | `numeric_disagreement` | Independent readings differ in one or more numbers. | Verify each number against the source. |
 | `unconfirmed_model_output` | Selected generative-model text lacks independent agreement. | Compare with the source or obtain an independent extraction. |
-| `blank_candidate` | No usable text was extracted; visual blankness is not established. | Inspect the source; record `reviewed_blank` only if confirmed. |
+| `blank_candidate` | No usable text was extracted; visual blankness is not established. A later engine that reads clean text from the page clears it. | Inspect the source; record `reviewed_blank` only if confirmed. |
 | `provider_failure` | The latest extraction attempt failed. | Read the safe failure code and adapter guidance. Resolve setup or input problems before a deliberate new attempt. |
 | `outcome_unknown` | A request may have been sent, but no durable result was saved. | Investigate adapter/provider records before starting new work; automatic retry is not safe. |
 | `source_defect` | A person or adapter identified a source problem. | Seek an alternate source; review does not restore missing content. |

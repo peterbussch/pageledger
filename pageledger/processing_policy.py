@@ -81,7 +81,10 @@ _WARNING_HOLDS = {
 # Jobs written before 0.6 carry no hold_policy and filed an engine's low
 # confidence under coverage_defect; verification rebuilds them that way.
 _LEGACY_WARNING_HOLDS = {**_WARNING_HOLDS, "low_confidence": "coverage_defect"}
-HOLD_POLICY = "0.6"
+# 0.6.1: clean text from a later engine settles a blank candidate. Jobs written
+# under "0.6" kept the hold and are rebuilt that way.
+HOLD_POLICY = "0.6.1"
+COMPARING_HOLD_POLICIES = frozenset({"0.6", HOLD_POLICY})
 # Word agreement below which two engines disagree. On the 24 calibration pages it
 # flags 9 for RapidOCR/Apple Vision, 14 for Surya/RapidOCR, 22 for Tesseract/RapidOCR.
 ENGINE_AGREEMENT_THRESHOLD = 0.60
@@ -90,7 +93,16 @@ _HASH = re.compile(r"[0-9a-f]{64}\Z")
 
 def warning_holds(record: dict) -> dict[str, str]:
     """The warning-to-hold mapping that a job or its report was written with."""
-    return _WARNING_HOLDS if record.get("hold_policy") == HOLD_POLICY else _LEGACY_WARNING_HOLDS
+    return (
+        _WARNING_HOLDS
+        if record.get("hold_policy") in COMPARING_HOLD_POLICIES
+        else _LEGACY_WARNING_HOLDS
+    )
+
+
+def text_refutes_blank(record: dict) -> bool:
+    """Whether a job's hold policy lets clean text from a later engine clear a blank hold."""
+    return record.get("hold_policy") == HOLD_POLICY
 
 
 def validate_review(review: dict, page: dict) -> None:
@@ -321,9 +333,17 @@ def selected_clean_comparisons(
 
 
 def assess_page(
-    page: dict, review: dict | None = None, *, holds_for: dict[str, str] = _WARNING_HOLDS
+    page: dict,
+    review: dict | None = None,
+    *,
+    holds_for: dict[str, str] = _WARNING_HOLDS,
+    text_refutes_blank: bool = True,
 ) -> dict:
-    """Select evidence deterministically while keeping all recorded review holds."""
+    """Select evidence deterministically while keeping all recorded review holds.
+
+    The one hold later evidence can settle is a blank candidate: an engine that
+    reads clean text from the page shows it is not blank.
+    """
     attempts = page.get("attempts", [])
     reasons = list(dict.fromkeys(page.get("review_reasons") or []))
     completed = [item for item in attempts if item.get("outcome") == "completed"]
@@ -335,6 +355,8 @@ def assess_page(
         reasons.append("numeric_column_conflict")
     usable = _usable(completed)
     clean = [item for item in usable if not holds_by_id[item["attempt_id"]]]
+    if text_refutes_blank and clean and "blank_candidate" in reasons:
+        reasons.remove("blank_candidate")
     selected = next(iter(clean or usable), None)
     selected_comparisons = (
         selected_clean_comparisons(page, selected["attempt_id"], holds_for)

@@ -107,10 +107,13 @@ stage. An explicit quality warning is evidence requiring review; numeric model
 confidence does not rank candidates. `historical_orthography` alone does not
 force a rewrite or extraction escalation.
 
-Jobs record the mapping they used as `hold_policy: "0.6"`. Jobs and reports
-written before 0.6 have no `hold_policy`; they filed `low_confidence` under
-`coverage_defect`, and verification rebuilds them that way, so they still
-verify unchanged.
+Jobs record the mapping they used as `hold_policy`. Under `"0.6.1"`, a blank
+candidate is settled when a later engine reads clean text from the page: a scan
+with no text layer that OCR reads without concern is not held as a possible
+blank. Jobs marked `"0.6"` kept that hold. Jobs and reports written before 0.6
+have no `hold_policy`; they filed `low_confidence` under `coverage_defect`.
+Verification rebuilds every job with the mapping it recorded, so older jobs
+still verify unchanged.
 
 Numeric comparison uses records from alignment or explicitly structured JSON,
 CSV, and Markdown tables. It compares numeric cells under the same named columns

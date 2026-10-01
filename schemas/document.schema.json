@@ -28,8 +28,8 @@
       }
     },
     "hold_policy": {
-      "const": "0.6",
-      "description": "Warning-to-hold mapping the job used. Absent on reports written before 0.6, whose jobs filed low_confidence under coverage_defect."
+      "enum": ["0.6", "0.6.1"],
+      "description": "Warning-to-hold mapping the job used; 0.6.1 lets clean text from a later engine clear a blank candidate. Absent on reports written before 0.6, whose jobs filed low_confidence under coverage_defect."
     },
     "job_id": {
       "type": "string",

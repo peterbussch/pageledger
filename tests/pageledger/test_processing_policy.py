@@ -110,6 +110,33 @@ def test_blank_output_requires_explicit_review_and_preflight_receipt_can_bind():
     assert assess_page(p, receipt(p, "reviewed_blank", None))["disposition"] == "reviewed_blank"
 
 
+def test_clean_ocr_text_shows_an_empty_text_layer_was_not_a_blank_page():
+    # A scan has no text layer; OCR reading clean text settles that the page is not blank.
+    result = assess_page(page(attempt(text=" \n"), attempt("a2", "local_ocr")))
+    assert result["selected_attempt"] == "a2"
+    assert "blank_candidate" not in result["review_reasons"]
+    assert result["disposition"] == "unreviewed_text"
+    assert result["next_action"] == "review"
+
+
+def test_ocr_text_with_its_own_concern_keeps_the_blank_hold():
+    # Paper texture read as a few stray marks must not clear a blank candidate.
+    result = assess_page(
+        page(attempt(text=" \n"), attempt("a2", "local_ocr", text="., ~", warnings=["sparse"]))
+    )
+    assert "blank_candidate" in result["review_reasons"]
+    assert result["disposition"] == "coverage_defect"
+
+
+def test_jobs_written_by_0_6_0_keep_the_blank_hold_after_clean_ocr():
+    # Verification rebuilds a 0.6.0 job with the rule it was written under.
+    result = assess_page(
+        page(attempt(text=" \n"), attempt("a2", "local_ocr")), text_refutes_blank=False
+    )
+    assert result["disposition"] == "blank_candidate"
+    assert result["selected_attempt"] == "a2"
+
+
 @pytest.mark.parametrize(
     "outcome,disposition",
     [
