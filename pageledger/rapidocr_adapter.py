@@ -30,6 +30,7 @@ class RapidOCRAdapter:
     rec_model_dir: str
     max_side: int = 3200
     det_model_dir: str | None = None
+    reading_order: str = "rows"
     name: ClassVar[str] = "rapidocr"
     version: ClassVar[str] = "0.1"
     deterministic: ClassVar[bool] = True
@@ -57,6 +58,8 @@ class RapidOCRAdapter:
             and not (Path(self.det_model_dir).expanduser() / "inference.onnx").is_file()
         ):
             raise ValueError("det_model_dir must contain inference.onnx for the detection model")
+        if self.reading_order not in READING_ORDERS:
+            raise ValueError("rapidocr reading_order must be rows or columns")
         self._rapidocr_module()
 
     @cached_property
@@ -150,9 +153,13 @@ class RapidOCRAdapter:
                     "cx": sum(xs) / 4,
                     "cy": sum(ys) / 4,
                     "h": max(ys) - min(ys),
+                    "x0": min(xs),
+                    "x1": max(xs),
+                    "y0": min(ys),
+                    "y1": max(ys),
                 }
             )
-        content = assemble(lines)
+        content = assemble(lines, reading_order=self.reading_order)
         scores = [line["score"] * 100 for line in lines]
         detail = (
             None
@@ -172,6 +179,7 @@ class RapidOCRAdapter:
             model=(
                 f"rapidocr {importlib.metadata.version('rapidocr')}; rec PP-OCRv5 "
                 f"sha256:{self._recognizer_sha256}; scale-to={self.max_side}"
+                + ("; reading-order=columns" if self.reading_order == "columns" else "")
             ),
             warnings=[],
             usage={
@@ -184,10 +192,78 @@ class RapidOCRAdapter:
         )
 
 
-def assemble(lines: list[dict[str, Any]]) -> str:
-    """Cluster OCR lines into rows, preserving left-to-right order."""
+READING_ORDERS = ("rows", "columns")
+
+
+def assemble(lines: list[dict[str, Any]], reading_order: str = "rows") -> str:
+    """Join OCR lines in reading order.
+
+    ``rows`` clusters lines into rows across the whole page, which keeps the
+    cells of a table together. ``columns`` first cuts the page at whitespace
+    (recursive XY-cut), so the columns of a journal page are read one after
+    the other instead of line by line across the gutter.
+    """
     if not lines:
         return ""
+    if reading_order == "columns":
+        heights = sorted(line["h"] for line in lines)
+        gap = max(heights[len(heights) // 2], 1.0)
+        return "\n".join(_rows(block) for block in _xy_cut(lines, gap))
+    return _rows(lines)
+
+
+def _gaps(spans: list[tuple[float, float]], minimum: float) -> list[float]:
+    """Cut positions inside whitespace wider than ``minimum`` along one axis."""
+    cuts, end = [], None
+    for start, stop in sorted(spans):
+        if end is not None and start - end > minimum:
+            cuts.append((end + start) / 2)
+        end = stop if end is None else max(end, stop)
+    return cuts
+
+
+def _split(lines: list[dict[str, Any]], axis: str, gap: float) -> list[list[dict[str, Any]]]:
+    low, high, centre, size = (
+        ("y0", "y1", "cy", 0.8 * gap) if axis == "y" else ("x0", "x1", "cx", gap)
+    )
+    edges = [float("-inf"), *_gaps([(line[low], line[high]) for line in lines], size), float("inf")]
+    parts = [
+        [line for line in lines if edges[i] < line[centre] <= edges[i + 1]]
+        for i in range(len(edges) - 1)
+    ]
+    return [part for part in parts if part]
+
+
+def _gutters(lines: list[dict[str, Any]], gap: float) -> list[float]:
+    return _gaps([(line["x0"], line["x1"]) for line in lines], gap)
+
+
+def _xy_cut(lines: list[dict[str, Any]], gap: float) -> list[list[dict[str, Any]]]:
+    """Split at horizontal whitespace bands, then at vertical gutters.
+
+    Consecutive bands with the same gutter are rejoined first, so a paragraph
+    break that happens to fall at the same height in both columns does not
+    make the page read left-top, right-top, left-bottom, right-bottom.
+    """
+    bands = _split(lines, "y", gap)
+    merged: list[list[dict[str, Any]]] = []
+    for band in bands:
+        if merged:
+            above, here = _gutters(merged[-1], gap), _gutters(band, gap)
+            if above and here and all(any(abs(a - b) <= 2 * gap for b in above) for a in here):
+                merged[-1] = merged[-1] + band
+                continue
+        merged.append(band)
+    if len(merged) > 1:
+        return [block for band in merged for block in _xy_cut(band, gap)]
+    columns = _split(lines, "x", gap)
+    if len(columns) > 1:
+        return [block for column in columns for block in _xy_cut(column, gap)]
+    return [lines]
+
+
+def _rows(lines: list[dict[str, Any]]) -> str:
+    """Cluster OCR lines into rows, preserving left-to-right order."""
     heights = sorted(line["h"] for line in lines)
     tolerance = heights[len(heights) // 2] * 0.55
     rows: list[list[dict[str, Any]]] = []

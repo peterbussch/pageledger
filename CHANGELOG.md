@@ -4,6 +4,14 @@ Release changes follow the [artifact compatibility policy](docs/run-manifest-spe
 
 ## Unreleased
 
+### Added
+
+- `reading_order: columns` for the `rapidocr` adapter reads a page set in
+  columns one column at a time, after cutting the page at its whitespace. The
+  default, `rows`, still reads across the page, which suits tables. On a
+  two-column journal article the default glued the halves of neighbouring lines
+  together without any warning.
+
 ### Fixed
 
 - A scanned page with no text layer no longer waits for a person once OCR reads

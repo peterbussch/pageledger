@@ -95,6 +95,15 @@ taxonomy:
 
 Run with `pageledger run book.pdf --config pageledger.yml --out runs/rapidocr`.
 
+RapidOCR finds lines of text, and the adapter puts them in order. By default
+(`reading_order: rows`) it reads each row across the whole page, which keeps
+the cells of a table together. On a page set in two columns, such as a journal
+article, that reads line by line across the gutter and glues the halves of
+neighbouring lines together. Set `reading_order: columns` for such pages: the
+adapter then cuts the page at its whitespace and reads each column from top to
+bottom. Do not use it for tables, whose columns it would read one at a time.
+The page's provenance records the choice (`reading-order=columns`).
+
 ## Tesseract with the community orus model (macOS and Linux)
 
 The `orus` model source is [AButon-8/iskra_ocr](https://github.com/AButon-8/iskra_ocr),
