@@ -2,7 +2,7 @@
 
 Release changes follow the [artifact compatibility policy](docs/run-manifest-spec.md#compatibility-policy).
 
-## Unreleased
+## 0.6.1 - 2026-10-01
 
 ### Added
 
@@ -25,6 +25,17 @@ Release changes follow the [artifact compatibility policy](docs/run-manifest-spe
   cleared, and only by a non-generative engine; an engine's own judgement that a
   page is blank stays. New jobs record `hold_policy: "0.6.1"`;
   jobs written by 0.6.0 keep their holds and still verify.
+
+### Documentation
+
+- Troubleshooting covers an exit code 134 that ONNX Runtime can raise while
+  Python shuts down after a finished `rapidocr` job: verify the output and
+  decide from that.
+
+### Compatibility
+
+- `job.schema.json` and `document.schema.json` accept `hold_policy` `"0.6"` or
+  `"0.6.1"`. Artifacts written by 0.6.0 verify unchanged.
 
 ## 0.6.0 - 2026-09-28
 
