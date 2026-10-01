@@ -31,7 +31,7 @@ such as stage, route and disposition are defined in the
 | `resume` | `resume RUN_DIR [--adapter-path DIR] [--raise-limit LIMIT=VALUE] [--json]` | Work resumed, paused, or already finalized. | Halted/failed result or runtime error. |
 | `rerun` | `rerun PARENT_DIR --config FILE --out DIR [--dry-run] [--json] [--log-level LEVEL] [--adapter-path DIR]` | Rerun completed. | Any partial execution result or runtime error. |
 | `classify` | `classify [INPUT...] --out FILE [--config FILE] [--from-run DIR] [--adapter SPEC] [--adapter-path DIR] [--json]` | Route map written. | Runtime error. |
-| `doctor` | `doctor [--json]` | Diagnostics reported; findings do not change the exit code. | Runtime error. |
+| `doctor` | `doctor [--config FILE] [--json]` | Diagnostics reported; findings do not change the exit code. | Runtime error. |
 | `init-config` | `init-config [--out FILE] [--adapter text|pdf_text|pdf_ocr]` | Config written or printed. | Runtime error. |
 | `inspect-run` | `inspect-run RUN_DIR [--json | --csv]` | Summary written. | Runtime error. `--json` and `--csv` are mutually exclusive (usage error 2). |
 | `align` | `align RUN_DIR [--schema FILE] [--json] [--dry-run]` | Alignment applied or previewed. | Runtime error. |
@@ -416,12 +416,15 @@ non-English collections need are visible from the start.
 ```bash
 pageledger doctor
 pageledger doctor --json
+pageledger doctor --config processing.yml
 ```
 
 Read-only diagnostics: Python runtime, optional packages, external
 commands with versions and install hints, installed Tesseract language
 packs (the valid values for `run.adapter_options.lang`), and whether cloud
-OCR/VLM keys are present, without printing their values.
+OCR/VLM keys are present, without printing their values. With `--config`,
+doctor also reports every environment variable that config names through an
+adapter's `env_key`, such as a gateway's own key.
 
 ## Configuration
 

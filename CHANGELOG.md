@@ -6,6 +6,10 @@ Release changes follow the [artifact compatibility policy](docs/run-manifest-spe
 
 ### Added
 
+- `doctor --config FILE` also reports, without their values, the environment
+  variables that config's adapters name through `env_key`, such as a model
+  gateway's own key. Before, doctor listed only four fixed provider keys.
+
 - `reading_order: columns` for the `rapidocr` adapter reads a page set in
   columns one column at a time, after cutting the page at its whitespace. The
   default, `rows`, still reads across the page, which suits tables. On a

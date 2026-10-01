@@ -241,6 +241,11 @@ def build_parser() -> argparse.ArgumentParser:
         "doctor",
         help="Report optional dependencies, external tools, and redacted OCR/VLM env state",
     )
+    doctor_parser.add_argument(
+        "--config",
+        type=Path,
+        help="Also report the environment variables this config's adapters name by env_key",
+    )
     doctor_parser.add_argument("--json", action="store_true", dest="json_output")
 
     init_parser = subparsers.add_parser(
@@ -795,7 +800,7 @@ def _print_persisted_budget_alerts(out_dir: Path) -> None:
 
 
 def _cmd_doctor(args: argparse.Namespace) -> int:
-    report = build_doctor_report()
+    report = build_doctor_report(args.config)
     if args.json_output:
         print(json.dumps(report, ensure_ascii=False, sort_keys=True))
     else:

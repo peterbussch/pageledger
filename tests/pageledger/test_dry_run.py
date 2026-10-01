@@ -1935,6 +1935,36 @@ def test_doctor_reports_command_versions_and_redacted_env(monkeypatch):
     assert "do-not-print-me" not in json.dumps(report)
 
 
+def test_doctor_reports_the_keys_a_config_names(monkeypatch, tmp_path, capsys):
+    monkeypatch.setenv("OMNIROUTE_API_KEY", "do-not-print-me")
+    monkeypatch.delenv("SECOND_ROUTE_KEY", raising=False)
+    config = tmp_path / "processing.yml"
+    config.write_text(
+        "schema_version: '0.1'\n"
+        "processing:\n"
+        "  local_text: {adapter: pdf_text}\n"
+        "  local_ocr: {adapter: pdf_ocr}\n"
+        "  image:\n"
+        "    adapter: vision\n"
+        "    adapter_options: {base_url: 'http://127.0.0.1:20128/v1', model: m, env_key: OMNIROUTE_API_KEY}\n"
+        "  second_opinion:\n"
+        "    adapter: vision\n"
+        "    adapter_options: {base_url: 'http://127.0.0.1:20128/v1', model: n, env_key: SECOND_ROUTE_KEY}\n",
+        encoding="utf-8",
+    )
+    report = pageledger.doctor.build_doctor_report(config)
+    named = report["cloud_environment"]
+    assert named["OMNIROUTE_API_KEY"]["set"] is True
+    assert named["SECOND_ROUTE_KEY"]["set"] is False
+    assert "processing.yml" in named["OMNIROUTE_API_KEY"]["explanation"]
+    assert "do-not-print-me" not in json.dumps(report)
+    assert main(["doctor", "--config", str(config)]) == 0
+    out = capsys.readouterr().out
+    assert "Env OMNIROUTE_API_KEY: set" in out
+    assert "Env SECOND_ROUTE_KEY: missing" in out
+    assert "do-not-print-me" not in out
+
+
 def test_docs_examples_smoke_without_heavy_ocr_installs():
     root = runner_module.Path(__file__).resolve().parents[2]
     for example in [

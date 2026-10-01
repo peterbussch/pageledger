@@ -8,7 +8,10 @@ import platform
 import shutil
 import subprocess
 import sys
+from pathlib import Path
 from typing import Any
+
+import yaml
 
 from ._version import __version__
 
@@ -50,7 +53,21 @@ CLOUD_ENV_EXPLANATIONS = {
 }
 
 
-def build_doctor_report() -> dict[str, Any]:
+def build_doctor_report(config_path: Path | None = None) -> dict[str, Any]:
+    """Diagnostics; with a config, also the environment variables its adapters name by env_key."""
+    cloud = {
+        name: {"set": bool(os.environ.get(name)), "value": "<redacted>", "explanation": explanation}
+        for name, explanation in CLOUD_ENV_EXPLANATIONS.items()
+    }
+    if config_path is not None:
+        for name in sorted(
+            _env_keys(yaml.safe_load(Path(config_path).read_text(encoding="utf-8")))
+        ):
+            cloud[name] = {
+                "set": bool(os.environ.get(name)),
+                "value": "<redacted>",
+                "explanation": f"Named by env_key in {Path(config_path).name}.",
+            }
     return {
         "pageledger_version": __version__,
         "python": {
@@ -65,15 +82,18 @@ def build_doctor_report() -> dict[str, Any]:
         },
         "external_commands": {name: _command_report(name) for name in EXTERNAL_COMMANDS},
         "ocr_languages": _ocr_languages_report(),
-        "cloud_environment": {
-            name: {
-                "set": bool(os.environ.get(name)),
-                "value": "<redacted>",
-                "explanation": CLOUD_ENV_EXPLANATIONS[name],
-            }
-            for name in CLOUD_ENV_EXPLANATIONS
-        },
+        "cloud_environment": cloud,
     }
+
+
+def _env_keys(value: Any) -> set[str]:
+    """Every string set as `env_key` anywhere in a loaded config."""
+    if isinstance(value, dict):
+        found = {value["env_key"]} if isinstance(value.get("env_key"), str) else set()
+        return found.union(*(_env_keys(item) for item in value.values()))
+    if isinstance(value, list):
+        return set().union(*(_env_keys(item) for item in value))
+    return set()
 
 
 def _ocr_languages_report() -> dict[str, Any]:
