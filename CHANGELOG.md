@@ -17,7 +17,9 @@ Release changes follow the [artifact compatibility policy](docs/run-manifest-spe
 - A scanned page with no text layer no longer waits for a person once OCR reads
   it without concern. The empty text layer used to leave a `blank_candidate`
   hold on every such page, so a whole scanned book showed as "needing a person"
-  even where OCR had read each page. New jobs record `hold_policy: "0.6.1"`;
+  even where OCR had read each page. Only a hold raised by an empty reading is
+  cleared, and only by a non-generative engine; an engine's own judgement that a
+  page is blank stays. New jobs record `hold_policy: "0.6.1"`;
   jobs written by 0.6.0 keep their holds and still verify.
 
 ## 0.6.0 - 2026-09-28

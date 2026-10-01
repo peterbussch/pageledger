@@ -12,7 +12,7 @@ from uuid import uuid4
 
 import yaml
 
-from . import runner
+from . import processing_policy, runner
 from .adapters import PageLedgerDiagnostic
 from .checkpoint import (
     Checkpoint,
@@ -28,9 +28,8 @@ from .comparison import compare_texts
 from .config import load_config
 from .processing_config import STAGES, processing_config
 from .processing_policy import (
-    COMPARING_HOLD_POLICIES,
+    HOLD_POLICIES,
     HOLD_POLICY,
-    text_refutes_blank,
     warning_holds,
 )
 from .processing_source import inspect_source
@@ -467,7 +466,7 @@ def _refresh(job: dict, root: Path, *, materialize: bool = True) -> None:
                 "failure": record.get("error"),
                 "input_evidence": result.get("input_evidence"),
             }
-            if job.get("hold_policy") in COMPARING_HOLD_POLICIES:
+            if job.get("hold_policy") in HOLD_POLICIES:
                 attempt["adapter_capabilities"] = provenance.get("extractor", {}).get(
                     "capabilities", []
                 )
@@ -491,13 +490,17 @@ def _refresh(job: dict, root: Path, *, materialize: bool = True) -> None:
             pages[page_id]["attempts"].append(attempt)
     holds = warning_holds(job)
     for page in pages.values():
-        if job.get("hold_policy") in COMPARING_HOLD_POLICIES:
+        if job.get("hold_policy") in HOLD_POLICIES:
             page["comparisons"] = _build_comparisons(page["attempts"])
         else:
             page.pop("comparisons", None)
         page.update(
             assess_page(
-                page, page["review"], holds_for=holds, text_refutes_blank=text_refutes_blank(job)
+                page,
+                page["review"],
+                holds_for=holds,
+                # Only jobs written under the current policy clear a blank hold this way.
+                text_refutes_blank=job.get("hold_policy") == processing_policy.HOLD_POLICY,
             )
         )
     attempts = [attempt for page in pages.values() for attempt in page["attempts"]]

@@ -84,7 +84,7 @@ _LEGACY_WARNING_HOLDS = {**_WARNING_HOLDS, "low_confidence": "coverage_defect"}
 # 0.6.1: clean text from a later engine settles a blank candidate. Jobs written
 # under "0.6" kept the hold and are rebuilt that way.
 HOLD_POLICY = "0.6.1"
-COMPARING_HOLD_POLICIES = frozenset({"0.6", HOLD_POLICY})
+HOLD_POLICIES = frozenset({"0.6", HOLD_POLICY})
 # Word agreement below which two engines disagree. On the 24 calibration pages it
 # flags 9 for RapidOCR/Apple Vision, 14 for Surya/RapidOCR, 22 for Tesseract/RapidOCR.
 ENGINE_AGREEMENT_THRESHOLD = 0.60
@@ -93,16 +93,7 @@ _HASH = re.compile(r"[0-9a-f]{64}\Z")
 
 def warning_holds(record: dict) -> dict[str, str]:
     """The warning-to-hold mapping that a job or its report was written with."""
-    return (
-        _WARNING_HOLDS
-        if record.get("hold_policy") in COMPARING_HOLD_POLICIES
-        else _LEGACY_WARNING_HOLDS
-    )
-
-
-def text_refutes_blank(record: dict) -> bool:
-    """Whether a job's hold policy lets clean text from a later engine clear a blank hold."""
-    return record.get("hold_policy") == HOLD_POLICY
+    return _WARNING_HOLDS if record.get("hold_policy") in HOLD_POLICIES else _LEGACY_WARNING_HOLDS
 
 
 def validate_review(review: dict, page: dict) -> None:
@@ -332,17 +323,37 @@ def selected_clean_comparisons(
     ]
 
 
+def _blank_refuted(attempts: list[dict], clean: list[dict], holds_for: dict[str, str]) -> bool:
+    """A blank hold came only from empty readings, and a non-generative engine read clean text."""
+    for item in attempts:
+        if "blank_candidate" not in _attempt_holds(item, holds_for):
+            continue
+        codes = {
+            warning.get("type", warning.get("code")) if isinstance(warning, dict) else warning
+            for warning in item.get("warnings") or []
+        }
+        judged_blank = codes & {"blank", "blank_candidate"} or (
+            (item.get("classification") or {}).get("type") in {"blank", "blank_candidate"}
+            and (item.get("text") or "").strip()
+        )
+        if judged_blank or (item.get("text") or "").strip():
+            return False
+    return any("generative" not in item.get("adapter_capabilities", ()) for item in clean)
+
+
 def assess_page(
     page: dict,
     review: dict | None = None,
     *,
     holds_for: dict[str, str] = _WARNING_HOLDS,
-    text_refutes_blank: bool = True,
+    text_refutes_blank: bool = False,
 ) -> dict:
     """Select evidence deterministically while keeping all recorded review holds.
 
-    The one hold later evidence can settle is a blank candidate: an engine that
-    reads clean text from the page shows it is not blank.
+    With ``text_refutes_blank`` (hold policy 0.6.1) one hold can be settled by
+    later evidence: a blank candidate raised only because an engine returned no
+    text is cleared when another, non-generative engine reads clean text from the
+    page. An engine's own judgement that the page is blank is never cleared.
     """
     attempts = page.get("attempts", [])
     reasons = list(dict.fromkeys(page.get("review_reasons") or []))
@@ -355,7 +366,11 @@ def assess_page(
         reasons.append("numeric_column_conflict")
     usable = _usable(completed)
     clean = [item for item in usable if not holds_by_id[item["attempt_id"]]]
-    if text_refutes_blank and clean and "blank_candidate" in reasons:
+    if (
+        text_refutes_blank
+        and "blank_candidate" in reasons
+        and _blank_refuted(attempts, clean, holds_for)
+    ):
         reasons.remove("blank_candidate")
     selected = next(iter(clean or usable), None)
     selected_comparisons = (
