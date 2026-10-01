@@ -213,6 +213,25 @@ def test_rapidocr_column_order_survives_a_break_at_the_same_height_in_both_colum
     ]
 
 
+def test_rapidocr_column_order_finds_a_gutter_hidden_by_padded_boxes() -> None:
+    from pageledger.rapidocr_adapter import assemble
+
+    # Detector boxes overlap across a narrow gutter, and one line was merged across it.
+    lines = []
+    for row in range(12):
+        y = row * 14
+        for x0, x1, side in ((100, 1099, "L"), (1092, 2070, "R")):
+            lines.append({"text": f"{side}{row}", "x0": x0, "x1": x1, "y0": y, "y1": y + 12})
+    lines.append({"text": "merged", "x0": 100, "x1": 2070, "y0": 168, "y1": 180})
+    for line in lines:
+        line.update(cx=(line["x0"] + line["x1"]) / 2, cy=(line["y0"] + line["y1"]) / 2, h=12)
+    assert assemble(lines, reading_order="columns").splitlines() == [
+        *(f"L{row}" for row in range(12)),
+        *(f"R{row}" for row in range(12)),
+        "merged",
+    ]
+
+
 def test_rapidocr_rejects_an_unknown_reading_order(tmp_path: Path, monkeypatch) -> None:
     from pageledger.adapters import load_adapter
 

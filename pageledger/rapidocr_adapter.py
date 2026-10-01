@@ -222,20 +222,77 @@ def _gaps(spans: list[tuple[float, float]], minimum: float) -> list[float]:
     return cuts
 
 
-def _split(lines: list[dict[str, Any]], axis: str, gap: float) -> list[list[dict[str, Any]]]:
-    low, high, centre, size = (
-        ("y0", "y1", "cy", 0.8 * gap) if axis == "y" else ("x0", "x1", "cx", gap)
-    )
-    edges = [float("-inf"), *_gaps([(line[low], line[high]) for line in lines], size), float("inf")]
+# Fractions of the median line height: whitespace that separates bands of text,
+# and the narrowest gutter between columns. Lines wider than _WIDE of their block
+# (running heads, footers, headings across the page) are not allowed to hide a
+# gutter; they are read in place, between the column segments they divide.
+_BAND, _GUTTER, _WIDE = 0.5, 0.25, 0.6
+
+
+def _bands(lines: list[dict[str, Any]], gap: float) -> list[list[dict[str, Any]]]:
+    edges = [float("-inf"), *_gaps([(line["y0"], line["y1"]) for line in lines], _BAND * gap)]
+    edges.append(float("inf"))
     parts = [
-        [line for line in lines if edges[i] < line[centre] <= edges[i + 1]]
+        [line for line in lines if edges[i] < line["cy"] <= edges[i + 1]]
         for i in range(len(edges) - 1)
     ]
     return [part for part in parts if part]
 
 
 def _gutters(lines: list[dict[str, Any]], gap: float) -> list[float]:
-    return _gaps([(line["x0"], line["x1"]) for line in lines], gap)
+    cuts = _gaps([(line["x0"], line["x1"]) for line in lines], _GUTTER * gap)
+    if cuts:
+        return cuts
+    width = max(line["x1"] for line in lines) - min(line["x0"] for line in lines)
+    narrow = [line for line in lines if line["x1"] - line["x0"] < _WIDE * width]
+    cuts = _gaps([(line["x0"], line["x1"]) for line in narrow], _GUTTER * gap)
+    return cuts or _column_starts(narrow, gap)
+
+
+def _column_starts(lines: list[dict[str, Any]], gap: float) -> list[float]:
+    """Gutters a detector's padded boxes hide: where many lines begin again to the right.
+
+    Justified columns start their lines at one x position. A second cluster of
+    starts, holding at least a fifth of the lines, marks another column.
+    """
+    if len(lines) < 10:
+        return []
+    starts = sorted(line["x0"] for line in lines)
+    clusters: list[list[float]] = [[starts[0]]]
+    for x in starts[1:]:
+        if x - clusters[-1][-1] <= gap:
+            clusters[-1].append(x)
+        else:
+            clusters.append([x])
+    columns = [c for c in clusters if len(c) >= max(3, len(lines) // 5)]
+    return [c[0] - gap / 2 for c in columns[1:]] if len(columns) > 1 else []
+
+
+def _columns(
+    lines: list[dict[str, Any]], cuts: list[float], gap: float
+) -> list[list[dict[str, Any]]]:
+    """Read column by column, with lines that cross a gutter kept in place by height."""
+    edges = [float("-inf"), *cuts, float("inf")]
+    wide = sorted(
+        (
+            line
+            for line in lines
+            if any(line["x0"] < cut - 2 * gap and line["x1"] > cut + 2 * gap for cut in cuts)
+        ),
+        key=lambda line: line["cy"],
+    )
+    rest = [line for line in lines if all(line is not other for other in wide)]
+    blocks: list[list[dict[str, Any]]] = []
+    for limit in [*(line["cy"] for line in wide), float("inf")]:
+        segment = [line for line in rest if line["cy"] < limit]
+        rest = [line for line in rest if line["cy"] >= limit]
+        for i in range(len(edges) - 1):
+            column = [line for line in segment if edges[i] < line["cx"] <= edges[i + 1]]
+            if column:
+                blocks.extend(_xy_cut(column, gap))
+        if wide and limit == wide[0]["cy"]:
+            blocks.append([wide.pop(0)])
+    return blocks
 
 
 def _xy_cut(lines: list[dict[str, Any]], gap: float) -> list[list[dict[str, Any]]]:
@@ -245,9 +302,8 @@ def _xy_cut(lines: list[dict[str, Any]], gap: float) -> list[list[dict[str, Any]
     break that happens to fall at the same height in both columns does not
     make the page read left-top, right-top, left-bottom, right-bottom.
     """
-    bands = _split(lines, "y", gap)
     merged: list[list[dict[str, Any]]] = []
-    for band in bands:
+    for band in _bands(lines, gap):
         if merged:
             above, here = _gutters(merged[-1], gap), _gutters(band, gap)
             if above and here and all(any(abs(a - b) <= 2 * gap for b in above) for a in here):
@@ -256,10 +312,8 @@ def _xy_cut(lines: list[dict[str, Any]], gap: float) -> list[list[dict[str, Any]
         merged.append(band)
     if len(merged) > 1:
         return [block for band in merged for block in _xy_cut(band, gap)]
-    columns = _split(lines, "x", gap)
-    if len(columns) > 1:
-        return [block for column in columns for block in _xy_cut(column, gap)]
-    return [lines]
+    cuts = _gutters(lines, gap)
+    return _columns(lines, cuts, gap) if cuts else [lines]
 
 
 def _rows(lines: list[dict[str, Any]]) -> str:
