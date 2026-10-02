@@ -30,6 +30,7 @@ class RapidOCRAdapter:
     rec_model_dir: str
     max_side: int = 3200
     det_model_dir: str | None = None
+    reading_order: str = "rows"
     name: ClassVar[str] = "rapidocr"
     version: ClassVar[str] = "0.1"
     deterministic: ClassVar[bool] = True
@@ -57,6 +58,8 @@ class RapidOCRAdapter:
             and not (Path(self.det_model_dir).expanduser() / "inference.onnx").is_file()
         ):
             raise ValueError("det_model_dir must contain inference.onnx for the detection model")
+        if self.reading_order not in READING_ORDERS:
+            raise ValueError("rapidocr reading_order must be rows or columns")
         self._rapidocr_module()
 
     @cached_property
@@ -150,9 +153,13 @@ class RapidOCRAdapter:
                     "cx": sum(xs) / 4,
                     "cy": sum(ys) / 4,
                     "h": max(ys) - min(ys),
+                    "x0": min(xs),
+                    "x1": max(xs),
+                    "y0": min(ys),
+                    "y1": max(ys),
                 }
             )
-        content = assemble(lines)
+        content = assemble(lines, reading_order=self.reading_order)
         scores = [line["score"] * 100 for line in lines]
         detail = (
             None
@@ -172,6 +179,7 @@ class RapidOCRAdapter:
             model=(
                 f"rapidocr {importlib.metadata.version('rapidocr')}; rec PP-OCRv5 "
                 f"sha256:{self._recognizer_sha256}; scale-to={self.max_side}"
+                + ("; reading-order=columns" if self.reading_order == "columns" else "")
             ),
             warnings=[],
             usage={
@@ -184,10 +192,143 @@ class RapidOCRAdapter:
         )
 
 
-def assemble(lines: list[dict[str, Any]]) -> str:
-    """Cluster OCR lines into rows, preserving left-to-right order."""
+READING_ORDERS = ("rows", "columns")
+
+
+def assemble(lines: list[dict[str, Any]], reading_order: str = "rows") -> str:
+    """Join OCR lines in reading order.
+
+    ``rows`` clusters lines into rows across the whole page, which keeps the
+    cells of a table together. ``columns`` first cuts the page at whitespace
+    (recursive XY-cut), so the columns of a journal page are read one after
+    the other instead of line by line across the gutter.
+    """
     if not lines:
         return ""
+    if reading_order == "columns":
+        heights = sorted(line["h"] for line in lines)
+        gap = max(heights[len(heights) // 2], 1.0)
+        return "\n".join(_rows(block) for block in _xy_cut(lines, gap))
+    return _rows(lines)
+
+
+def _gaps(spans: list[tuple[float, float]], minimum: float) -> list[float]:
+    """Cut positions inside whitespace wider than ``minimum`` along one axis."""
+    cuts, end = [], None
+    for start, stop in sorted(spans):
+        if end is not None and start - end > minimum:
+            cuts.append((end + start) / 2)
+        end = stop if end is None else max(end, stop)
+    return cuts
+
+
+# Fractions of the median line height: whitespace that separates bands of text,
+# and the narrowest gutter between columns. Lines wider than _WIDE of their block
+# (running heads, footers, headings across the page) are not allowed to hide a
+# gutter; they are read in place, between the column segments they divide.
+_BAND, _GUTTER, _WIDE = 0.5, 0.25, 0.6
+
+
+def _bands(lines: list[dict[str, Any]], gap: float) -> list[list[dict[str, Any]]]:
+    edges = [float("-inf"), *_gaps([(line["y0"], line["y1"]) for line in lines], _BAND * gap)]
+    edges.append(float("inf"))
+    parts = [
+        [line for line in lines if edges[i] < line["cy"] <= edges[i + 1]]
+        for i in range(len(edges) - 1)
+    ]
+    return [part for part in parts if part]
+
+
+def _gutters(lines: list[dict[str, Any]], gap: float) -> list[float]:
+    cuts = _gaps([(line["x0"], line["x1"]) for line in lines], _GUTTER * gap)
+    if cuts:
+        return cuts
+    width = max(line["x1"] for line in lines) - min(line["x0"] for line in lines)
+    narrow = [line for line in lines if line["x1"] - line["x0"] < _WIDE * width]
+    cuts = _gaps([(line["x0"], line["x1"]) for line in narrow], _GUTTER * gap)
+    return cuts or _column_starts(narrow, gap)
+
+
+def _column_starts(lines: list[dict[str, Any]], gap: float) -> list[float]:
+    """Gutters a detector's padded boxes hide: where many lines begin again to the right.
+
+    Justified columns start their lines at one x position. A second cluster of
+    starts, holding at least a fifth of the lines, marks another column, but only
+    if nearly all the lines that start to its left also end at it. Indented
+    dialogue or verse in a single column starts further right too, yet the lines
+    beside it run on past that point, so it is not taken for a column.
+    """
+    if len(lines) < 10:
+        return []
+    starts = sorted(line["x0"] for line in lines)
+    clusters: list[list[float]] = [[starts[0]]]
+    for x in starts[1:]:
+        if x - clusters[-1][-1] <= gap:
+            clusters[-1].append(x)
+        else:
+            clusters.append([x])
+    columns = [c for c in clusters if len(c) >= max(3, len(lines) // 5)]
+    cuts = []
+    for column in columns[1:]:
+        start = column[0]
+        left = [line for line in lines if line["x0"] < start - gap / 2]
+        if left and sum(line["x1"] <= start + gap for line in left) >= 0.8 * len(left):
+            cuts.append(start - gap / 2)
+    return cuts
+
+
+def _columns(
+    lines: list[dict[str, Any]], cuts: list[float], gap: float
+) -> list[list[dict[str, Any]]]:
+    """Read column by column, with lines that cross a gutter kept in place by height."""
+    edges = [float("-inf"), *cuts, float("inf")]
+    wide = sorted(
+        (
+            line
+            for line in lines
+            if any(line["x0"] < cut - 2 * gap and line["x1"] > cut + 2 * gap for cut in cuts)
+        ),
+        key=lambda line: line["cy"],
+    )
+    rest = [line for line in lines if all(line is not other for other in wide)]
+    blocks: list[list[dict[str, Any]]] = []
+    for limit in [*(line["cy"] for line in wide), float("inf")]:
+        segment = [line for line in rest if line["cy"] < limit]
+        rest = [line for line in rest if line["cy"] >= limit]
+        for i in range(len(edges) - 1):
+            column = [line for line in segment if edges[i] < line["cx"] <= edges[i + 1]]
+            if len(column) == len(lines):  # no progress: read these lines as one block
+                blocks.append(column)
+            elif column:
+                blocks.extend(_xy_cut(column, gap))
+        if wide and limit == wide[0]["cy"]:
+            blocks.append([wide.pop(0)])
+    return blocks
+
+
+def _xy_cut(lines: list[dict[str, Any]], gap: float) -> list[list[dict[str, Any]]]:
+    """Split at horizontal whitespace bands, then at vertical gutters.
+
+    Consecutive bands with the same gutter are rejoined first, so a paragraph
+    break that happens to fall at the same height in both columns does not
+    make the page read left-top, right-top, left-bottom, right-bottom.
+    """
+    merged: list[list[dict[str, Any]]] = []
+    for band in _bands(lines, gap):
+        if merged:
+            above, here = _gutters(merged[-1], gap), _gutters(band, gap)
+            if above and here and all(any(abs(a - b) <= 2 * gap for b in above) for a in here):
+                merged[-1] = merged[-1] + band
+                continue
+        merged.append(band)
+    if len(merged) > 1:
+        return [block for band in merged for block in _xy_cut(band, gap)]
+    cuts = _gutters(lines, gap)
+    return _columns(lines, cuts, gap) if cuts else [lines]
+
+
+def _rows(lines: list[dict[str, Any]]) -> str:
+    """Cluster OCR lines into rows, preserving left-to-right order."""
     heights = sorted(line["h"] for line in lines)
     tolerance = heights[len(heights) // 2] * 0.55
     rows: list[list[dict[str, Any]]] = []

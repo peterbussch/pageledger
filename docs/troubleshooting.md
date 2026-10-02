@@ -88,6 +88,17 @@ Compare a copied directory with its source. For a job, verify again after
 restoring the exact missing or altered artifact; otherwise preserve the
 verification failure as part of the record. See [artifact verification](artifacts.md).
 
+## The command exits with code 134 after finishing
+
+On macOS, ONNX Runtime (used by the `rapidocr` adapter) has once been seen to
+abort while Python shut down, after a job had completed and written every
+file. The message is `libc++abi: terminating due to uncaught exception of type
+std::__1::system_error: recursive_mutex lock failed`. It could not be
+reproduced in 18 further jobs. If you see it, run `pageledger verify-job` (or
+`verify-run`) on the output: a `pass` means the work is complete and the exit
+code came from shutdown. Scripts that call PageLedger should decide from the
+verification, not from the exit code alone.
+
 ## One page keeps failing
 
 For a run, inspect `run.log`, `manifest.json`, and `rerun-manifest.yml`. Rerun

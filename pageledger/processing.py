@@ -12,7 +12,7 @@ from uuid import uuid4
 
 import yaml
 
-from . import runner
+from . import processing_policy, runner
 from .adapters import PageLedgerDiagnostic
 from .checkpoint import (
     Checkpoint,
@@ -27,7 +27,11 @@ from .classifier import classify_signals, merge_classify_thresholds, structural_
 from .comparison import compare_texts
 from .config import load_config
 from .processing_config import STAGES, processing_config
-from .processing_policy import HOLD_POLICY, warning_holds
+from .processing_policy import (
+    HOLD_POLICIES,
+    HOLD_POLICY,
+    warning_holds,
+)
 from .processing_source import inspect_source
 from .replay import _package_code_sha256
 from .review_sheet import read_review_sheet, write_review_sheet
@@ -462,7 +466,7 @@ def _refresh(job: dict, root: Path, *, materialize: bool = True) -> None:
                 "failure": record.get("error"),
                 "input_evidence": result.get("input_evidence"),
             }
-            if job.get("hold_policy") == HOLD_POLICY:
+            if job.get("hold_policy") in HOLD_POLICIES:
                 attempt["adapter_capabilities"] = provenance.get("extractor", {}).get(
                     "capabilities", []
                 )
@@ -486,11 +490,19 @@ def _refresh(job: dict, root: Path, *, materialize: bool = True) -> None:
             pages[page_id]["attempts"].append(attempt)
     holds = warning_holds(job)
     for page in pages.values():
-        if job.get("hold_policy") == HOLD_POLICY:
+        if job.get("hold_policy") in HOLD_POLICIES:
             page["comparisons"] = _build_comparisons(page["attempts"])
         else:
             page.pop("comparisons", None)
-        page.update(assess_page(page, page["review"], holds_for=holds))
+        page.update(
+            assess_page(
+                page,
+                page["review"],
+                holds_for=holds,
+                # Only jobs written under the current policy clear a blank hold this way.
+                text_refutes_blank=job.get("hold_policy") == processing_policy.HOLD_POLICY,
+            )
+        )
     attempts = [attempt for page in pages.values() for attempt in page["attempts"]]
     paid = [a for a in attempts if a["stage"] in {"image", "second_opinion"}]
     token_values = [a["usage"].get("tokens") for a in attempts]

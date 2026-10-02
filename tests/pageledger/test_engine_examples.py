@@ -82,6 +82,248 @@ def test_rapidocr_assembles_text_and_maps_confidence(
     assert result.model.startswith("rapidocr 3.9.2; rec PP-OCRv5 sha256:")
 
 
+def _box(x0: float, y0: float, x1: float, y1: float) -> list[list[float]]:
+    return [[x0, y0], [x1, y0], [x1, y1], [x0, y1]]
+
+
+# A journal page: a full-width title, then two columns whose lines sit at the same heights.
+TWO_COLUMNS = [
+    (_box(0, 0, 420, 20), "Title across the page"),
+    (_box(0, 60, 200, 72), "left one"),
+    (_box(220, 60, 420, 72), "right one"),
+    (_box(0, 80, 200, 92), "left two"),
+    (_box(220, 80, 420, 92), "right two"),
+    (_box(0, 100, 200, 112), "left three"),
+    (_box(220, 100, 420, 112), "right three"),
+]
+
+
+def _engine_for(lines):
+    class Engine:
+        def __init__(self, params):
+            pass
+
+        def __call__(self, _image):
+            return types.SimpleNamespace(
+                boxes=[box for box, _ in lines],
+                txts=[text for _, text in lines],
+                scores=[0.9] * len(lines),
+            )
+
+    return Engine
+
+
+def test_rapidocr_reads_rows_across_the_page_by_default(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from pageledger.adapters import load_adapter
+
+    _fake_rapidocr(monkeypatch, _engine_for(TWO_COLUMNS))
+    adapter = load_adapter("rapidocr", {"rec_model_dir": str(_recognizer(tmp_path / "rec"))})
+    result = adapter.extract(
+        _pdf(tmp_path / "sample.pdf"), page_id="p1", page_number=1, action="transcribe_text"
+    )
+    assert result.content.splitlines()[1] == "left one | right one"
+    assert "reading-order" not in result.model
+
+
+def test_rapidocr_column_reading_order_reads_each_column_through(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from pageledger.adapters import load_adapter
+
+    _fake_rapidocr(monkeypatch, _engine_for(TWO_COLUMNS))
+    adapter = load_adapter(
+        "rapidocr",
+        {"rec_model_dir": str(_recognizer(tmp_path / "rec")), "reading_order": "columns"},
+    )
+    result = adapter.extract(
+        _pdf(tmp_path / "sample.pdf"), page_id="p1", page_number=1, action="transcribe_text"
+    )
+    assert result.content.splitlines() == [
+        "Title across the page",
+        "left one",
+        "left two",
+        "left three",
+        "right one",
+        "right two",
+        "right three",
+    ]
+    assert result.model.endswith("; reading-order=columns")
+
+
+def test_rapidocr_column_order_keeps_a_side_block_beside_a_title(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from pageledger.rapidocr_adapter import assemble
+
+    # Authors on the left beside the title and abstract on the right, then body columns.
+    lines = [
+        {"text": text, "x0": b[0][0], "y0": b[0][1], "x1": b[2][0], "y1": b[2][1]}
+        for b, text in [
+            (_box(0, 0, 100, 12), "Author A"),
+            (_box(0, 16, 100, 28), "Author B"),
+            (_box(140, 0, 420, 12), "Title line"),
+            (_box(140, 16, 420, 28), "Abstract line"),
+            (_box(0, 60, 200, 72), "body left"),
+            (_box(220, 60, 420, 72), "body right"),
+        ]
+    ]
+    for line in lines:
+        line.update(cx=(line["x0"] + line["x1"]) / 2, cy=(line["y0"] + line["y1"]) / 2)
+        line["h"] = line["y1"] - line["y0"]
+    assert assemble(lines, reading_order="columns").splitlines() == [
+        "Author A",
+        "Author B",
+        "Title line",
+        "Abstract line",
+        "body left",
+        "body right",
+    ]
+
+
+def test_rapidocr_column_order_survives_a_break_at_the_same_height_in_both_columns() -> None:
+    from pageledger.rapidocr_adapter import assemble
+
+    rows = [(0, "a1", "b1"), (20, "a2", "b2"), (60, "a3", "b3"), (80, "a4", "b4")]
+    lines = []
+    for y, left, right in rows:
+        for x0, text in ((0, left), (220, right)):
+            lines.append(
+                {
+                    "text": text,
+                    "x0": x0,
+                    "x1": x0 + 200,
+                    "y0": y,
+                    "y1": y + 12,
+                    "cx": x0 + 100,
+                    "cy": y + 6,
+                    "h": 12,
+                }
+            )
+    assert assemble(lines, reading_order="columns").splitlines() == [
+        "a1",
+        "a2",
+        "a3",
+        "a4",
+        "b1",
+        "b2",
+        "b3",
+        "b4",
+    ]
+
+
+def test_rapidocr_column_order_finds_a_gutter_hidden_by_padded_boxes() -> None:
+    from pageledger.rapidocr_adapter import assemble
+
+    # Detector boxes overlap across a narrow gutter, and one line was merged across it.
+    lines = []
+    for row in range(12):
+        y = row * 14
+        for x0, x1, side in ((100, 1099, "L"), (1092, 2070, "R")):
+            lines.append({"text": f"{side}{row}", "x0": x0, "x1": x1, "y0": y, "y1": y + 12})
+    lines.append({"text": "merged", "x0": 100, "x1": 2070, "y0": 168, "y1": 180})
+    for line in lines:
+        line.update(cx=(line["x0"] + line["x1"]) / 2, cy=(line["y0"] + line["y1"]) / 2, h=12)
+    assert assemble(lines, reading_order="columns").splitlines() == [
+        *(f"L{row}" for row in range(12)),
+        *(f"R{row}" for row in range(12)),
+        "merged",
+    ]
+
+
+def _line(text: str, x0: float, y0: float, x1: float, y1: float) -> dict:
+    return {
+        "text": text,
+        "x0": x0,
+        "x1": x1,
+        "y0": y0,
+        "y1": y1,
+        "cx": (x0 + x1) / 2,
+        "cy": (y0 + y1) / 2,
+        "h": y1 - y0,
+    }
+
+
+def _single_column(pattern: list[str]) -> list[dict]:
+    """One column of prose: full lines, short paragraph tails, indented dialogue, very short lines."""
+    spans = {"full": (0, 1000), "tail": (0, 380), "dlg": (60, 420), "short": (0, 70)}
+    return [
+        _line(f"{kind}{i}", *(spans[kind][0], i * 40, spans[kind][1], i * 40 + 30))
+        for i, kind in enumerate(pattern)
+    ]
+
+
+@pytest.mark.parametrize(
+    "pattern",
+    [
+        [
+            "dlg",
+            "tail",
+            "dlg",
+            "full",
+            "full",
+            "tail",
+            "dlg",
+            "tail",
+            "dlg",
+            "tail",
+            "dlg",
+            "full",
+            "tail",
+            "dlg",
+            "tail",
+            "dlg",
+            "tail",
+        ],
+        [
+            "dlg",
+            "tail",
+            "dlg",
+            "full",
+            "full",
+            "short",
+            "dlg",
+            "tail",
+            "dlg",
+            "short",
+            "dlg",
+            "full",
+            "tail",
+            "dlg",
+            "short",
+            "dlg",
+            "tail",
+        ],
+    ],
+)
+def test_rapidocr_column_order_reads_a_single_column_with_dialogue_in_order(pattern) -> None:
+    from pageledger.rapidocr_adapter import assemble
+
+    lines = _single_column(pattern)
+    assert assemble(lines, reading_order="columns").splitlines() == [line["text"] for line in lines]
+
+
+def test_rapidocr_column_order_reads_alternating_verse_indents_in_order() -> None:
+    from pageledger.rapidocr_adapter import assemble
+
+    lines = [
+        _line(f"verse{i}", 30 * (i % 2), i * 16, 30 * (i % 2) + 200, i * 16 + 12) for i in range(12)
+    ]
+    assert assemble(lines, reading_order="columns").splitlines() == [line["text"] for line in lines]
+
+
+def test_rapidocr_rejects_an_unknown_reading_order(tmp_path: Path, monkeypatch) -> None:
+    from pageledger.adapters import load_adapter
+
+    _fake_rapidocr(monkeypatch, _engine_for(TWO_COLUMNS))
+    with pytest.raises(ValueError, match="reading_order must be rows or columns"):
+        load_adapter(
+            "rapidocr",
+            {"rec_model_dir": str(_recognizer(tmp_path / "rec")), "reading_order": "auto"},
+        )
+
+
 def test_rapidocr_run_cli_writes_normalized_quality_and_detail(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

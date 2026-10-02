@@ -48,6 +48,8 @@ class StageAdapter(TextAdapter):
             )
         if self.stage in {"local_text", "local_ocr"} and getattr(self, "generative_only", False):
             content = ""
+        if self.stage == "local_text" and getattr(self, "scanned", False):
+            content = ""
         if self.stage == "image" and getattr(self, "generative_only", False):
             content = TEXT
         return ExtractionResult(
@@ -86,6 +88,7 @@ def setup(tmp_path, monkeypatch):
         object.__setattr__(value, "numeric", shared.get("numeric", False))
         object.__setattr__(value, "generative_only", shared.get("generative_only", False))
         object.__setattr__(value, "text_only_defective", shared.get("text_only_defective", False))
+        object.__setattr__(value, "scanned", shared.get("scanned", False))
         object.__setattr__(
             value,
             "capabilities",
@@ -579,6 +582,34 @@ def test_verify_job_accepts_a_legacy_report_without_format_marker(setup):
     (setup[2] / "transcript.md").write_text(render_transcript(report))
     (setup[2] / "report.md").write_text(render_document_report(report))
 
+    assert verify_job(setup[2])["status"] == "pass"
+
+
+def test_scanned_page_read_cleanly_by_ocr_does_not_need_a_person(setup):
+    from pageledger.processing_policy import HOLD_POLICY
+
+    setup[3].update(scanned=True, defective=set())
+    assert launch(setup, pages="1")["status"] == "completed"
+    job = read_record(setup[2] / "job.json")
+    assert job["hold_policy"] == HOLD_POLICY
+    page = job["pages"][0]
+    assert page["selected_attempt"].startswith("local_ocr")
+    assert page["disposition"] == "unreviewed_text"
+    assert page["review_reasons"] == []
+    assert "Pages needing a person: 0" in (setup[2] / "report.md").read_text(encoding="utf-8")
+    assert verify_job(setup[2])["status"] == "pass"
+
+
+def test_job_written_by_0_6_0_still_verifies_with_its_blank_hold(setup, monkeypatch):
+    import pageledger.processing as processing_module
+
+    setup[3].update(scanned=True, defective=set())
+    with monkeypatch.context() as patch:
+        patch.setattr(processing_module, "HOLD_POLICY", "0.6")
+        assert launch(setup, pages="1")["status"] == "completed"
+    job = read_record(setup[2] / "job.json")
+    assert job["hold_policy"] == "0.6"
+    assert job["pages"][0]["disposition"] == "blank_candidate"
     assert verify_job(setup[2])["status"] == "pass"
 
 

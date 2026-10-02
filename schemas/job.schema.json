@@ -747,8 +747,8 @@
           }
         },
         "hold_policy": {
-          "const": "0.6",
-          "description": "Warning-to-hold mapping for this job. Absent on jobs written before 0.6, which filed low_confidence under coverage_defect."
+          "enum": ["0.6", "0.6.1"],
+          "description": "Warning-to-hold mapping for this job; 0.6.1 lets clean text from a later engine clear a blank candidate. Absent on jobs written before 0.6, which filed low_confidence under coverage_defect."
         },
         "package_sha256": {
           "type": "string",

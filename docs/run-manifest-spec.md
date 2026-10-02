@@ -8,7 +8,7 @@ is the durable pointer to every other artifact in the run directory.
 ```json
 {
   "schema_version": "0.1",
-  "pageledger_version": "0.6.0",
+  "pageledger_version": "0.6.1",
   "run_id": "run-20260619T193000000000Z",
   "parent_run_id": null,
   "run_depth": 0,

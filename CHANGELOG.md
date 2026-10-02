@@ -2,6 +2,41 @@
 
 Release changes follow the [artifact compatibility policy](docs/run-manifest-spec.md#compatibility-policy).
 
+## 0.6.1 - 2026-10-01
+
+### Added
+
+- `doctor --config FILE` also reports, without their values, the environment
+  variables that config's adapters name through `env_key`, such as a model
+  gateway's own key. Before, doctor listed only four fixed provider keys.
+
+- `reading_order: columns` for the `rapidocr` adapter reads a page set in
+  columns one column at a time, after cutting the page at its whitespace. The
+  default, `rows`, still reads across the page, which suits tables. On a
+  two-column journal article the default glued the halves of neighbouring lines
+  together without any warning.
+
+### Fixed
+
+- A scanned page with no text layer no longer waits for a person once OCR reads
+  it without concern. The empty text layer used to leave a `blank_candidate`
+  hold on every such page, so a whole scanned book showed as "needing a person"
+  even where OCR had read each page. Only a hold raised by an empty reading is
+  cleared, and only by a non-generative engine; an engine's own judgement that a
+  page is blank stays. New jobs record `hold_policy: "0.6.1"`;
+  jobs written by 0.6.0 keep their holds and still verify.
+
+### Documentation
+
+- Troubleshooting covers an exit code 134 that ONNX Runtime can raise while
+  Python shuts down after a finished `rapidocr` job: verify the output and
+  decide from that.
+
+### Compatibility
+
+- `job.schema.json` and `document.schema.json` accept `hold_policy` `"0.6"` or
+  `"0.6.1"`. Artifacts written by 0.6.0 verify unchanged.
+
 ## 0.6.0 - 2026-09-28
 
 ### Added
