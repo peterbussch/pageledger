@@ -555,6 +555,8 @@ def _triggers(
         fired.append(
             {"trigger": "rough", "stage": stage, "attempt": selected["attempt_id"], **measure}
         )
+    if "always" in escalate_on:
+        fired.append({"trigger": "always", "stage": stage, "attempt": selected["attempt_id"]})
     found = [reason for reason in _DISAGREEMENTS if reason in reasons]
     if "disagreement" in escalate_on and found:
         fired.append(

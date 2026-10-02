@@ -182,6 +182,9 @@ processing:
 - `disagreement`: the selected reading and another clean one agree on fewer than
   60% of their words, or read a number differently. Without this trigger the page
   goes to review, as before.
+- `always`: every page climbs to the image stage. Use it with
+  [`contest`](#contest-a-models-reading) when the goal is an edition: the model
+  reads every page and each place it differs from the OCR is checked.
 
 `hold` is 0.6's rule and must be listed. Triggers lift a page at most to the
 `image` stage: a second model is another witness with the same habits, not a
@@ -199,7 +202,11 @@ adds the work done at each stage and how many pages each trigger raised.
 These numbers came from one test with real documents. Clean born-digital
 Russian scored 0.98 to 0.995. OCR of a two-column article read as one column
 scored 0.87 to 0.91. Treat 0.95 as a starting point and measure your own
-collection.
+collection. `rough` catches a reading that has gone wrong, not scattered
+misreadings: read in column order, the same article scored 0.95 to 0.97 while
+its OCR still misread about one word in a hundred, and six of its seven pages
+stopped at OCR. Names, abbreviations and a linguist's examples are unknown
+words too; a hand-checked 1962 monograph scored a median 0.97.
 
 ## Contest a model's reading
 
@@ -222,7 +229,10 @@ processing:
 
 The model's text is the base, and every span is anchored in its offsets. Words
 one engine placed elsewhere on the page count as reading order, not as
-differences. Unpaired words are grouped, so a line one engine dropped is one
+differences, and so does a word the model hyphenated across a line that the
+other engine read as its two halves. Any other split or joined word stays a
+difference: a model that writes «гос средств» for the printed «госсредств» has
+changed the text. Unpaired words are grouped, so a line one engine dropped is one
 span. A formula (`$...$`), a `[Figure: ...]` line, `[illegible]` and a word the
 model marked `[?]` are each one `region` span, because the model wrote them in a
 form no literal engine can confirm word by word.
@@ -241,7 +251,7 @@ Cyrillic model made at least twice in one dogfood, checked against the page
 images; its pairs never cross case, and they apply only to the `rapidocr`
 adapter. Without a lexicon only rule H applies. On two fully checked Russian
 documents (61 pages) the rules settled 175 spans with no error against the
-image-checked text, and the open spans covered 303 of the 319 corrections the
+image-checked text, and the open spans covered 302 of the 319 corrections the
 model's text needed. The misses were accents and figure labels that neither
 engine read.
 

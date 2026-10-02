@@ -181,6 +181,27 @@ def contest(
         else:
             unmatched.append((index, block))
 
+    # A word the base hyphenates across a line break, read by the other engine as its
+    # two halves, is one word: column order often carries the second half elsewhere.
+    # Any other split or merge changes the text and stays a difference.
+    for index, block in list(unmatched):
+        start, end = stream[index][:2]
+        parts = [unicodedata.normalize("NFC", p) for p in _BREAK.split(base[start:end], 1)]
+        if len(parts) != 2:
+            continue
+        first, second = (
+            min(
+                (item for item in remaining if other[item[0]][2] == part),
+                key=lambda item: abs(item[1] - block),
+                default=None,
+            )
+            for part in parts
+        )
+        if first and second and first != second:
+            unmatched.remove((index, block))
+            remaining.remove(first)
+            remaining.remove(second)
+
     spans: list[dict[str, Any]] = []
     alone: list[tuple[int, int]] = []
     for index, block in unmatched:

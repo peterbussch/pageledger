@@ -10,7 +10,7 @@ Release changes follow the [artifact compatibility policy](docs/run-manifest-spe
   adds `rough`, for a reading whose share of known words falls below a threshold
   (the Russian lexicon comes with `pip install 'pageledger[ru]'`), and
   `disagreement`, for clean readings that disagree, which used to go straight to
-  review. Triggers lift a page at most to the image stage. Each one is recorded
+  review, and `always`, which sends every page to the image stage. Triggers lift a page at most to the image stage. Each one is recorded
   on the page with its evidence, and the report shows the work done at each
   stage.
 - A `foreign_script_characters` warning for a few letters from a script that

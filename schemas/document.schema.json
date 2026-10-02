@@ -546,7 +546,7 @@
             "items": {
               "type": "object",
               "properties": {
-                "trigger": {"enum": ["rough", "disagreement"]},
+                "trigger": {"enum": ["rough", "disagreement", "always"]},
                 "attempt": {"type": "string", "minLength": 1}
               },
               "required": ["trigger", "attempt"]

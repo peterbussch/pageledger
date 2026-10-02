@@ -7,8 +7,9 @@ from typing import Any
 
 STAGES = ("local_text", "local_ocr", "image", "second_opinion")
 # Why a page climbs to the next stage. `hold` is 0.6's rule and always applies;
-# `rough` and `disagreement` let a page whose reading looks clean climb too.
-TRIGGERS = ("hold", "rough", "disagreement")
+# `rough` and `disagreement` let a page whose reading looks clean climb too, and
+# `always` sends every page up, so a contested reader checks every page.
+TRIGGERS = ("hold", "rough", "disagreement", "always")
 LEXICON_PROVIDERS = ("pymorphy3",)
 PROMPT = (
     "Transcribe only text visible on this source page, preserving page order, headings, "

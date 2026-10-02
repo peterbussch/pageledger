@@ -673,6 +673,21 @@ def test_disagreeing_engines_climb_to_the_reader(setup, monkeypatch):
     assert page["triggers"][0]["trigger"] == "disagreement"
 
 
+def test_always_sends_a_clean_page_up_to_the_reader(setup):
+    setup[3].update(defective=set())
+    data = yaml.safe_load(setup[1].read_text())
+    data["processing"]["escalate_on"] = ["hold", "always"]
+    setup[1].write_text(yaml.safe_dump(data))
+    assert launch(setup, pages="1")["status"] == "completed"
+    page = read_record(setup[2] / "job.json")["pages"][0]
+    assert [a["stage"] for a in page["attempts"]] == ["local_text", "local_ocr", "image"]
+    assert [(t["trigger"], t["stage"]) for t in page["triggers"]] == [
+        ("always", "local_text"),
+        ("always", "local_ocr"),
+    ]
+    assert verify_job(setup[2])["status"] == "pass"
+
+
 def test_a_job_refuses_to_verify_under_another_lexicon(setup, monkeypatch):
     setup[3].update(defective=set())
     _escalating(setup, monkeypatch)

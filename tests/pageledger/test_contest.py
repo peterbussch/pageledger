@@ -143,3 +143,14 @@ def test_span_ids_are_stable_and_distinct():
     first, second = spans(base, witness), spans(base, witness)
     assert [s["span_id"] for s in first] == [s["span_id"] for s in second]
     assert len({s["span_id"] for s in first}) == 2
+
+
+def test_a_word_hyphenated_at_a_line_end_matches_its_two_halves_anywhere():
+    # Column order carried the second half of the hyphenated word elsewhere.
+    assert spans("Работа в запад-\nной науке.", "Работа в запад науке. ной") == []
+
+
+def test_a_reader_that_splits_or_joins_a_word_is_contested():
+    # The print has госсредств; the reader wrote two words.
+    assert spans("Работа гос средств.", "Работа госсредств.", lexicon=None)
+    assert spans("Работа западной науке.", "Работа запад ной науке.", lexicon=None)
