@@ -1052,8 +1052,9 @@ def test_letters_from_a_script_that_does_not_belong_warn(tmp_path, intrusion):
         PROSE + " Функция потерь 𝜃 и ℒ(𝜃) = ∑ log p, где ℓ — длина. ",
         PROSE + " Греческие буквы α, β, γ и стрелка → обозначают отношения. ",
         "שלום עולם זה טקסט בעברית עם כמה מילים נוספות לבדיקה " * 6,
+        PROSE + " Толщина 3 µm, 5 µm и 7 µm; 1º и 2ª. ",
     ],
-    ids=["math-letters", "greek", "hebrew-page"],
+    ids=["math-letters", "greek", "hebrew-page", "micro-and-ordinals"],
 )
 def test_math_letters_greek_and_a_whole_other_script_do_not_warn(tmp_path, text):
     assert "foreign_script_characters" not in _page_warnings(tmp_path, text)["warnings"]

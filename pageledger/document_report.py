@@ -315,10 +315,12 @@ def _contest_accounting(report: dict) -> list[str]:
     by_review = sum(item["by_review"] for item in contested)
     open_spans = sum(item["open"] for item in contested)
     held = sum(item["open"] > 0 for item in contested)
+    superseded = sum(len(item["superseded"]) for item in contested)
     return [
         f"Contested spans on {len(contested)} pages: {listed}. Settled by rule: {by_rule}; "
         f"by adjudication: {by_review}; open: {open_spans}, holding {held} pages. "
-        f"Adjudicated pages: {report['counts']['adjudicated_pages']}.",
+        f"Adjudicated pages: {report['counts']['adjudicated_pages']}. "
+        f"Holds set aside by contest: {superseded}.",
         "",
     ]
 
@@ -525,10 +527,20 @@ def build_document_report(
                 "text": text,
             }
             edition = page.get("edition")
-            if edition is not None:
-                # The selected attempt with its settled spans applied; the attempt is unchanged.
-                if edition["base_attempt"] != chosen["attempt_id"]:
-                    raise ValueError("Edition text rests on another attempt than the selected one")
+            reviewed = None
+            if page.get("review") is not None:
+                reviewed = next(
+                    item["output_sha256"]
+                    for item in page["review"]["decisions"]
+                    if item["page_id"] == page["page_id"]
+                )
+            # The selected attempt with its settled spans applied, unless a person
+            # reviewed the attempt's own text instead. The attempt is unchanged.
+            if (
+                edition is not None
+                and edition["base_attempt"] == chosen["attempt_id"]
+                and reviewed in (None, edition["sha256"])
+            ):
                 content = _artifact_bytes(root, edition["artifact"], edition["sha256"])
                 page["selected_output"].update(
                     path=edition["artifact"],

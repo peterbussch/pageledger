@@ -1100,7 +1100,7 @@ def _mixed_script_token_ratio(text: str) -> float:
 def _oracle_foreign_script_count(text: str) -> int:
     count = 0
     for char in text:
-        if unicodedata.category(char)[0] not in "LM":
+        if char in "µªº" or unicodedata.category(char)[0] not in "LM":
             continue
         if "℀" <= char <= "⅏" or "\U0001d400" <= char <= "\U0001d7ff":
             continue

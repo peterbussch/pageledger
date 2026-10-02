@@ -26,7 +26,7 @@ such as stage, route and disposition are defined in the
 | `verify-job` | `verify-job JOB_DIR [--json]` | Job verifies. | Verification fails or runtime error. |
 | `review-sheet` | `review-sheet JOB_DIR --out FILE [--json]` | Sheet written. | Runtime error. |
 | `review-job` | `review-job JOB_DIR --review FILE [--reviewer NAME] [--dry-run] [--json]` | Decisions checked or recorded. | Job halted/failed or runtime error. |
-| `adjudicate` | `adjudicate JOB_DIR (--packets DIR | --decisions DIR --reviewer NAME [--dry-run]) [--json]` | Packets written, or decisions checked or recorded. | Refused decisions or runtime error. |
+| `adjudicate` | `adjudicate JOB_DIR (--packets DIR | --decisions DIR --reviewer NAME [--dry-run]) [--json]` | Packets written, or decisions checked or recorded. | Refused decisions, a halted job (decisions are still recorded), or runtime error. |
 | `export` | `export JOB_DIR --format txt|md|jsonl|tei --out FILE [--reviewed-only]` | Verified export written. | Runtime error or refused export. |
 | `run` | `run INPUT... (--config FILE | --adapter text|pdf_text|pdf_ocr) --out DIR [--pages RANGE] [--routes FILE] [--resumable] [--dry-run] [--json] [--log-level LEVEL] [--adapter-path DIR]` | Run completed, including partial results without failed or unattempted pages. | Partial run with failed or unattempted pages, or runtime error. |
 | `resume` | `resume RUN_DIR [--adapter-path DIR] [--raise-limit LIMIT=VALUE] [--json]` | Work resumed, paused, or already finalized. | Halted/failed result or runtime error. |

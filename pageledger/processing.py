@@ -381,7 +381,7 @@ def _escalation(job: dict) -> tuple[tuple[str, ...], Any, float | None]:
             f"{lexicon.identity}. Install the recorded version to verify or resume it."
         )
     return (
-        tuple(policy["escalate_on"]),
+        tuple(policy.get("escalate_on", ("hold",))),
         # Selection, triggers and their history judge the same readings repeatedly.
         functools.lru_cache(maxsize=None)(lambda text: roughness(text, lexicon)),
         lexicon_config.get("rough_below"),
@@ -450,9 +450,27 @@ def _retain(root: Path, relative: str, encoded: bytes, materialize: bool, what: 
     return file_digest(target)
 
 
-def _retain_contested(root: Path, page: dict, result: dict, materialize: bool) -> None:
-    """Keep a page's spans and any edition as artifacts; the page keeps hashes and counts."""
+def _retain_contested(
+    root: Path, page: dict, result: dict, materialize: bool, before: dict | None
+) -> None:
+    """Keep a page's spans and any edition as artifacts; the page keeps hashes and counts.
+
+    Spans change when a new reading becomes the base or the witness. Different spans
+    from the same two readings mean the contest procedure changed, which would orphan
+    every receipt that answers them, so that is refused.
+    """
     record = result["record"]
+    if (
+        before is not None
+        and before["base_attempt"] == record["base"]["attempt"]
+        and before["witness_attempt"] == record["witness"]["attempt"]
+        and before["sha256"] != result["sha256"]
+    ):
+        raise ValueError(
+            f"Contest of {page['page_id']} gives different spans from the same readings: "
+            f"this job was contested under {record['rules']} by another PageLedger version. "
+            "Install that version to continue or verify it."
+        )
     relative = f"contested/{page['page_id']}.json"
     _retain(root, relative, adjudication.encode(record), materialize, "Contested spans")
     spans = record["spans"]
@@ -465,6 +483,9 @@ def _retain_contested(root: Path, page: dict, result: dict, materialize: bool) -
         "open": result["open"],
         "by_rule": sum(span["status"] == "settled" for span in spans),
         "by_review": len(result["decided"]),
+        "superseded": [
+            {"reason": reason, "attempt": attempt} for reason, attempt in result["superseded"]
+        ],
     }
     if result["edition"] is not None:
         relative = f"editions/{page['page_id']}.txt"
@@ -482,10 +503,11 @@ def _refresh(job: dict, root: Path, *, materialize: bool = True) -> None:
 
     _check_source(job)
     pages = {p["page_id"]: p for p in job["pages"]}
+    contested_before = {}
     for page in pages.values():
         page["attempts"] = []
         page["review_reasons"] = []
-        page.pop("contested", None)
+        contested_before[page["page_id"]] = page.pop("contested", None)
         page.pop("edition", None)
     for stage in job["stages"]:
         child = _safe(root, stage["run_path"])
@@ -631,7 +653,7 @@ def _refresh(job: dict, root: Path, *, materialize: bool = True) -> None:
         )
         result = page.pop("contested", None)
         if result is not None:
-            _retain_contested(root, page, result, materialize)
+            _retain_contested(root, page, result, materialize, contested_before[page["page_id"]])
     attempts = [attempt for page in pages.values() for attempt in page["attempts"]]
     paid = [a for a in attempts if a["stage"] in {"image", "second_opinion"}]
     token_values = [a["usage"].get("tokens") for a in attempts]
@@ -957,6 +979,8 @@ def adjudication_packets(job_dir: Path, out: Path) -> dict:
     root = job_dir.expanduser().resolve()
     with writer_lock(root):
         job = _load(root)
+        if not job["policy"].get("contest"):
+            raise ValueError("This job does not contest readings; it has no spans to settle")
         _refresh(job, root, materialize=False)
         return {"status": "written", **adjudication.write_packets(job, root, out)}
 
@@ -980,6 +1004,8 @@ def adjudicate_job(job_dir: Path, decisions: Path, *, reviewer: str, dry_run: bo
             contested = page.get("contested")
             if not contested:
                 raise ValueError(f"{page['page_id']} has no contested spans to settle")
+            if page.get("review") is not None:
+                raise ValueError(f"{page['page_id']} was reviewed by a person; its text is settled")
             record = json.loads((root / contested["artifact"]).read_bytes())
             answer = json.loads(path.read_text(encoding="utf-8"))
             receipt = adjudication.receipt_for(
@@ -1019,17 +1045,25 @@ def create_review_sheet(job_dir: Path, sheet: Path) -> dict:
         return {"status": "written", **write_review_sheet(job, sheet)}
 
 
+def _derived(page: dict) -> tuple:
+    """What a page's record states that verification must rebuild identically."""
+    return (
+        page["selected_attempt"],
+        page["disposition"],
+        page["review_reasons"],
+        page.get("triggers"),
+        page.get("contested"),
+        page.get("edition"),
+    )
+
+
 def verify_job(job_dir: Path) -> dict:
     root = job_dir.expanduser().resolve()
     try:
         job = _load(root)
-        before = [
-            (p["selected_attempt"], p["disposition"], p["review_reasons"]) for p in job["pages"]
-        ]
+        before = [_derived(p) for p in job["pages"]]
         _refresh(job, root, materialize=False)
-        if before != [
-            (p["selected_attempt"], p["disposition"], p["review_reasons"]) for p in job["pages"]
-        ]:
+        if before != [_derived(p) for p in job["pages"]]:
             raise ValueError("Job selections disagree with retained evidence")
         from .document_report import build_document_report, verify_document_report
 

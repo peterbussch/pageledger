@@ -266,11 +266,13 @@ def _content_coverage_metrics(text: str, tokens: list[str]) -> dict[str, Any]:
 # any other script, in small numbers, are a symbol font read through the wrong map:
 # a 2019 paper's formulas came out as Ethiopic, Oriya, Tamil and Syriac letters.
 _HOME_SCRIPTS = ("LATIN", "CYRILLIC", "GREEK", "COMBINING", "MODIFIER")
+# Letters in Latin-1 whose names do not say Latin: µ (micro), ª and º (ordinals).
+_HOME_SIGNS = frozenset("µªº")
 
 
 def _foreign_script(char: str) -> bool:
     """A letter or mark from a script outside the home scripts (math alphabets excepted)."""
-    if not unicodedata.category(char).startswith(("L", "M")):
+    if char in _HOME_SIGNS or not unicodedata.category(char).startswith(("L", "M")):
         return False
     code = ord(char)
     if 0x2100 <= code <= 0x214F or 0x1D400 <= code <= 0x1D7FF:

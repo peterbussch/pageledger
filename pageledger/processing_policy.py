@@ -7,6 +7,7 @@ Neither extraction grades nor model confidence participate in this policy.
 from __future__ import annotations
 
 import csv
+import hashlib
 import io
 import json
 import re
@@ -102,8 +103,18 @@ def warning_holds(record: dict) -> dict[str, str]:
     return _WARNING_HOLDS if record.get("hold_policy") in HOLD_POLICIES else _LEGACY_WARNING_HOLDS
 
 
-def validate_review(review: dict, page: dict) -> None:
-    """Reject receipts that do not bind an exact source, page, and completed output."""
+def validate_review(
+    review: dict, page: dict, edition: tuple[str, str] | None | bool = True
+) -> None:
+    """Reject receipts that do not bind an exact source, page, and completed output.
+
+    A page with an edition may be reviewed as that edition: the receipt names the
+    edition's attempt and the edition's hash. ``edition`` is that (attempt, hash),
+    by default the one recorded on the page.
+    """
+    if edition is True:
+        recorded = page.get("edition")
+        edition = (recorded["base_attempt"], recorded["sha256"]) if recorded else None
     if (
         not isinstance(review, dict)
         or review.get("schema_version") != "0.1"
@@ -155,13 +166,16 @@ def validate_review(review: dict, page: dict) -> None:
             raise ValueError("Reviewed text requires an exact completed output")
         return
     matches = [item for item in page.get("attempts", []) if item.get("attempt_id") == selected]
+    reviewed = {matches[0].get("raw_sha256")} if len(matches) == 1 else set()
+    if isinstance(edition, tuple) and edition[0] == selected:
+        reviewed.add(edition[1])
     if (
         len(matches) != 1
         or matches[0].get("outcome") != "completed"
         or not matches[0].get("raw_artifact")
         or not isinstance(decision["output_sha256"], str)
         or not _HASH.fullmatch(decision["output_sha256"])
-        or matches[0].get("raw_sha256") != decision["output_sha256"]
+        or decision["output_sha256"] not in reviewed
     ):
         raise ValueError("Review output binding is invalid")
 
@@ -417,21 +431,35 @@ def assess_page(
     contested = None
     if contest is not None and selected in clean and _generative(selected):
         literals = [item for item in usable if not _generative(item)]
+        # Without a clean literal reading, the latest engine's is the witness.
         literal = _select(
             [item for item in literals if item in clean],
-            literals,
+            literals[::-1],
             escalate_on,
             roughness,
             rough_below,
         )
         if literal is not None:
             contested = contest(selected, literal)
-            own = {*holds_by_id[selected["attempt_id"]], *holds_by_id[literal["attempt_id"]]}
+            # Coverage and confidence holds on readings the page no longer rests on
+            # are set aside, and so are the witness's own once every span is settled
+            # against the page. Each one set aside is recorded.
+            kept = set(holds_by_id[selected["attempt_id"]])
+            if contested["open"]:
+                kept |= set(holds_by_id[literal["attempt_id"]])
+            contested["superseded"] = sorted(
+                {
+                    (hold, item["attempt_id"])
+                    for item in attempts
+                    for hold in holds_by_id[item["attempt_id"]]
+                    if hold in _SUPERSEDED and hold not in kept
+                }
+            )
             reasons = [
                 reason
                 for reason in reasons
                 if reason not in _COMPARISON_REASONS
-                and (reason not in _SUPERSEDED or reason in own)
+                and (reason not in _SUPERSEDED or reason in kept)
             ]
             if contested["open"]:
                 reasons.append("contested")
@@ -472,7 +500,11 @@ def assess_page(
     selected_id = selected["attempt_id"] if selected else None
     receipt = review if review is not None else page.get("review")
     if receipt is not None:
-        validate_review(receipt, page)
+        edition = None
+        if selected and contested is not None and contested["edition"] is not None:
+            text = contested["edition"].encode("utf-8")
+            edition = (selected["attempt_id"], hashlib.sha256(text).hexdigest())
+        validate_review(receipt, page, edition if contest is not None else True)
         decision = next(item for item in receipt["decisions"] if item["page_id"] == page["page_id"])
         disposition, selected_id, next_action = (
             decision["disposition"],

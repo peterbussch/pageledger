@@ -218,19 +218,43 @@ by word with the best literal reading of the same page, and each place they
 differ is recorded:
 
 ```yaml
+schema_version: "0.1"
 processing:
-  # ... stages as above, with an image stage
+  local_text:
+    adapter: pdf_text
+  local_ocr:
+    adapter: rapidocr
+  image:
+    adapter: vision
+    adapter_options:
+      base_url: http://127.0.0.1:20128/v1
+      model: codex/gpt-6.1-sol
+      env_key: OMNIROUTE_API_KEY
+    prompt: |
+      Transcribe this printed page exactly as printed, for a scholarly digital edition.
+      Keep the original spelling, punctuation and line breaks; do not correct or modernise.
+      Write formulas in LaTeX between $...$ or $$...$$. Write each figure as one line
+      "[Figure: <its printed caption or labels>]". Mark a word you cannot read with
+      confidence with [?] after it, and an illegible passage as [illegible].
+  escalate_on: [hold, always]   # the model reads every page
   contest:
     rules: ru-print-0.1
-  lexicon:            # optional; lets the glyph rule judge Russian words
+  lexicon:                      # optional; lets the glyph rule judge Russian words
     provider: pymorphy3
     language: ru
+  limits:
+    max_image_pages: 200
 ```
+
+Regions rely on the model marking them, as this prompt asks; with the default
+prompt a formula is compared word by word.
 
 The model's text is the base, and every span is anchored in its offsets. Words
 one engine placed elsewhere on the page count as reading order, not as
-differences, and so does a word the model hyphenated across a line that the
-other engine read as its two halves. Any other split or joined word stays a
+differences, when at least two words moved together or the word stands alone on
+its line; a single word in another place is a difference, because a model may
+move a negation. A word hyphenated across a line that the other engine read as
+its two halves, side by side or with the hyphen kept, is one word. Any other split or joined word stays a
 difference: a model that writes «гос средств» for the printed «госсредств» has
 changed the text. Unpaired words are grouped, so a line one engine dropped is one
 span. A formula (`$...$`), a `[Figure: ...]` line, `[illegible]` and a word the
@@ -282,7 +306,8 @@ pageledger adjudicate jobs/book --decisions packets/book --reviewer agent:sol
 `--packets` writes, for every page with open spans, `<page_id>.json` with the
 open spans, and the exact image the model read (`<page_id>.jpg`), with
 `INSTRUCTIONS.md`. Packets are blind: each span gives the two readings in sorted
-order and the words around the place, never which engine read which. In a test
+order and the text around the place, never which engine read which. The
+surrounding text is the model's, so the blinding is partial. In a test
 on Большаков (7 pages, 60 open spans, Sol as the reader), Sol adjudicating
 spans labelled as its own reading kept three of its own substitutions (мощными
 for the printed модными) and called each one plainly printed; blind, it did no
@@ -297,6 +322,9 @@ model family than the reader, and check its answers on pages you have verified. 
 
 `text` is what the page prints at that place: the model's reading, the literal
 one, other text, or nothing. A printed misprint is written as printed.
+Packets and answers have schemas
+([packet](../schemas/adjudication-packet.schema.json),
+[decisions](../schemas/adjudication-decisions.schema.json)).
 `--decisions` checks each answer against the spans it names and records it as an
 adjudication receipt (schema 0.2) on the page, with the reviewer, the time and
 the hash of the image. Answers for spans that have since changed are refused;
@@ -309,9 +337,10 @@ offsets. The attempt itself is never edited. The transcript, `document.json` and
 every export use the edition and say so. `verify-job` rebuilds each edition from
 its receipts and fails if the file differs.
 
-`adjudicated_text` is not `reviewed_text`. It means every difference from the
-literal reading was settled, by a rule or an adjudicator, or there was none; no
-person has read the page. The report counts adjudicated pages on their own line,
+`adjudicated_text` is not `reviewed_text`. It means every word-level difference
+from the literal reading was settled, by a rule or an adjudicator, or there was
+none; punctuation and the order of words that moved together are not compared,
+and no person has read the page. The report counts adjudicated pages on their own line,
 and `unresolved_pages` keeps its meaning: pages without a person's review. A
 person can answer packets too, under their own `--reviewer` name, or review the
 page as before.

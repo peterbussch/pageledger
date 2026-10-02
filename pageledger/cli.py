@@ -730,6 +730,8 @@ def _cmd_job(args: argparse.Namespace) -> int:
     elif args.command == "review-sheet":
         result = create_review_sheet(args.job_dir, args.out)
     elif args.command == "adjudicate" and args.packets:
+        if args.reviewer or args.dry_run:
+            raise ValueError("--reviewer and --dry-run go with --decisions, not --packets")
         result = adjudication_packets(args.job_dir, args.packets)
     elif args.command == "adjudicate":
         result = adjudicate_job(

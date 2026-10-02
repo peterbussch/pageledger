@@ -568,9 +568,19 @@
                   },
                   "open": {"type": "integer", "minimum": 0, "description": "Spans neither a rule nor a high-confidence adjudication settled."},
                   "by_rule": {"type": "integer", "minimum": 0},
-                  "by_review": {"type": "integer", "minimum": 0, "description": "Spans settled by a high-confidence decision in an adjudication receipt."}
+                  "by_review": {"type": "integer", "minimum": 0, "description": "Spans settled by a high-confidence decision in an adjudication receipt."},
+                  "superseded": {
+                    "type": "array",
+                    "description": "Coverage, confidence and blank holds set aside: those of readings the page no longer rests on, and the witness's own once no span is open.",
+                    "items": {
+                      "type": "object",
+                      "properties": {"reason": {"enum": ["coverage_defect", "low_confidence", "blank_candidate"]}, "attempt": {"type": "string", "minLength": 1}},
+                      "required": ["reason", "attempt"],
+                      "additionalProperties": false
+                    }
+                  }
                 },
-                "required": ["artifact", "sha256", "base_attempt", "witness_attempt", "kinds", "open", "by_rule", "by_review"],
+                "required": ["artifact", "sha256", "base_attempt", "witness_attempt", "kinds", "open", "by_rule", "by_review", "superseded"],
                 "additionalProperties": false
               },
               "edition": {
@@ -595,7 +605,6 @@
                     "page_id": {"type": "string", "minLength": 1},
                     "page_number": {"type": "integer", "minimum": 1},
                     "contested_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
-                    "base_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
                     "image_sha256": {"type": ["string", "null"], "pattern": "^[0-9a-f]{64}$"},
                     "decisions": {
                       "type": "array",
@@ -615,7 +624,7 @@
                     "reviewer": {"type": "string", "minLength": 1},
                     "reviewed_at": {"type": "string", "minLength": 1}
                   },
-                  "required": ["schema_version", "source_sha256", "page_id", "page_number", "contested_sha256", "base_sha256", "image_sha256", "decisions", "reviewer", "reviewed_at"],
+                  "required": ["schema_version", "source_sha256", "page_id", "page_number", "contested_sha256", "image_sha256", "decisions", "reviewer", "reviewed_at"],
                   "additionalProperties": false
                 }
               },

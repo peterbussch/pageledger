@@ -28,8 +28,9 @@ Each `<page_id>.json` packet lists places where two engines read a page
 differently. The page image is `<page_id>.jpg`.
 
 For every span, `candidates` are the two readings, in no particular order, and
-`before` and `after` are the words around the place, to help you find it. Look
-at the page image and write what is printed there:
+`before` and `after` are the text around the place, to help you find it. Your
+answer replaces exactly what lies between `before` and `after`. Look at the page
+image and write what is printed there:
 
 - one of the candidates, or other text when neither is right;
 - the printer's misprints exactly as printed, never corrected;
@@ -60,12 +61,14 @@ def settle(record: dict, sha256: str, receipts: list[dict]) -> tuple[list[dict],
     example before a new reading changed the base, no longer apply and are kept
     only as history.
     """
+    rule_open = {span["span_id"] for span in record["spans"] if span["status"] == "open"}
     decided: dict[str, dict] = {}
     for receipt in receipts:
         if receipt["contested_sha256"] != sha256:
             continue
         for decision in receipt["decisions"]:
-            decided[decision["span_id"]] = {**decision, "reviewer": receipt["reviewer"]}
+            if decision["span_id"] in rule_open:
+                decided[decision["span_id"]] = {**decision, "reviewer": receipt["reviewer"]}
     still_open = [
         span
         for span in record["spans"]
@@ -75,19 +78,32 @@ def settle(record: dict, sha256: str, receipts: list[dict]) -> tuple[list[dict],
 
 
 def edition(base: str, record: dict, decided: dict[str, dict]) -> str | None:
-    """The base with every decided change applied, or None when nothing changes."""
+    """The base with every decided change applied, or None when nothing changes.
+
+    An answer replaces exactly the characters of its span. Inserted words get a
+    space where they would touch a word, and a removed word takes one space with it.
+    """
     edits = sorted(
-        (
-            (span["start"], span["end"], decided[span["span_id"]]["text"])
-            for span in record["spans"]
-            if span["span_id"] in decided and decided[span["span_id"]]["text"] != span["base"]
-        ),
-        reverse=True,
+        (span["start"], span["end"], decided[span["span_id"]]["text"])
+        for span in record["spans"]
+        if span["span_id"] in decided and decided[span["span_id"]]["text"] != span["base"]
     )
-    # From the end backwards, so earlier offsets still hold. At one offset a
-    # replacement goes first, then an insertion lands before its new text.
+    for (_, end, _), (start, _, _) in zip(edits, edits[1:], strict=False):
+        if start < end:
+            raise ValueError("Settled spans overlap; the contested spans are invalid")
+    # From the end backwards, so earlier offsets still hold.
     text = base
-    for start, end, new in edits:
+    for start, end, new in reversed(edits):
+        if start == end and new:
+            if start and not text[start - 1].isspace() and not new[0].isspace():
+                new = " " + new
+            if start < len(text) and text[start].isalnum() and not new[-1].isspace():
+                new = new + " "
+        elif not new:
+            if text[end : end + 1] == " ":
+                end += 1
+            elif start and text[start - 1] == " ":
+                start -= 1
         text = text[:start] + new + text[end:]
     return text if edits else None
 
@@ -103,7 +119,6 @@ def validate_receipt(receipt: Any, page: dict) -> None:
             "page_id",
             "page_number",
             "contested_sha256",
-            "base_sha256",
             "image_sha256",
             "decisions",
             "reviewer",
@@ -113,10 +128,8 @@ def validate_receipt(receipt: Any, page: dict) -> None:
         or receipt["source_sha256"] != page["source_sha256"]
         or receipt["page_id"] != page["page_id"]
         or receipt["page_number"] != page["page_number"]
-        or not all(
-            isinstance(receipt[key], str) and _HASH.fullmatch(receipt[key])
-            for key in ("contested_sha256", "base_sha256")
-        )
+        or not isinstance(receipt["contested_sha256"], str)
+        or not _HASH.fullmatch(receipt["contested_sha256"])
         or not (receipt["image_sha256"] is None or _HASH.fullmatch(str(receipt["image_sha256"])))
         or not isinstance(receipt["reviewer"], str)
         or not receipt["reviewer"].strip()
@@ -159,7 +172,10 @@ def receipt_for(
     if answer["page_id"] != page["page_id"] or answer["contested_sha256"] != sha256:
         raise ValueError(f"Decisions for {page['page_id']} answer other spans; write packets again")
     _check_decisions(answer["decisions"], page["page_id"])
-    open_ids = {span["span_id"] for span in record["spans"] if span["status"] == "open"}
+    # Only spans still open: answers already recorded are not recorded again, under
+    # whoever runs the command this time.
+    still_open, _ = settle(record, sha256, page.get("adjudications", []))
+    open_ids = {span["span_id"] for span in still_open}
     unknown = [d["span_id"] for d in answer["decisions"] if d["span_id"] not in open_ids]
     if unknown:
         raise ValueError(f"Decisions for {page['page_id']} name no open span: {unknown[0]}")
@@ -170,7 +186,6 @@ def receipt_for(
         "page_id": page["page_id"],
         "page_number": page["page_number"],
         "contested_sha256": sha256,
-        "base_sha256": record["base"]["text_sha256"],
         "image_sha256": (base.get("input_evidence") or {}).get("sha256"),
         "decisions": answer["decisions"],
         "reviewer": reviewer,
@@ -189,12 +204,17 @@ def write_packets(job: dict, root: Path, directory: Path) -> dict:
     the model's tends to keep it; the model that made a substitution will vouch
     for it.
     """
+    if directory.exists() and any(directory.iterdir()):
+        raise ValueError(
+            f"{directory} is not empty; write packets to a new directory so old answers "
+            "are not recorded again"
+        )
     directory.mkdir(parents=True, exist_ok=True)
     atomic_bytes(directory / "INSTRUCTIONS.md", INSTRUCTIONS.encode())
     written = 0
     for page in job["pages"]:
         contested = page.get("contested")
-        if not contested or not contested["open"]:
+        if not contested or not contested["open"] or page.get("review") is not None:
             continue
         record = json.loads((root / contested["artifact"]).read_bytes())
         base = next(a for a in page["attempts"] if a["attempt_id"] == record["base"]["attempt"])

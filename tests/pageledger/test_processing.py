@@ -33,6 +33,7 @@ class StageAdapter(TextAdapter):
             getattr(self, "text_only_defective", False) and self.stage != "local_text"
         )
         warnings = ["coverage_defect"] if defective else []
+        warnings += getattr(self, "warn", {}).get(self.stage, [])
         evidence = (
             image_descriptor(Path(self.evidence_dir).parent, source, page_number, prompt)
             if self.stage in {"image", "second_opinion"}
@@ -92,6 +93,7 @@ def setup(tmp_path, monkeypatch):
         object.__setattr__(value, "text_only_defective", shared.get("text_only_defective", False))
         object.__setattr__(value, "scanned", shared.get("scanned", False))
         object.__setattr__(value, "texts", shared.get("texts", {}))
+        object.__setattr__(value, "warn", shared.get("warn", {}))
         object.__setattr__(
             value,
             "capabilities",
@@ -705,6 +707,18 @@ def test_a_contested_job_takes_the_readers_text_over_clean_ocr(setup, monkeypatc
     assert verify_job(setup[2])["status"] == "pass"
 
 
+def test_contest_with_a_lexicon_and_no_escalation_triggers(setup, monkeypatch):
+    import pageledger.processing as processing_module
+
+    data = yaml.safe_load(setup[1].read_text())
+    data["processing"]["contest"] = {"rules": "ru-print-0.1"}
+    data["processing"]["lexicon"] = {"provider": "pymorphy3", "language": "ru"}
+    setup[1].write_text(yaml.safe_dump(data))
+    monkeypatch.setattr(processing_module, "load_lexicon", lambda config: _FakeLexicon())
+    assert launch(setup, pages="2")["status"] == "completed"
+    assert verify_job(setup[2])["status"] == "pass"
+
+
 def test_a_job_refuses_to_verify_under_another_lexicon(setup, monkeypatch):
     setup[3].update(defective=set())
     _escalating(setup, monkeypatch)
@@ -817,6 +831,9 @@ def _answer(root, out, text, confidence="high"):
         ],
     }
     (out / "doc_0001_page_0001.decisions.json").write_text(json.dumps(answer, ensure_ascii=False))
+    schemas = Path(__file__).parents[2] / "schemas"
+    for name, value in (("adjudication-packet", packet), ("adjudication-decisions", answer)):
+        jsonschema.validate(value, json.loads((schemas / f"{name}.schema.json").read_text()))
     return answer
 
 
@@ -860,10 +877,118 @@ def test_adjudicated_decisions_make_an_edition_that_verifies_and_exports(
     assert line["edition"]["path"] == page["edition"]["artifact"]
     assert line["attempt"]["output_sha256"] != line["edition"]["sha256"]
 
+    # Summaries in job.json are rebuilt too.
+    from pageledger.checkpoint import write_record
+
+    job = read_record(setup[2] / "job.json")
+    job["pages"][0]["contested"]["open"] = 99
+    write_record(setup[2] / "job.json", job)
+    assert verify_job(setup[2])["status"] == "fail"
+    job["pages"][0]["contested"]["open"] = 0
+    write_record(setup[2] / "job.json", job)
+    assert verify_job(setup[2])["status"] == "pass"
+
     # The edition is rebuilt from the receipts; a changed file does not verify.
     (setup[2] / page["edition"]["artifact"]).write_text(READER)
     result = verify_job(setup[2])
     assert result["status"] == "fail" and "Edition texts differ" in result["error"]
+
+
+def _adjudicated(setup, monkeypatch, tmp_path):
+    from pageledger.processing import adjudicate_job
+
+    _contesting(setup, monkeypatch)
+    launch(setup, pages="1")
+    _answer(setup[2], tmp_path / "packets", "полные")
+    adjudicate_job(setup[2], tmp_path / "packets", reviewer="agent:test")
+    return read_record(setup[2] / "job.json")["pages"][0]
+
+
+def _review(setup, tmp_path, decision):
+    import csv
+
+    from pageledger.processing import create_review_sheet
+
+    sheet = tmp_path / "review.csv"
+    create_review_sheet(setup[2], sheet)
+    rows = list(csv.DictReader(sheet.read_text(encoding="utf-8-sig").splitlines()))
+    rows[0]["decision"] = decision
+    with sheet.open("w", encoding="utf-8-sig", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=list(rows[0]), quoting=csv.QUOTE_ALL)
+        writer.writeheader()
+        writer.writerows(rows)
+    return review_job(setup[2], sheet, reviewer="person:test")
+
+
+def test_accepting_an_adjudicated_page_accepts_its_edition(setup, monkeypatch, tmp_path):
+    page = _adjudicated(setup, monkeypatch, tmp_path)
+    assert _review(setup, tmp_path, "accept")["status"] == "completed"
+    reviewed = read_record(setup[2] / "job.json")["pages"][0]
+    assert reviewed["disposition"] == "reviewed_text"
+    decision = reviewed["review"]["decisions"][0]
+    assert decision["output_sha256"] == page["edition"]["sha256"]
+    transcript = (setup[2] / "transcript.md").read_text(encoding="utf-8")
+    assert READER.replace("поныне", "полные") in transcript
+    assert verify_job(setup[2])["status"] == "pass"
+
+
+def test_choosing_another_reading_publishes_that_reading(setup, monkeypatch, tmp_path):
+    page = _adjudicated(setup, monkeypatch, tmp_path)
+    witness = page["contested"]["witness_attempt"]
+    assert _review(setup, tmp_path, f"use:{witness}")["status"] == "completed"
+    transcript = (setup[2] / "transcript.md").read_text(encoding="utf-8")
+    assert LITERAL in transcript
+    assert verify_job(setup[2])["status"] == "pass"
+
+
+def test_a_held_witness_is_answered_once_every_span_is_settled(setup, monkeypatch, tmp_path):
+    from pageledger.processing import adjudicate_job
+
+    _contesting(setup, monkeypatch)
+    data = yaml.safe_load(setup[1].read_text())
+    data["processing"].pop("escalate_on")
+    data["processing"]["lexicon"].pop("rough_below")
+    setup[1].write_text(yaml.safe_dump(data))
+    # The page climbs on holds alone: an empty text layer, then OCR unsure of itself.
+    setup[3].update(scanned=True, warn={"rapidocr": ["low_confidence"]})
+    launch(setup, pages="1")
+    page = read_record(setup[2] / "job.json")["pages"][0]
+    assert page["disposition"] == "contested"
+    assert "low_confidence" in page["review_reasons"]
+    _answer(setup[2], tmp_path / "packets", "полные")
+    adjudicate_job(setup[2], tmp_path / "packets", reviewer="agent:test")
+    page = read_record(setup[2] / "job.json")["pages"][0]
+    assert page["disposition"] == "adjudicated_text"
+    assert {(s["reason"], s["attempt"].split(":")[0]) for s in page["contested"]["superseded"]} == {
+        ("blank_candidate", "local_text"),
+        ("low_confidence", "local_ocr-0001"),
+    }
+    assert verify_job(setup[2])["status"] == "pass"
+
+
+def test_a_changed_contest_procedure_is_refused_not_rewritten(setup, monkeypatch, tmp_path):
+    import pageledger.processing as processing_module
+
+    _adjudicated(setup, monkeypatch, tmp_path)
+    artifact = setup[2] / "contested/doc_0001_page_0001.json"
+    kept = artifact.read_bytes()
+    original = processing_module.contest_spans
+    monkeypatch.setattr(processing_module, "contest_spans", lambda *a, **k: original(*a, **k)[1:])
+    result = verify_job(setup[2])
+    assert result["status"] == "fail" and "another PageLedger version" in result["error"]
+    with pytest.raises(ValueError, match="another PageLedger version"):
+        _review(setup, tmp_path, "accept")
+    assert artifact.read_bytes() == kept
+
+
+def test_old_answers_are_not_recorded_again_under_another_name(setup, monkeypatch, tmp_path):
+    from pageledger.processing import adjudicate_job, adjudication_packets
+
+    _adjudicated(setup, monkeypatch, tmp_path)
+    with pytest.raises(ValueError, match="name no open span"):
+        adjudicate_job(setup[2], tmp_path / "packets", reviewer="person:test")
+    with pytest.raises(ValueError, match="not empty"):
+        adjudication_packets(setup[2], tmp_path / "packets")
 
 
 def test_a_decision_short_of_high_confidence_leaves_the_span_open(setup, monkeypatch, tmp_path):

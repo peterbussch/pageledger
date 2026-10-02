@@ -43,7 +43,7 @@ def load_lexicon(config: dict[str, Any]) -> Lexicon:
             import pymorphy3
         except ImportError as exc:
             raise ValueError(
-                "The rough trigger needs pymorphy3; install it with pip install 'pageledger[ru]'"
+                "processing.lexicon needs pymorphy3; install it with pip install 'pageledger[ru]'"
             ) from exc
         _LOADED[key] = Lexicon(
             identity={

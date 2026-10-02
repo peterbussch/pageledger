@@ -1145,6 +1145,7 @@ rapidocr = [
 ]
 ru = [
     { name = "pymorphy3" },
+    { name = "pymorphy3-dicts-ru" },
 ]
 
 [package.metadata]
@@ -1153,7 +1154,8 @@ requires-dist = [
     { name = "jsonschema", marker = "extra == 'dev'", specifier = ">=4.0" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.15" },
     { name = "onnxruntime", marker = "extra == 'rapidocr'", specifier = ">=1.20" },
-    { name = "pymorphy3", marker = "extra == 'ru'", specifier = ">=2.0" },
+    { name = "pymorphy3", marker = "extra == 'ru'", specifier = "==2.0.6" },
+    { name = "pymorphy3-dicts-ru", marker = "extra == 'ru'", specifier = "==2.4.417150.4580142" },
     { name = "pypdf", extras = ["crypto"], marker = "extra == 'pdf'", specifier = ">=6" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0" },
     { name = "pyyaml", specifier = ">=6.0.2" },
