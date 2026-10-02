@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pageledger"
-version = "0.6.1"
+version = "0.7.0"
 description = "Auditable page-level run ledger for OCR and document extraction"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -61,6 +61,11 @@ rapidocr = [
   "onnxruntime>=1.20",
   "rapidocr>=3,<4",
 ]
+# Exact versions: a job records its lexicon and refuses to verify under another one.
+ru = [
+  "pymorphy3==2.0.6",
+  "pymorphy3-dicts-ru==2.4.417150.4580142",
+]
 
 [project.urls]
 Homepage = "https://github.com/peterbussch/pageledger"
@@ -105,5 +110,5 @@ files = ["pageledger"]
 warn_unused_configs = true
 
 [[tool.mypy.overrides]]
-module = ["pypdf", "pypdf.*"]
+module = ["pypdf", "pypdf.*", "pymorphy3"]
 ignore_missing_imports = true

@@ -70,6 +70,16 @@
         "null"
       ]
     },
+    "edition": {
+      "description": "Present when the text is an edition: the attempt's output with its adjudicated changes applied.",
+      "type": "object",
+      "properties": {
+        "path": {"type": "string", "pattern": "^editions/"},
+        "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+      },
+      "required": ["path", "sha256"],
+      "additionalProperties": false
+    },
     "review": {
       "description": "This page's decision from its human review receipt (see job-review.schema.json); null when the page was not reviewed.",
       "type": [

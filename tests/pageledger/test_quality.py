@@ -1029,6 +1029,37 @@ def test_separate_latin_words_in_cyrillic_prose_are_not_mixed_script(tmp_path):
     assert entry["text_quality"]["mixed_script_token_ratio"] == 0.0
 
 
+PROSE = "Пусть задано множество слов и для каждого слова построен вектор признаков. " * 6
+
+
+@pytest.mark.parametrize(
+    "intrusion",
+    [
+        "ሻ ହ ௪ ݓ ଵ ൈ",  # a born-digital paper's math font, read as Ethiopic, Oriya, Tamil, Syriac...
+        "\u05da\u05b0 x \u05da\u05b0 y \u05da\u05b0",  # Hebrew points standing in for a negation sign
+    ],
+    ids=["math-font", "hebrew-points"],
+)
+def test_letters_from_a_script_that_does_not_belong_warn(tmp_path, intrusion):
+    entry = _page_warnings(tmp_path, f"{PROSE} {intrusion} {PROSE}")
+    assert "foreign_script_characters" in entry["warnings"]
+    assert entry["text_quality"]["foreign_script_count"] >= 3
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        PROSE + " Функция потерь 𝜃 и ℒ(𝜃) = ∑ log p, где ℓ — длина. ",
+        PROSE + " Греческие буквы α, β, γ и стрелка → обозначают отношения. ",
+        "שלום עולם זה טקסט בעברית עם כמה מילים נוספות לבדיקה " * 6,
+        PROSE + " Толщина 3 µm, 5 µm и 7 µm; 1º и 2ª. ",
+    ],
+    ids=["math-letters", "greek", "hebrew-page", "micro-and-ordinals"],
+)
+def test_math_letters_greek_and_a_whole_other_script_do_not_warn(tmp_path, text):
+    assert "foreign_script_characters" not in _page_warnings(tmp_path, text)["warnings"]
+
+
 def test_private_use_characters_warn(tmp_path):
     # Old-style figures that a 1990s PDF mapped to the Private Use Area: the
     # year 1830 is unreadable in the text layer.

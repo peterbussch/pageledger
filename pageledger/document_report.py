@@ -6,6 +6,7 @@ import copy
 import hashlib
 import json
 import os
+from collections import Counter
 from pathlib import Path
 from urllib.parse import quote
 
@@ -38,6 +39,8 @@ _DISPOSITION_LABELS = {
     "engine_disagreement": "Engines disagree",
     "numeric_disagreement": "Engines read numbers differently",
     "unconfirmed_model_output": "Model output not confirmed by another engine",
+    "contested": "Model and literal readings differ; check them against the page",
+    "adjudicated_text": "Every difference from the literal reading settled; not read by a person",
     "blank_candidate": "Candidate blank",
     "provider_failure": "Extraction failed",
     "outcome_unknown": "Extraction outcome unknown",
@@ -108,9 +111,12 @@ def render_transcript(report: dict) -> str:
         if selected is None:
             chunks.append(f"[No selected text: {page['disposition']}.]\n\n")
         else:
-            chunks.append(
-                _link(f"Selected attempt {selected['attempt_id']}", selected["path"]) + "\n\n"
+            label = (
+                f"Edition of attempt {selected['attempt_id']}"
+                if selected.get("edition")
+                else f"Selected attempt {selected['attempt_id']}"
             )
+            chunks.append(_link(label, selected["path"]) + "\n\n")
             chunks.append(selected["text"])
             chunks.append("\n\n")
     return "".join(chunks)
@@ -240,6 +246,12 @@ def _recorded_concerns(page: dict, holds_for: dict[str, str]) -> str:
                         f"comparison of {_escape(comparison['left_attempt'])} and "
                         f"{_escape(comparison['right_attempt'])}"
                     )
+        if reason == "contested":
+            contested = page["contested"]
+            evidence.append(
+                f"{contested['open']} open of {sum(contested['kinds'].values())} "
+                f"in {_link('spans', contested['artifact'])}"
+            )
         for attempt in page["attempts"]:
             code = _explicit_attempt_hold(attempt, reason, holds_for)
             if code is None:
@@ -256,6 +268,61 @@ def _recorded_concerns(page: dict, holds_for: dict[str, str]) -> str:
         else:
             concerns.append(f"{_disposition_label(reason)}; retained review concern")
     return "; ".join(concerns)
+
+
+def _escalation_accounting(report: dict) -> list[str]:
+    """Work done at each stage and why pages climbed; only for jobs that escalate on triggers."""
+    if not any("triggers" in page for page in report["pages"]):
+        return []
+    rows = []
+    for stage, label in _STAGE_LABELS.items():
+        attempts = [a for page in report["pages"] for a in page["attempts"] if a["stage"] == stage]
+        if not attempts:
+            continue
+        tokens = [a["usage"].get("tokens") for a in attempts]
+        seconds = sum(a["usage"].get("compute_seconds") or 0 for a in attempts)
+        known = sum(t for t in tokens if isinstance(t, int))
+        if all(isinstance(t, int) for t in tokens):
+            shown = str(known)
+        elif any(isinstance(t, int) for t in tokens):
+            shown = f"{known}+ (some unknown)"
+        else:
+            shown = "not reported"  # local engines report no tokens
+        rows.append(f"| {label} | {len(attempts)} | {shown} | {round(seconds, 1)} |")
+    fired = Counter(t["trigger"] for page in report["pages"] for t in page.get("triggers", []))
+    climbed = ", ".join(f"{name} {count}" for name, count in sorted(fired.items())) or "none"
+    return [
+        "Work by stage:",
+        "",
+        "| Stage | Pages read | Tokens | Seconds |",
+        "| --- | --- | --- | --- |",
+        *rows,
+        "",
+        f"Climbs other than holds: {climbed}.",
+        "",
+    ]
+
+
+def _contest_accounting(report: dict) -> list[str]:
+    contested = [page["contested"] for page in report["pages"] if page.get("contested")]
+    if not contested:
+        return []
+    kinds: Counter = Counter()
+    for item in contested:
+        kinds.update(item["kinds"])
+    listed = ", ".join(f"{kind} {count}" for kind, count in sorted(kinds.items())) or "none"
+    by_rule = sum(item["by_rule"] for item in contested)
+    by_review = sum(item["by_review"] for item in contested)
+    open_spans = sum(item["open"] for item in contested)
+    held = sum(item["open"] > 0 for item in contested)
+    superseded = sum(len(item["superseded"]) for item in contested)
+    return [
+        f"Contested spans on {len(contested)} pages: {listed}. Settled by rule: {by_rule}; "
+        f"by adjudication: {by_review}; open: {open_spans}, holding {held} pages. "
+        f"Adjudicated pages: {report['counts']['adjudicated_pages']}. "
+        f"Holds set aside by contest: {superseded}.",
+        "",
+    ]
 
 
 def render_document_report(report: dict) -> str:
@@ -288,6 +355,8 @@ def render_document_report(report: dict) -> str:
         "",
         f"Attempt pages: {usage['attempt_pages']}; image calls: {usage['image_calls']}; tokens: {tokens}; cost: {cost}.",
         "",
+        *_escalation_accounting(report),
+        *_contest_accounting(report),
         *(["Current page results", ""] if current else []),
         *(
             [
@@ -457,6 +526,28 @@ def build_document_report(
                 "format": chosen["format"],
                 "text": text,
             }
+            edition = page.get("edition")
+            reviewed = None
+            if page.get("review") is not None:
+                reviewed = next(
+                    item["output_sha256"]
+                    for item in page["review"]["decisions"]
+                    if item["page_id"] == page["page_id"]
+                )
+            # The selected attempt with its settled spans applied, unless a person
+            # reviewed the attempt's own text instead. The attempt is unchanged.
+            if (
+                edition is not None
+                and edition["base_attempt"] == chosen["attempt_id"]
+                and reviewed in (None, edition["sha256"])
+            ):
+                content = _artifact_bytes(root, edition["artifact"], edition["sha256"])
+                page["selected_output"].update(
+                    path=edition["artifact"],
+                    sha256=edition["sha256"],
+                    text=content.decode("utf-8"),
+                    edition=True,
+                )
         page["source_link"] = f"{quoted_source}#page={page['page_number']}"
         pages.append(page)
     report["pages"] = pages
@@ -469,6 +560,10 @@ def build_document_report(
             page["disposition"] not in {"reviewed_text", "reviewed_blank"} for page in pages
         ),
     }
+    if any("contested" in page for page in pages):
+        report["counts"]["adjudicated_pages"] = sum(
+            page["disposition"] == "adjudicated_text" for page in pages
+        )
     transcript = render_transcript(report).encode("utf-8")
     report["transcript"] = {
         "path": "transcript.md",

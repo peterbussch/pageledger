@@ -68,10 +68,16 @@ def _pages(root: Path, report: dict, reviewed_only: bool) -> list[dict]:
                 "stage": chosen["stage"],
                 "adapter": plan["identity"]["name"],
                 "model": checkpoints[run].records[page["page_id"]]["result"]["model"],
-                "output_sha256": selected["sha256"],
+                "output_sha256": chosen["raw_sha256"],
             }
+        edition = page.get("edition")
         pages.append(
             {
+                **(
+                    {"edition": {"path": edition["artifact"], "sha256": edition["sha256"]}}
+                    if edition
+                    else {}
+                ),
                 "job_id": report["job_id"],
                 "source_sha256": page["source_sha256"],
                 "page_number": page["page_number"],
@@ -106,6 +112,11 @@ def _facts(page: dict) -> list[tuple[str, str]]:
     if attempt is not None:
         facts.append(("Attempt", f"{attempt['attempt_id']}, {_engine(attempt)}"))
         facts.append(("Output SHA-256", attempt["output_sha256"]))
+    if "edition" in page:
+        facts.append(
+            ("Edition", f"{page['edition']['path']}, the attempt with adjudicated changes")
+        )
+        facts.append(("Edition SHA-256", page["edition"]["sha256"]))
     return facts
 
 

@@ -2,19 +2,49 @@
 
 Release changes follow the [artifact compatibility policy](docs/run-manifest-spec.md#compatibility-policy).
 
-## 0.6.1 - 2026-10-01
+## 0.7.0 - 2026-10-01
+
+0.6.1 was prepared but never published; its changes ship in 0.7.0 and are
+listed here.
 
 ### Added
 
-- `doctor --config FILE` also reports, without their values, the environment
-  variables that config's adapters name through `env_key`, such as a model
-  gateway's own key. Before, doctor listed only four fixed provider keys.
-
+- Document jobs can climb on more than warning holds. `processing.escalate_on`
+  adds `rough`, for a reading whose share of known words falls below a
+  threshold (the Russian lexicon comes with `pip install 'pageledger[ru]'`);
+  `disagreement`, for clean readings that disagree, which used to go straight
+  to review; and `always`, which sends every page to the image stage. Triggers
+  lift a page at most to the image stage. Each one is recorded on the page with
+  its evidence, and the report shows the work done at each stage.
+- `processing.contest` compares a model's reading with the literal engine's,
+  word by word, and keeps each difference as a span in
+  `contested/<page_id>.json`. Look-alike letters and RapidOCR's listed glyph
+  confusions are settled by rule; a literal non-word those confusions do not
+  explain stays open, because it may be the printer's misprint. A page with open
+  spans is held as `contested`, and `verify-job` rebuilds the spans. A job that
+  contests readings takes the model's text, checked against the OCR, even where
+  the OCR reads clean.
+- `pageledger adjudicate` settles contested spans against the page image.
+  `--packets` writes each contested page's open spans and the image the model
+  read, blind to which engine read what; `--decisions` records the answers as
+  receipts bound to those spans. When no span is open the page is
+  `adjudicated_text`, kept apart from `reviewed_text`, and its edition (the
+  model's reading with the settled changes applied) is what the transcript and
+  exports carry. `verify-job` rebuilds each edition from its receipts. On a
+  hand-checked Russian article, OCR differed from the checked text in 91 words,
+  the model's reading in 17, and the adjudicated edition in 4.
+- A `foreign_script_characters` warning for a few letters from a script that
+  doesn't belong on the page, usually a math font read through the wrong
+  character map. On the test documents it found all nine pages where 0.6 found
+  two.
 - `reading_order: columns` for the `rapidocr` adapter reads a page set in
   columns one column at a time, after cutting the page at its whitespace. The
   default, `rows`, still reads across the page, which suits tables. On a
   two-column journal article the default glued the halves of neighbouring lines
   together without any warning.
+- `doctor --config FILE` also reports, without their values, the environment
+  variables that config's adapters name through `env_key`, such as a model
+  gateway's own key. Before, doctor listed only four fixed provider keys.
 
 ### Fixed
 
@@ -35,7 +65,17 @@ Release changes follow the [artifact compatibility policy](docs/run-manifest-spe
 ### Compatibility
 
 - `job.schema.json` and `document.schema.json` accept `hold_policy` `"0.6"` or
-  `"0.6.1"`. Artifacts written by 0.6.0 verify unchanged.
+  `"0.6.1"`, and the new page fields `triggers`, `contested`, `edition` and
+  `adjudications`, present only in jobs that configure them. Artifacts written
+  by 0.6.0 verify unchanged.
+- New schemas: `contested.schema.json`, `adjudication-packet.schema.json` and
+  `adjudication-decisions.schema.json`. Adjudication receipts are their own
+  record (`schema_version: "0.2"`), separate from human review receipts.
+- The `ru` extra pins `pymorphy3` and its dictionary exactly: a job records its
+  lexicon and refuses to verify under another one.
+- The rule set name (`ru-print-0.1`) versions the whole contest procedure. A
+  later change that alters spans takes a new name, and a job contested under an
+  older procedure refuses to continue rather than orphan its receipts.
 
 ## 0.6.0 - 2026-09-28
 

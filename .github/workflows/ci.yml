@@ -28,6 +28,9 @@ jobs:
       matrix:
         python-version: ["3.10", "3.11", "3.12", "3.13", "3.14"]
         extras: ["dev", "dev,pdf"]
+        include:
+          - python-version: "3.13"
+            extras: "dev,pdf,ru"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
@@ -94,13 +97,13 @@ jobs:
             --document "$GITHUB_WORKSPACE/docs/first-run.md" \
             --work-dir "$WORK_ROOT/first-run" \
             --python /tmp/venv-wheel/bin/python \
-            --expected-version 0.6.1 \
+            --expected-version 0.7.0 \
             --forbid-import-root "$GITHUB_WORKSPACE"
           /tmp/venv-wheel/bin/python examples/run_first_run.py \
             --document "$GITHUB_WORKSPACE/docs/document-first-run.md" \
             --work-dir "$WORK_ROOT/document-first-run" \
             --python /tmp/venv-wheel/bin/python \
-            --expected-version 0.6.1 \
+            --expected-version 0.7.0 \
             --forbid-import-root "$GITHUB_WORKSPACE"
       - name: Smoke test sdist install
         env:
@@ -116,13 +119,13 @@ jobs:
             --document "$GITHUB_WORKSPACE/docs/first-run.md" \
             --work-dir "$WORK_ROOT/first-run" \
             --python /tmp/venv-sdist/bin/python \
-            --expected-version 0.6.1 \
+            --expected-version 0.7.0 \
             --forbid-import-root "$GITHUB_WORKSPACE"
           /tmp/venv-sdist/bin/python examples/run_first_run.py \
             --document "$GITHUB_WORKSPACE/docs/document-first-run.md" \
             --work-dir "$WORK_ROOT/document-first-run" \
             --python /tmp/venv-sdist/bin/python \
-            --expected-version 0.6.1 \
+            --expected-version 0.7.0 \
             --forbid-import-root "$GITHUB_WORKSPACE"
 
   locked:

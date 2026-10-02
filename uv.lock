@@ -364,6 +364,18 @@ wheels = [
 ]
 
 [[package]]
+name = "dawg2-python"
+version = "0.9.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "typing-extensions", marker = "python_full_version < '3.11'" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/2d/03/85171ce1e59088237aebf21943d1136463f6422820f096ac8cf9322aa851/dawg2_python-0.9.0.tar.gz", hash = "sha256:adea0312acd1a958659e8448ce6899046c0858d0b6c8949a51eebdeb5a113e4a", size = 10278, upload-time = "2025-02-17T13:22:24.261Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/84/3b/7fb4c1a8df59cb80f5f7ecb9646280e000f9ba2ccff8710205dc9aa4604f/dawg2_python-0.9.0-py3-none-any.whl", hash = "sha256:4fab6fc097bd176cd783cd8421b757348ea5a460789e53b0f6bb64831380bab5", size = 9331, upload-time = "2025-02-17T13:22:22.858Z" },
+]
+
+[[package]]
 name = "docutils"
 version = "0.23"
 source = { registry = "https://pypi.org/simple" }
@@ -1107,7 +1119,7 @@ wheels = [
 
 [[package]]
 name = "pageledger"
-version = "0.6.1"
+version = "0.7.0"
 source = { editable = "." }
 dependencies = [
     { name = "pyyaml" },
@@ -1131,6 +1143,10 @@ rapidocr = [
     { name = "onnxruntime", version = "1.30.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
     { name = "rapidocr" },
 ]
+ru = [
+    { name = "pymorphy3" },
+    { name = "pymorphy3-dicts-ru" },
+]
 
 [package.metadata]
 requires-dist = [
@@ -1138,6 +1154,8 @@ requires-dist = [
     { name = "jsonschema", marker = "extra == 'dev'", specifier = ">=4.0" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.15" },
     { name = "onnxruntime", marker = "extra == 'rapidocr'", specifier = ">=1.20" },
+    { name = "pymorphy3", marker = "extra == 'ru'", specifier = "==2.0.6" },
+    { name = "pymorphy3-dicts-ru", marker = "extra == 'ru'", specifier = "==2.4.417150.4580142" },
     { name = "pypdf", extras = ["crypto"], marker = "extra == 'pdf'", specifier = ">=6" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0" },
     { name = "pyyaml", specifier = ">=6.0.2" },
@@ -1146,7 +1164,7 @@ requires-dist = [
     { name = "twine", marker = "extra == 'dev'", specifier = ">=6.0" },
     { name = "types-pyyaml", marker = "extra == 'dev'", specifier = ">=6.0" },
 ]
-provides-extras = ["dev", "pdf", "rapidocr"]
+provides-extras = ["dev", "pdf", "rapidocr", "ru"]
 
 [[package]]
 name = "pathspec"
@@ -1334,6 +1352,29 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/c3/b2/bc9c9196916376152d655522fdcebac55e66de6603a76a02bca1b6414f6c/pygments-2.20.0.tar.gz", hash = "sha256:6757cd03768053ff99f3039c1a36d6c0aa0b263438fcab17520b30a303a82b5f", size = 4955991, upload-time = "2026-03-29T13:29:33.898Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/f4/7e/a72dd26f3b0f4f2bf1dd8923c85f7ceb43172af56d63c7383eb62b332364/pygments-2.20.0-py3-none-any.whl", hash = "sha256:81a9e26dd42fd28a23a2d169d86d7ac03b46e2f8b59ed4698fb4785f946d0176", size = 1231151, upload-time = "2026-03-29T13:29:30.038Z" },
+]
+
+[[package]]
+name = "pymorphy3"
+version = "2.0.6"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "dawg2-python" },
+    { name = "pymorphy3-dicts-ru" },
+    { name = "setuptools", marker = "python_full_version >= '3.12'" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/17/63/3a1eabd3a7e6e060b69a87fe9c28fe89f75f4d49e55f0caf2e29c943c003/pymorphy3-2.0.6.tar.gz", hash = "sha256:1603df3bc9e116967c990607f5b97d42fb1c572d6839b851af3501e51d7f5493", size = 97681, upload-time = "2025-10-09T16:06:18.718Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/18/4b/59bac03278033e293d1405ed42fb6c6252c25f40c50f509c615caeaa3b71/pymorphy3-2.0.6-py3-none-any.whl", hash = "sha256:0254317c02ce3ea17e080b7fc9d675e44662b3a5296bae68605b7a41d25b36c3", size = 53900, upload-time = "2025-10-09T16:06:17.721Z" },
+]
+
+[[package]]
+name = "pymorphy3-dicts-ru"
+version = "2.4.417150.4580142"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/ba/13/02ffe6893a777add5c8a43f212f31a3f6a03e7d44a484cf7b5ac5381fddb/pymorphy3-dicts-ru-2.4.417150.4580142.tar.gz", hash = "sha256:39ab379d4ca905bafed50f5afc3a3de6f9643605776fbcabc4d3088d4ed382b0", size = 8381569, upload-time = "2022-01-08T22:17:37.581Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/b0/67/469e9e52d046863f5959928794d3067d455a77f580bf4a662630a43eb426/pymorphy3_dicts_ru-2.4.417150.4580142-py2.py3-none-any.whl", hash = "sha256:718bac64c73c10c16073a199402657283d9b64c04188b694f6d3e9b0d85440f4", size = 8442043, upload-time = "2022-01-08T22:17:34.282Z" },
 ]
 
 [[package]]
@@ -1843,6 +1884,15 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/1c/03/e834bcd866f2f8a49a85eaff47340affa3bfa391ee9912a952a1faa68c7b/secretstorage-3.5.0.tar.gz", hash = "sha256:f04b8e4689cbce351744d5537bf6b1329c6fc68f91fa666f60a380edddcd11be", size = 19884, upload-time = "2025-11-23T19:02:53.191Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/b7/46/f5af3402b579fd5e11573ce652019a67074317e18c1935cc0b4ba9b35552/secretstorage-3.5.0-py3-none-any.whl", hash = "sha256:0ce65888c0725fcb2c5bc0fdb8e5438eece02c523557ea40ce0703c266248137", size = 15554, upload-time = "2025-11-23T19:02:51.545Z" },
+]
+
+[[package]]
+name = "setuptools"
+version = "84.0.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/6d/44/f5da03a8ef95d369145c5bb53050e7877c9f3d312e128605fd9504829143/setuptools-84.0.0.tar.gz", hash = "sha256:f4695c21257f0d9b537ec2692c941d02ee143b7cc1276941349a546573b2ef73", size = 1168449, upload-time = "2026-08-08T18:27:58.365Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/95/9c/c510029fc6ef33a6275cd2c5d3cecd6613dfd6aa401d57c54f1c18852ccf/setuptools-84.0.0-py3-none-any.whl", hash = "sha256:51a52592b3b99e102b609654876bd65f19f999935166d1352678931132b0c670", size = 818216, upload-time = "2026-08-08T18:27:56.719Z" },
 ]
 
 [[package]]

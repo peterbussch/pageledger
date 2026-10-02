@@ -39,6 +39,17 @@ limits, retained attempts and review holds. It keeps the attempts available for
 inspection; completion does not mean that the text is accurate or reviewed.
 See [document processing](processing-spec.md) for stages and limits.
 
+Pages climb on warning holds and, when configured, on a Russian lexicon's
+judgement (`rough`), engine disagreement or every page (`always`). With
+`processing.contest`, a model's reading is compared word by word with the
+literal OCR reading; rules settle look-alike letters and listed glyph confusions,
+and `pageledger adjudicate` settles the rest against the page image through
+packets an agent or a person answers. Settled pages are `adjudicated_text`, kept
+apart from `reviewed_text`. Contest compares words, not punctuation or the order
+of words that moved together; its glyph pairs cover RapidOCR's Cyrillic model
+only; and an adjudicator can be wrong, which is why it should come from another
+model family than the reader. See [contest](processing-spec.md#contest-a-models-reading).
+
 ### Review and export
 
 | Supported | What to rely on | Limit |
@@ -195,6 +206,9 @@ the commands.
 - `run` without `--routes` still sends every page to the configured
   `default_action` (`review` in dry-run mode). Classification is an explicit
   `classify` then `run --routes` workflow so the map can be reviewed.
+- A model's reading that a literal engine confirms word for word becomes
+  `adjudicated_text` with no person reading it. Both engines can miss the same
+  word; contest finds only where they differ.
 - Adapter escalation chains advance only when the user runs `pageledger rerun`.
   They do not automatically call every adapter in one run, merge parent and
   child output, or remove unresolved pages from human review.

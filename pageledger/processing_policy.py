@@ -7,9 +7,11 @@ Neither extraction grades nor model confidence participate in this policy.
 from __future__ import annotations
 
 import csv
+import hashlib
 import io
 import json
 import re
+from collections.abc import Callable
 from datetime import datetime
 from decimal import Decimal, InvalidOperation
 from itertools import combinations
@@ -33,6 +35,7 @@ _HOLD_ORDER = (
     "numeric_disagreement",
     "engine_disagreement",
     "unconfirmed_model_output",
+    "contested",
     "coverage_defect",
     "low_confidence",
     "handwriting",
@@ -41,6 +44,9 @@ _HOLD_ORDER = (
     "blank_candidate",
 )
 _DISAGREEMENTS = ("engine_disagreement", "numeric_disagreement")
+# Holds on readings a contested page no longer rests on: two later engines, and
+# the spans between them, have read what these readings missed.
+_SUPERSEDED = ("coverage_defect", "low_confidence", "blank_candidate")
 _COMPARISON_REASONS = (*_DISAGREEMENTS, "unconfirmed_model_output")
 _WARNING_HOLDS = {
     "coverage_defect": "coverage_defect",
@@ -73,6 +79,7 @@ _WARNING_HOLDS = {
     "digits_only_text": "coverage_defect",
     "mixed_script_tokens": "coverage_defect",
     "private_use_characters": "coverage_defect",
+    "foreign_script_characters": "coverage_defect",
     "repeated_page_text": "coverage_defect",
     "repetition_loop": "coverage_defect",
     "script_mismatch": "coverage_defect",
@@ -96,8 +103,18 @@ def warning_holds(record: dict) -> dict[str, str]:
     return _WARNING_HOLDS if record.get("hold_policy") in HOLD_POLICIES else _LEGACY_WARNING_HOLDS
 
 
-def validate_review(review: dict, page: dict) -> None:
-    """Reject receipts that do not bind an exact source, page, and completed output."""
+def validate_review(
+    review: dict, page: dict, edition: tuple[str, str] | None | bool = True
+) -> None:
+    """Reject receipts that do not bind an exact source, page, and completed output.
+
+    A page with an edition may be reviewed as that edition: the receipt names the
+    edition's attempt and the edition's hash. ``edition`` is that (attempt, hash),
+    by default the one recorded on the page.
+    """
+    if edition is True:
+        recorded = page.get("edition")
+        edition = (recorded["base_attempt"], recorded["sha256"]) if recorded else None
     if (
         not isinstance(review, dict)
         or review.get("schema_version") != "0.1"
@@ -149,13 +166,16 @@ def validate_review(review: dict, page: dict) -> None:
             raise ValueError("Reviewed text requires an exact completed output")
         return
     matches = [item for item in page.get("attempts", []) if item.get("attempt_id") == selected]
+    reviewed = {matches[0].get("raw_sha256")} if len(matches) == 1 else set()
+    if isinstance(edition, tuple) and edition[0] == selected:
+        reviewed.add(edition[1])
     if (
         len(matches) != 1
         or matches[0].get("outcome") != "completed"
         or not matches[0].get("raw_artifact")
         or not isinstance(decision["output_sha256"], str)
         or not _HASH.fullmatch(decision["output_sha256"])
-        or matches[0].get("raw_sha256") != decision["output_sha256"]
+        or decision["output_sha256"] not in reviewed
     ):
         raise ValueError("Review output binding is invalid")
 
@@ -347,6 +367,10 @@ def assess_page(
     *,
     holds_for: dict[str, str] = _WARNING_HOLDS,
     text_refutes_blank: bool = False,
+    escalate_on: tuple[str, ...] | list[str] = ("hold",),
+    roughness: Callable[[str], dict | None] | None = None,
+    rough_below: float | None = None,
+    contest: Callable[[dict, dict], dict] | None = None,
 ) -> dict:
     """Select evidence deterministically while keeping all recorded review holds.
 
@@ -354,6 +378,17 @@ def assess_page(
     later evidence: a blank candidate raised only because an engine returned no
     text is cleared when another, non-generative engine reads clean text from the
     page. An engine's own judgement that the page is blank is never cleared.
+
+    ``escalate_on`` adds triggers to 0.6's rule that a held page climbs: ``rough``
+    (too few known words in the selected reading, judged by ``roughness``) and
+    ``disagreement`` (clean readings disagree). Triggers lift a page at most to the
+    image stage: a second reader is another witness, not a better one.
+
+    With ``contest``, a selected reader's text is compared with the best literal
+    reading word by word. The spans replace the page-level comparison reasons and
+    the coverage holds of readings the page no longer rests on. Any span neither
+    a rule nor a high-confidence adjudication settled holds the page as
+    ``contested``; once none is open, the page is ``adjudicated_text``.
     """
     attempts = page.get("attempts", [])
     reasons = list(dict.fromkeys(page.get("review_reasons") or []))
@@ -372,7 +407,12 @@ def assess_page(
         and _blank_refuted(attempts, clean, holds_for)
     ):
         reasons.remove("blank_candidate")
-    selected = next(iter(clean or usable), None)
+    readers = [item for item in clean if _generative(item)]
+    if contest is not None and readers:
+        # A contested job's text is the reader's, checked word by word against OCR.
+        selected = _select(readers, readers, escalate_on, roughness, rough_below)
+    else:
+        selected = _select(clean, usable, escalate_on, roughness, rough_below)
     selected_comparisons = (
         selected_clean_comparisons(page, selected["attempt_id"], holds_for)
         if selected and holds_for is _WARNING_HOLDS
@@ -382,19 +422,53 @@ def assess_page(
         reasons.append("engine_disagreement")
     if any(item["number_differences"] for item in selected_comparisons):
         reasons.append("numeric_disagreement")
-    if (
-        holds_for is _WARNING_HOLDS
-        and selected
-        and "generative" in selected.get("adapter_capabilities", ())
-    ):
+    if holds_for is _WARNING_HOLDS and selected and _generative(selected):
         confirmed = any(
             item["agreement_ratio"] >= ENGINE_AGREEMENT_THRESHOLD for item in selected_comparisons
         )
         if not confirmed:
             reasons.append("unconfirmed_model_output")
+    contested = None
+    if contest is not None and selected in clean and _generative(selected):
+        literals = [item for item in usable if not _generative(item)]
+        # Without a clean literal reading, the latest engine's is the witness.
+        literal = _select(
+            [item for item in literals if item in clean],
+            literals[::-1],
+            escalate_on,
+            roughness,
+            rough_below,
+        )
+        if literal is not None:
+            contested = contest(selected, literal)
+            # Coverage and confidence holds on readings the page no longer rests on
+            # are set aside, and so are the witness's own once every span is settled
+            # against the page. Each one set aside is recorded.
+            kept = set(holds_by_id[selected["attempt_id"]])
+            if contested["open"]:
+                kept |= set(holds_by_id[literal["attempt_id"]])
+            contested["superseded"] = sorted(
+                {
+                    (hold, item["attempt_id"])
+                    for item in attempts
+                    for hold in holds_by_id[item["attempt_id"]]
+                    if hold in _SUPERSEDED and hold not in kept
+                }
+            )
+            reasons = [
+                reason
+                for reason in reasons
+                if reason not in _COMPARISON_REASONS
+                and (reason not in _SUPERSEDED or reason in kept)
+            ]
+            if contested["open"]:
+                reasons.append("contested")
     disposition = next((hold for hold in _HOLD_ORDER if hold in reasons), None)
     if disposition is None:
-        if selected:
+        if contested is not None:
+            # Every difference from the literal reading is settled, or there is none.
+            disposition = "adjudicated_text"
+        elif selected:
             disposition = "unreviewed_text"
         elif any(item.get("outcome") in {"outcome_unknown", "response"} for item in attempts):
             disposition = "outcome_unknown"
@@ -412,9 +486,10 @@ def assess_page(
         (STAGES.index(item["stage"]) for item in attempts if item.get("stage") in STAGES),
         default=-1,
     )
+    triggers = _triggers(selected, reasons, stage_index, escalate_on, roughness, rough_below)
+    held = not clean and not any(reason in reasons for reason in _COMPARISON_REASONS)
     if (
-        clean
-        or any(reason in reasons for reason in _COMPARISON_REASONS)
+        not (held or triggers)
         or numeric_conflict
         or disposition in {"source_defect", "outcome_unknown", "provider_failure", "illustration"}
         or stage_index == len(STAGES) - 1
@@ -425,16 +500,143 @@ def assess_page(
     selected_id = selected["attempt_id"] if selected else None
     receipt = review if review is not None else page.get("review")
     if receipt is not None:
-        validate_review(receipt, page)
+        edition = None
+        if selected and contested is not None and contested["edition"] is not None:
+            text = contested["edition"].encode("utf-8")
+            edition = (selected["attempt_id"], hashlib.sha256(text).hexdigest())
+        validate_review(receipt, page, edition if contest is not None else True)
         decision = next(item for item in receipt["decisions"] if item["page_id"] == page["page_id"])
         disposition, selected_id, next_action = (
             decision["disposition"],
             decision["selected_attempt"],
             "none",
         )
-    return {
+    result = {
         "selected_attempt": selected_id,
         "disposition": disposition,
         "review_reasons": reasons,
         "next_action": next_action,
     }
+    if contest is not None:
+        result["contested"] = contested
+    if tuple(escalate_on) != ("hold",):
+        # Why the page climbed at each earlier stage, then why it climbs now.
+        result["triggers"] = [
+            *_trigger_history(
+                page, holds_for, text_refutes_blank, escalate_on, roughness, rough_below
+            ),
+            *(triggers if next_action not in {"review", "none"} else []),
+        ]
+    return result
+
+
+def _generative(attempt: dict) -> bool:
+    return "generative" in attempt.get("adapter_capabilities", ())
+
+
+def _trigger_history(
+    page: dict,
+    holds_for: dict[str, str],
+    text_refutes_blank: bool,
+    escalate_on: tuple[str, ...] | list[str],
+    roughness: Callable[[str], dict | None] | None,
+    rough_below: float | None,
+) -> list[dict]:
+    """Re-assess the page as it stood after each earlier stage, from retained attempts only."""
+    reached = sorted(
+        {STAGES.index(a["stage"]) for a in page.get("attempts", []) if a.get("stage") in STAGES}
+    )
+    history: list[dict] = []
+    for index in reached[:-1]:
+        kept = [a for a in page["attempts"] if a.get("stage") in STAGES[: index + 1]]
+        ids = {a["attempt_id"] for a in kept}
+        earlier = {
+            **page,
+            "attempts": kept,
+            "comparisons": [
+                c
+                for c in page.get("comparisons", [])
+                if c["left_attempt"] in ids and c["right_attempt"] in ids
+            ],
+            "review": None,
+        }
+        before = assess_page(
+            earlier,
+            holds_for=holds_for,
+            text_refutes_blank=text_refutes_blank,
+            escalate_on=escalate_on,
+            roughness=roughness,
+            rough_below=rough_below,
+        )
+        # Its list repeats the history found so far; only the tail is this stage's.
+        history.extend(before["triggers"][len(history) :])
+    return history
+
+
+def _triggers(
+    selected: dict | None,
+    reasons: list[str],
+    stage_index: int,
+    escalate_on: tuple[str, ...] | list[str],
+    roughness: Callable[[str], dict | None] | None,
+    rough_below: float | None,
+) -> list[dict]:
+    """Why a page whose reading is not held still climbs, with the evidence that fired."""
+    following = STAGES[stage_index + 1] if stage_index + 1 < len(STAGES) else None
+    if selected is None or following not in {"local_ocr", "image"}:
+        return []
+    fired = []
+    stage = STAGES[stage_index]
+    measure = _rough_measure(selected, escalate_on, roughness, rough_below)
+    if measure is not None:
+        fired.append(
+            {"trigger": "rough", "stage": stage, "attempt": selected["attempt_id"], **measure}
+        )
+    if "always" in escalate_on:
+        fired.append({"trigger": "always", "stage": stage, "attempt": selected["attempt_id"]})
+    found = [reason for reason in _DISAGREEMENTS if reason in reasons]
+    if "disagreement" in escalate_on and found:
+        fired.append(
+            {
+                "trigger": "disagreement",
+                "stage": stage,
+                "attempt": selected["attempt_id"],
+                "reasons": found,
+            }
+        )
+    return fired
+
+
+def _rough_measure(
+    attempt: dict,
+    escalate_on: tuple[str, ...] | list[str],
+    roughness: Callable[[str], dict | None] | None,
+    rough_below: float | None,
+) -> dict | None:
+    """The lexicon's measure of a reading when it falls below the threshold, else None."""
+    if "rough" not in escalate_on or roughness is None or rough_below is None:
+        return None
+    measure = roughness(attempt.get("text") or "")
+    return measure if measure is not None and measure["known_share"] < rough_below else None
+
+
+def _select(
+    clean: list[dict],
+    usable: list[dict],
+    escalate_on: tuple[str, ...] | list[str],
+    roughness: Callable[[str], dict | None] | None,
+    rough_below: float | None,
+) -> dict | None:
+    """The first clean reading; with the rough trigger, the first clean one that is not rough.
+
+    When every clean reading is rough, the least rough wins (the earliest on a tie), so
+    a page that climbed for roughness moves to the better reading it climbed for.
+    """
+    if not clean:
+        return next(iter(usable), None)
+    rough = [_rough_measure(item, escalate_on, roughness, rough_below) for item in clean]
+    smooth = [item for item, measure in zip(clean, rough, strict=True) if measure is None]
+    if smooth:
+        return smooth[0]
+    shares = [measure["known_share"] for measure in rough if measure is not None]
+    return clean[shares.index(max(shares))]

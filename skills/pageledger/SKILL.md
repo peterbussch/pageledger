@@ -23,6 +23,7 @@ page lists supported workflows and limits; the
 | Process a document with staged attempts | `pageledger process book.pdf --config processing.yml --out jobs/book` |
 | Read or verify a document report | `pageledger inspect-job jobs/book`; `pageledger verify-job jobs/book` |
 | Record human review | `pageledger review-job jobs/book --review reviewed-pages.json` |
+| Settle a model's contested words | `pageledger adjudicate jobs/book --packets DIR`, answer each packet against its page image, then `pageledger adjudicate jobs/book --decisions DIR --reviewer agent:NAME` |
 | Start a resumable run | `pageledger run scan.pdf --adapter pdf_ocr --resumable --out runs/a` |
 | Recover pending work in place | `pageledger resume runs/a` or `pageledger resume jobs/book` |
 | OCR a scan, no config | `pageledger run scan.pdf --adapter pdf_ocr --out runs/a` |
@@ -115,6 +116,13 @@ Jobs retain all attempts and publish `document.json`, `report.md`, and
 `transcript.md`. A clean later attempt may supply the transcript while an earlier
 review hold remains. Only source/output-bound human receipts establish reviewed
 text; never create a receipt claiming a human review that did not happen.
+
+With `processing.contest`, a model's reading is compared with the OCR and each
+difference becomes a span; open spans hold the page as `contested`. When you
+answer adjudication packets, write what the page image prints, keep printed
+misprints, use `high` confidence only when the image is plain, and name yourself
+truthfully in `--reviewer` (`agent:...` for an agent, never a person's name).
+Do not adjudicate a reading made by your own model family.
 
 `process` retains checkpoints automatically; individual runs require
 `--resumable` at creation. Use `resume DIR` to recover work in place. If it

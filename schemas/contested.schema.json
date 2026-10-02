@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/peterbussch/pageledger/schemas/contested.json",
+  "title": "PageLedger Contested Spans",
+  "description": "contested/<page_id>.json in a document job: where a reader's text (the base) differs from a literal engine's reading of the same page. Rebuilt from the retained readings by verify-job. Schema version 0.1.",
+  "type": "object",
+  "required": ["schema_version", "page_id", "rules", "base", "witness", "spans"],
+  "properties": {
+    "schema_version": { "const": "0.1" },
+    "page_id": { "type": "string", "minLength": 1 },
+    "rules": { "type": "string", "description": "The versioned rule set that settled spans, such as ru-print-0.1." },
+    "base": {
+      "type": "object",
+      "required": ["attempt", "text_sha256"],
+      "properties": {
+        "attempt": { "type": "string", "minLength": 1 },
+        "text_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$", "description": "SHA-256 of the UTF-8 text that span offsets index." }
+      },
+      "additionalProperties": false
+    },
+    "witness": {
+      "type": "object",
+      "required": ["attempt", "text_sha256", "adapter"],
+      "properties": {
+        "attempt": { "type": "string", "minLength": 1 },
+        "text_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "adapter": { "type": "string", "minLength": 1, "description": "The literal engine; glyph pairs are listed per engine." }
+      },
+      "additionalProperties": false
+    },
+    "spans": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["span_id", "kind", "start", "end", "base", "witness", "status"],
+        "properties": {
+          "span_id": { "type": "string", "pattern": "^sp_[0-9a-f]{16}$" },
+          "kind": {
+            "enum": ["homoglyph", "glyph", "misprint_guard", "word", "number", "region"],
+            "description": "homoglyph and glyph are settled by rule; misprint_guard is a literal non-word the engine's known confusions do not explain, possibly a printed misprint, and is never settled by rule."
+          },
+          "start": { "type": "integer", "minimum": 0, "description": "Offset in the base text, in code points." },
+          "end": { "type": "integer", "minimum": 0 },
+          "base": { "type": "string", "description": "The base text between start and end; empty where only the witness has words." },
+          "witness": { "type": "string", "description": "What the literal engine read here; empty where only the base has words." },
+          "status": { "enum": ["open", "settled"] },
+          "settled_by": { "type": "string", "pattern": "^rule:" },
+          "text": { "type": "string", "description": "The text a settled span keeps." }
+        },
+        "if": { "properties": { "status": { "const": "settled" } } },
+        "then": { "required": ["settled_by", "text"] },
+        "else": { "not": { "anyOf": [{ "required": ["settled_by"] }, { "required": ["text"] }] } },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

@@ -147,6 +147,204 @@ This runs `local_ocr` on source pages 10, 20, 30 and so on, even when their
 text layer is clean. The stage must be enabled, and its pages count against the
 job's limits.
 
+## Climb on roughness and disagreement
+
+By default a page climbs to the next stage only when its reading carries a
+warning hold, and two engines that disagree send the page straight to review.
+Two problems escape that rule. OCR can be wrong without any warning: an engine
+that reads two columns as one glues the halves of neighbouring lines into
+non-words. And a disagreement between two clean readings is a question a
+stronger engine can help answer. `escalate_on` adds two triggers:
+
+```yaml
+schema_version: "0.1"
+processing:
+  local_text:
+    adapter: pdf_text
+  local_ocr:
+    adapter: pdf_ocr
+    adapter_options:
+      lang: rus
+  escalate_on: [hold, rough, disagreement]
+  lexicon:
+    provider: pymorphy3
+    language: ru
+    rough_below: 0.95
+  limits:
+    max_attempt_pages: 100
+    max_image_pages: 0
+```
+
+- `rough`: the selected reading's share of words the lexicon knows falls below
+  `rough_below`. Words split across a line break are rejoined first, and a page
+  with fewer than 20 Cyrillic words is not judged. Install the Russian lexicon
+  with `pip install 'pageledger[ru]'`.
+- `disagreement`: the selected reading and another clean one agree on fewer than
+  60% of their words, or read a number differently. Without this trigger the page
+  goes to review, as before.
+- `always`: every page climbs to the image stage. Use it with
+  [`contest`](#contest-a-models-reading) when the goal is an edition: the model
+  reads every page and each place it differs from the OCR is checked.
+
+`hold` is 0.6's rule and must be listed. Triggers lift a page at most to the
+`image` stage: a second model is another witness with the same habits, not a
+better reader, so `second_opinion` still climbs on holds only. When the rough
+trigger is on, a later reading that is not rough replaces a rough one as the
+selected text. If every clean reading is rough, the least rough is selected.
+
+Each trigger that fired is recorded on the page with its stage, the reading it
+judged and the evidence, for example
+`{"trigger": "rough", "stage": "local_ocr", "known_share": 0.89, ...}`. The job
+records the lexicon's provider and package versions. `verify-job` recomputes the
+triggers and refuses a job whose lexicon is not the installed one. The report
+adds the work done at each stage and how many pages each trigger raised.
+
+These numbers came from one test with real documents. Clean born-digital
+Russian scored 0.98 to 0.995. OCR of a two-column article read as one column
+scored 0.87 to 0.91. Treat 0.95 as a starting point and measure your own
+collection. `rough` catches a reading that has gone wrong, not scattered
+misreadings: read in column order, the same article scored 0.95 to 0.97 while
+its OCR still misread about one word in a hundred, and six of its seven pages
+stopped at OCR. Names, abbreviations and a linguist's examples are unknown
+words too; a hand-checked 1962 monograph scored a median 0.97.
+
+## Contest a model's reading
+
+A vision model writes fluent text and silently corrects what it sees: it fixes
+the printer's misprints and swaps in a likelier word. An OCR engine misreads
+glyphs but does not invent words. With `contest`, a page whose selected reading
+came from a model (an adapter with the `generative` capability) is compared word
+by word with the best literal reading of the same page, and each place they
+differ is recorded:
+
+```yaml
+schema_version: "0.1"
+processing:
+  local_text:
+    adapter: pdf_text
+  local_ocr:
+    adapter: rapidocr
+  image:
+    adapter: vision
+    adapter_options:
+      base_url: http://127.0.0.1:20128/v1
+      model: codex/gpt-6.1-sol
+      env_key: OMNIROUTE_API_KEY
+    prompt: |
+      Transcribe this printed page exactly as printed, for a scholarly digital edition.
+      Keep the original spelling, punctuation and line breaks; do not correct or modernise.
+      Write formulas in LaTeX between $...$ or $$...$$. Write each figure as one line
+      "[Figure: <its printed caption or labels>]". Mark a word you cannot read with
+      confidence with [?] after it, and an illegible passage as [illegible].
+  escalate_on: [hold, always]   # the model reads every page
+  contest:
+    rules: ru-print-0.1
+  lexicon:                      # optional; lets the glyph rule judge Russian words
+    provider: pymorphy3
+    language: ru
+  limits:
+    max_image_pages: 200
+```
+
+Regions rely on the model marking them, as this prompt asks; with the default
+prompt a formula is compared word by word.
+
+The model's text is the base, and every span is anchored in its offsets. Words
+one engine placed elsewhere on the page count as reading order, not as
+differences, when at least two words moved together or the word stands alone on
+its line; a single word in another place is a difference, because a model may
+move a negation. A word hyphenated across a line that the other engine read as
+its two halves, side by side or with the hyphen kept, is one word. Any other split or joined word stays a
+difference: a model that writes «гос средств» for the printed «госсредств» has
+changed the text. Unpaired words are grouped, so a line one engine dropped is one
+span. A formula (`$...$`), a `[Figure: ...]` line, `[illegible]` and a word the
+model marked `[?]` are each one `region` span, because the model wrote them in a
+form no literal engine can confirm word by word.
+
+| Kind | Literal reading against the model's | Settled by |
+|---|---|---|
+| `homoglyph` | Look-alike letters of another script (HAYK for НАУК), two letters or more | Rule H: the model's |
+| `glyph` | A non-word whose difference from the model's known word is only confusions listed for that engine (RapidOCR's н for п) | Rule G: the model's |
+| `misprint_guard` | A non-word the engine's listed confusions do not explain (назависимости) | Open: it may be what the page prints |
+| `word` | Any other difference, or words only one side has | Open |
+| `number` | Either side has a digit | Open |
+| `region` | A formula, figure line or the model's own doubt | Open |
+
+The rule set is versioned data. `ru-print-0.1` lists the confusions RapidOCR's
+Cyrillic model made at least twice in one dogfood, checked against the page
+images; its pairs never cross case, and they apply only to the `rapidocr`
+adapter. Without a lexicon only rule H applies. On two fully checked Russian
+documents (61 pages) the rules settled 178 spans with no error against the
+image-checked text, and the open spans covered 306 of the 319 corrections the
+model's text needed. The misses were accents and figure labels that neither
+engine read.
+
+The spans are kept in `contested/<page_id>.json` ([schema](../schemas/contested.schema.json)),
+and the page records its hash and counts. A page with an open span is held as
+`contested`. That replaces `engine_disagreement`, `numeric_disagreement` and
+`unconfirmed_model_output` on that page, because the spans say exactly where the
+readings differ. `verify-job` rebuilds the spans from the retained readings and fails if the
+artifact differs. The report counts spans by kind, settlements, and the pages
+they hold.
+
+On a contested page, the coverage, low-confidence and blank holds of readings
+the page no longer rests on are dropped: the model and the literal engine, and
+the spans between them, have read what those readings missed. Holds on the two
+readings themselves stay.
+
+## Settle contested spans
+
+Rules settle what the two readings alone decide. The rest is settled against the
+page image, by an agent or a person, outside PageLedger:
+
+```bash
+pageledger adjudicate jobs/book --packets packets/book
+# an adjudicator answers each packet
+pageledger adjudicate jobs/book --decisions packets/book --reviewer agent:sol
+```
+
+`--packets` writes, for every page with open spans, `<page_id>.json` with the
+open spans, and the exact image the model read (`<page_id>.jpg`), with
+`INSTRUCTIONS.md`. Packets are blind: each span gives the two readings in sorted
+order and the text around the place, never which engine read which. The
+surrounding text is the model's, so the blinding is partial. In a test
+on Большаков (7 pages, 60 open spans, Sol as the reader), Sol adjudicating
+spans labelled as its own reading kept three of its own substitutions (мощными
+for the printed модными) and called each one plainly printed; blind, it did no
+better. Gemini 3.1 Pro, blind, left one error, a printed misprint it corrected.
+Claude Sonnet 4.6 corrected three misprints. Use an adjudicator from another
+model family than the reader, and check its answers on pages you have verified. The adjudicator answers in `<page_id>.decisions.json`:
+
+```json
+{"page_id": "doc_0001_page_0003", "contested_sha256": "…",
+ "decisions": [{"span_id": "sp_9f…", "text": "поныне", "confidence": "high", "note": "print reads поныне"}]}
+```
+
+`text` is what the page prints at that place: the model's reading, the literal
+one, other text, or nothing. A printed misprint is written as printed.
+Packets and answers have schemas
+([packet](../schemas/adjudication-packet.schema.json),
+[decisions](../schemas/adjudication-decisions.schema.json)).
+`--decisions` checks each answer against the spans it names and records it as an
+adjudication receipt (schema 0.2) on the page, with the reviewer, the time and
+the hash of the image. Answers for spans that have since changed are refused;
+write packets again. A later answer for a span overrides an earlier one.
+
+Only a `high` answer settles a span. When no span on a page is open, the page is
+`adjudicated_text`, and, if any answer changed the text, PageLedger writes
+`editions/<page_id>.txt`: the model's reading with each change applied at its
+offsets. The attempt itself is never edited. The transcript, `document.json` and
+every export use the edition and say so. `verify-job` rebuilds each edition from
+its receipts and fails if the file differs.
+
+`adjudicated_text` is not `reviewed_text`. It means every word-level difference
+from the literal reading was settled, by a rule or an adjudicator, or there was
+none; punctuation and the order of words that moved together are not compared,
+and no person has read the page. The report counts adjudicated pages on their own line,
+and `unresolved_pages` keeps its meaning: pages without a person's review. A
+person can answer packets too, under their own `--reviewer` name, or review the
+page as before.
+
 ## One budget for the job
 
 `processing.limits` accepts:

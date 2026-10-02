@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/peterbussch/pageledger/schemas/adjudication-packet.json",
+  "title": "PageLedger Adjudication Packet",
+  "description": "<page_id>.json written by `pageledger adjudicate JOB --packets DIR`: one page's open contested spans, blind to which engine read which. Schema version 0.1.",
+  "type": "object",
+  "required": ["schema_version", "job_id", "source_sha256", "page_id", "page_number", "contested_sha256", "image", "spans"],
+  "properties": {
+    "schema_version": { "const": "0.1" },
+    "job_id": { "type": "string", "minLength": 1 },
+    "source_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "page_id": { "type": "string", "minLength": 1 },
+    "page_number": { "type": "integer", "minimum": 1 },
+    "contested_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$", "description": "The spans these answers must be bound to; copied into the decisions file." },
+    "image": {
+      "description": "The exact page image the model read, copied beside the packet; null when the reading has no image evidence.",
+      "anyOf": [
+        { "type": "null" },
+        {
+          "type": "object",
+          "required": ["path", "sha256"],
+          "properties": {
+            "path": { "type": "string", "minLength": 1 },
+            "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "spans": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["span_id", "candidates", "before", "after"],
+        "properties": {
+          "span_id": { "type": "string", "pattern": "^sp_[0-9a-f]{16}$" },
+          "candidates": { "type": "array", "items": { "type": "string" }, "minItems": 1, "maxItems": 2, "description": "The two readings, sorted; an empty string means a reading has nothing there." },
+          "before": { "type": "string" },
+          "after": { "type": "string" }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

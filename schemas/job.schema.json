@@ -249,6 +249,8 @@
                   "engine_disagreement",
                   "numeric_disagreement",
                   "unconfirmed_model_output",
+                  "contested",
+                  "adjudicated_text",
                   "blank_candidate",
                   "provider_failure",
                   "outcome_unknown",
@@ -551,6 +553,93 @@
                   "additionalProperties": false
                 }
               },
+              "contested": {
+                "type": "object",
+                "description": "Where the selected reader's text differs from the best literal reading. The spans are in the artifact; the job keeps its hash and counts. Present only in jobs with processing.contest.",
+                "properties": {
+                  "artifact": {"type": "string", "pattern": "^contested/doc_[0-9]{4}_page_[0-9]{4,}\\.json$"},
+                  "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+                  "base_attempt": {"type": "string", "minLength": 1},
+                  "witness_attempt": {"type": "string", "minLength": 1},
+                  "kinds": {
+                    "type": "object",
+                    "propertyNames": {"enum": ["homoglyph", "glyph", "misprint_guard", "word", "number", "region"]},
+                    "additionalProperties": {"type": "integer", "minimum": 1}
+                  },
+                  "open": {"type": "integer", "minimum": 0, "description": "Spans neither a rule nor a high-confidence adjudication settled."},
+                  "by_rule": {"type": "integer", "minimum": 0},
+                  "by_review": {"type": "integer", "minimum": 0, "description": "Spans settled by a high-confidence decision in an adjudication receipt."},
+                  "superseded": {
+                    "type": "array",
+                    "description": "Coverage, confidence and blank holds set aside: those of readings the page no longer rests on, and the witness's own once no span is open.",
+                    "items": {
+                      "type": "object",
+                      "properties": {"reason": {"enum": ["coverage_defect", "low_confidence", "blank_candidate"]}, "attempt": {"type": "string", "minLength": 1}},
+                      "required": ["reason", "attempt"],
+                      "additionalProperties": false
+                    }
+                  }
+                },
+                "required": ["artifact", "sha256", "base_attempt", "witness_attempt", "kinds", "open", "by_rule", "by_review", "superseded"],
+                "additionalProperties": false
+              },
+              "edition": {
+                "type": "object",
+                "description": "The selected reading with its adjudicated changes applied, once no span is open. The attempt itself is never edited.",
+                "properties": {
+                  "artifact": {"type": "string", "pattern": "^editions/doc_[0-9]{4}_page_[0-9]{4,}\\.txt$"},
+                  "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+                  "base_attempt": {"type": "string", "minLength": 1}
+                },
+                "required": ["artifact", "sha256", "base_attempt"],
+                "additionalProperties": false
+              },
+              "adjudications": {
+                "type": "array",
+                "description": "Adjudication receipts (schema 0.2), oldest first. Each binds its decisions to the contested-spans artifact they answer; a receipt bound to an earlier artifact no longer applies.",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "schema_version": {"const": "0.2"},
+                    "source_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+                    "page_id": {"type": "string", "minLength": 1},
+                    "page_number": {"type": "integer", "minimum": 1},
+                    "contested_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+                    "image_sha256": {"type": ["string", "null"], "pattern": "^[0-9a-f]{64}$"},
+                    "decisions": {
+                      "type": "array",
+                      "minItems": 1,
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "span_id": {"type": "string", "pattern": "^sp_[0-9a-f]{16}$"},
+                          "text": {"type": "string"},
+                          "confidence": {"enum": ["high", "medium", "low"]},
+                          "note": {"type": "string"}
+                        },
+                        "required": ["span_id", "text", "confidence", "note"],
+                        "additionalProperties": false
+                      }
+                    },
+                    "reviewer": {"type": "string", "minLength": 1},
+                    "reviewed_at": {"type": "string", "minLength": 1}
+                  },
+                  "required": ["schema_version", "source_sha256", "page_id", "page_number", "contested_sha256", "image_sha256", "decisions", "reviewer", "reviewed_at"],
+                  "additionalProperties": false
+                }
+              },
+              "triggers": {
+                "type": "array",
+                "description": "Why a page climbed although its reading was not held, with the evidence that fired. Present only in jobs with escalate_on beyond hold.",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "trigger": {"enum": ["rough", "disagreement", "always"]},
+                    "attempt": {"type": "string", "minLength": 1}
+                  },
+                  "required": ["trigger", "attempt"]
+                }
+              },
               "comparisons": {
                 "type": "array",
                 "items": {
@@ -730,6 +819,18 @@
         },
         "policy": {
           "type": "object"
+        },
+        "lexicon": {
+          "type": "object",
+          "description": "Identity of the lexicon the rough trigger used. Present only when the job configures one.",
+          "properties": {
+            "provider": {"type": "string"},
+            "language": {"type": "string"},
+            "version": {"type": "string"},
+            "dictionary": {"type": "string"}
+          },
+          "required": ["provider", "language", "version", "dictionary"],
+          "additionalProperties": false
         },
         "limits_history": {
           "type": "array",

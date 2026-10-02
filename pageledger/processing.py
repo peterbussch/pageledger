@@ -3,16 +3,19 @@
 from __future__ import annotations
 
 import copy
+import functools
+import hashlib
 import json
 import math
 from collections import Counter
 from dataclasses import asdict
 from pathlib import Path
+from typing import Any
 from uuid import uuid4
 
 import yaml
 
-from . import processing_policy, runner
+from . import adjudication, processing_policy, runner
 from .adapters import PageLedgerDiagnostic
 from .checkpoint import (
     Checkpoint,
@@ -26,6 +29,8 @@ from .checkpoint import (
 from .classifier import classify_signals, merge_classify_thresholds, structural_signals
 from .comparison import compare_texts
 from .config import load_config
+from .contest import contest as contest_spans
+from .lexicon import load_lexicon, roughness
 from .processing_config import STAGES, processing_config
 from .processing_policy import (
     HOLD_POLICIES,
@@ -136,6 +141,10 @@ def _load(root: Path) -> dict:
             raise ValueError("Active review differs from retained review history")
         for receipt in history:
             validate_review(receipt, page)
+        if not isinstance(page.get("adjudications", []), list):
+            raise ValueError("Document job adjudications are invalid")
+        for receipt in page.get("adjudications", []):
+            adjudication.validate_receipt(receipt, page)
     for stage in job["stages"]:
         if (
             stage["stage"] not in STAGES
@@ -312,6 +321,7 @@ def _process(
         "config_sha256": digest(config.data),
         "policy": policy,
         "hold_policy": HOLD_POLICY,
+        **({"lexicon": load_lexicon(policy["lexicon"]).identity} if policy.get("lexicon") else {}),
         "package_sha256": _package_code_sha256(),
         "selected_pages": selected,
         "pages": [],
@@ -358,15 +368,147 @@ def _process(
         return _continue(job, root, adapter_path)
 
 
+def _escalation(job: dict) -> tuple[tuple[str, ...], Any, float | None]:
+    """The job's triggers, and its lexicon's judgement when the rough trigger is on."""
+    policy = job["policy"]
+    lexicon_config = policy.get("lexicon")
+    if not lexicon_config:
+        return tuple(policy.get("escalate_on", ("hold",))), None, None
+    lexicon = load_lexicon(lexicon_config)
+    if lexicon.identity != job.get("lexicon"):
+        raise ValueError(
+            f"This job judged words with {job.get('lexicon')}; the installed lexicon is "
+            f"{lexicon.identity}. Install the recorded version to verify or resume it."
+        )
+    return (
+        tuple(policy.get("escalate_on", ("hold",))),
+        # Selection, triggers and their history judge the same readings repeatedly.
+        functools.lru_cache(maxsize=None)(lambda text: roughness(text, lexicon)),
+        lexicon_config.get("rough_below"),
+    )
+
+
+def _contester(job: dict) -> Any:
+    """Compare a page's reader with its literal witness, when the job contests readings."""
+    settings = job["policy"].get("contest")
+    if not settings:
+        return None
+    lexicon = load_lexicon(job["policy"]["lexicon"]) if job["policy"].get("lexicon") else None
+    receipts = {page["page_id"]: page.get("adjudications", []) for page in job["pages"]}
+
+    @functools.cache
+    def spans(base: str, witness: str, engine: str) -> list[dict]:
+        return contest_spans(
+            base,
+            witness,
+            rules=settings["rules"],
+            engine=engine,
+            known=lexicon.known if lexicon else None,
+        )
+
+    def contest(base: dict, witness: dict) -> dict:
+        engine = job["policy"][witness["stage"]]["adapter"]
+        record = {
+            "schema_version": "0.1",
+            "page_id": base["page_id"],
+            "rules": settings["rules"],
+            "base": {"attempt": base["attempt_id"], "text_sha256": _text_sha256(base["text"])},
+            "witness": {
+                "attempt": witness["attempt_id"],
+                "text_sha256": _text_sha256(witness["text"]),
+                "adapter": engine,
+            },
+            "spans": copy.deepcopy(spans(base["text"], witness["text"], engine)),
+        }
+        sha256 = hashlib.sha256(adjudication.encode(record)).hexdigest()
+        still_open, decided = adjudication.settle(record, sha256, receipts[base["page_id"]])
+        return {
+            "record": record,
+            "sha256": sha256,
+            "open": len(still_open),
+            "decided": decided,
+            "edition": adjudication.edition(base["text"], record, decided)
+            if not still_open
+            else None,
+        }
+
+    return contest
+
+
+def _text_sha256(text: str) -> str:
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def _retain(root: Path, relative: str, encoded: bytes, materialize: bool, what: str) -> str:
+    """Write a derived artifact, or when verifying, refuse one that differs; return its hash."""
+    target = _safe(root, relative)
+    if not target.exists() or target.read_bytes() != encoded:
+        if not materialize:
+            raise ValueError(f"{what} differ from the retained readings and receipts")
+        target.parent.mkdir(exist_ok=True)
+        atomic_bytes(target, encoded)
+    return file_digest(target)
+
+
+def _retain_contested(
+    root: Path, page: dict, result: dict, materialize: bool, before: dict | None
+) -> None:
+    """Keep a page's spans and any edition as artifacts; the page keeps hashes and counts.
+
+    Spans change when a new reading becomes the base or the witness. Different spans
+    from the same two readings mean the contest procedure changed, which would orphan
+    every receipt that answers them, so that is refused.
+    """
+    record = result["record"]
+    if (
+        before is not None
+        and before["base_attempt"] == record["base"]["attempt"]
+        and before["witness_attempt"] == record["witness"]["attempt"]
+        and before["sha256"] != result["sha256"]
+    ):
+        raise ValueError(
+            f"Contest of {page['page_id']} gives different spans from the same readings: "
+            f"this job was contested under {record['rules']} by another PageLedger version. "
+            "Install that version to continue or verify it."
+        )
+    relative = f"contested/{page['page_id']}.json"
+    _retain(root, relative, adjudication.encode(record), materialize, "Contested spans")
+    spans = record["spans"]
+    page["contested"] = {
+        "artifact": relative,
+        "sha256": result["sha256"],
+        "base_attempt": record["base"]["attempt"],
+        "witness_attempt": record["witness"]["attempt"],
+        "kinds": dict(sorted(Counter(span["kind"] for span in spans).items())),
+        "open": result["open"],
+        "by_rule": sum(span["status"] == "settled" for span in spans),
+        "by_review": len(result["decided"]),
+        "superseded": [
+            {"reason": reason, "attempt": attempt} for reason, attempt in result["superseded"]
+        ],
+    }
+    if result["edition"] is not None:
+        relative = f"editions/{page['page_id']}.txt"
+        sha256 = _retain(root, relative, result["edition"].encode(), materialize, "Edition texts")
+        page["edition"] = {
+            "artifact": relative,
+            "sha256": sha256,
+            "base_attempt": record["base"]["attempt"],
+        }
+
+
 def _refresh(job: dict, root: Path, *, materialize: bool = True) -> None:
     """Rebuild the job index from validated durable child evidence before scheduling."""
     from .processing_policy import assess_page
 
     _check_source(job)
     pages = {p["page_id"]: p for p in job["pages"]}
+    contested_before = {}
     for page in pages.values():
         page["attempts"] = []
         page["review_reasons"] = []
+        contested_before[page["page_id"]] = page.pop("contested", None)
+        page.pop("edition", None)
     for stage in job["stages"]:
         child = _safe(root, stage["run_path"])
         if not child.exists():
@@ -489,6 +631,8 @@ def _refresh(job: dict, root: Path, *, materialize: bool = True) -> None:
                 )
             pages[page_id]["attempts"].append(attempt)
     holds = warning_holds(job)
+    escalate_on, roughness_of, rough_below = _escalation(job)
+    contest = _contester(job)
     for page in pages.values():
         if job.get("hold_policy") in HOLD_POLICIES:
             page["comparisons"] = _build_comparisons(page["attempts"])
@@ -501,8 +645,15 @@ def _refresh(job: dict, root: Path, *, materialize: bool = True) -> None:
                 holds_for=holds,
                 # Only jobs written under the current policy clear a blank hold this way.
                 text_refutes_blank=job.get("hold_policy") == processing_policy.HOLD_POLICY,
+                escalate_on=escalate_on,
+                roughness=roughness_of,
+                rough_below=rough_below,
+                contest=contest,
             )
         )
+        result = page.pop("contested", None)
+        if result is not None:
+            _retain_contested(root, page, result, materialize, contested_before[page["page_id"]])
     attempts = [attempt for page in pages.values() for attempt in page["attempts"]]
     paid = [a for a in attempts if a["stage"] in {"image", "second_opinion"}]
     token_values = [a["usage"].get("tokens") for a in attempts]
@@ -823,6 +974,65 @@ def review_job(
         return {**_publish(job, root), "decisions": _decision_counts(review)}
 
 
+def adjudication_packets(job_dir: Path, out: Path) -> dict:
+    """Write a packet for each page with open contested spans, for an adjudicator to answer."""
+    root = job_dir.expanduser().resolve()
+    with writer_lock(root):
+        job = _load(root)
+        if not job["policy"].get("contest"):
+            raise ValueError("This job does not contest readings; it has no spans to settle")
+        _refresh(job, root, materialize=False)
+        return {"status": "written", **adjudication.write_packets(job, root, out)}
+
+
+def adjudicate_job(job_dir: Path, decisions: Path, *, reviewer: str, dry_run: bool = False) -> dict:
+    """Record answers from <page_id>.decisions.json files as receipts, then rebuild the job."""
+    if not reviewer.strip():
+        raise ValueError(
+            "Name who settled the spans with --reviewer, e.g. agent:sol or person:NAME"
+        )
+    root = job_dir.expanduser().resolve()
+    with writer_lock(root):
+        job = _load(root)
+        _refresh(job, root)
+        now = runner._utc_now()
+        recorded = []
+        for page in job["pages"]:
+            path = decisions / f"{page['page_id']}.decisions.json"
+            if not path.exists():
+                continue
+            contested = page.get("contested")
+            if not contested:
+                raise ValueError(f"{page['page_id']} has no contested spans to settle")
+            if page.get("review") is not None:
+                raise ValueError(f"{page['page_id']} was reviewed by a person; its text is settled")
+            record = json.loads((root / contested["artifact"]).read_bytes())
+            answer = json.loads(path.read_text(encoding="utf-8"))
+            receipt = adjudication.receipt_for(
+                page,
+                answer,
+                record=record,
+                sha256=contested["sha256"],
+                reviewer=reviewer,
+                reviewed_at=now,
+            )
+            recorded.append((page, receipt))
+        if not recorded:
+            raise ValueError(f"No <page_id>.decisions.json files in {decisions}")
+        settled = sum(
+            d["confidence"] == "high" for _, receipt in recorded for d in receipt["decisions"]
+        )
+        counts = {"pages": len(recorded), "decisions_high": settled}
+        if dry_run:
+            return {"job_id": job["job_id"], "out_dir": str(root), "status": "checked", **counts}
+        for page, receipt in recorded:
+            page.setdefault("adjudications", []).append(receipt)
+        _refresh(job, root)
+        if job["status"] == "completed":
+            job["next_action"] = _review_next_action(job)
+        return {**_publish(job, root), **counts}
+
+
 def _decision_counts(review: dict) -> dict[str, int]:
     return dict(Counter(decision["disposition"] for decision in review["decisions"]))
 
@@ -835,17 +1045,25 @@ def create_review_sheet(job_dir: Path, sheet: Path) -> dict:
         return {"status": "written", **write_review_sheet(job, sheet)}
 
 
+def _derived(page: dict) -> tuple:
+    """What a page's record states that verification must rebuild identically."""
+    return (
+        page["selected_attempt"],
+        page["disposition"],
+        page["review_reasons"],
+        page.get("triggers"),
+        page.get("contested"),
+        page.get("edition"),
+    )
+
+
 def verify_job(job_dir: Path) -> dict:
     root = job_dir.expanduser().resolve()
     try:
         job = _load(root)
-        before = [
-            (p["selected_attempt"], p["disposition"], p["review_reasons"]) for p in job["pages"]
-        ]
+        before = [_derived(p) for p in job["pages"]]
         _refresh(job, root, materialize=False)
-        if before != [
-            (p["selected_attempt"], p["disposition"], p["review_reasons"]) for p in job["pages"]
-        ]:
+        if before != [_derived(p) for p in job["pages"]]:
             raise ValueError("Job selections disagree with retained evidence")
         from .document_report import build_document_report, verify_document_report
 

@@ -26,7 +26,7 @@
     },
     "warnings": {
       "type": "array",
-      "description": "Adapter-native warnings plus PageLedger-derived quality warnings such as empty_text, short_text, replacement_characters, control_characters, suspicious_symbol_density, fragmented_text, joined_text, suspicious_embedded_text_delta, historical_orthography, low_confidence, instruction_echo, output_inflation, digits_only_text, mixed_script_tokens, private_use_characters, repeated_page_text, repetition_loop, script_mismatch, and historical_letters_lost.",
+      "description": "Adapter-native warnings plus PageLedger-derived quality warnings such as empty_text, short_text, replacement_characters, control_characters, suspicious_symbol_density, fragmented_text, joined_text, suspicious_embedded_text_delta, historical_orthography, low_confidence, instruction_echo, output_inflation, digits_only_text, mixed_script_tokens, private_use_characters, foreign_script_characters, repeated_page_text, repetition_loop, script_mismatch, and historical_letters_lost.",
       "items": { "type": "string" }
     },
     "text_quality": {
@@ -95,6 +95,11 @@
           "type": "integer",
           "minimum": 0,
           "description": "Private Use Area code points, except one that opens a line before a space (a bullet or icon glyph). Optional for compatibility with older quality lines."
+        },
+        "foreign_script_count": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Letters and marks from scripts other than Latin, Cyrillic or Greek, letterlike symbols and mathematical alphanumerics excepted. Optional for compatibility with older quality lines."
         },
         "largest_identical_line_count": {
           "type": "integer",

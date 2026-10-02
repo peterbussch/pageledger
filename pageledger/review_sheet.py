@@ -54,7 +54,7 @@ def write_review_sheet(job: dict, sheet: Path) -> dict:
                 "page_number": str(page["page_number"]),
                 "source_page": f"{source}#page={page['page_number']}",
                 "disposition": page["disposition"],
-                "attempt_summary": _summary(_selected(page)),
+                "attempt_summary": _summary(job, page, _selected(page)),
                 "review_reasons": "; ".join(page["review_reasons"]),
                 "decision": "",
                 "note": "",
@@ -155,6 +155,15 @@ def _decision(page: dict, row_id: str, token: str) -> dict:
         disposition = "reviewed_text"
     elif token in DECISIONS:
         attempt, disposition = _selected(page), DECISIONS[token]
+        if attempt is not None and token == "accept":
+            # Accepting a page with an edition accepts the edition, the published text.
+            return {
+                "page_id": page["page_id"],
+                "page_number": page["page_number"],
+                "disposition": disposition,
+                "selected_attempt": attempt["attempt_id"],
+                "output_sha256": _output_sha256(page, attempt),
+            }
     else:
         choices = ", ".join([*DECISIONS, "use:ATTEMPT"])
         raise ValueError(f"Review row {row_id}: unknown decision {token!r}; use one of {choices}")
@@ -180,11 +189,22 @@ def _selected(page: dict) -> dict | None:
     )
 
 
-def _summary(attempt: dict | None) -> str:
+def _output_sha256(page: dict, attempt: dict) -> str:
+    edition = page.get("edition")
+    if edition and edition["base_attempt"] == attempt["attempt_id"]:
+        return edition["sha256"]
+    return attempt["raw_sha256"]
+
+
+def _summary(job: dict, page: dict, attempt: dict | None) -> str:
     if attempt is None:
         return "No selected text"
-    text = attempt["text"]
-    return f"{attempt['attempt_id']}: {' '.join(text.split()[:12])} ({len(text)} characters)"
+    text, label = attempt["text"], attempt["attempt_id"]
+    edition = page.get("edition")
+    if edition and edition["base_attempt"] == attempt["attempt_id"]:
+        text = (Path(job["root"]) / edition["artifact"]).read_text(encoding="utf-8")
+        label = f"{label}, edition {edition['artifact']}"
+    return f"{label}: {' '.join(text.split()[:12])} ({len(text)} characters)"
 
 
 def _binding(job: dict, page: dict) -> dict:
@@ -196,5 +216,5 @@ def _binding(job: dict, page: dict) -> dict:
         "page_id": page["page_id"],
         "page_number": page["page_number"],
         "selected_attempt": None if selected is None else selected["attempt_id"],
-        "output_sha256": None if selected is None else selected["raw_sha256"],
+        "output_sha256": None if selected is None else _output_sha256(page, selected),
     }

@@ -1052,6 +1052,7 @@ def _expected_text_metrics(text: str, token_lengths: list[int]) -> dict[str, Any
         "digit_count": sum(unicodedata.category(char) == "Nd" for char in text),
         "mixed_script_token_ratio": _mixed_script_token_ratio(text),
         "private_use_count": _private_use_outside_bullets(text),
+        "foreign_script_count": _oracle_foreign_script_count(text),
         "largest_identical_line_count": identical_line_count,
         "longest_repeated_tail_length": _oracle_repeated_tail(text),
         "longest_letter_run": longest_letter_run,
@@ -1094,6 +1095,18 @@ def _mixed_script_token_ratio(text: str) -> float:
     if scripts is not None:
         tokens.append(scripts)
     return 0.0 if not tokens else round(sum(len(t) > 1 for t in tokens) / len(tokens), 4)
+
+
+def _oracle_foreign_script_count(text: str) -> int:
+    count = 0
+    for char in text:
+        if char in "µªº" or unicodedata.category(char)[0] not in "LM":
+            continue
+        if "℀" <= char <= "⅏" or "\U0001d400" <= char <= "\U0001d7ff":
+            continue
+        script = unicodedata.name(char, "").split(" ")[0]
+        count += script not in {"LATIN", "CYRILLIC", "GREEK", "COMBINING", "MODIFIER"}
+    return count
 
 
 def _private_use_outside_bullets(text: str) -> int:
