@@ -393,7 +393,12 @@ def assess_page(
         and _blank_refuted(attempts, clean, holds_for)
     ):
         reasons.remove("blank_candidate")
-    selected = _select(clean, usable, escalate_on, roughness, rough_below)
+    readers = [item for item in clean if _generative(item)]
+    if contest is not None and readers:
+        # A contested job's text is the reader's, checked word by word against OCR.
+        selected = _select(readers, readers, escalate_on, roughness, rough_below)
+    else:
+        selected = _select(clean, usable, escalate_on, roughness, rough_below)
     selected_comparisons = (
         selected_clean_comparisons(page, selected["attempt_id"], holds_for)
         if selected and holds_for is _WARNING_HOLDS

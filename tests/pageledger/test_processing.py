@@ -688,6 +688,23 @@ def test_always_sends_a_clean_page_up_to_the_reader(setup):
     assert verify_job(setup[2])["status"] == "pass"
 
 
+def test_a_contested_job_takes_the_readers_text_over_clean_ocr(setup, monkeypatch):
+    import pageledger.processing as processing_module
+
+    _contesting(setup, monkeypatch)
+    data = yaml.safe_load(setup[1].read_text())
+    data["processing"]["escalate_on"] = ["hold", "always"]
+    data["processing"]["lexicon"].pop("rough_below")
+    setup[1].write_text(yaml.safe_dump(data))
+    # OCR reads smoothly here; without contest it would stay the selected text.
+    monkeypatch.setattr(processing_module, "roughness", lambda text, lexicon: None)
+    assert launch(setup, pages="1")["status"] == "completed"
+    page = read_record(setup[2] / "job.json")["pages"][0]
+    assert page["selected_attempt"].startswith("image")
+    assert page["disposition"] == "contested"
+    assert verify_job(setup[2])["status"] == "pass"
+
+
 def test_a_job_refuses_to_verify_under_another_lexicon(setup, monkeypatch):
     setup[3].update(defective=set())
     _escalating(setup, monkeypatch)
