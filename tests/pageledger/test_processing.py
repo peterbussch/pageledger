@@ -613,6 +613,74 @@ def test_job_written_by_0_6_0_still_verifies_with_its_blank_hold(setup, monkeypa
     assert verify_job(setup[2])["status"] == "pass"
 
 
+class _FakeLexicon:
+    identity = {"provider": "pymorphy3", "language": "ru", "version": "test", "dictionary": "test"}
+
+
+def _escalating(setup, monkeypatch, *, rough=True, **processing):
+    import pageledger.processing as processing_module
+
+    data = yaml.safe_load(setup[1].read_text())
+    triggers = ["hold", "rough", "disagreement"] if rough else ["hold", "disagreement"]
+    data["processing"].update(escalate_on=triggers, **processing)
+    if rough:
+        data["processing"]["lexicon"] = {
+            "provider": "pymorphy3",
+            "language": "ru",
+            "rough_below": 0.95,
+        }
+    setup[1].write_text(yaml.safe_dump(data))
+    monkeypatch.setattr(processing_module, "load_lexicon", lambda config: _FakeLexicon())
+    # Every reading of the fixture text is judged rough by this stand-in.
+    monkeypatch.setattr(
+        processing_module,
+        "roughness",
+        lambda text, lexicon: {"known_share": 0.5, "words": 40, "unknown": ["x"]} if text else None,
+    )
+
+
+def test_a_rough_page_climbs_and_the_job_verifies(setup, monkeypatch):
+    setup[3].update(defective=set())
+    _escalating(setup, monkeypatch)
+    assert launch(setup, pages="1")["status"] == "completed"
+    job = read_record(setup[2] / "job.json")
+    assert job["lexicon"] == _FakeLexicon.identity
+    page = job["pages"][0]
+    assert [a["stage"] for a in page["attempts"]] == ["local_text", "local_ocr", "image"]
+    assert page["triggers"][0]["trigger"] == "rough"
+    report = (setup[2] / "report.md").read_text(encoding="utf-8")
+    assert "| Stage | Pages read | Tokens | Seconds |" in report
+    assert "Climbs other than holds: rough 2." in report
+    assert verify_job(setup[2])["status"] == "pass"
+
+
+def test_disagreeing_engines_climb_to_the_reader(setup, monkeypatch):
+    setup[3].update(defective=set(), different=True)
+    _escalating(
+        setup, monkeypatch, rough=False, benchmark={"stage": "local_ocr", "every_nth_page": 1}
+    )
+    assert launch(setup, pages="1")["status"] == "completed"
+    page = read_record(setup[2] / "job.json")["pages"][0]
+    assert [a["stage"] for a in page["attempts"]] == ["local_text", "local_ocr", "image"]
+    assert page["triggers"][0]["trigger"] == "disagreement"
+
+
+def test_a_job_refuses_to_verify_under_another_lexicon(setup, monkeypatch):
+    setup[3].update(defective=set())
+    _escalating(setup, monkeypatch)
+    assert launch(setup, pages="1")["status"] == "completed"
+
+    class Other:
+        identity = {**_FakeLexicon.identity, "dictionary": "other"}
+
+    import pageledger.processing as processing_module
+
+    monkeypatch.setattr(processing_module, "load_lexicon", lambda config: Other())
+    result = verify_job(setup[2])
+    assert result["status"] == "fail"
+    assert "Install the recorded version" in result["error"]
+
+
 def test_verify_job_rebuilds_legacy_hold_policy_artifacts(setup):
     from pageledger.checkpoint import write_record
     from pageledger.document_report import (

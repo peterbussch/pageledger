@@ -468,6 +468,18 @@
             "type": "string",
             "minLength": 1
           },
+          "triggers": {
+            "type": "array",
+            "description": "Why a page climbed although its reading was not held, with the evidence that fired. Present only in jobs with escalate_on beyond hold.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "trigger": {"enum": ["rough", "disagreement"]},
+                "attempt": {"type": "string", "minLength": 1}
+              },
+              "required": ["trigger", "attempt"]
+            }
+          },
           "comparisons": {
             "type": "array",
             "items": {

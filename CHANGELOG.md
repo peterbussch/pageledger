@@ -2,6 +2,21 @@
 
 Release changes follow the [artifact compatibility policy](docs/run-manifest-spec.md#compatibility-policy).
 
+## Unreleased
+
+### Added
+
+- Document jobs can climb on more than warning holds. `processing.escalate_on`
+  adds `rough`, for a reading whose share of known words falls below a threshold
+  (the Russian lexicon comes with `pip install 'pageledger[ru]'`), and
+  `disagreement`, for clean readings that disagree, which used to go straight to
+  review. Triggers lift a page at most to the image stage. Each one is recorded
+  on the page with its evidence, and the report shows the work done at each
+  stage.
+- A `foreign_script_characters` warning for a few letters from a script that
+  doesn't belong on the page, usually a math font read through the wrong
+  character map. On the test documents it found all nine pages where 0.6 found two.
+
 ## 0.6.1 - 2026-10-01
 
 ### Added

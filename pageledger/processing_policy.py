@@ -10,6 +10,7 @@ import csv
 import io
 import json
 import re
+from collections.abc import Callable
 from datetime import datetime
 from decimal import Decimal, InvalidOperation
 from itertools import combinations
@@ -348,6 +349,9 @@ def assess_page(
     *,
     holds_for: dict[str, str] = _WARNING_HOLDS,
     text_refutes_blank: bool = False,
+    escalate_on: tuple[str, ...] | list[str] = ("hold",),
+    roughness: Callable[[str], dict | None] | None = None,
+    rough_below: float | None = None,
 ) -> dict:
     """Select evidence deterministically while keeping all recorded review holds.
 
@@ -355,6 +359,11 @@ def assess_page(
     later evidence: a blank candidate raised only because an engine returned no
     text is cleared when another, non-generative engine reads clean text from the
     page. An engine's own judgement that the page is blank is never cleared.
+
+    ``escalate_on`` adds triggers to 0.6's rule that a held page climbs: ``rough``
+    (too few known words in the selected reading, judged by ``roughness``) and
+    ``disagreement`` (clean readings disagree). Triggers lift a page at most to the
+    image stage: a second reader is another witness, not a better one.
     """
     attempts = page.get("attempts", [])
     reasons = list(dict.fromkeys(page.get("review_reasons") or []))
@@ -373,7 +382,7 @@ def assess_page(
         and _blank_refuted(attempts, clean, holds_for)
     ):
         reasons.remove("blank_candidate")
-    selected = next(iter(clean or usable), None)
+    selected = _select(clean, usable, escalate_on, roughness, rough_below)
     selected_comparisons = (
         selected_clean_comparisons(page, selected["attempt_id"], holds_for)
         if selected and holds_for is _WARNING_HOLDS
@@ -413,9 +422,10 @@ def assess_page(
         (STAGES.index(item["stage"]) for item in attempts if item.get("stage") in STAGES),
         default=-1,
     )
+    triggers = _triggers(selected, reasons, stage_index, escalate_on, roughness, rough_below)
+    held = not clean and not any(reason in reasons for reason in _COMPARISON_REASONS)
     if (
-        clean
-        or any(reason in reasons for reason in _COMPARISON_REASONS)
+        not (held or triggers)
         or numeric_conflict
         or disposition in {"source_defect", "outcome_unknown", "provider_failure", "illustration"}
         or stage_index == len(STAGES) - 1
@@ -433,9 +443,124 @@ def assess_page(
             decision["selected_attempt"],
             "none",
         )
-    return {
+    result = {
         "selected_attempt": selected_id,
         "disposition": disposition,
         "review_reasons": reasons,
         "next_action": next_action,
     }
+    if tuple(escalate_on) != ("hold",):
+        # Why the page climbed at each earlier stage, then why it climbs now.
+        result["triggers"] = [
+            *_trigger_history(
+                page, holds_for, text_refutes_blank, escalate_on, roughness, rough_below
+            ),
+            *(triggers if next_action not in {"review", "none"} else []),
+        ]
+    return result
+
+
+def _trigger_history(
+    page: dict,
+    holds_for: dict[str, str],
+    text_refutes_blank: bool,
+    escalate_on: tuple[str, ...] | list[str],
+    roughness: Callable[[str], dict | None] | None,
+    rough_below: float | None,
+) -> list[dict]:
+    """Re-assess the page as it stood after each earlier stage, from retained attempts only."""
+    reached = sorted(
+        {STAGES.index(a["stage"]) for a in page.get("attempts", []) if a.get("stage") in STAGES}
+    )
+    history: list[dict] = []
+    for index in reached[:-1]:
+        kept = [a for a in page["attempts"] if a.get("stage") in STAGES[: index + 1]]
+        ids = {a["attempt_id"] for a in kept}
+        earlier = {
+            **page,
+            "attempts": kept,
+            "comparisons": [
+                c
+                for c in page.get("comparisons", [])
+                if c["left_attempt"] in ids and c["right_attempt"] in ids
+            ],
+            "review": None,
+        }
+        before = assess_page(
+            earlier,
+            holds_for=holds_for,
+            text_refutes_blank=text_refutes_blank,
+            escalate_on=escalate_on,
+            roughness=roughness,
+            rough_below=rough_below,
+        )
+        # Its list repeats the history found so far; only the tail is this stage's.
+        history.extend(before["triggers"][len(history) :])
+    return history
+
+
+def _triggers(
+    selected: dict | None,
+    reasons: list[str],
+    stage_index: int,
+    escalate_on: tuple[str, ...] | list[str],
+    roughness: Callable[[str], dict | None] | None,
+    rough_below: float | None,
+) -> list[dict]:
+    """Why a page whose reading is not held still climbs, with the evidence that fired."""
+    following = STAGES[stage_index + 1] if stage_index + 1 < len(STAGES) else None
+    if selected is None or following not in {"local_ocr", "image"}:
+        return []
+    fired = []
+    stage = STAGES[stage_index]
+    measure = _rough_measure(selected, escalate_on, roughness, rough_below)
+    if measure is not None:
+        fired.append(
+            {"trigger": "rough", "stage": stage, "attempt": selected["attempt_id"], **measure}
+        )
+    found = [reason for reason in _DISAGREEMENTS if reason in reasons]
+    if "disagreement" in escalate_on and found:
+        fired.append(
+            {
+                "trigger": "disagreement",
+                "stage": stage,
+                "attempt": selected["attempt_id"],
+                "reasons": found,
+            }
+        )
+    return fired
+
+
+def _rough_measure(
+    attempt: dict,
+    escalate_on: tuple[str, ...] | list[str],
+    roughness: Callable[[str], dict | None] | None,
+    rough_below: float | None,
+) -> dict | None:
+    """The lexicon's measure of a reading when it falls below the threshold, else None."""
+    if "rough" not in escalate_on or roughness is None or rough_below is None:
+        return None
+    measure = roughness(attempt.get("text") or "")
+    return measure if measure is not None and measure["known_share"] < rough_below else None
+
+
+def _select(
+    clean: list[dict],
+    usable: list[dict],
+    escalate_on: tuple[str, ...] | list[str],
+    roughness: Callable[[str], dict | None] | None,
+    rough_below: float | None,
+) -> dict | None:
+    """The first clean reading; with the rough trigger, the first clean one that is not rough.
+
+    When every clean reading is rough, the least rough wins (the earliest on a tie), so
+    a page that climbed for roughness moves to the better reading it climbed for.
+    """
+    if not clean:
+        return next(iter(usable), None)
+    rough = [_rough_measure(item, escalate_on, roughness, rough_below) for item in clean]
+    smooth = [item for item, measure in zip(clean, rough, strict=True) if measure is None]
+    if smooth:
+        return smooth[0]
+    shares = [measure["known_share"] for measure in rough if measure is not None]
+    return clean[shares.index(max(shares))]

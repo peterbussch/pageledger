@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import copy
+import functools
 import json
 import math
 from collections import Counter
 from dataclasses import asdict
 from pathlib import Path
+from typing import Any
 from uuid import uuid4
 
 import yaml
@@ -26,6 +28,7 @@ from .checkpoint import (
 from .classifier import classify_signals, merge_classify_thresholds, structural_signals
 from .comparison import compare_texts
 from .config import load_config
+from .lexicon import load_lexicon, roughness
 from .processing_config import STAGES, processing_config
 from .processing_policy import (
     HOLD_POLICIES,
@@ -312,6 +315,7 @@ def _process(
         "config_sha256": digest(config.data),
         "policy": policy,
         "hold_policy": HOLD_POLICY,
+        **({"lexicon": load_lexicon(policy["lexicon"]).identity} if policy.get("lexicon") else {}),
         "package_sha256": _package_code_sha256(),
         "selected_pages": selected,
         "pages": [],
@@ -356,6 +360,26 @@ def _process(
         _refresh(job, root)
         _save(job, root)
         return _continue(job, root, adapter_path)
+
+
+def _escalation(job: dict) -> tuple[tuple[str, ...], Any, float | None]:
+    """The job's triggers, and its lexicon's judgement when the rough trigger is on."""
+    policy = job["policy"]
+    lexicon_config = policy.get("lexicon")
+    if not lexicon_config:
+        return tuple(policy.get("escalate_on", ("hold",))), None, None
+    lexicon = load_lexicon(lexicon_config)
+    if lexicon.identity != job.get("lexicon"):
+        raise ValueError(
+            f"This job judged words with {job.get('lexicon')}; the installed lexicon is "
+            f"{lexicon.identity}. Install the recorded version to verify or resume it."
+        )
+    return (
+        tuple(policy["escalate_on"]),
+        # Selection, triggers and their history judge the same readings repeatedly.
+        functools.lru_cache(maxsize=None)(lambda text: roughness(text, lexicon)),
+        lexicon_config["rough_below"],
+    )
 
 
 def _refresh(job: dict, root: Path, *, materialize: bool = True) -> None:
@@ -489,6 +513,7 @@ def _refresh(job: dict, root: Path, *, materialize: bool = True) -> None:
                 )
             pages[page_id]["attempts"].append(attempt)
     holds = warning_holds(job)
+    escalate_on, roughness_of, rough_below = _escalation(job)
     for page in pages.values():
         if job.get("hold_policy") in HOLD_POLICIES:
             page["comparisons"] = _build_comparisons(page["attempts"])
@@ -501,6 +526,9 @@ def _refresh(job: dict, root: Path, *, materialize: bool = True) -> None:
                 holds_for=holds,
                 # Only jobs written under the current policy clear a blank hold this way.
                 text_refutes_blank=job.get("hold_policy") == processing_policy.HOLD_POLICY,
+                escalate_on=escalate_on,
+                roughness=roughness_of,
+                rough_below=rough_below,
             )
         )
     attempts = [attempt for page in pages.values() for attempt in page["attempts"]]

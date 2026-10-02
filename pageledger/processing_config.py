@@ -6,6 +6,10 @@ import math
 from typing import Any
 
 STAGES = ("local_text", "local_ocr", "image", "second_opinion")
+# Why a page climbs to the next stage. `hold` is 0.6's rule and always applies;
+# `rough` and `disagreement` let a page whose reading looks clean climb too.
+TRIGGERS = ("hold", "rough", "disagreement")
+LEXICON_PROVIDERS = ("pymorphy3",)
 PROMPT = (
     "Transcribe only text visible on this source page, preserving page order, headings, "
     "footnotes and named table columns. Do not reconstruct missing or invisible text. "
@@ -17,7 +21,7 @@ def processing_config(data: dict[str, Any], *, pdf: bool) -> dict[str, Any]:
     value = data.get("processing", {})
     if not isinstance(value, dict):
         raise ValueError("processing must be a mapping")
-    unknown = set(value) - {*STAGES, "limits", "links", "benchmark"}
+    unknown = set(value) - {*STAGES, "limits", "links", "benchmark", "escalate_on", "lexicon"}
     if unknown:
         raise ValueError(f"Unknown processing key: {sorted(unknown)[0]}")
     result: dict[str, Any] = {}
@@ -95,4 +99,50 @@ def processing_config(data: dict[str, Any], *, pdf: bool) -> dict[str, Any]:
         if result[benchmark["stage"]] is None:
             raise ValueError("processing.benchmark.stage must name an enabled stage")
         result["benchmark"] = dict(benchmark)
+    triggers, lexicon = _escalation(value)
+    if triggers != ["hold"]:
+        # Only when used, so a 0.6 config still compiles to the policy its jobs recorded.
+        result["escalate_on"] = triggers
+        if lexicon is not None:
+            result["lexicon"] = lexicon
     return result
+
+
+def _escalation(value: dict[str, Any]) -> tuple[list[str], dict[str, Any] | None]:
+    """Validate escalate_on and lexicon; refuse settings that would do nothing."""
+    triggers = value.get("escalate_on", ["hold"])
+    if not isinstance(triggers, list) or not all(isinstance(item, str) for item in triggers):
+        raise ValueError("processing.escalate_on must be a list of trigger names")
+    unknown = sorted(set(triggers) - set(TRIGGERS))
+    if unknown:
+        raise ValueError(f"Unknown escalation trigger: {unknown[0]} (use {', '.join(TRIGGERS)})")
+    if len(set(triggers)) != len(triggers):
+        raise ValueError("processing.escalate_on names a trigger more than once")
+    if "hold" not in triggers:
+        raise ValueError("processing.escalate_on must include hold, the 0.6 rule")
+    lexicon = value.get("lexicon")
+    if "rough" in triggers and lexicon is None:
+        raise ValueError("The rough trigger needs processing.lexicon to judge words")
+    if lexicon is None:
+        return [name for name in TRIGGERS if name in triggers], None
+    if "rough" not in triggers:
+        raise ValueError(
+            "processing.lexicon is used only by the rough trigger; add rough to escalate_on"
+        )
+    if (
+        not isinstance(lexicon, dict)
+        or set(lexicon) != {"provider", "language", "rough_below"}
+        or lexicon["provider"] not in LEXICON_PROVIDERS
+        or lexicon["language"] != "ru"
+    ):
+        raise ValueError(
+            "processing.lexicon needs provider: pymorphy3, language: ru and rough_below"
+        )
+    threshold = lexicon["rough_below"]
+    if (
+        isinstance(threshold, bool)
+        or not isinstance(threshold, (int, float))
+        or not 0 < threshold <= 1
+    ):
+        raise ValueError("processing.lexicon.rough_below must be a share above 0 and at most 1")
+    return [name for name in TRIGGERS if name in triggers], dict(lexicon)

@@ -6,6 +6,7 @@ import copy
 import hashlib
 import json
 import os
+from collections import Counter
 from pathlib import Path
 from urllib.parse import quote
 
@@ -258,6 +259,39 @@ def _recorded_concerns(page: dict, holds_for: dict[str, str]) -> str:
     return "; ".join(concerns)
 
 
+def _escalation_accounting(report: dict) -> list[str]:
+    """Work done at each stage and why pages climbed; only for jobs that escalate on triggers."""
+    if not any("triggers" in page for page in report["pages"]):
+        return []
+    rows = []
+    for stage, label in _STAGE_LABELS.items():
+        attempts = [a for page in report["pages"] for a in page["attempts"] if a["stage"] == stage]
+        if not attempts:
+            continue
+        tokens = [a["usage"].get("tokens") for a in attempts]
+        seconds = sum(a["usage"].get("compute_seconds") or 0 for a in attempts)
+        known = sum(t for t in tokens if isinstance(t, int))
+        if all(isinstance(t, int) for t in tokens):
+            shown = str(known)
+        elif any(isinstance(t, int) for t in tokens):
+            shown = f"{known}+ (some unknown)"
+        else:
+            shown = "not reported"  # local engines report no tokens
+        rows.append(f"| {label} | {len(attempts)} | {shown} | {round(seconds, 1)} |")
+    fired = Counter(t["trigger"] for page in report["pages"] for t in page.get("triggers", []))
+    climbed = ", ".join(f"{name} {count}" for name, count in sorted(fired.items())) or "none"
+    return [
+        "Work by stage:",
+        "",
+        "| Stage | Pages read | Tokens | Seconds |",
+        "| --- | --- | --- | --- |",
+        *rows,
+        "",
+        f"Climbs other than holds: {climbed}.",
+        "",
+    ]
+
+
 def render_document_report(report: dict) -> str:
     """Render a report, retaining the 0.5.0 format when its marker is absent."""
     current = "report_format" in report
@@ -288,6 +322,7 @@ def render_document_report(report: dict) -> str:
         "",
         f"Attempt pages: {usage['attempt_pages']}; image calls: {usage['image_calls']}; tokens: {tokens}; cost: {cost}.",
         "",
+        *_escalation_accounting(report),
         *(["Current page results", ""] if current else []),
         *(
             [

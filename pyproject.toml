@@ -61,6 +61,9 @@ rapidocr = [
   "onnxruntime>=1.20",
   "rapidocr>=3,<4",
 ]
+ru = [
+  "pymorphy3>=2.0",
+]
 
 [project.urls]
 Homepage = "https://github.com/peterbussch/pageledger"
@@ -105,5 +108,5 @@ files = ["pageledger"]
 warn_unused_configs = true
 
 [[tool.mypy.overrides]]
-module = ["pypdf", "pypdf.*"]
+module = ["pypdf", "pypdf.*", "pymorphy3"]
 ignore_missing_imports = true

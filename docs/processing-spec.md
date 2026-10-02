@@ -147,6 +147,60 @@ This runs `local_ocr` on source pages 10, 20, 30 and so on, even when their
 text layer is clean. The stage must be enabled, and its pages count against the
 job's limits.
 
+## Climb on roughness and disagreement
+
+By default a page climbs to the next stage only when its reading carries a
+warning hold, and two engines that disagree send the page straight to review.
+Two problems escape that rule. OCR can be wrong without any warning: an engine
+that reads two columns as one glues the halves of neighbouring lines into
+non-words. And a disagreement between two clean readings is a question a
+stronger engine can help answer. `escalate_on` adds two triggers:
+
+```yaml
+schema_version: "0.1"
+processing:
+  local_text:
+    adapter: pdf_text
+  local_ocr:
+    adapter: pdf_ocr
+    adapter_options:
+      lang: rus
+  escalate_on: [hold, rough, disagreement]
+  lexicon:
+    provider: pymorphy3
+    language: ru
+    rough_below: 0.95
+  limits:
+    max_attempt_pages: 100
+    max_image_pages: 0
+```
+
+- `rough`: the selected reading's share of words the lexicon knows falls below
+  `rough_below`. Words split across a line break are rejoined first, and a page
+  with fewer than 20 Cyrillic words is not judged. Install the Russian lexicon
+  with `pip install 'pageledger[ru]'`.
+- `disagreement`: the selected reading and another clean one agree on fewer than
+  60% of their words, or read a number differently. Without this trigger the page
+  goes to review, as before.
+
+`hold` is 0.6's rule and must be listed. Triggers lift a page at most to the
+`image` stage: a second model is another witness with the same habits, not a
+better reader, so `second_opinion` still climbs on holds only. When the rough
+trigger is on, a later reading that is not rough replaces a rough one as the
+selected text. If every clean reading is rough, the least rough is selected.
+
+Each trigger that fired is recorded on the page with its stage, the reading it
+judged and the evidence, for example
+`{"trigger": "rough", "stage": "local_ocr", "known_share": 0.89, ...}`. The job
+records the lexicon's provider and package versions. `verify-job` recomputes the
+triggers and refuses a job whose lexicon is not the installed one. The report
+adds the work done at each stage and how many pages each trigger raised.
+
+These numbers came from one test with real documents. Clean born-digital
+Russian scored 0.98 to 0.995. OCR of a two-column article read as one column
+scored 0.87 to 0.91. Treat 0.95 as a starting point and measure your own
+collection.
+
 ## One budget for the job
 
 `processing.limits` accepts:
