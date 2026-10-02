@@ -274,8 +274,8 @@ The rule set is versioned data. `ru-print-0.1` lists the confusions RapidOCR's
 Cyrillic model made at least twice in one dogfood, checked against the page
 images; its pairs never cross case, and they apply only to the `rapidocr`
 adapter. Without a lexicon only rule H applies. On two fully checked Russian
-documents (61 pages) the rules settled 175 spans with no error against the
-image-checked text, and the open spans covered 302 of the 319 corrections the
+documents (61 pages) the rules settled 178 spans with no error against the
+image-checked text, and the open spans covered 306 of the 319 corrections the
 model's text needed. The misses were accents and figure labels that neither
 engine read.
 
