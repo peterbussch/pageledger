@@ -59,6 +59,8 @@ the source evidence. The built-in PDF OCR currently reports
 | `numeric_disagreement` | Independent readings differ in one or more numbers. | Verify each number against the source. |
 | `unconfirmed_model_output` | Selected generative-model text lacks independent agreement. | Compare with the source or obtain an independent extraction. |
 | `contested` | With `processing.contest`, the selected model reading differs from the literal reading in places no rule settled. The spans are in `contested/<page_id>.json`. | Check each open span against the page image. A literal non-word kept open by the misprint guard may be what the page prints. |
+| `contested` | A model's reading differs from the literal reading in places no rule or high-confidence adjudication settled. | Answer the open spans with `pageledger adjudicate`, or review the page. |
+| `adjudicated_text` | Every difference between a model's reading and the literal reading is settled, or there is none. No person has read the page. | Publish it if adjudicated text is enough for your use; review it to make it `reviewed_text`. |
 | `blank_candidate` | No usable text was extracted; visual blankness is not established. If the hold came only from an empty reading, a later non-generative engine that reads clean text from the page clears it; an engine's own `blank` judgement stays. | Inspect the source; record `reviewed_blank` only if confirmed. |
 | `provider_failure` | The latest extraction attempt failed. | Read the safe failure code and adapter guidance. Resolve setup or input problems before a deliberate new attempt. |
 | `outcome_unknown` | A request may have been sent, but no durable result was saved. | Investigate adapter/provider records before starting new work; automatic retry is not safe. |

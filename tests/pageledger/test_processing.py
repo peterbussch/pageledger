@@ -722,9 +722,9 @@ def test_a_readers_changes_are_contested_and_the_artifact_verifies(setup, monkey
     page = read_record(setup[2] / "job.json")["pages"][0]
     assert page["selected_attempt"].startswith("image")
     assert page["disposition"] == "contested"
-    assert "unconfirmed_model_output" not in page["review_reasons"]
+    assert page["review_reasons"] == ["contested"]
     contested = page["contested"]
-    assert (contested["open"], contested["settled"]) == (8, 8)
+    assert (contested["open"], contested["by_rule"], contested["by_review"]) == (8, 8, 0)
     assert contested["kinds"] == {"glyph": 8, "word": 8}
     artifact = setup[2] / contested["artifact"]
     record = json.loads(artifact.read_text(encoding="utf-8"))
@@ -732,17 +732,11 @@ def test_a_readers_changes_are_contested_and_the_artifact_verifies(setup, monkey
     assert record["witness"]["adapter"] == "rapidocr"
     report = (setup[2] / "report.md").read_text(encoding="utf-8")
     assert (
-        "Contested spans on 1 pages: glyph 8, word 8. Settled by rule: 8; open: 8, holding 1 pages."
-        in report
+        "Contested spans on 1 pages: glyph 8, word 8. Settled by rule: 8; by adjudication: 0; "
+        "open: 8, holding 1 pages. Adjudicated pages: 0." in report
     )
     assert "8 open of 16 in [spans](<contested/doc_0001_page_0001.json>)" in report
-    for name, path in (
-        ("job", "job.json"),
-        ("document", "document.json"),
-        ("contested", contested["artifact"]),
-    ):
-        schema = json.loads((Path(__file__).parents[2] / f"schemas/{name}.schema.json").read_text())
-        jsonschema.validate(json.loads((setup[2] / path).read_text(encoding="utf-8")), schema)
+    _validate_schemas(setup[2], contested=contested["artifact"])
     assert verify_job(setup[2])["status"] == "pass"
 
     artifact.write_text(artifact.read_text(encoding="utf-8").replace("полные", "поныне"))
@@ -750,13 +744,122 @@ def test_a_readers_changes_are_contested_and_the_artifact_verifies(setup, monkey
     assert result["status"] == "fail" and "Contested spans differ" in result["error"]
 
 
-def test_a_page_whose_spans_all_settle_by_rule_is_not_held(setup, monkeypatch):
+def _validate_schemas(root, **artifacts):
+    paths = {"job": "job.json", "document": "document.json", **artifacts}
+    for name, path in paths.items():
+        schema = json.loads((Path(__file__).parents[2] / f"schemas/{name}.schema.json").read_text())
+        jsonschema.validate(json.loads((root / path).read_text(encoding="utf-8")), schema)
+
+
+def test_a_page_whose_spans_all_settle_by_rule_is_adjudicated(setup, monkeypatch):
     _contesting(setup, monkeypatch, literal=READER.replace("написана", "нанисана"))
     assert launch(setup, pages="1")["status"] == "completed"
     page = read_record(setup[2] / "job.json")["pages"][0]
-    assert page["disposition"] == "unreviewed_text"
-    assert (page["contested"]["open"], page["contested"]["settled"]) == (0, 8)
+    assert page["disposition"] == "adjudicated_text"
+    assert (page["contested"]["open"], page["contested"]["by_rule"]) == (0, 8)
+    # Rules keep the reader's words, so there is nothing to edit.
+    assert "edition" not in page
+    document = json.loads((setup[2] / "document.json").read_text(encoding="utf-8"))
+    assert document["counts"]["adjudicated_pages"] == 1
+    assert document["counts"]["unresolved_pages"] == 1
     assert verify_job(setup[2])["status"] == "pass"
+
+
+def _answer(root, out, text, confidence="high"):
+    from pageledger.cli import main
+
+    assert main(["adjudicate", str(root), "--packets", str(out)]) == 0
+    assert (out / "INSTRUCTIONS.md").is_file()
+    packet = json.loads((out / "doc_0001_page_0001.json").read_text(encoding="utf-8"))
+    assert (out / packet["image"]["path"]).is_file()
+    assert {span["witness"] for span in packet["spans"]} == {"полные"}
+    answer = {
+        "page_id": packet["page_id"],
+        "contested_sha256": packet["contested_sha256"],
+        "decisions": [
+            {"span_id": span["span_id"], "text": text, "confidence": confidence, "note": ""}
+            for span in packet["spans"]
+        ],
+    }
+    (out / "doc_0001_page_0001.decisions.json").write_text(json.dumps(answer, ensure_ascii=False))
+    return answer
+
+
+def test_adjudicated_decisions_make_an_edition_that_verifies_and_exports(
+    setup, monkeypatch, tmp_path
+):
+    from pageledger.export import export_job
+    from pageledger.processing import adjudicate_job
+
+    _contesting(setup, monkeypatch)
+    assert launch(setup, pages="1")["status"] == "completed"
+    # The page image shows what the literal engine read: the reader replaced a printed word.
+    _answer(setup[2], tmp_path / "packets", "полные")
+    checked = adjudicate_job(setup[2], tmp_path / "packets", reviewer="agent:test", dry_run=True)
+    assert checked["status"] == "checked"
+    assert "adjudications" not in read_record(setup[2] / "job.json")["pages"][0]
+
+    from pageledger.cli import main
+
+    command = ["adjudicate", str(setup[2]), "--decisions", str(tmp_path / "packets")]
+    assert main([*command, "--reviewer", "agent:test"]) == 0
+    page = read_record(setup[2] / "job.json")["pages"][0]
+    assert page["adjudications"][0]["reviewer"] == "agent:test"
+    assert page["disposition"] == "adjudicated_text"
+    assert page["contested"]["by_review"] == 8
+    edition = (setup[2] / page["edition"]["artifact"]).read_text(encoding="utf-8")
+    assert edition == READER.replace("поныне", "полные")
+    transcript = (setup[2] / "transcript.md").read_text(encoding="utf-8")
+    assert "Edition of attempt image-0001:doc_0001_page_0001" in transcript
+    assert READER.replace("поныне", "полные") in transcript
+    _validate_schemas(setup[2])
+    assert verify_job(setup[2])["status"] == "pass"
+    out = tmp_path / "export.txt"
+    export_job(setup[2], out, format="txt")
+    assert READER.replace("поныне", "полные") in out.read_text(encoding="utf-8")
+    assert "Edition: editions/doc_0001_page_0001.txt" in out.read_text(encoding="utf-8")
+    export_job(setup[2], tmp_path / "export.jsonl", format="jsonl")
+    line = json.loads((tmp_path / "export.jsonl").read_text(encoding="utf-8"))
+    schema = json.loads((Path(__file__).parents[2] / "schemas/export-page.schema.json").read_text())
+    jsonschema.validate(line, schema)
+    assert line["edition"]["path"] == page["edition"]["artifact"]
+    assert line["attempt"]["output_sha256"] != line["edition"]["sha256"]
+
+    # The edition is rebuilt from the receipts; a changed file does not verify.
+    (setup[2] / page["edition"]["artifact"]).write_text(READER)
+    result = verify_job(setup[2])
+    assert result["status"] == "fail" and "Edition texts differ" in result["error"]
+
+
+def test_a_decision_short_of_high_confidence_leaves_the_span_open(setup, monkeypatch, tmp_path):
+    from pageledger.processing import adjudicate_job
+
+    _contesting(setup, monkeypatch)
+    launch(setup, pages="1")
+    _answer(setup[2], tmp_path / "packets", "полные", confidence="medium")
+    adjudicate_job(setup[2], tmp_path / "packets", reviewer="agent:test")
+    page = read_record(setup[2] / "job.json")["pages"][0]
+    assert page["disposition"] == "contested" and page["contested"]["open"] == 8
+    assert len(page["adjudications"]) == 1 and "edition" not in page
+    assert verify_job(setup[2])["status"] == "pass"
+
+
+def test_decisions_for_other_spans_are_refused(setup, monkeypatch, tmp_path):
+    from pageledger.processing import adjudicate_job
+
+    _contesting(setup, monkeypatch)
+    launch(setup, pages="1")
+    answer = _answer(setup[2], tmp_path / "packets", "полные")
+    stale = tmp_path / "packets" / "doc_0001_page_0001.decisions.json"
+    stale.write_text(json.dumps({**answer, "contested_sha256": "0" * 64}))
+    with pytest.raises(ValueError, match="answer other spans"):
+        adjudicate_job(setup[2], tmp_path / "packets", reviewer="agent:test")
+    answer["decisions"][0]["span_id"] = "sp_" + "0" * 16
+    stale.write_text(json.dumps(answer))
+    with pytest.raises(ValueError, match="name no open span"):
+        adjudicate_job(setup[2], tmp_path / "packets", reviewer="agent:test")
+    with pytest.raises(ValueError, match="--reviewer"):
+        adjudicate_job(setup[2], tmp_path / "packets", reviewer=" ")
 
 
 def test_verify_job_rebuilds_legacy_hold_policy_artifacts(setup):

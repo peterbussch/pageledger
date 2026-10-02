@@ -40,6 +40,7 @@ _DISPOSITION_LABELS = {
     "numeric_disagreement": "Engines read numbers differently",
     "unconfirmed_model_output": "Model output not confirmed by another engine",
     "contested": "Model and literal readings differ; check them against the page",
+    "adjudicated_text": "Every difference from the literal reading settled; not read by a person",
     "blank_candidate": "Candidate blank",
     "provider_failure": "Extraction failed",
     "outcome_unknown": "Extraction outcome unknown",
@@ -110,9 +111,12 @@ def render_transcript(report: dict) -> str:
         if selected is None:
             chunks.append(f"[No selected text: {page['disposition']}.]\n\n")
         else:
-            chunks.append(
-                _link(f"Selected attempt {selected['attempt_id']}", selected["path"]) + "\n\n"
+            label = (
+                f"Edition of attempt {selected['attempt_id']}"
+                if selected.get("edition")
+                else f"Selected attempt {selected['attempt_id']}"
             )
+            chunks.append(_link(label, selected["path"]) + "\n\n")
             chunks.append(selected["text"])
             chunks.append("\n\n")
     return "".join(chunks)
@@ -245,7 +249,7 @@ def _recorded_concerns(page: dict, holds_for: dict[str, str]) -> str:
         if reason == "contested":
             contested = page["contested"]
             evidence.append(
-                f"{contested['open']} open of {contested['open'] + contested['settled']} "
+                f"{contested['open']} open of {sum(contested['kinds'].values())} "
                 f"in {_link('spans', contested['artifact'])}"
             )
         for attempt in page["attempts"]:
@@ -306,13 +310,15 @@ def _contest_accounting(report: dict) -> list[str]:
     kinds: Counter = Counter()
     for item in contested:
         kinds.update(item["kinds"])
-    listed = ", ".join(f"{kind} {count}" for kind, count in sorted(kinds.items()))
+    listed = ", ".join(f"{kind} {count}" for kind, count in sorted(kinds.items())) or "none"
+    by_rule = sum(item["by_rule"] for item in contested)
+    by_review = sum(item["by_review"] for item in contested)
     open_spans = sum(item["open"] for item in contested)
-    settled = sum(item["settled"] for item in contested)
     held = sum(item["open"] > 0 for item in contested)
     return [
-        f"Contested spans on {len(contested)} pages: {listed}. Settled by rule: {settled}; "
-        f"open: {open_spans}, holding {held} pages.",
+        f"Contested spans on {len(contested)} pages: {listed}. Settled by rule: {by_rule}; "
+        f"by adjudication: {by_review}; open: {open_spans}, holding {held} pages. "
+        f"Adjudicated pages: {report['counts']['adjudicated_pages']}.",
         "",
     ]
 
@@ -518,6 +524,18 @@ def build_document_report(
                 "format": chosen["format"],
                 "text": text,
             }
+            edition = page.get("edition")
+            if edition is not None:
+                # The selected attempt with its settled spans applied; the attempt is unchanged.
+                if edition["base_attempt"] != chosen["attempt_id"]:
+                    raise ValueError("Edition text rests on another attempt than the selected one")
+                content = _artifact_bytes(root, edition["artifact"], edition["sha256"])
+                page["selected_output"].update(
+                    path=edition["artifact"],
+                    sha256=edition["sha256"],
+                    text=content.decode("utf-8"),
+                    edition=True,
+                )
         page["source_link"] = f"{quoted_source}#page={page['page_number']}"
         pages.append(page)
     report["pages"] = pages
@@ -530,6 +548,10 @@ def build_document_report(
             page["disposition"] not in {"reviewed_text", "reviewed_blank"} for page in pages
         ),
     }
+    if any("contested" in page for page in pages):
+        report["counts"]["adjudicated_pages"] = sum(
+            page["disposition"] == "adjudicated_text" for page in pages
+        )
     transcript = render_transcript(report).encode("utf-8")
     report["transcript"] = {
         "path": "transcript.md",

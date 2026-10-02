@@ -249,10 +249,55 @@ The spans are kept in `contested/<page_id>.json` ([schema](../schemas/contested.
 and the page records its hash and counts. A page with an open span is held as
 `contested`. That replaces `engine_disagreement`, `numeric_disagreement` and
 `unconfirmed_model_output` on that page, because the spans say exactly where the
-readings differ. A page whose spans all settle by rule keeps its 0.6 disposition.
-`verify-job` rebuilds the spans from the retained readings and fails if the
-artifact differs. The report counts spans by kind, rule settlements, and the
-pages they hold.
+readings differ. `verify-job` rebuilds the spans from the retained readings and fails if the
+artifact differs. The report counts spans by kind, settlements, and the pages
+they hold.
+
+On a contested page, the coverage, low-confidence and blank holds of readings
+the page no longer rests on are dropped: the model and the literal engine, and
+the spans between them, have read what those readings missed. Holds on the two
+readings themselves stay.
+
+## Settle contested spans
+
+Rules settle what the two readings alone decide. The rest is settled against the
+page image, by an agent or a person, outside PageLedger:
+
+```bash
+pageledger adjudicate jobs/book --packets packets/book
+# an adjudicator answers each packet
+pageledger adjudicate jobs/book --decisions packets/book --reviewer agent:sol
+```
+
+`--packets` writes, for every page with open spans, `<page_id>.json`: both
+readings, the open spans, and the exact image the model read (`<page_id>.jpg`),
+with `INSTRUCTIONS.md`. The adjudicator answers in `<page_id>.decisions.json`:
+
+```json
+{"page_id": "doc_0001_page_0003", "contested_sha256": "…",
+ "decisions": [{"span_id": "sp_9f…", "text": "поныне", "confidence": "high", "note": "print reads поныне"}]}
+```
+
+`text` is what the page prints at that place: the model's reading, the literal
+one, other text, or nothing. A printed misprint is written as printed.
+`--decisions` checks each answer against the spans it names and records it as an
+adjudication receipt (schema 0.2) on the page, with the reviewer, the time and
+the hash of the image. Answers for spans that have since changed are refused;
+write packets again. A later answer for a span overrides an earlier one.
+
+Only a `high` answer settles a span. When no span on a page is open, the page is
+`adjudicated_text`, and, if any answer changed the text, PageLedger writes
+`editions/<page_id>.txt`: the model's reading with each change applied at its
+offsets. The attempt itself is never edited. The transcript, `document.json` and
+every export use the edition and say so. `verify-job` rebuilds each edition from
+its receipts and fails if the file differs.
+
+`adjudicated_text` is not `reviewed_text`. It means every difference from the
+literal reading was settled, by a rule or an adjudicator, or there was none; no
+person has read the page. The report counts adjudicated pages on their own line,
+and `unresolved_pages` keeps its meaning: pages without a person's review. A
+person can answer packets too, under their own `--reviewer` name, or review the
+page as before.
 
 ## One budget for the job
 

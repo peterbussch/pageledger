@@ -18,6 +18,8 @@ jobs/book/
 ├── transcript.md     # selected text with source-page and attempt links
 ├── attempts/         # ordinary resumable runs for the processing stages
 ├── partials/         # retained failed output, excluded from transcript selection
+├── contested/        # with processing.contest: where a model and the literal engine differ
+├── editions/         # a model's reading with its adjudicated changes applied
 └── .job/             # exact child configuration snapshots
 ```
 

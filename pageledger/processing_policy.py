@@ -43,6 +43,9 @@ _HOLD_ORDER = (
     "blank_candidate",
 )
 _DISAGREEMENTS = ("engine_disagreement", "numeric_disagreement")
+# Holds on readings a contested page no longer rests on: two later engines, and
+# the spans between them, have read what these readings missed.
+_SUPERSEDED = ("coverage_defect", "low_confidence", "blank_candidate")
 _COMPARISON_REASONS = (*_DISAGREEMENTS, "unconfirmed_model_output")
 _WARNING_HOLDS = {
     "coverage_defect": "coverage_defect",
@@ -368,8 +371,10 @@ def assess_page(
     image stage: a second reader is another witness, not a better one.
 
     With ``contest``, a selected reader's text is compared with the best literal
-    reading word by word. The spans it returns replace the page-level comparison
-    reasons, and any span no rule settled holds the page as ``contested``.
+    reading word by word. The spans replace the page-level comparison reasons and
+    the coverage holds of readings the page no longer rests on. Any span neither
+    a rule nor a high-confidence adjudication settled holds the page as
+    ``contested``; once none is open, the page is ``adjudicated_text``.
     """
     attempts = page.get("attempts", [])
     reasons = list(dict.fromkeys(page.get("review_reasons") or []))
@@ -416,12 +421,21 @@ def assess_page(
         )
         if literal is not None:
             contested = contest(selected, literal)
-            reasons = [reason for reason in reasons if reason not in _COMPARISON_REASONS]
-            if any(span["status"] == "open" for span in contested["spans"]):
+            own = {*holds_by_id[selected["attempt_id"]], *holds_by_id[literal["attempt_id"]]}
+            reasons = [
+                reason
+                for reason in reasons
+                if reason not in _COMPARISON_REASONS
+                and (reason not in _SUPERSEDED or reason in own)
+            ]
+            if contested["open"]:
                 reasons.append("contested")
     disposition = next((hold for hold in _HOLD_ORDER if hold in reasons), None)
     if disposition is None:
-        if selected:
+        if contested is not None:
+            # Every difference from the literal reading is settled, or there is none.
+            disposition = "adjudicated_text"
+        elif selected:
             disposition = "unreviewed_text"
         elif any(item.get("outcome") in {"outcome_unknown", "response"} for item in attempts):
             disposition = "outcome_unknown"

@@ -22,6 +22,13 @@ Release changes follow the [artifact compatibility policy](docs/run-manifest-spe
   confusions are settled by rule; a literal non-word those confusions do not
   explain stays open, because it may be the printer's misprint. A page with open
   spans is held as `contested`, and `verify-job` rebuilds the spans.
+- `pageledger adjudicate` settles contested spans against the page image.
+  `--packets` writes each contested page's readings, open spans and the image
+  the model read; `--decisions` records the answers as receipts bound to those
+  spans. When no span is open the page is `adjudicated_text`, kept apart from
+  `reviewed_text`, and its edition (the model's reading with the settled changes
+  applied) is what the transcript and exports carry. `verify-job` rebuilds each
+  edition from its receipts.
 
 ## 0.6.1 - 2026-10-01
 

@@ -88,6 +88,7 @@ def build_parser() -> argparse.ArgumentParser:
         ("verify-job", "Verify document source, attempts, selection and report"),
         ("review-job", "Apply source/output-bound human review without extraction"),
         ("review-sheet", "Write a CSV for reviewing a document job in a spreadsheet"),
+        ("adjudicate", "Write packets for contested spans, or record decisions that settle them"),
     ):
         job_parser = subparsers.add_parser(command, help=help_text)
         job_parser.add_argument("job_dir", type=Path)
@@ -104,6 +105,22 @@ def build_parser() -> argparse.ArgumentParser:
         elif command == "review-sheet":
             job_parser.add_argument(
                 "--out", type=Path, required=True, help="CSV to write; its binding goes beside it"
+            )
+        elif command == "adjudicate":
+            mode = job_parser.add_mutually_exclusive_group(required=True)
+            mode.add_argument(
+                "--packets", type=Path, help="Directory for one packet per page with open spans"
+            )
+            mode.add_argument(
+                "--decisions", type=Path, help="Directory of <page_id>.decisions.json answers"
+            )
+            job_parser.add_argument(
+                "--reviewer",
+                default="",
+                help="Who settled the spans, e.g. agent:sol or person:NAME",
+            )
+            job_parser.add_argument(
+                "--dry-run", action="store_true", help="Check every decision without recording any"
             )
 
     export_parser = subparsers.add_parser(
@@ -346,6 +363,7 @@ def main(argv: list[str] | None = None) -> int:
         "verify-job": _cmd_job,
         "review-job": _cmd_job,
         "review-sheet": _cmd_job,
+        "adjudicate": _cmd_job,
         "export": _cmd_export,
         "init-config": _cmd_init_config,
         "inspect-run": _cmd_inspect_run,
@@ -689,7 +707,14 @@ def _cmd_resume(args: argparse.Namespace) -> int:
 
 
 def _cmd_job(args: argparse.Namespace) -> int:
-    from .processing import create_review_sheet, process, review_job, verify_job
+    from .processing import (
+        adjudicate_job,
+        adjudication_packets,
+        create_review_sheet,
+        process,
+        review_job,
+        verify_job,
+    )
 
     if args.command == "process":
         result = process(
@@ -704,6 +729,12 @@ def _cmd_job(args: argparse.Namespace) -> int:
         result = review_job(args.job_dir, args.review, reviewer=args.reviewer, dry_run=args.dry_run)
     elif args.command == "review-sheet":
         result = create_review_sheet(args.job_dir, args.out)
+    elif args.command == "adjudicate" and args.packets:
+        result = adjudication_packets(args.job_dir, args.packets)
+    elif args.command == "adjudicate":
+        result = adjudicate_job(
+            args.job_dir, args.decisions, reviewer=args.reviewer, dry_run=args.dry_run
+        )
     elif args.command == "verify-job":
         result = verify_job(args.job_dir)
     else:
@@ -718,6 +749,10 @@ def _cmd_job(args: argparse.Namespace) -> int:
         if "decisions" in result:
             counts = sorted(result["decisions"].items())
             print("Decisions: " + (", ".join(f"{name} {n}" for name, n in counts) or "none"))
+        if "packets" in result:
+            print(f"Packets: {result['packets']} pages in {result['out']}")
+        if "decisions_high" in result:
+            print(f"Pages answered: {result['pages']}; spans settled: {result['decisions_high']}")
         if "binding" in result:
             print(f"Review sheet: {result['out']} ({result['rows']} pages)")
             print(f"Binding: {result['binding']}")
