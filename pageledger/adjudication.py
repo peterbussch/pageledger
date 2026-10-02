@@ -24,18 +24,18 @@ _HASH = re.compile(r"[0-9a-f]{64}\Z")
 INSTRUCTIONS = """\
 # Settle contested spans against the page image
 
-Each `<page_id>.json` packet lists the places where a vision model's reading of a
-page (the base) differs from a literal OCR reading (the witness). The image the
-model read is `<page_id>.jpg`.
+Each `<page_id>.json` packet lists places where two engines read a page
+differently. The page image is `<page_id>.jpg`.
 
-For every span, look at the page image and write what is printed at that place:
+For every span, `candidates` are the two readings, in no particular order, and
+`before` and `after` are the words around the place, to help you find it. Look
+at the page image and write what is printed there:
 
-- the base reading, the witness reading, or other text when neither is right;
+- one of the candidates, or other text when neither is right;
 - the printer's misprints exactly as printed, never corrected;
 - an empty string where the page prints nothing there.
 
-`base` is the exact text between the span's offsets in the base reading; an
-empty `base` means the witness has words there that the base lacks.
+Do not choose the more fluent or more likely word: choose the printed one.
 
 Answer in `<page_id>.decisions.json`, copying `page_id` and `contested_sha256`
 from the packet:
@@ -178,8 +178,17 @@ def receipt_for(
     }
 
 
+_AROUND = 80
+
+
 def write_packets(job: dict, root: Path, directory: Path) -> dict:
-    """One packet per page with open spans: readings, open spans and the image the reader saw."""
+    """One packet per page with open spans and the image the reader saw.
+
+    Packets are blind: a span shows both readings in sorted order and the words
+    around it, never which engine read what. An adjudicator told which reading is
+    the model's tends to keep it; the model that made a substitution will vouch
+    for it.
+    """
     directory.mkdir(parents=True, exist_ok=True)
     atomic_bytes(directory / "INSTRUCTIONS.md", INSTRUCTIONS.encode())
     written = 0
@@ -188,9 +197,8 @@ def write_packets(job: dict, root: Path, directory: Path) -> dict:
         if not contested or not contested["open"]:
             continue
         record = json.loads((root / contested["artifact"]).read_bytes())
-        attempts = {a["attempt_id"]: a for a in page["attempts"]}
-        base = attempts[record["base"]["attempt"]]
-        witness = attempts[record["witness"]["attempt"]]
+        base = next(a for a in page["attempts"] if a["attempt_id"] == record["base"]["attempt"])
+        text = base["text"]
         still_open, _ = settle(record, contested["sha256"], page.get("adjudications", []))
         image = None
         evidence = base.get("input_evidence")
@@ -209,10 +217,13 @@ def write_packets(job: dict, root: Path, directory: Path) -> dict:
             "page_number": page["page_number"],
             "contested_sha256": contested["sha256"],
             "image": image,
-            "base": {"attempt": base["attempt_id"], "text": base["text"]},
-            "witness": {"attempt": witness["attempt_id"], "text": witness["text"]},
             "spans": [
-                {key: span[key] for key in ("span_id", "kind", "start", "end", "base", "witness")}
+                {
+                    "span_id": span["span_id"],
+                    "candidates": sorted({span["base"], span["witness"]}),
+                    "before": text[max(0, span["start"] - _AROUND) : span["start"]],
+                    "after": text[span["end"] : span["end"] + _AROUND],
+                }
                 for span in still_open
             ],
         }

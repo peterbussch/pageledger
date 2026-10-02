@@ -279,9 +279,16 @@ pageledger adjudicate jobs/book --packets packets/book
 pageledger adjudicate jobs/book --decisions packets/book --reviewer agent:sol
 ```
 
-`--packets` writes, for every page with open spans, `<page_id>.json`: both
-readings, the open spans, and the exact image the model read (`<page_id>.jpg`),
-with `INSTRUCTIONS.md`. The adjudicator answers in `<page_id>.decisions.json`:
+`--packets` writes, for every page with open spans, `<page_id>.json` with the
+open spans, and the exact image the model read (`<page_id>.jpg`), with
+`INSTRUCTIONS.md`. Packets are blind: each span gives the two readings in sorted
+order and the words around the place, never which engine read which. In a test
+on Большаков (7 pages, 60 open spans, Sol as the reader), Sol adjudicating
+spans labelled as its own reading kept three of its own substitutions (мощными
+for the printed модными) and called each one plainly printed; blind, it did no
+better. Gemini 3.1 Pro, blind, left one error, a printed misprint it corrected.
+Claude Sonnet 4.6 corrected three misprints. Use an adjudicator from another
+model family than the reader, and check its answers on pages you have verified. The adjudicator answers in `<page_id>.decisions.json`:
 
 ```json
 {"page_id": "doc_0001_page_0003", "contested_sha256": "…",

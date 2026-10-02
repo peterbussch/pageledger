@@ -804,7 +804,10 @@ def _answer(root, out, text, confidence="high"):
     assert (out / "INSTRUCTIONS.md").is_file()
     packet = json.loads((out / "doc_0001_page_0001.json").read_text(encoding="utf-8"))
     assert (out / packet["image"]["path"]).is_file()
-    assert {span["witness"] for span in packet["spans"]} == {"полные"}
+    # Blind: both readings, in sorted order, and not which engine read which.
+    assert {tuple(span["candidates"]) for span in packet["spans"]} == {("полные", "поныне")}
+    assert not {"base", "witness", "kind"} & set(packet["spans"][0])
+    assert "base" not in packet and "witness" not in packet
     answer = {
         "page_id": packet["page_id"],
         "contested_sha256": packet["contested_sha256"],
