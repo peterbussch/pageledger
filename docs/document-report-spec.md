@@ -98,8 +98,8 @@ additional evidence. Sparse/unknown structural output is a reason to inspect or
 escalate, not a claim that content is definitely missing.
 Existing `replacement_characters`, `control_characters`,
 `suspicious_symbol_density`, `instruction_echo`, `digits_only_text`,
-`mixed_script_tokens`, `private_use_characters`, and `repeated_page_text`
-quality warnings also create coverage holds even when the output is classified
+`mixed_script_tokens`, `private_use_characters`, `foreign_script_characters`
+and `repeated_page_text` quality warnings also create coverage holds even when the output is classified
 as prose or has a high grade. `low_confidence` creates its own hold, reported
 as "The engine was unsure of some words": the engine doubted its reading, which
 is not evidence of missing content. Both kinds of hold escalate to the next

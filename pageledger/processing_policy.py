@@ -73,6 +73,7 @@ _WARNING_HOLDS = {
     "digits_only_text": "coverage_defect",
     "mixed_script_tokens": "coverage_defect",
     "private_use_characters": "coverage_defect",
+    "foreign_script_characters": "coverage_defect",
     "repeated_page_text": "coverage_defect",
     "repetition_loop": "coverage_defect",
     "script_mismatch": "coverage_defect",

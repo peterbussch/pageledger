@@ -258,7 +258,24 @@ def _content_coverage_metrics(text: str, tokens: list[str]) -> dict[str, Any]:
         "digit_count": sum(1 for char in text if char.isdecimal()),
         "mixed_script_token_ratio": 0.0 if not tokens else round(mixed / len(tokens), 4),
         "private_use_count": _private_use_count(text),
+        "foreign_script_count": sum(1 for char in text if _foreign_script(char)),
     }
+
+
+# Scripts a Latin, Cyrillic or Greek text layer legitimately carries. Letters from
+# any other script, in small numbers, are a symbol font read through the wrong map:
+# a 2019 paper's formulas came out as Ethiopic, Oriya, Tamil and Syriac letters.
+_HOME_SCRIPTS = ("LATIN", "CYRILLIC", "GREEK", "COMBINING", "MODIFIER")
+
+
+def _foreign_script(char: str) -> bool:
+    """A letter or mark from a script outside the home scripts (math alphabets excepted)."""
+    if not unicodedata.category(char).startswith(("L", "M")):
+        return False
+    code = ord(char)
+    if 0x2100 <= code <= 0x214F or 0x1D400 <= code <= 0x1D7FF:
+        return False  # letterlike symbols and mathematical alphanumerics: real formulas
+    return not unicodedata.name(char, "").startswith(_HOME_SCRIPTS)
 
 
 def _repetition_evidence(text: str) -> tuple[dict[str, int], list[str]]:
@@ -439,6 +456,11 @@ def _text_quality_warnings(metrics: dict[str, Any]) -> list[str]:
         warnings.append("mixed_script_tokens")
     if metrics["private_use_count"] >= 3:
         warnings.append("private_use_characters")
+    foreign = metrics["foreign_script_count"]
+    if foreign >= 3 and foreign < 0.1 * letters:
+        # A few letters from an unrelated script in a Latin or Cyrillic page; a page
+        # mostly in that script is simply written in it.
+        warnings.append("foreign_script_characters")
     return warnings
 
 

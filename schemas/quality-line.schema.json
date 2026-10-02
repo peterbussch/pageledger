@@ -96,6 +96,11 @@
           "minimum": 0,
           "description": "Private Use Area code points, except one that opens a line before a space (a bullet or icon glyph). Optional for compatibility with older quality lines."
         },
+        "foreign_script_count": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Letters and marks from scripts other than Latin, Cyrillic or Greek, letterlike symbols and mathematical alphanumerics excepted. Optional for compatibility with older quality lines."
+        },
         "largest_identical_line_count": {
           "type": "integer",
           "minimum": 0,

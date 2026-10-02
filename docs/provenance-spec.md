@@ -212,6 +212,7 @@ Meanings and suggested next steps for warnings are in the
 | `digits_only_text` | `digit_count >= 20` and letters under 5% of `letter_count + digit_count`. A table whose text layer kept the digits and lost the words. Not raised for `markdown_table`, `json` or `csv` output. |
 | `mixed_script_tokens` | `mixed_script_token_ratio >= 0.05` over ≥20 alphabetic tokens. Look-alike letters from another script inside words: search and alignment miss them. |
 | `private_use_characters` | `private_use_count >= 3`. Characters the text layer lost to font-specific code points, such as old-style digits or ligatures. |
+| `foreign_script_characters` | At least 3 letters or marks from a script other than Latin, Cyrillic or Greek (letterlike symbols and mathematical alphanumerics excepted), making up under 10% of the page's letters. A symbol font read through the wrong map: a born-digital paper's formulas came out as Ethiopic, Oriya, Tamil and Syriac letters. A page mostly in another script does not raise it. |
 | `repeated_page_text` | The page's whole text, under 200 characters after whitespace is collapsed, is identical on at least three pages of the run. A stamp-only text layer repeats a scanner's or website's mark on every page and none of the content. |
 | `repetition_loop` | A line other than dot leaders or rules occurs at least 20 times and makes up at least 30% of the page's non-empty lines; or the text ends in one unit of up to 200 characters repeated at least 20 times; or one letter repeats at least 40 times in a row. These are the shapes of a model stuck in a loop; a table that repeats a label on some of its rows stays below them. |
 | `script_mismatch` | Only when the config declares `language.script`: the page has at least 200 letters and fewer than half are in that script. |
@@ -227,6 +228,11 @@ files. Private-use characters appeared in 44 files, mostly as bullets;
 `private_use_characters` fired on 19 pages of 12 files. A layer in the wrong script
 entirely, such as Latin-letter OCR of a Cyrillic book, contains no mixed
 tokens and raises none of these warnings.
+
+`foreign_script_characters` was measured on the text layers of six documents
+(252 pages) from a 2026 test with real scholarly PDFs. It fired on the 9 pages
+whose formulas a math font had encoded as other scripts and on one page where
+Hebrew points stood in for a negation sign, and on no other page.
 
 `repetition_loop` was set on 287 outputs of the same 24 transcribed pages by 11
 engines. It flags 16 pages, all from local vision models and every one a loop on
