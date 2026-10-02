@@ -16,6 +16,12 @@ Release changes follow the [artifact compatibility policy](docs/run-manifest-spe
 - A `foreign_script_characters` warning for a few letters from a script that
   doesn't belong on the page, usually a math font read through the wrong
   character map. On the test documents it found all nine pages where 0.6 found two.
+- `processing.contest` compares a model's reading with the literal engine's,
+  word by word, and keeps each difference as a span in
+  `contested/<page_id>.json`. Look-alike letters and RapidOCR's listed glyph
+  confusions are settled by rule; a literal non-word those confusions do not
+  explain stays open, because it may be the printer's misprint. A page with open
+  spans is held as `contested`, and `verify-job` rebuilds the spans.
 
 ## 0.6.1 - 2026-10-01
 

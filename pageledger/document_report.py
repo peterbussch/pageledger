@@ -39,6 +39,7 @@ _DISPOSITION_LABELS = {
     "engine_disagreement": "Engines disagree",
     "numeric_disagreement": "Engines read numbers differently",
     "unconfirmed_model_output": "Model output not confirmed by another engine",
+    "contested": "Model and literal readings differ; check them against the page",
     "blank_candidate": "Candidate blank",
     "provider_failure": "Extraction failed",
     "outcome_unknown": "Extraction outcome unknown",
@@ -241,6 +242,12 @@ def _recorded_concerns(page: dict, holds_for: dict[str, str]) -> str:
                         f"comparison of {_escape(comparison['left_attempt'])} and "
                         f"{_escape(comparison['right_attempt'])}"
                     )
+        if reason == "contested":
+            contested = page["contested"]
+            evidence.append(
+                f"{contested['open']} open of {contested['open'] + contested['settled']} "
+                f"in {_link('spans', contested['artifact'])}"
+            )
         for attempt in page["attempts"]:
             code = _explicit_attempt_hold(attempt, reason, holds_for)
             if code is None:
@@ -292,6 +299,24 @@ def _escalation_accounting(report: dict) -> list[str]:
     ]
 
 
+def _contest_accounting(report: dict) -> list[str]:
+    contested = [page["contested"] for page in report["pages"] if page.get("contested")]
+    if not contested:
+        return []
+    kinds: Counter = Counter()
+    for item in contested:
+        kinds.update(item["kinds"])
+    listed = ", ".join(f"{kind} {count}" for kind, count in sorted(kinds.items()))
+    open_spans = sum(item["open"] for item in contested)
+    settled = sum(item["settled"] for item in contested)
+    held = sum(item["open"] > 0 for item in contested)
+    return [
+        f"Contested spans on {len(contested)} pages: {listed}. Settled by rule: {settled}; "
+        f"open: {open_spans}, holding {held} pages.",
+        "",
+    ]
+
+
 def render_document_report(report: dict) -> str:
     """Render a report, retaining the 0.5.0 format when its marker is absent."""
     current = "report_format" in report
@@ -323,6 +348,7 @@ def render_document_report(report: dict) -> str:
         f"Attempt pages: {usage['attempt_pages']}; image calls: {usage['image_calls']}; tokens: {tokens}; cost: {cost}.",
         "",
         *_escalation_accounting(report),
+        *_contest_accounting(report),
         *(["Current page results", ""] if current else []),
         *(
             [

@@ -34,6 +34,7 @@ _HOLD_ORDER = (
     "numeric_disagreement",
     "engine_disagreement",
     "unconfirmed_model_output",
+    "contested",
     "coverage_defect",
     "low_confidence",
     "handwriting",
@@ -352,6 +353,7 @@ def assess_page(
     escalate_on: tuple[str, ...] | list[str] = ("hold",),
     roughness: Callable[[str], dict | None] | None = None,
     rough_below: float | None = None,
+    contest: Callable[[dict, dict], dict] | None = None,
 ) -> dict:
     """Select evidence deterministically while keeping all recorded review holds.
 
@@ -364,6 +366,10 @@ def assess_page(
     (too few known words in the selected reading, judged by ``roughness``) and
     ``disagreement`` (clean readings disagree). Triggers lift a page at most to the
     image stage: a second reader is another witness, not a better one.
+
+    With ``contest``, a selected reader's text is compared with the best literal
+    reading word by word. The spans it returns replace the page-level comparison
+    reasons, and any span no rule settled holds the page as ``contested``.
     """
     attempts = page.get("attempts", [])
     reasons = list(dict.fromkeys(page.get("review_reasons") or []))
@@ -392,16 +398,27 @@ def assess_page(
         reasons.append("engine_disagreement")
     if any(item["number_differences"] for item in selected_comparisons):
         reasons.append("numeric_disagreement")
-    if (
-        holds_for is _WARNING_HOLDS
-        and selected
-        and "generative" in selected.get("adapter_capabilities", ())
-    ):
+    if holds_for is _WARNING_HOLDS and selected and _generative(selected):
         confirmed = any(
             item["agreement_ratio"] >= ENGINE_AGREEMENT_THRESHOLD for item in selected_comparisons
         )
         if not confirmed:
             reasons.append("unconfirmed_model_output")
+    contested = None
+    if contest is not None and selected in clean and _generative(selected):
+        literals = [item for item in usable if not _generative(item)]
+        literal = _select(
+            [item for item in literals if item in clean],
+            literals,
+            escalate_on,
+            roughness,
+            rough_below,
+        )
+        if literal is not None:
+            contested = contest(selected, literal)
+            reasons = [reason for reason in reasons if reason not in _COMPARISON_REASONS]
+            if any(span["status"] == "open" for span in contested["spans"]):
+                reasons.append("contested")
     disposition = next((hold for hold in _HOLD_ORDER if hold in reasons), None)
     if disposition is None:
         if selected:
@@ -449,6 +466,8 @@ def assess_page(
         "review_reasons": reasons,
         "next_action": next_action,
     }
+    if contest is not None:
+        result["contested"] = contested
     if tuple(escalate_on) != ("hold",):
         # Why the page climbed at each earlier stage, then why it climbs now.
         result["triggers"] = [
@@ -458,6 +477,10 @@ def assess_page(
             *(triggers if next_action not in {"review", "none"} else []),
         ]
     return result
+
+
+def _generative(attempt: dict) -> bool:
+    return "generative" in attempt.get("adapter_capabilities", ())
 
 
 def _trigger_history(

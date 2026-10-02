@@ -6,6 +6,7 @@ import dataclasses
 import json
 from pathlib import Path
 
+import jsonschema
 import pytest
 import yaml
 from test_image_evidence import image_descriptor
@@ -52,6 +53,7 @@ class StageAdapter(TextAdapter):
             content = ""
         if self.stage == "image" and getattr(self, "generative_only", False):
             content = TEXT
+        content = getattr(self, "texts", {}).get(self.stage, content)
         return ExtractionResult(
             content,
             "text",
@@ -89,10 +91,13 @@ def setup(tmp_path, monkeypatch):
         object.__setattr__(value, "generative_only", shared.get("generative_only", False))
         object.__setattr__(value, "text_only_defective", shared.get("text_only_defective", False))
         object.__setattr__(value, "scanned", shared.get("scanned", False))
+        object.__setattr__(value, "texts", shared.get("texts", {}))
         object.__setattr__(
             value,
             "capabilities",
-            ("generative",) if name == "image" and shared.get("generative_only") else (),
+            ("generative",)
+            if name == "image" and (shared.get("generative_only") or shared.get("texts"))
+            else (),
         )
         object.__setattr__(value, "evidence_dir", args[0].get("evidence_dir") if args else None)
         return value
@@ -616,6 +621,9 @@ def test_job_written_by_0_6_0_still_verifies_with_its_blank_hold(setup, monkeypa
 class _FakeLexicon:
     identity = {"provider": "pymorphy3", "language": "ru", "version": "test", "dictionary": "test"}
 
+    def known(self, word):
+        return word.lower() in {"работа", "была", "написана", "поныне", "полные", "москве"}
+
 
 def _escalating(setup, monkeypatch, *, rough=True, **processing):
     import pageledger.processing as processing_module
@@ -679,6 +687,76 @@ def test_a_job_refuses_to_verify_under_another_lexicon(setup, monkeypatch):
     result = verify_job(setup[2])
     assert result["status"] == "fail"
     assert "Install the recorded version" in result["error"]
+
+
+READER = "Работа была написана поныне в Москве. " * 8
+# RapidOCR's н for п, which the glyph rule settles, and a real word the reader changed.
+LITERAL = "Работа была нанисана полные в Москве. " * 8
+
+
+def _contesting(setup, monkeypatch, literal=LITERAL):
+    import pageledger.processing as processing_module
+
+    _escalating(
+        setup,
+        monkeypatch,
+        contest={"rules": "ru-print-0.1"},
+        local_ocr={"adapter": "rapidocr"},
+    )
+    setup[3].update(defective=set(), texts={"rapidocr": literal, "image": READER})
+    # The text layer reads worst and only the reader smoothly, so the page climbs to
+    # the reader and RapidOCR is its literal witness.
+    shares = {TEXT: 0.3, literal: 0.5}
+    monkeypatch.setattr(
+        processing_module,
+        "roughness",
+        lambda text, lexicon: (
+            {"known_share": shares[text], "words": 40, "unknown": ["x"]} if text in shares else None
+        ),
+    )
+
+
+def test_a_readers_changes_are_contested_and_the_artifact_verifies(setup, monkeypatch):
+    _contesting(setup, monkeypatch)
+    assert launch(setup, pages="1")["status"] == "completed"
+    page = read_record(setup[2] / "job.json")["pages"][0]
+    assert page["selected_attempt"].startswith("image")
+    assert page["disposition"] == "contested"
+    assert "unconfirmed_model_output" not in page["review_reasons"]
+    contested = page["contested"]
+    assert (contested["open"], contested["settled"]) == (8, 8)
+    assert contested["kinds"] == {"glyph": 8, "word": 8}
+    artifact = setup[2] / contested["artifact"]
+    record = json.loads(artifact.read_text(encoding="utf-8"))
+    assert {s["witness"] for s in record["spans"] if s["status"] == "open"} == {"полные"}
+    assert record["witness"]["adapter"] == "rapidocr"
+    report = (setup[2] / "report.md").read_text(encoding="utf-8")
+    assert (
+        "Contested spans on 1 pages: glyph 8, word 8. Settled by rule: 8; open: 8, holding 1 pages."
+        in report
+    )
+    assert "8 open of 16 in [spans](<contested/doc_0001_page_0001.json>)" in report
+    for name, path in (
+        ("job", "job.json"),
+        ("document", "document.json"),
+        ("contested", contested["artifact"]),
+    ):
+        schema = json.loads((Path(__file__).parents[2] / f"schemas/{name}.schema.json").read_text())
+        jsonschema.validate(json.loads((setup[2] / path).read_text(encoding="utf-8")), schema)
+    assert verify_job(setup[2])["status"] == "pass"
+
+    artifact.write_text(artifact.read_text(encoding="utf-8").replace("полные", "поныне"))
+    result = verify_job(setup[2])
+    assert result["status"] == "fail" and "Contested spans differ" in result["error"]
+
+
+def test_a_page_whose_spans_all_settle_by_rule_is_not_held(setup, monkeypatch):
+    _contesting(setup, monkeypatch, literal=READER.replace("написана", "нанисана"))
+    assert launch(setup, pages="1")["status"] == "completed"
+    page = read_record(setup[2] / "job.json")["pages"][0]
+    assert page["disposition"] == "unreviewed_text"
+    assert (page["contested"]["open"], page["contested"]["settled"]) == (0, 8)
+    assert verify_job(setup[2])["status"] == "pass"
 
 
 def test_verify_job_rebuilds_legacy_hold_policy_artifacts(setup):

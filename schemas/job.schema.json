@@ -249,6 +249,7 @@
                   "engine_disagreement",
                   "numeric_disagreement",
                   "unconfirmed_model_output",
+                  "contested",
                   "blank_candidate",
                   "provider_failure",
                   "outcome_unknown",
@@ -550,6 +551,25 @@
                   ],
                   "additionalProperties": false
                 }
+              },
+              "contested": {
+                "type": "object",
+                "description": "Where the selected reader's text differs from the best literal reading. The spans are in the artifact; the job keeps its hash and counts. Present only in jobs with processing.contest.",
+                "properties": {
+                  "artifact": {"type": "string", "pattern": "^contested/doc_[0-9]{4}_page_[0-9]{4,}\\.json$"},
+                  "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+                  "base_attempt": {"type": "string", "minLength": 1},
+                  "witness_attempt": {"type": "string", "minLength": 1},
+                  "kinds": {
+                    "type": "object",
+                    "propertyNames": {"enum": ["homoglyph", "glyph", "misprint_guard", "word", "number", "region"]},
+                    "additionalProperties": {"type": "integer", "minimum": 1}
+                  },
+                  "open": {"type": "integer", "minimum": 0},
+                  "settled": {"type": "integer", "minimum": 0}
+                },
+                "required": ["artifact", "sha256", "base_attempt", "witness_attempt", "kinds", "open", "settled"],
+                "additionalProperties": false
               },
               "triggers": {
                 "type": "array",

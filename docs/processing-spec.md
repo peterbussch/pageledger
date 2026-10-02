@@ -201,6 +201,59 @@ Russian scored 0.98 to 0.995. OCR of a two-column article read as one column
 scored 0.87 to 0.91. Treat 0.95 as a starting point and measure your own
 collection.
 
+## Contest a model's reading
+
+A vision model writes fluent text and silently corrects what it sees: it fixes
+the printer's misprints and swaps in a likelier word. An OCR engine misreads
+glyphs but does not invent words. With `contest`, a page whose selected reading
+came from a model (an adapter with the `generative` capability) is compared word
+by word with the best literal reading of the same page, and each place they
+differ is recorded:
+
+```yaml
+processing:
+  # ... stages as above, with an image stage
+  contest:
+    rules: ru-print-0.1
+  lexicon:            # optional; lets the glyph rule judge Russian words
+    provider: pymorphy3
+    language: ru
+```
+
+The model's text is the base, and every span is anchored in its offsets. Words
+one engine placed elsewhere on the page count as reading order, not as
+differences. Unpaired words are grouped, so a line one engine dropped is one
+span. A formula (`$...$`), a `[Figure: ...]` line, `[illegible]` and a word the
+model marked `[?]` are each one `region` span, because the model wrote them in a
+form no literal engine can confirm word by word.
+
+| Kind | Literal reading against the model's | Settled by |
+|---|---|---|
+| `homoglyph` | Look-alike letters of another script (HAYK for НАУК), two letters or more | Rule H: the model's |
+| `glyph` | A non-word whose difference from the model's known word is only confusions listed for that engine (RapidOCR's н for п) | Rule G: the model's |
+| `misprint_guard` | A non-word the engine's listed confusions do not explain (назависимости) | Open: it may be what the page prints |
+| `word` | Any other difference, or words only one side has | Open |
+| `number` | Either side has a digit | Open |
+| `region` | A formula, figure line or the model's own doubt | Open |
+
+The rule set is versioned data. `ru-print-0.1` lists the confusions RapidOCR's
+Cyrillic model made at least twice in one dogfood, checked against the page
+images; its pairs never cross case, and they apply only to the `rapidocr`
+adapter. Without a lexicon only rule H applies. On two fully checked Russian
+documents (61 pages) the rules settled 175 spans with no error against the
+image-checked text, and the open spans covered 303 of the 319 corrections the
+model's text needed. The misses were accents and figure labels that neither
+engine read.
+
+The spans are kept in `contested/<page_id>.json` ([schema](../schemas/contested.schema.json)),
+and the page records its hash and counts. A page with an open span is held as
+`contested`. That replaces `engine_disagreement`, `numeric_disagreement` and
+`unconfirmed_model_output` on that page, because the spans say exactly where the
+readings differ. A page whose spans all settle by rule keeps its 0.6 disposition.
+`verify-job` rebuilds the spans from the retained readings and fails if the
+artifact differs. The report counts spans by kind, rule settlements, and the
+pages they hold.
+
 ## One budget for the job
 
 `processing.limits` accepts:

@@ -42,7 +42,7 @@ def test_escalation_accepts_rough_and_disagreement_with_a_lexicon():
         ({"escalate_on": ["hold", "hold"]}, "more than once"),
         (
             {"lexicon": {"provider": "pymorphy3", "language": "ru", "rough_below": 0.9}},
-            "lexicon is used only by the rough trigger",
+            "used by the rough trigger and by contest",
         ),
         (
             {
@@ -189,3 +189,44 @@ def test_a_smooth_ocr_reading_replaces_a_rough_text_layer():
     assert result["selected_attempt"] == "a2"
     assert result["next_action"] == "review"
     assert [t["attempt"] for t in result["triggers"]] == ["a1"]
+
+
+def _contest_config(**processing):
+    return _config(
+        image={"adapter": "vision"},
+        limits={"max_image_pages": 5},
+        contest={"rules": "ru-print-0.1"},
+        **processing,
+    )
+
+
+def test_contest_records_its_rules_and_may_judge_words_without_the_rough_trigger():
+    config = processing_config(
+        _contest_config(lexicon={"provider": "pymorphy3", "language": "ru"}), pdf=True
+    )
+    assert config["contest"] == {"rules": "ru-print-0.1"}
+    assert config["lexicon"] == {"provider": "pymorphy3", "language": "ru"}
+    assert "escalate_on" not in config
+
+
+@pytest.mark.parametrize(
+    "processing,message",
+    [
+        ({"contest": {"rules": "ru-print-9"}}, "processing.contest needs rules"),
+        ({"contest": True}, "processing.contest needs rules"),
+        (
+            {"contest": {"rules": "ru-print-0.1"}, "image": None},
+            "add an image stage",
+        ),
+        (
+            {"lexicon": {"provider": "pymorphy3", "language": "ru", "rough_below": 0.9}},
+            "rough_below only for the rough trigger",
+        ),
+    ],
+)
+def test_meaningless_contest_configs_are_refused(processing, message):
+    base = {"image": {"adapter": "vision"}, "limits": {"max_image_pages": 5}}
+    if "lexicon" in processing:
+        base["contest"] = {"rules": "ru-print-0.1"}
+    with pytest.raises(ValueError, match=message):
+        processing_config(_config(**{**base, **processing}), pdf=True)

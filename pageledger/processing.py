@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import copy
 import functools
+import hashlib
 import json
 import math
 from collections import Counter
@@ -28,6 +29,7 @@ from .checkpoint import (
 from .classifier import classify_signals, merge_classify_thresholds, structural_signals
 from .comparison import compare_texts
 from .config import load_config
+from .contest import contest as contest_spans
 from .lexicon import load_lexicon, roughness
 from .processing_config import STAGES, processing_config
 from .processing_policy import (
@@ -378,8 +380,69 @@ def _escalation(job: dict) -> tuple[tuple[str, ...], Any, float | None]:
         tuple(policy["escalate_on"]),
         # Selection, triggers and their history judge the same readings repeatedly.
         functools.lru_cache(maxsize=None)(lambda text: roughness(text, lexicon)),
-        lexicon_config["rough_below"],
+        lexicon_config.get("rough_below"),
     )
+
+
+def _contester(job: dict) -> Any:
+    """Compare a page's reader with its literal witness, when the job contests readings."""
+    settings = job["policy"].get("contest")
+    if not settings:
+        return None
+    lexicon = load_lexicon(job["policy"]["lexicon"]) if job["policy"].get("lexicon") else None
+
+    @functools.cache
+    def spans(base: str, witness: str, engine: str) -> list[dict]:
+        return contest_spans(
+            base,
+            witness,
+            rules=settings["rules"],
+            engine=engine,
+            known=lexicon.known if lexicon else None,
+        )
+
+    def contest(base: dict, witness: dict) -> dict:
+        engine = job["policy"][witness["stage"]]["adapter"]
+        return {
+            "schema_version": "0.1",
+            "page_id": base["page_id"],
+            "rules": settings["rules"],
+            "base": {"attempt": base["attempt_id"], "text_sha256": _text_sha256(base["text"])},
+            "witness": {
+                "attempt": witness["attempt_id"],
+                "text_sha256": _text_sha256(witness["text"]),
+                "adapter": engine,
+            },
+            "spans": copy.deepcopy(spans(base["text"], witness["text"], engine)),
+        }
+
+    return contest
+
+
+def _text_sha256(text: str) -> str:
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def _retain_contested(root: Path, page: dict, record: dict, materialize: bool) -> dict:
+    """Keep a page's spans as an artifact; the job keeps its hash and counts."""
+    relative = f"contested/{page['page_id']}.json"
+    target = _safe(root, relative)
+    encoded = (json.dumps(record, ensure_ascii=False, indent=1, sort_keys=True) + "\n").encode()
+    if not target.exists() or target.read_bytes() != encoded:
+        if not materialize:
+            raise ValueError("Contested spans differ from the retained readings")
+        target.parent.mkdir(exist_ok=True)
+        atomic_bytes(target, encoded)
+    spans = record["spans"]
+    return {
+        "artifact": relative,
+        "sha256": file_digest(target),
+        "base_attempt": record["base"]["attempt"],
+        "witness_attempt": record["witness"]["attempt"],
+        "kinds": dict(sorted(Counter(span["kind"] for span in spans).items())),
+        "open": sum(span["status"] == "open" for span in spans),
+        "settled": sum(span["status"] == "settled" for span in spans),
+    }
 
 
 def _refresh(job: dict, root: Path, *, materialize: bool = True) -> None:
@@ -391,6 +454,7 @@ def _refresh(job: dict, root: Path, *, materialize: bool = True) -> None:
     for page in pages.values():
         page["attempts"] = []
         page["review_reasons"] = []
+        page.pop("contested", None)
     for stage in job["stages"]:
         child = _safe(root, stage["run_path"])
         if not child.exists():
@@ -514,6 +578,7 @@ def _refresh(job: dict, root: Path, *, materialize: bool = True) -> None:
             pages[page_id]["attempts"].append(attempt)
     holds = warning_holds(job)
     escalate_on, roughness_of, rough_below = _escalation(job)
+    contest = _contester(job)
     for page in pages.values():
         if job.get("hold_policy") in HOLD_POLICIES:
             page["comparisons"] = _build_comparisons(page["attempts"])
@@ -529,8 +594,12 @@ def _refresh(job: dict, root: Path, *, materialize: bool = True) -> None:
                 escalate_on=escalate_on,
                 roughness=roughness_of,
                 rough_below=rough_below,
+                contest=contest,
             )
         )
+        record = page.pop("contested", None)
+        if record is not None:
+            page["contested"] = _retain_contested(root, page, record, materialize)
     attempts = [attempt for page in pages.values() for attempt in page["attempts"]]
     paid = [a for a in attempts if a["stage"] in {"image", "second_opinion"}]
     token_values = [a["usage"].get("tokens") for a in attempts]

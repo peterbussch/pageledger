@@ -21,7 +21,15 @@ def processing_config(data: dict[str, Any], *, pdf: bool) -> dict[str, Any]:
     value = data.get("processing", {})
     if not isinstance(value, dict):
         raise ValueError("processing must be a mapping")
-    unknown = set(value) - {*STAGES, "limits", "links", "benchmark", "escalate_on", "lexicon"}
+    unknown = set(value) - {
+        *STAGES,
+        "limits",
+        "links",
+        "benchmark",
+        "escalate_on",
+        "lexicon",
+        "contest",
+    }
     if unknown:
         raise ValueError(f"Unknown processing key: {sorted(unknown)[0]}")
     result: dict[str, Any] = {}
@@ -99,16 +107,32 @@ def processing_config(data: dict[str, Any], *, pdf: bool) -> dict[str, Any]:
         if result[benchmark["stage"]] is None:
             raise ValueError("processing.benchmark.stage must name an enabled stage")
         result["benchmark"] = dict(benchmark)
-    triggers, lexicon = _escalation(value)
+    contest = value.get("contest")
+    if contest is not None:
+        from .contest import RULE_SETS
+
+        if (
+            not isinstance(contest, dict)
+            or set(contest) != {"rules"}
+            or contest["rules"] not in RULE_SETS
+        ):
+            raise ValueError(
+                f"processing.contest needs rules, one of: {', '.join(sorted(RULE_SETS))}"
+            )
+        if result["image"] is None:
+            raise ValueError("processing.contest compares a reader's text; add an image stage")
+    triggers, lexicon = _escalation(value, contest=contest is not None)
+    # Each key only when used, so a 0.6 config still compiles to the policy its jobs recorded.
     if triggers != ["hold"]:
-        # Only when used, so a 0.6 config still compiles to the policy its jobs recorded.
         result["escalate_on"] = triggers
-        if lexicon is not None:
-            result["lexicon"] = lexicon
+    if lexicon is not None:
+        result["lexicon"] = lexicon
+    if contest is not None:
+        result["contest"] = dict(contest)
     return result
 
 
-def _escalation(value: dict[str, Any]) -> tuple[list[str], dict[str, Any] | None]:
+def _escalation(value: dict[str, Any], *, contest: bool) -> tuple[list[str], dict[str, Any] | None]:
     """Validate escalate_on and lexicon; refuse settings that would do nothing."""
     triggers = value.get("escalate_on", ["hold"])
     if not isinstance(triggers, list) or not all(isinstance(item, str) for item in triggers):
@@ -125,20 +149,22 @@ def _escalation(value: dict[str, Any]) -> tuple[list[str], dict[str, Any] | None
         raise ValueError("The rough trigger needs processing.lexicon to judge words")
     if lexicon is None:
         return [name for name in TRIGGERS if name in triggers], None
-    if "rough" not in triggers:
+    if "rough" not in triggers and not contest:
         raise ValueError(
-            "processing.lexicon is used only by the rough trigger; add rough to escalate_on"
+            "processing.lexicon is used by the rough trigger and by contest; enable one of them"
         )
+    rough = "rough" in triggers
     if (
         not isinstance(lexicon, dict)
-        or set(lexicon) != {"provider", "language", "rough_below"}
+        or set(lexicon) != {"provider", "language", *(["rough_below"] if rough else [])}
         or lexicon["provider"] not in LEXICON_PROVIDERS
         or lexicon["language"] != "ru"
     ):
         raise ValueError(
-            "processing.lexicon needs provider: pymorphy3, language: ru and rough_below"
+            "processing.lexicon needs provider: pymorphy3 and language: ru, "
+            "with rough_below only for the rough trigger"
         )
-    threshold = lexicon["rough_below"]
+    threshold = lexicon.get("rough_below", 1)
     if (
         isinstance(threshold, bool)
         or not isinstance(threshold, (int, float))
