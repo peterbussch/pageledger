@@ -74,9 +74,9 @@ Three assertions that bite during routine changes:
 
 Use GitHub's native features throughout work on this repository, including
 issues, pull requests, Actions checks, review threads, and releases where they
-fit the task. Read and assess Copilot's guidance during development and review.
-Verify findings against the code, address substantive issues, and request
-another Copilot review after substantive fixes when available.
+fit the task. Read and assess existing Copilot review findings during development
+and review: verify them against the code and address substantive issues. Request
+or re-request a Copilot review only when Peter asks.
 
 Before merging, read all reviews and inline comments alongside the check
 results. Check again before publishing through the protected release environment.
