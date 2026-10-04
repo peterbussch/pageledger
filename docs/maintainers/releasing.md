@@ -9,16 +9,13 @@ uploading to PyPI also requires approval through the `pypi` environment.
 1. Choose a version that is not already present on PyPI.
 2. Update `pyproject.toml`, `pageledger/_version.py`, `CITATION.cff`, the dated
    `CHANGELOG.md` heading, and the editable PageLedger entry in `uv.lock`.
-   Update version assertions, workflow smoke commands and active documentation
-   examples too. Artifact schema versions change only when their contracts do.
-3. Run the complete local source gate:
+   Update workflow smoke commands and active documentation examples too.
+   Artifact schema versions change only when their contracts do.
+3. Run the complete local source gate, then the release metadata check:
 
    ```bash
-   uv sync --frozen --extra dev --extra pdf
-   uv run --frozen --extra dev --extra pdf ruff check pageledger/ tests/ examples/ scripts/
-   uv run --frozen --extra dev --extra pdf mypy pageledger/
-   uv run --frozen --extra dev --extra pdf python -m pytest tests/pageledger/ -q -m "not stress"
-   uv run --frozen --extra dev python scripts/check_release.py vX.Y.Z
+   sh scripts/check.sh --all-lanes
+   uv run --frozen --extra dev --extra pdf python scripts/check_release.py vX.Y.Z
    ```
 
 4. Review `git diff` and `git status --ignored`. No run directories, PDFs,

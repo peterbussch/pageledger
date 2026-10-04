@@ -1,0 +1,9 @@
+#!/bin/sh
+# Lint and format-check only the staged Python files. Full gate: scripts/check.sh.
+set -eu
+files=$(git diff --cached --name-only --diff-filter=ACMR -- '*.py')
+[ -z "$files" ] && exit 0
+# shellcheck disable=SC2086
+uv run --frozen --extra dev --extra pdf ruff check $files
+# shellcheck disable=SC2086
+uv run --frozen --extra dev --extra pdf ruff format --check $files

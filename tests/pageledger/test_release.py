@@ -11,6 +11,7 @@ from zipfile import ZipFile
 import pytest
 import yaml
 
+from pageledger import __version__
 from scripts.check_distributions import REQUIRED_SDIST_FILES, check_distributions
 from scripts.check_release import check_release
 
@@ -37,7 +38,7 @@ def _write_release_fixture(root: Path, *, citation_version: str = "1.2.3") -> No
 
 
 def test_release_metadata_agrees_for_current_version() -> None:
-    assert check_release(REPO, "v0.7.0") == []
+    assert check_release(REPO, f"v{__version__}") == []
 
 
 def test_release_check_rejects_tag_and_metadata_mismatches(tmp_path: Path) -> None:
@@ -129,7 +130,7 @@ def test_package_workflows_run_shared_reader_journey_outside_checkout() -> None:
             assert f'--document "$GITHUB_WORKSPACE/docs/{tutorial}.md"' in command
             assert f'--work-dir "$WORK_ROOT/{tutorial}"' in command
         assert f"--python {isolated_python}" in command
-        assert "--expected-version 0.7.0" in command
+        assert f"--expected-version {__version__}" in command
         assert '--forbid-import-root "$GITHUB_WORKSPACE"' in command
         assert "--source-root" not in command
 
@@ -185,7 +186,8 @@ def test_all_github_actions_are_pinned_and_ci_has_a_frozen_lane() -> None:
     uses = re.findall(r"^\s*- uses: [^@\s]+@([^\s#]+)", "\n".join(workflows), re.MULTILINE)
     assert uses
     assert all(re.fullmatch(r"[0-9a-f]{40}", revision) for revision in uses)
-    assert "uv sync --frozen" in workflows[0]
+    assert "sh scripts/check.sh" in workflows[0]
+    assert "uv sync --frozen" in (REPO / "scripts" / "check.sh").read_text(encoding="utf-8")
 
 
 def test_brand_archive_carries_font_license_and_no_release_version() -> None:

@@ -24,19 +24,17 @@ bugs, include `pageledger --version`, OS/Python, and the exact command.
 ## Development
 
 ```bash
-uv sync --frozen --extra dev --extra pdf
-uv run --frozen --extra dev --extra pdf python -m pytest tests/pageledger/ -q
-uv run --frozen --extra dev --extra pdf ruff check pageledger/ tests/ examples/ scripts/
-uv run --frozen --extra dev --extra pdf ruff format --check pageledger/ tests/ examples/ scripts/
-uv run --frozen --extra dev --extra pdf mypy pageledger/
+sh scripts/check.sh              # what CI's locked job runs
+sh scripts/check.sh --all-lanes  # also without the pdf extra; run before pushing
+git config core.hooksPath scripts/git-hooks   # optional: lint staged files on commit, run the gate on push
 ```
 
 [AGENTS.md](AGENTS.md) covers repository structure, test requirements and
 implementation constraints. See [maintainer procedures](docs/maintainers/README.md)
 for release, performance, reader-trial, and tutorial-verification records.
 
-Use `ruff format` with the same paths to format changes. CI uses the version
-in `uv.lock` so local and automated checks agree.
+Use `uv run --frozen --extra dev --extra pdf ruff format` to format changes.
+CI uses the version in `uv.lock` so local and automated checks agree.
 
 Keep each change easy to review. Prefer direct control flow, descriptive names,
 and helpers with one clear responsibility. Validate external data before using

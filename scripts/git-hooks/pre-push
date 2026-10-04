@@ -1,0 +1,4 @@
+#!/bin/sh
+# Run the full local gate, including the no-pdf lane, before anything leaves the machine.
+set -eu
+exec sh "$(git rev-parse --show-toplevel)/scripts/check.sh" --all-lanes

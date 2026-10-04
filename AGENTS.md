@@ -26,7 +26,7 @@ scope list.
 ## Run it
 
 ```bash
-pip install -e ".[dev,pdf]"
+uv sync --frozen --extra dev --extra pdf && . .venv/bin/activate
 pageledger init-config --out pageledger.yml
 printf 'first page\fsecond page\n' > sample.txt
 pageledger classify sample.txt --config pageledger.yml --out routes.yml --json
@@ -43,11 +43,9 @@ flags a page and continues with `rerun` and `compare-runs`.
 
 ## Test and verify
 
-```bash
-python -m pytest tests/pageledger/ -q          # full suite
-ruff check pageledger/ tests/ examples/        # lint (CI enforces)
-python -m build && twine check dist/*          # packaging
-```
+Gate: `scripts/check.sh` (what CI's `locked` job runs); add `--all-lanes`
+before pushing to also run the suite without the `pdf` extra. Packaging checks
+are part of the release procedure in `docs/maintainers/releasing.md`.
 
 Every generated artifact must validate against its schema in `schemas/`;
 `tests/pageledger/test_schemas.py` enforces this. If you change an artifact
@@ -56,12 +54,11 @@ together — the spec docs and runtime output must agree exactly.
 
 Three assertions that bite during routine changes:
 
-- The release version is pinned in `test_dry_run.py`
-  (`test_package_exports_release_version`), `test_release.py`,
-  `test_reader_journey.py`, `test_document_journey.py` and
-  `.github/workflows/{ci,publish}.yml` — bump them with `pyproject.toml`,
-  `pageledger/_version.py`, `CITATION.cff`, and the editable package entry in
-  `uv.lock`.
+- A version bump touches `pyproject.toml`, `pageledger/_version.py`,
+  `CITATION.cff`, the editable package entry in `uv.lock`, and the
+  `--expected-version` smoke commands in `.github/workflows/{ci,publish}.yml`.
+  Tests read the version from the package; `test_release.py` and
+  `scripts/check_release.py` fail when those surfaces disagree.
 - `test_docs_examples_smoke_without_heavy_ocr_installs` pins strings in
   README, `docs/ocr-options.md`, `MANIFEST.in`, and `examples/` — docs
   restructuring can fail the suite.
