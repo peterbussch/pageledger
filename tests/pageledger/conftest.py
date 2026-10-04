@@ -2,9 +2,22 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
+import pageledger
 import pageledger.adapters as adapters_module
+
+_CHECKOUT = Path(__file__).resolve().parents[2]
+_IMPORTED = Path(pageledger.__file__).resolve()
+if not _IMPORTED.is_relative_to(_CHECKOUT):
+    # Another checkout's editable install (e.g. ~/Code/pageledger/.venv run
+    # from a worktree) would otherwise be tested silently in place of this one.
+    raise pytest.UsageError(
+        f"tests in {_CHECKOUT} imported pageledger from {_IMPORTED}; "
+        "use this checkout's own environment (uv run) or put it first on PYTHONPATH"
+    )
 
 
 @pytest.fixture(autouse=True)

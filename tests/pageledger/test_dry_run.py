@@ -4,8 +4,10 @@ import hashlib
 import json
 import os
 import py_compile
+import re
 import sys
 import types
+from pathlib import Path
 
 import pytest
 import yaml
@@ -228,7 +230,10 @@ def test_dry_run_writes_auditable_artifacts(tmp_path):
 
 
 def test_package_exports_release_version():
-    assert pageledger.__version__ == "0.7.0"
+    pyproject = (Path(__file__).resolve().parents[2] / "pyproject.toml").read_text(encoding="utf-8")
+    declared = re.search(r'^version = "([^"]+)"$', pyproject, flags=re.MULTILINE)
+    assert declared is not None
+    assert pageledger.__version__ == declared.group(1)
 
 
 def test_dry_run_expands_directory_inputs_in_stable_order(tmp_path):

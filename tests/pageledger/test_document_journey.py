@@ -10,6 +10,7 @@ from pathlib import Path
 
 import pytest
 
+from pageledger import __version__
 from pageledger.adapters import TextAdapter
 from pageledger.processing import process, review_job
 
@@ -35,7 +36,7 @@ def test_document_first_run_journey_records_recovery_and_bounded_review(
             "--source-root",
             str(ROOT),
             "--expected-version",
-            "0.7.0",
+            __version__,
         ],
         cwd=ROOT,
         env=environment,
