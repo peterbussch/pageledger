@@ -348,8 +348,10 @@ def resume(run_dir: Path, *, adapter_path: Path | None = None) -> dict[str, Any]
         checkpoint.require_resumable()
         assert checkpoint.job is not None
         job = checkpoint.job
+        # The checkpoint keeps the recorded paths as source identity; reads go
+        # wherever the verified bytes are now (the source index may relocate them).
         return _run(
-            inputs=[Path(item["path"]) for item in job["inputs"]],
+            inputs=[checkpoint.sources[item["path"]] for item in job["inputs"]],
             config_path=root / "config-snapshot.yml",
             out_dir=root,
             dry_run=False,
@@ -646,6 +648,10 @@ def _run(
         for page in document["pages"]
     ]
     source_sha256_map = {Path(item["path"]): item["sha256"] for item in input_entries}
+    readable_sources: dict[Path, Path] = {}
+    if _checkpoint is not None and recovery_job is not None:
+        located = _checkpoint.sources or _checkpoint.check_sources()
+        readable_sources = {Path(recorded): path for recorded, path in located.items()}
     review_queue = [
         _review_queue_entry(page) for _, page in planned_pages if page["action"] == "review"
     ]
@@ -760,6 +766,7 @@ def _run(
         attempted_page_ids.add(page_id)
         page_prompt = cast(str | None, page.get("prompt"))
         prompt_hash = _sha256_text(page_prompt or "")
+        readable = readable_sources.get(source, source)
 
         phase_clock.switch("adapter_call")
         try:
@@ -775,7 +782,7 @@ def _run(
                 extract_kwargs = {}
             result, extraction_seconds, extraction_started_at, attempt, adapter_error = extract(
                 adapter=adapter,
-                source=source,
+                source=readable,
                 page=page,
                 prompt=page_prompt,
                 **extract_kwargs,
@@ -807,7 +814,7 @@ def _run(
             validate_input_evidence(
                 result.input_evidence,
                 root=out_dir,
-                source_sha256=_sha256_path(source),
+                source_sha256=_sha256_path(readable),
                 page_number=page["page_number"],
                 prompt_sha256=prompt_hash,
             )
@@ -904,7 +911,7 @@ def _run(
             _build_quality_entry(
                 schema_version=config.schema_version,
                 page=page,
-                source=source,
+                source=readable,
                 result=result,
                 adapter=adapter,
                 parent_quality=(parent_quality_by_page or {}).get(page_id),
@@ -1323,13 +1330,20 @@ def rerun(
         ):
             recorded_inputs[str(Path(document["source"]).resolve())] = parent_inputs[index]
     source_page_counts: dict[Path, int] = {}
+    relocated: dict[str, Path] = {}
     for source_str in sorted({str(item["source"]) for item in items}):
         source = Path(source_str)
-        if not source.exists():
-            raise ValueError(f"Rerun source no longer exists: {source}")
         recorded_input = recorded_inputs.get(str(source.resolve()))
         recorded = recorded_input.get("sha256") if recorded_input else None
-        if not isinstance(recorded, str) or _sha256_path(source) != recorded:
+        if not source.exists():
+            from .source_index import find_indexed
+
+            located = find_indexed(recorded) if isinstance(recorded, str) else None
+            if located is None:
+                raise ValueError(f"Rerun source no longer exists: {source}")
+            # The parent keeps its recorded path; the child records where it read.
+            relocated[source_str] = source = located
+        elif not isinstance(recorded, str) or _sha256_path(source) != recorded:
             raise ValueError(
                 f"Source changed since parent run: {source} (sha256 does not match parent manifest)"
             )
@@ -1337,6 +1351,11 @@ def rerun(
         if not isinstance(page_count, int) or isinstance(page_count, bool) or page_count < 1:
             raise ValueError(f"Parent manifest lacks a valid source page_count for {source}")
         source_page_counts[source.resolve()] = page_count
+    if relocated:
+        items = [
+            {**item, "source": str(relocated.get(str(item["source"]), item["source"]))}
+            for item in items
+        ]
 
     result = run(
         inputs=[],

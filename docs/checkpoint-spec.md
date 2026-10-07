@@ -107,8 +107,43 @@ output before further adapter calls. Changed source bytes, a changed config,
 adapter/package changes, altered output, missing records or incompatible
 lineage stop recovery. Sources are hashed again after processing, before final
 publication. Full source page counts remain distinct from selected-page
-counts. Recovery is in place: moving a run directory or replacing its source
-paths is outside this contract.
+counts. Recovery is in place: moving a run directory is outside this
+contract. A source file that has moved can be found by its hash through a
+[source index](#moved-source-files).
+
+## Moved source files
+
+Recovery records, run manifests and document jobs name each source by absolute
+path and SHA-256, and moving the original does not rewrite them. A source index
+tells PageLedger where the same bytes are now. It is a UTF-8 text file with one
+tab-separated `sha256` and absolute `path` per line:
+
+```text
+sha256	path
+9f2c…41d0	/Volumes/Archive/library/SDC-076 Collected decrees.pdf
+```
+
+A header line, lines starting with `#`, columns after the path, relative paths
+and blank lines are ignored. Set `PAGELEDGER_SOURCE_INDEX` to one index file,
+or several separated by the platform path separator (`:` on macOS and Linux).
+When the variable is unset, PageLedger reads
+`~/.config/pageledger/source-index.tsv` if it exists; setting the variable to
+an empty value turns the index off. Missing or unreadable index files are
+skipped.
+
+The recorded path is always tried first. When it is missing or no longer holds
+the recorded bytes, PageLedger uses the first indexed file with the recorded
+SHA-256. A file whose digest differs is never read, so a wrong or stale index
+entry fails the same way a missing source does.
+
+| Command | With a moved source and a matching index entry |
+| --- | --- |
+| `resume RUN_DIR` | Verifies and reads the indexed file. `checkpoint.json`, provenance and the final manifest keep the recorded path. |
+| `resume JOB_DIR`, `verify-job` | Same for document jobs: `job.json` keeps the recorded path. A stage first started after the move records the path it read; the job binds stages to its source by SHA-256. |
+| `verify-run` | Reports warning `source_relocated`, with the recorded `source` and the `located` file, instead of `source_missing`. |
+| `rerun`, `bundle` | Use the indexed file when the recorded path is missing. A rerun records the path it read; a bundle copies the bytes as usual. |
+
+Reports, exports and review sheets still name the recorded path.
 
 ## Page states
 

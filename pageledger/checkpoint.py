@@ -142,6 +142,7 @@ class Checkpoint:
         self.root = root
         self.job: dict[str, Any] | None = None
         self.records: dict[str, dict[str, Any]] = {}
+        self.sources: dict[str, Path] = {}
         if existing:
             self.job = read_record(root / "checkpoint.json")
             try:
@@ -171,11 +172,15 @@ class Checkpoint:
         write_record(self.page_path(page_id), value)
         self.records[page_id] = value
 
-    def check_sources(self) -> None:
+    def check_sources(self) -> dict[str, Path]:
+        """Verify every recorded source; map each recorded path to where its bytes are."""
+        from .source_index import SourceUnavailable, resolve_source
+
         assert self.job is not None
         inputs = self.job.get("inputs")
         if not isinstance(inputs, list) or not inputs:
             raise ValueError("Invalid recovery source identity inventory")
+        located: dict[str, Path] = {}
         for source in inputs:
             if (
                 not isinstance(source, dict)
@@ -184,10 +189,11 @@ class Checkpoint:
             ):
                 raise ValueError("Invalid recovery source identity")
             try:
-                if file_digest(Path(source["path"])) != source["sha256"]:
-                    raise ValueError("source changed")
-            except (OSError, ValueError) as exc:
+                located[source["path"]] = resolve_source(source["path"], source["sha256"])
+            except SourceUnavailable as exc:
                 raise ValueError("Recovery source identity changed or source is missing") from exc
+        self.sources = located
+        return located
 
     def validate(self, *, sources: bool = True) -> None:
         """Validate all pages before any adapter request or artifact reconstruction."""

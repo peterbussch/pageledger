@@ -181,7 +181,15 @@ def build_parser() -> argparse.ArgumentParser:
         help="Directory added to sys.path so custom adapter modules can be imported",
     )
 
-    resume_parser = subparsers.add_parser("resume", help="Resume verified pending work in place")
+    resume_parser = subparsers.add_parser(
+        "resume",
+        help="Resume verified pending work in place",
+        epilog=(
+            "A source file that has moved is found by SHA-256 through the source index: "
+            "PAGELEDGER_SOURCE_INDEX (TSV files of sha256<TAB>path), or "
+            "~/.config/pageledger/source-index.tsv when unset. Records keep the recorded path."
+        ),
+    )
     resume_parser.add_argument("run_dir", type=Path)
     resume_parser.add_argument("--adapter-path", type=Path, default=None)
     resume_parser.add_argument(

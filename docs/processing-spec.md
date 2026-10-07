@@ -61,6 +61,10 @@ pageledger inspect-job jobs/book
 pageledger verify-job jobs/book
 ```
 
+If the source has moved, add its new path to a
+[source index](checkpoint-spec.md#moved-source-files) rather than editing
+`job.json`; resume and `verify-job` then find it by SHA-256.
+
 Job recovery checks retained attempts before scheduling pending work. Saved
 responses are reused. A request with no saved outcome, a recorded provider
 failure, or a halted job is not retried automatically. Each attempt is a

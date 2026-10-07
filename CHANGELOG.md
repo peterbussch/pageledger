@@ -2,6 +2,27 @@
 
 Release changes follow the [artifact compatibility policy](docs/run-manifest-spec.md#compatibility-policy).
 
+## 0.7.1 - 2026-10-07
+
+### Added
+
+- A source index finds originals that have moved since a run or document job
+  started. Each line of the TSV maps a SHA-256 to an absolute path; PageLedger
+  reads `PAGELEDGER_SOURCE_INDEX` (one or more files, separated by the platform
+  path separator) or, when that is unset, `~/.config/pageledger/source-index.tsv`.
+  `resume`, `verify-job`, `rerun` and `bundle` read the indexed file only when
+  its digest matches the recorded one. Checkpoints, `job.json`, manifests and
+  provenance keep the recorded path; nothing sealed is rewritten. See
+  [moved source files](docs/checkpoint-spec.md#moved-source-files).
+- `verify-run` reports a source found through the index as the warning
+  `source_relocated` instead of `source_missing`.
+
+### Changed
+
+- A document job binds its stage runs to its source by SHA-256 and page count
+  rather than by path, so a stage started after the source moved, which records
+  the path it actually read, still belongs to the job.
+
 ## 0.7.0 - 2026-10-01
 
 0.6.1 was prepared but never published; its changes ship in 0.7.0 and are

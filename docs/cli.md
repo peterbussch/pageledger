@@ -196,6 +196,10 @@ individual-run recovery rules, see the [checkpoint contract](checkpoint-spec.md)
 `--adapter-path DIR` adds a trusted adapter import directory; `--json` emits a
 machine-readable result. `--raise-limit LIMIT=VALUE` applies only to a paused
 document job; see [one budget for the job](processing-spec.md#one-budget-for-the-job).
+If a source file has moved, list its new path in a
+[source index](checkpoint-spec.md#moved-source-files) (`PAGELEDGER_SOURCE_INDEX`
+or `~/.config/pageledger/source-index.tsv`); resume finds it by SHA-256 and
+keeps the recorded path in its records.
 
 ## classify
 
@@ -328,8 +332,10 @@ pageledger verify-run runs/run-001/ --json
 Checks that the files in a run directory agree with one another: manifest
 declarations, identifiers, hashes, page counts, raw and normalized references,
 quality totals, audit/rerun items, alignment-schema snapshots, and cost totals.
-Missing or changed external source files are warnings; malformed or
-inconsistent ledger artifacts are errors and produce exit code 1. Verification
+Missing or changed external source files are warnings, and a source found
+through the [source index](checkpoint-spec.md#moved-source-files) is reported
+as `source_relocated`; malformed or inconsistent ledger artifacts are errors
+and produce exit code 1. Verification
 checks coherence, not extraction accuracy, and is not a replacement for the
 JSON Schema test suite.
 

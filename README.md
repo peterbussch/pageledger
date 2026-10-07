@@ -144,7 +144,10 @@ pageledger resume runs/book
 ```
 
 Use `pageledger resume jobs/book` for a document job. Resume reuses saved work
-and never repeats a request that may already have been processed. See the
+and never repeats a request that may already have been processed. If a source
+file has moved since the run started, a
+[source index](https://github.com/peterbussch/pageledger/blob/main/docs/checkpoint-spec.md#moved-source-files)
+maps its SHA-256 to the new path without rewriting the run's records. See the
 [checkpoint specification](https://github.com/peterbussch/pageledger/blob/main/docs/checkpoint-spec.md)
 for run recovery rules and the
 [processing specification](https://github.com/peterbussch/pageledger/blob/main/docs/processing-spec.md)

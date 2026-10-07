@@ -127,7 +127,10 @@ Do not adjudicate a reading made by your own model family.
 `process` retains checkpoints automatically; individual runs require
 `--resumable` at creation. Use `resume DIR` to recover work in place. If it
 reports `outcome_unknown`, stop: do not retry the request or delete the
-recovery files, and ask the user to check with the provider. See the
+recovery files, and ask the user to check with the provider. If a source
+file has moved, do not edit `job.json` or checkpoints: add a
+`sha256<TAB>new path` line to a source index (`PAGELEDGER_SOURCE_INDEX`, or
+`~/.config/pageledger/source-index.tsv`). See the
 [processing specification](../../docs/processing-spec.md) for jobs and the
 [checkpoint specification](../../docs/checkpoint-spec.md) for individual runs.
 Jobs and image-evidence runs cannot be bundled in this version.

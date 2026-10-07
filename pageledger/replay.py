@@ -406,7 +406,9 @@ def bundle_run(run_dir: Path, out_dir: Path) -> dict[str, Any]:
     source_records, source_paths = _bundle_sources(run_root, manifest)
     route_source = _declared_file(run_root, manifest, "route_map")
     route_map = _read_yaml_mapping(route_source, "route map")
-    _check_source_route(manifest, route_map, source_paths)
+    _check_source_route(
+        manifest, route_map, [Path(entry["path"]).expanduser() for entry in manifest["inputs"]]
+    )
 
     requested = Path(out_dir).expanduser()
     if requested.exists() or requested.is_symlink():
@@ -1193,12 +1195,16 @@ def _bundle_sources(
         if not isinstance(entry, dict) or not isinstance(entry.get("path"), str):
             _fail("source_invalid", "Manifest source entry is invalid")
         source = Path(entry["path"]).expanduser()
+        expected = entry.get("sha256")
+        if not source.exists() and _is_sha256(expected):
+            from .source_index import find_indexed
+
+            source = find_indexed(expected) or source
         _require_regular(source, f"source {entry['path']}")
         resolved = source.resolve()
         if resolved in seen:
             _fail("source_duplicate", "Manifest contains duplicate source paths")
         seen.add(resolved)
-        expected = entry.get("sha256")
         if not _is_sha256(expected) or _sha256_file(source) != expected:
             _fail("source_changed", f"Source does not match manifest: {source}")
         portable = f"sources/source-{index:04d}"

@@ -21,6 +21,12 @@ if not _IMPORTED.is_relative_to(_CHECKOUT):
 
 
 @pytest.fixture(autouse=True)
+def _no_host_source_index(monkeypatch):
+    """Keep the host's ~/.config/pageledger/source-index.tsv out of every test."""
+    monkeypatch.setenv("PAGELEDGER_SOURCE_INDEX", "")
+
+
+@pytest.fixture(autouse=True)
 def _clear_adapter_identity_caches():
     """Keep adapter runtime identity caches from leaking between tests.
 

@@ -40,6 +40,7 @@ from .processing_policy import (
 from .processing_source import inspect_source
 from .replay import _package_code_sha256
 from .review_sheet import read_review_sheet, write_review_sheet
+from .source_index import SourceUnavailable, resolve_source
 from .verify import verify_run
 
 
@@ -70,10 +71,12 @@ def _publish(job: dict, root: Path) -> dict:
     }
 
 
-def _check_source(job: dict) -> None:
-    source = Path(job["source"]["path"])
-    if not source.is_file() or file_digest(source) != job["source"]["sha256"]:
-        raise ValueError("Document job source changed or is missing")
+def _check_source(job: dict) -> Path:
+    """Return where the recorded source bytes are now; job.json keeps the recorded path."""
+    try:
+        return resolve_source(job["source"]["path"], job["source"]["sha256"])
+    except SourceUnavailable as exc:
+        raise ValueError("Document job source changed or is missing") from exc
 
 
 def _build_comparisons(attempts: list[dict]) -> list[dict]:
@@ -533,9 +536,10 @@ def _refresh(job: dict, root: Path, *, materialize: bool = True) -> None:
         if identity["config_sha256"] != stage["config_sha256"]:
             raise ValueError("Child run configuration disagrees with document job")
         sources = identity["inputs"]
+        # Content is the identity: a child started after the original moved
+        # records the path it actually read, found through the source index.
         if (
             len(sources) != 1
-            or sources[0]["path"] != job["source"]["path"]
             or sources[0]["sha256"] != job["source"]["sha256"]
             or sources[0]["page_count"] != job["source"]["page_count"]
             or set(checkpoint.records) != {_page_id(n) for n in stage["pages"]}
@@ -830,7 +834,7 @@ def _execute(job: dict, root: Path, stage: dict, adapter_path: Path | None) -> b
             runner.resume(child, adapter_path=adapter_path)
         else:
             runner.run(
-                inputs=[Path(job["source"]["path"])],
+                inputs=[_check_source(job)],
                 config_path=root / stage["config_path"],
                 out_dir=child,
                 dry_run=False,

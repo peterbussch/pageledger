@@ -16,6 +16,7 @@ import yaml
 from .artifacts import ARTIFACT_PATHS, _safe_resolve, build_rerun_manifest, render_audit_markdown
 from .config import PageLedgerConfig
 from .replay import ReplayError, _validate_reproducibility_profile
+from .source_index import find_indexed
 
 REQUIRED_ARTIFACTS = set(ARTIFACT_PATHS)
 
@@ -1962,23 +1963,37 @@ def _check_external_sources(
         route_source = route_sources[index] if index < len(route_sources) else None
         source_path = route_source if isinstance(route_source, str) else entry["path"]
         path = Path(source_path).expanduser()
-        if not path.is_file():
-            _add(
-                warnings,
-                "source_missing",
-                f"External source file is missing: {path}",
-                source=str(path),
-            )
-            continue
         expected = entry.get("sha256")
-        if not isinstance(expected, str):
+        present = path.is_file()
+        if present and not isinstance(expected, str):
             _add(
                 warnings,
                 "legacy_evidence_incomplete",
                 f"Manifest input lacks a source hash: {path}",
                 source=str(path),
             )
-        elif _sha256(path) != expected:
+            continue
+        if present and _sha256(path) == expected:
+            continue
+        relocated = (
+            find_indexed(expected) if isinstance(expected, str) and _is_sha256(expected) else None
+        )
+        if relocated is not None:
+            _add(
+                warnings,
+                "source_relocated",
+                f"External source found through the source index: {path} -> {relocated}",
+                source=str(path),
+                located=str(relocated),
+            )
+        elif not present:
+            _add(
+                warnings,
+                "source_missing",
+                f"External source file is missing: {path}",
+                source=str(path),
+            )
+        else:
             _add(
                 warnings,
                 "source_changed",
