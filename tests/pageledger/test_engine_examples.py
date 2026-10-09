@@ -365,6 +365,49 @@ def test_rapidocr_run_cli_writes_normalized_quality_and_detail(
     assert len(constructions) == 1
 
 
+def test_rapidocr_render_timeout_reaches_pdftoppm(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from pageledger import rapidocr_adapter
+    from pageledger.adapters import load_adapter
+
+    class Engine:
+        def __init__(self, params):
+            pass
+
+        def __call__(self, _image):
+            return types.SimpleNamespace(boxes=[], txts=[], scores=[])
+
+    _fake_rapidocr(monkeypatch, Engine)
+    timeouts = []
+
+    def fake_run(command, **kwargs):
+        timeouts.append(kwargs["timeout"])
+        Path(command[-1] + ".png").write_bytes(b"png")
+
+    monkeypatch.setattr(rapidocr_adapter.subprocess, "run", fake_run)
+    rec = str(_recognizer(tmp_path / "rec"))
+    source = _pdf(tmp_path / "source.pdf")
+    for options, expected in (({}, 120), ({"render_timeout_seconds": 900}, 900)):
+        adapter = load_adapter("rapidocr", {"rec_model_dir": rec, **options})
+        adapter.extract(source, page_id="p1", page_number=1, action="transcribe_text")
+        assert timeouts[-1] == expected
+
+
+@pytest.mark.parametrize("value", [5, 7200, "600", True])
+def test_rapidocr_rejects_bad_render_timeout(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, value: object
+) -> None:
+    from pageledger.adapters import load_adapter
+
+    monkeypatch.setitem(sys.modules, "rapidocr", types.ModuleType("rapidocr"))
+    with pytest.raises(ValueError, match="render_timeout_seconds"):
+        load_adapter(
+            "rapidocr",
+            {"rec_model_dir": str(_recognizer(tmp_path / "rec")), "render_timeout_seconds": value},
+        )
+
+
 def test_rapidocr_missing_package_is_actionable(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

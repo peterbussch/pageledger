@@ -104,6 +104,10 @@ adapter then cuts the page at its whitespace and reads each column from top to
 bottom. Do not use it for tables, whose columns it would read one at a time.
 The page's provenance records the choice (`reading-order=columns`).
 
+Each page is rendered with `pdftoppm` before recognition, and a render that
+takes longer than `render_timeout_seconds` (default 120) fails the page. Raise
+it for very large scans or sources on a slow disk.
+
 ## Tesseract with the community orus model (macOS and Linux)
 
 The `orus` model source is [AButon-8/iskra_ocr](https://github.com/AButon-8/iskra_ocr),

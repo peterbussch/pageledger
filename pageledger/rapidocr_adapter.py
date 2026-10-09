@@ -31,6 +31,7 @@ class RapidOCRAdapter:
     max_side: int = 3200
     det_model_dir: str | None = None
     reading_order: str = "rows"
+    render_timeout_seconds: int = 120
     name: ClassVar[str] = "rapidocr"
     version: ClassVar[str] = "0.1"
     deterministic: ClassVar[bool] = True
@@ -52,6 +53,13 @@ class RapidOCRAdapter:
         if type(self.max_side) is not int or not 256 <= self.max_side <= 10000:
             raise ValueError(
                 "run.adapter_options.max_side must be an integer between 256 and 10000"
+            )
+        if (
+            type(self.render_timeout_seconds) is not int
+            or not 10 <= self.render_timeout_seconds <= 3600
+        ):
+            raise ValueError(
+                "run.adapter_options.render_timeout_seconds must be an integer between 10 and 3600"
             )
         if (
             self.det_model_dir is not None
@@ -135,7 +143,7 @@ class RapidOCRAdapter:
                 ],
                 check=True,
                 capture_output=True,
-                timeout=120,
+                timeout=self.render_timeout_seconds,
             )
             image = Path(tmp) / "page.png"
             if not image.is_file():
