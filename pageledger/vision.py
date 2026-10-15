@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import email.utils
 import hashlib
 import http.client
 import ipaddress
@@ -332,19 +333,47 @@ class VisionAdapter:
         )
         # Neither a redirect nor a proxy from the environment may carry the key elsewhere.
         opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), _NoRedirect())
-        try:
-            with opener.open(request, timeout=self.timeout_seconds) as response:
-                data = response.read(MAX_RESPONSE_BYTES + 1)
-        except urllib.error.HTTPError as error:
-            code = "MODEL_QUOTA" if error.code in {402, 429} else "MODEL_HTTP_ERROR"
-            raise AdapterFailure(code, http_status=error.code) from None
-        except urllib.error.URLError as error:
-            timed_out = isinstance(error.reason, TimeoutError)
-            raise AdapterFailure("MODEL_TIMEOUT" if timed_out else "MODEL_NETWORK_ERROR") from None
-        except TimeoutError:
-            raise AdapterFailure("MODEL_TIMEOUT") from None
-        except (OSError, http.client.HTTPException):
-            raise AdapterFailure("MODEL_NETWORK_ERROR") from None
+        deadline = time.monotonic() + self.timeout_seconds
+        for attempt in range(3):
+            try:
+                with opener.open(
+                    request, timeout=max(0.001, deadline - time.monotonic())
+                ) as response:
+                    data = response.read(MAX_RESPONSE_BYTES + 1)
+                break
+            except urllib.error.HTTPError as error:
+                status = error.code
+                retry_after = error.headers.get("Retry-After") if error.headers else None
+                error.close()
+                delay = float(2**attempt)
+                if retry_after is not None:
+                    try:
+                        delay = float(retry_after)
+                    except ValueError:
+                        try:
+                            delay = (
+                                email.utils.parsedate_to_datetime(retry_after).timestamp()
+                                - time.time()
+                            )
+                        except (ValueError, TypeError, OverflowError):
+                            pass
+                    if not math.isfinite(delay):
+                        delay = float(2**attempt)
+                    delay = max(0.0, delay)
+                if status == 429 and attempt < 2 and delay < min(60, deadline - time.monotonic()):
+                    time.sleep(delay)
+                    continue
+                code = "MODEL_QUOTA" if status in {402, 429} else "MODEL_HTTP_ERROR"
+                raise AdapterFailure(code, http_status=status) from None
+            except urllib.error.URLError as error:
+                timed_out = isinstance(error.reason, TimeoutError)
+                raise AdapterFailure(
+                    "MODEL_TIMEOUT" if timed_out else "MODEL_NETWORK_ERROR"
+                ) from None
+            except TimeoutError:
+                raise AdapterFailure("MODEL_TIMEOUT") from None
+            except (OSError, http.client.HTTPException):
+                raise AdapterFailure("MODEL_NETWORK_ERROR") from None
         try:
             value = json.loads(data) if len(data) <= MAX_RESPONSE_BYTES else None
         except ValueError:

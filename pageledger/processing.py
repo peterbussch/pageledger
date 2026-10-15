@@ -779,13 +779,24 @@ def _raise_limits(job: dict, raised: dict[str, int | float]) -> None:
     job.update(status="processing", halt_reason=None, next_action="Process selected source pages.")
 
 
-def _plan_stage(job: dict, root: Path, stage: str, numbers: list[int]) -> dict:
+def _plan_stage(
+    job: dict, root: Path, stage: str, numbers: list[int], *, retry: bool = False
+) -> dict:
     # A job's first text batch keeps the plain name; a batch resumed after a
     # budget pause is named by its first page, like the per-page stages.
     first_text_batch = stage == "local_text" and all(
         item["stage"] != "local_text" for item in job["stages"]
     )
     stage_id = stage if first_text_batch else f"{stage}-{numbers[0]:04d}"
+    if retry:
+        stage_id += "-retry-1"
+    existing = {item["stage_id"] for item in job["stages"]}
+    if stage_id in existing:
+        original = stage_id
+        suffix = 1
+        while stage_id in existing:
+            stage_id = f"{original}-retry-{suffix}"
+            suffix += 1
     profile = job["policy"][stage]
     options = dict(profile["adapter_options"])
     path = f"attempts/{stage_id}"
@@ -825,6 +836,39 @@ def _plan_stage(job: dict, root: Path, stage: str, numbers: list[int]) -> dict:
     return item
 
 
+def _retry_local(job: dict, root: Path, stage: dict, adapter_path: Path | None) -> bool:
+    """Retain an uncertain local attempt and retry only its unfinished pages once."""
+    if (
+        stage["stage"] not in {"local_text", "local_ocr"}
+        or job["policy"][stage["stage"]]["adapter"]
+        not in {"text", "pdf_text", "pdf_ocr", "rapidocr"}
+        or "-retry-" in stage["stage_id"]
+        or job["package_sha256"] != _package_code_sha256()
+    ):
+        return False
+    child = _safe(root, stage["run_path"])
+    if not (child / "checkpoint.json").exists():
+        return False
+    checkpoint = Checkpoint(child, existing=True, verify_sources=False)
+    states = {record["state"] for record in checkpoint.records.values()}
+    if not states.intersection({"started", "outcome_unknown"}) or "failed" in states:
+        return False
+    numbers = [
+        number
+        for number in stage["pages"]
+        if checkpoint.records[_page_id(number)]["state"]
+        in {"started", "outcome_unknown", "pending"}
+    ]
+    reason = _budget_reason(job, stage["stage"], len(numbers))
+    if reason:
+        _stop_for_budget(job, reason)
+        return False
+    stage["status"] = "halted"
+    job.update(status="processing", halt_reason=None)
+    retry = _plan_stage(job, root, stage["stage"], numbers, retry=True)
+    return _execute(job, root, retry, adapter_path)
+
+
 def _execute(job: dict, root: Path, stage: dict, adapter_path: Path | None) -> bool:
     stage["status"] = "running"
     _save(job, root)
@@ -853,6 +897,27 @@ def _execute(job: dict, root: Path, stage: dict, adapter_path: Path | None) -> b
         # verified request, and the directory remains evidence rather than reusable output.
         if (child / "checkpoint.json").exists():
             _refresh(job, root)
+            failures = [
+                attempt
+                for page in job["pages"]
+                for attempt in page["attempts"]
+                if attempt["run_path"] == stage["run_path"] and attempt["outcome"] != "completed"
+            ]
+            if (
+                stage["stage"] == "second_opinion"
+                and failures
+                and all(
+                    attempt["outcome"] == "failed"
+                    and (attempt.get("failure") or {}).get("http_status") == 429
+                    and not attempt.get("raw_artifact")
+                    for attempt in failures
+                )
+            ):
+                # A rejected optional witness remains a provider_failure hold on its page.
+                job.update(status="processing", halt_reason=None)
+                return True
+            if _retry_local(job, root, stage, adapter_path):
+                return True
         return False
     stage["status"] = "completed"
     _refresh(job, root)
@@ -935,6 +1000,10 @@ def resume_job(
         _refresh(job, root)
         if raise_limits:
             _raise_limits(job, raise_limits)
+        if job["status"] == "halted" and str(job.get("halt_reason")).startswith("attempt_stopped:"):
+            stopped = [stage for stage in job["stages"] if stage["status"] == "halted"]
+            if stopped and _retry_local(job, root, stopped[-1], adapter_path):
+                return _continue(job, root, adapter_path)
         if job["status"] != "processing":
             return _publish(job, root)
         return _continue(job, root, adapter_path)

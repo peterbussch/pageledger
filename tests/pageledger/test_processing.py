@@ -1423,3 +1423,92 @@ def test_process_without_run_section_has_no_config_warnings(setup):
     result = launch(setup)
     assert result["status"] == "completed"
     assert "config_warnings" not in result
+
+
+def test_interrupted_builtin_local_stage_retries_only_unfinished_pages(setup, monkeypatch):
+    original = StageAdapter.extract
+    data = yaml.safe_load(setup[1].read_text())
+    data["processing"]["local_text"]["adapter"] = "text"
+    setup[1].write_text(yaml.safe_dump(data))
+    stopped = []
+
+    def interrupt(self, source, **kwargs):
+        if self.stage == "text" and kwargs["page_number"] == 2 and not stopped:
+            stopped.append(True)
+            raise KeyboardInterrupt
+        return original(self, source, **kwargs)
+
+    monkeypatch.setattr(StageAdapter, "extract", interrupt)
+    with pytest.raises(KeyboardInterrupt):
+        launch(setup)
+    assert resume_job(setup[2])["status"] == "completed"
+    assert setup[3]["calls"].count(("text", 1)) == 1
+    assert setup[3]["calls"].count(("text", 2)) == 1
+    job = read_record(setup[2] / "job.json")
+    assert any(a["outcome"] == "outcome_unknown" for a in job["pages"][1]["attempts"])
+    assert any("-retry-" in stage["stage_id"] for stage in job["stages"])
+    assert verify_job(setup[2])["status"] == "pass"
+
+
+def test_optional_quota_failure_holds_page_and_continues_other_pages(setup, monkeypatch):
+    from pageledger.adapters import AdapterFailure
+
+    data = yaml.safe_load(setup[1].read_text())
+    data["processing"]["second_opinion"] = {"adapter": "second_opinion"}
+    data["processing"]["limits"]["max_image_pages"] = 10
+    setup[1].write_text(yaml.safe_dump(data))
+    original = StageAdapter.extract
+
+    def quota(self, source, **kwargs):
+        if self.stage == "second_opinion":
+            raise AdapterFailure("MODEL_QUOTA", http_status=429)
+        return original(self, source, **kwargs)
+
+    monkeypatch.setattr(StageAdapter, "extract", quota)
+    assert launch(setup)["status"] == "completed"
+    job = read_record(setup[2] / "job.json")
+    assert (
+        len([a for p in job["pages"] for a in p["attempts"] if a["stage"] == "second_opinion"]) == 2
+    )
+    assert job["pages"][1]["disposition"] == "provider_failure"
+    assert job["pages"][2]["disposition"] == "provider_failure"
+    assert verify_job(setup[2])["status"] == "pass"
+
+
+def test_local_recovery_is_bounded_and_does_not_retry_custom_adapters(setup, monkeypatch):
+    original = StageAdapter.extract
+    data = yaml.safe_load(setup[1].read_text())
+    data["processing"]["local_text"]["adapter"] = "text"
+    setup[1].write_text(yaml.safe_dump(data))
+    calls = []
+
+    def interrupt(self, source, **kwargs):
+        calls.append((self.stage, kwargs["page_number"]))
+        if kwargs["page_number"] == 2:
+            raise KeyboardInterrupt
+        return original(self, source, **kwargs)
+
+    monkeypatch.setattr(StageAdapter, "extract", interrupt)
+    with pytest.raises(KeyboardInterrupt):
+        launch(setup)
+    with pytest.raises(KeyboardInterrupt):
+        resume_job(setup[2])
+    before = list(calls)
+    assert resume_job(setup[2])["status"] == "halted"
+    assert calls == before and calls.count(("text", 2)) == 2
+
+
+def test_uncertain_custom_local_stage_still_requires_reconciliation(setup, monkeypatch):
+    original = StageAdapter.extract
+
+    def interrupt(self, source, **kwargs):
+        if self.stage == "local_text" and kwargs["page_number"] == 2:
+            raise KeyboardInterrupt
+        return original(self, source, **kwargs)
+
+    monkeypatch.setattr(StageAdapter, "extract", interrupt)
+    with pytest.raises(KeyboardInterrupt):
+        launch(setup)
+    before = list(setup[3]["calls"])
+    assert resume_job(setup[2])["status"] == "halted"
+    assert setup[3]["calls"] == before

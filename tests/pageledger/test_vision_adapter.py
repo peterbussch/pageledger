@@ -170,7 +170,7 @@ def test_endpoint_failures_become_typed_failures(pdf, endpoint, status, reply, c
     failure = _failure(pdf, endpoint)
 
     assert failure.code == code
-    assert len(Endpoint.requests) == 1
+    assert len(Endpoint.requests) == (3 if status == 429 else 1)
 
 
 def test_a_slow_endpoint_times_out(pdf, endpoint):
@@ -330,3 +330,53 @@ def test_a_document_job_can_send_empty_pages_to_a_vision_model(pdf, endpoint, tm
     assert page["selected_output"]["attempt_id"].startswith("image-")
     assert page["disposition"] == "unconfirmed_model_output"
     assert any((tmp_path / "job" / "attempts").glob("image-*/evidence/*"))
+
+
+@pytest.mark.parametrize("header, expected", [("7", 7.0), (None, 1.0), ("bad", 1.0)])
+def test_quota_retry_honors_retry_after_and_recovers(monkeypatch, header, expected):
+    import io
+    import urllib.error
+    from email.message import Message
+
+    headers = Message()
+    if header is not None:
+        headers["Retry-After"] = header
+    replies = [
+        urllib.error.HTTPError("http://localhost", 429, "quota", headers, None),
+        io.BytesIO(json.dumps(READING).encode()),
+    ]
+    calls, sleeps = [], []
+
+    class Opener:
+        def open(self, request, timeout):
+            calls.append(timeout)
+            reply = replies.pop(0)
+            if isinstance(reply, Exception):
+                raise reply
+            return reply
+
+    monkeypatch.setattr(vision.urllib.request, "build_opener", lambda *args: Opener())
+    monkeypatch.setattr(vision.time, "sleep", sleeps.append)
+    result = vision.VisionAdapter(base_url="http://localhost/v1", model="m")._post(b"{}")
+    assert result == READING and len(calls) == 2 and sleeps == [expected]
+
+
+def test_long_retry_after_is_retained_without_retrying_early(monkeypatch):
+    import urllib.error
+    from email.message import Message
+
+    headers = Message()
+    headers["Retry-After"] = "Thu, 15 Oct 2026 16:00:00 GMT"
+    calls = []
+
+    class Opener:
+        def open(self, request, timeout):
+            calls.append(timeout)
+            raise urllib.error.HTTPError("http://localhost", 429, "quota", headers, None)
+
+    monkeypatch.setattr(vision.urllib.request, "build_opener", lambda *args: Opener())
+    monkeypatch.setattr(vision.time, "time", lambda: 1792076400.0)  # 15:00 UTC
+    monkeypatch.setattr(vision.time, "sleep", lambda seconds: pytest.fail("must not sleep"))
+    with pytest.raises(AdapterFailure) as caught:
+        vision.VisionAdapter(base_url="http://localhost/v1", model="m")._post(b"{}")
+    assert caught.value.http_status == 429 and len(calls) == 1

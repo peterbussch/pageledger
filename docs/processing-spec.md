@@ -66,9 +66,10 @@ If the source has moved, add its new path to a
 `job.json`; resume and `verify-job` then find it by SHA-256.
 
 Job recovery checks retained attempts before scheduling pending work. Saved
-responses are reused. A request with no saved outcome, a recorded provider
-failure, or a halted job is not retried automatically. Each attempt is a
-resumable run; the [checkpoint specification](checkpoint-spec.md) describes
+responses are reused. An interrupted built-in local stage is retried once in
+a separate retained child run, only for its unfinished pages. Paid or custom
+adapter requests with no saved outcome are never retried automatically. Each
+attempt is a resumable run; the [checkpoint specification](checkpoint-spec.md) describes
 its recovery records.
 
 `--adapter-path DIR` on `process` or `resume` loads custom adapters. Use
@@ -403,10 +404,16 @@ Before further calls, resume checks retained child records, outputs,
 source/page identities and configuration snapshots. A child completed before
 the job index was saved is adopted without extraction. The child runner recovers
 a saved response that has not yet been published. A request without a saved
-response becomes `outcome_unknown`; no automatic retry or fallback is allowed.
-Typed provider failures, quota errors and truncated output stop the whole
-queue. Failed partial output is kept under
-`partials/` and linked in the report, but cannot be selected as the transcript.
+response becomes `outcome_unknown`. For built-in `text`, `pdf_text`, `pdf_ocr`
+and `rapidocr` in local stages, the job retains that child and retries its
+unfinished pages once in a new child; completed pages are reused. The retry
+counts toward the existing attempt budget and requires unchanged package code.
+Paid and custom adapter uncertainty still stops all later calls. Typed provider
+failures and truncated output stop the queue. A second-opinion HTTP 429 that
+exhausts the vision adapter's bounded backoff instead leaves its page held as
+`provider_failure` and lets other pages continue; the rejected attempt remains
+in the ledger. Unknown cost or token usage still respects configured budgets.
+Failed partial output is kept under `partials/` and linked in the report, but cannot be selected as the transcript.
 Missing image input evidence also stops the job and excludes that response from
 selection. The [checkpoint specification](checkpoint-spec.md) describes
 individual-run recovery checks and limits.
@@ -429,8 +436,8 @@ presence does not establish recovery of comments, body text, notes or citations.
 A `completed` job means its configured processing work finished. It does not
 mean its pages have passed human review. A `paused_budget` job continues when
 resumed with a higher limit. A `halted` job keeps its records, and `resume`
-reports it without retrying; settle any uncertain request with the provider
-before starting a new job.
+reports it without retrying, except for the bounded local recovery above;
+settle any uncertain paid request with the provider before starting a new job.
 `verify-job` is read-only and binds the report back to validated job and child
 records.
 

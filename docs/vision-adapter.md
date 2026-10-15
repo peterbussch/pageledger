@@ -191,5 +191,11 @@ environment are ignored, so neither can carry a key elsewhere.
 | `env_key` names a variable that is not set | `MODEL_UNAVAILABLE` |
 | The page could not be rendered small enough | `IMAGE_RENDER_ERROR` |
 
+HTTP 429 is retried at most twice, using `Retry-After` seconds or an HTTP date,
+with 1 s then 2 s backoff when the header is absent or malformed. A delay of
+60 s or more, or one beyond the remaining request timeout, returns `MODEL_QUOTA`
+without retrying early. HTTP 402, timeouts, network errors and other HTTP errors
+are not retried. No key or provider response body enters failure records.
+
 A missing `pdftoppm` stops the run before any page is read, with the
 diagnostic `missing_binary`.
