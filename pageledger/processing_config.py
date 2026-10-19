@@ -5,12 +5,12 @@ from __future__ import annotations
 import math
 from typing import Any
 
-STAGES = ("local_text", "local_ocr", "layout_ocr", "local_image", "image", "second_opinion")
+STAGES = ("local_text", "local_ocr", "second_ocr", "local_image", "image", "second_opinion")
 # The 0.6 ladder. A job's policy names these four even when unset; the 0.8 stages
 # appear only when configured, so an older config compiles to the policy its jobs
 # recorded.
 CORE_STAGES = ("local_text", "local_ocr", "image", "second_opinion")
-OPTIONAL_STAGES = ("layout_ocr", "local_image")
+OPTIONAL_STAGES = ("second_ocr", "local_image")
 # Stages whose reading comes from a model that writes text (a reader), in the order
 # a contested page prefers them as its base: the paid reader, then the local one.
 READER_STAGES = ("image", "local_image", "second_opinion")

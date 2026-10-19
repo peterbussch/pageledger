@@ -143,8 +143,9 @@ are kept with them.
 
 Indra is a literal engine, but when it is unsure of a line it rescores the
 candidates with a character language model, which can prefer a common spelling
-to the printed one. In a document job it fits as `layout_ocr`, the second
-literal reading after Tesseract or RapidOCR.
+to the printed one. In a document job it can be the first OCR (`local_ocr`),
+with Tesseract or RapidOCR as `second_ocr`, a literal witness from another
+engine.
 
 The code is Apache-2.0. The model weights use a modified OpenRAIL-M licence:
 free for research, personal use and organizations under $20M in funding or

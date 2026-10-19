@@ -646,7 +646,7 @@ def _hold_short_readers(attempts: list[dict], holds_by_id: dict[str, list[str]])
     literal = [
         len(re.findall(r"\w+", a["text"]))
         for a in _usable(attempts)
-        if a.get("stage") in {"local_ocr", "layout_ocr"} and not _generative(a)
+        if a.get("stage") in {"local_ocr", "second_ocr"} and not _generative(a)
     ]
     most = max(literal, default=0)
     if most < READER_COVERAGE_FLOOR:
@@ -725,7 +725,7 @@ def _triggers(
     Triggers lift a page at most to the image stage. From a local reader, `always`
     does not fire: the paid reader is called only on evidence against the local one.
     """
-    if selected is None or following not in {"local_ocr", "layout_ocr", "local_image", "image"}:
+    if selected is None or following not in {"local_ocr", "second_ocr", "local_image", "image"}:
         return []
     fired = []
     measure = _rough_measure(selected, escalate_on, roughness, rough_below)

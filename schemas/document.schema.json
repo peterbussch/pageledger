@@ -136,7 +136,7 @@
                   "enum": [
                     "local_text",
                     "local_ocr",
-                    "layout_ocr",
+                    "second_ocr",
                     "local_image",
                     "image",
                     "second_opinion"

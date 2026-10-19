@@ -81,7 +81,7 @@ or `review-job` to record them afterward. All job commands accept `--json`.
 `processing` is separate from `run.adapter_order`. The latter still chooses an
 adapter by explicit rerun generation; `process` rejects it. A document job has
 ordered stages `local_text`, `local_ocr`, `image`, and optional `second_opinion`,
-and two optional stages between local OCR and the image stage, `layout_ocr` and
+and two optional stages between local OCR and the image stage, `second_ocr` and
 `local_image` (see [the ladder](#the-ladder-a-second-ocr-engine-and-a-local-model)).
 Each stage is an adapter profile with `adapter`, optional `adapter_options`,
 and optional `prompt`. Set an optional stage to `null` to disable it;
@@ -124,11 +124,11 @@ processing:
   local_text:
     adapter: pdf_text
   local_ocr:
-    adapter: pdf_ocr
-  layout_ocr:            # a second literal engine, read when OCR is held
     adapter: indra
     adapter_options:
       mode: ocr
+  second_ocr:            # a second literal engine, read when the first is held
+    adapter: pdf_ocr
   local_image:           # a vision model on this machine
     adapter: vision
     adapter_options:
@@ -148,10 +148,12 @@ processing:
     max_local_image_pages: 100
 ```
 
-A page climbs one rung at a time, on the same triggers as before. `layout_ocr`
-is another literal engine, such as the built-in [`indra`](engine-recipes.md#indra-ocr-macos-and-linux-cpu)
-adapter: its reading is compared with the first OCR's like any other, and
-either can be a contested page's literal witness. `local_image` reads the page
+A page climbs one rung at a time, on the same triggers as before. `second_ocr`
+is another literal engine: its reading is compared with the first OCR's like
+any other, and either can be a contested page's literal witness. The example
+reads first with the built-in [`indra`](engine-recipes.md#indra-ocr-macos-and-linux-cpu)
+adapter, which was the stronger and much faster engine in the measurement
+there, and asks Tesseract only when Indra's reading is held. `local_image` reads the page
 image with a model on this machine through the `vision` adapter; it keeps the
 exact image it sent, like the image stage, and has its own page budget,
 `max_local_image_pages`, which `max_image_pages` does not count.
