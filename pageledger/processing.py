@@ -939,17 +939,16 @@ def _execute(job: dict, root: Path, stage: dict, adapter_path: Path | None) -> b
                 for attempt in page["attempts"]
                 if attempt["run_path"] == stage["run_path"] and attempt["outcome"] != "completed"
             ]
-            if failures and all(
-                attempt["outcome"] == "failed" and not attempt.get("raw_artifact")
-                for attempt in failures
-            ):
+            if failures and all(attempt["outcome"] == "failed" for attempt in failures):
                 failure_codes = [attempt.get("failure") or {} for attempt in failures]
                 quota = all(
-                    item.get("http_status") == 429 or item.get("code") == "MODEL_QUOTA"
-                    for item in failure_codes
+                    (item.get("http_status") == 429 or item.get("code") == "MODEL_QUOTA")
+                    and not attempt.get("raw_artifact")
+                    for item, attempt in zip(failure_codes, failures, strict=True)
                 )
                 # A rejected optional witness remains a provider_failure hold on its page,
-                # and a local reader that failed costs nothing: its page climbs past it.
+                # and a local reader that failed costs nothing: its page climbs past it,
+                # even when it kept a partial reading (a loop cut off at max_tokens).
                 if (stage["stage"] == "second_opinion" and quota) or stage[
                     "stage"
                 ] == "local_image":

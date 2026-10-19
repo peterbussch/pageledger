@@ -10,7 +10,7 @@ from test_image_evidence import image_descriptor
 from test_processing import StageAdapter, setup  # noqa: F401  (setup is a fixture)
 
 from pageledger import runner
-from pageledger.adapters import AdapterFailure
+from pageledger.adapters import AdapterFailure, ExtractionResult
 from pageledger.checkpoint import read_record
 from pageledger.processing import process, resume_job, verify_job
 from pageledger.processing_config import ladder, processing_config
@@ -158,6 +158,10 @@ class LocalReader(StageAdapter):
     fail = False
 
     def extract(self, source, *, page_id, page_number, action, prompt=None):
+        if self.fail == "loop":
+            self.calls.append((self.stage, page_number))
+            partial = ExtractionResult("SECRET\n" * 200, "text", None, "local", [], {"pages": 1})
+            raise AdapterFailure("MODEL_OUTPUT_TRUNCATED", partial_result=partial)
         if self.fail:
             self.calls.append((self.stage, page_number))
             raise AdapterFailure("MODEL_TIMEOUT")
@@ -213,8 +217,10 @@ def test_a_held_page_climbs_every_rung_of_the_ladder(setup, monkeypatch):  # noq
     assert verify_job(setup[2])["status"] == "pass"
 
 
-def test_a_failing_local_reader_does_not_halt_the_job(setup, monkeypatch):  # noqa: F811
-    result = _ladder_job(setup, monkeypatch, fail=True)
+@pytest.mark.parametrize("fail", [True, "loop"])
+def test_a_failing_local_reader_does_not_halt_the_job(setup, monkeypatch, fail):  # noqa: F811
+    # "loop": a model cut off at max_tokens keeps its partial reading, which is never selected.
+    result = _ladder_job(setup, monkeypatch, fail=fail)
     assert result["status"] == "completed"
     job = read_record(setup[2] / "job.json")
     for page in job["pages"]:
