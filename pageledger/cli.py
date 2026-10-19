@@ -854,6 +854,8 @@ def _cmd_doctor(args: argparse.Namespace) -> int:
         for name, info in report["optional_packages"].items():
             status = "available" if info["available"] else "missing"
             print(f"Optional package {name}: {status}")
+            if info["available"] and info.get("license"):
+                print(f"  License: {info['license']}")
         for name, info in report["external_commands"].items():
             status = info["path"] or "missing"
             version = f" ({info['version']})" if info.get("version") else ""

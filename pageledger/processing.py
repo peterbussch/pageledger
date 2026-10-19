@@ -839,9 +839,9 @@ def _plan_stage(
 def _retry_local(job: dict, root: Path, stage: dict, adapter_path: Path | None) -> bool:
     """Retain an uncertain local attempt and retry only its unfinished pages once."""
     if (
-        stage["stage"] not in {"local_text", "local_ocr"}
+        stage["stage"] not in {"local_text", "local_ocr", "layout_ocr"}
         or job["policy"][stage["stage"]]["adapter"]
-        not in {"text", "pdf_text", "pdf_ocr", "rapidocr"}
+        not in {"text", "pdf_text", "pdf_ocr", "rapidocr", "indra"}
         or "-retry-" in stage["stage_id"]
         or job["package_sha256"] != _package_code_sha256()
     ):

@@ -45,6 +45,20 @@ EXTERNAL_COMMANDS = {
         "Install Surya and its runtime backend if you choose that backend.",
     ),
 }
+OPTIONAL_PACKAGES: dict[str, dict[str, str]] = {
+    "pypdf": {},
+    "rapidocr": {},
+    "onnxruntime": {},
+    "pymorphy3": {"extra": "ru"},
+    "indra_ocr": {
+        "extra": "indra",
+        "license": (
+            "Code Apache-2.0; model weights modified OpenRAIL-M: free for research, personal "
+            "use and organizations under $20M funding or revenue, not for use competing with "
+            "Datalab's API. Check the terms before commercial use."
+        ),
+    },
+}
 CLOUD_ENV_EXPLANATIONS = {
     "GOOGLE_API_KEY": "Optional for Gemini/VLM adapters.",
     "ANTHROPIC_API_KEY": "Optional for Claude/VLM adapters.",
@@ -77,8 +91,8 @@ def build_doctor_report(config_path: Path | None = None) -> dict[str, Any]:
             "path": os.environ.get("PATH", ""),
         },
         "optional_packages": {
-            name: {"available": importlib.util.find_spec(name) is not None}
-            for name in ("pypdf", "rapidocr", "onnxruntime")
+            name: {"available": importlib.util.find_spec(name) is not None, **extra}
+            for name, extra in OPTIONAL_PACKAGES.items()
         },
         "external_commands": {name: _command_report(name) for name in EXTERNAL_COMMANDS},
         "ocr_languages": _ocr_languages_report(),

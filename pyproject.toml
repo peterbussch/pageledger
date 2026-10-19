@@ -57,6 +57,11 @@ dev = [
 pdf = [
   "pypdf[crypto]>=6",
 ]
+# Indra's code is Apache-2.0; its model weights, downloaded on first use, are not
+# (modified OpenRAIL-M). See THIRD_PARTY_NOTICES.md.
+indra = [
+  "indra-ocr>=1.1.1,<2",
+]
 rapidocr = [
   "onnxruntime>=1.20",
   "rapidocr>=3,<4",
