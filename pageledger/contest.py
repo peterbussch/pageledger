@@ -69,6 +69,9 @@ RULE_SETS: dict[str, dict[str, Any]] = {
         }
     }
 }
+# 0.2 files a grouped span (words only one side has, or an unpaired run) with a digit
+# on either side as `number`, as paired words always were: 0.1 called them `word`.
+RULE_SETS["ru-print-0.2"] = {**RULE_SETS["ru-print-0.1"], "grouped_numbers": True}
 
 
 def _span_id(*parts: object) -> str:
@@ -242,6 +245,12 @@ def contest(
     there, so either one, given as the answer, rebuilds that reading.
     """
     listed = RULE_SETS[rules]["glyph_pairs"].get(engine, ())
+    grouped_numbers = RULE_SETS[rules].get("grouped_numbers", False)
+
+    def grouped(base_part: str, witness_part: str) -> str:
+        digits = _DIGIT.search(base_part) or _DIGIT.search(witness_part)
+        return "number" if grouped_numbers and digits else "word"
+
     # A pair holds in either case, never across cases: print's capitals are evidence.
     pairs = {*listed, *((a.upper(), b.upper()) for a, b in listed)}
     regions = [(m.start(), m.end()) for m in _REGION.finditer(base)]
@@ -419,20 +428,28 @@ def contest(
             runs = _runs(here)
             for number, run in enumerate(runs):
                 start, end = stream[run[0]][0], stream[run[-1]][1]
+                witness_part = raw(there) if number == 0 else ""
                 spans.append(
                     {
-                        "kind": "word",
+                        "kind": grouped(base[start:end], witness_part),
                         "start": start,
                         "end": end,
                         "base": base[start:end],
-                        "witness": raw(there) if number == 0 else "",
+                        "witness": witness_part,
                     }
                 )
             if not runs:
                 for group in _runs(there):
                     at = anchor(group[0])
+                    witness_part = raw(group)
                     spans.append(
-                        {"kind": "word", "start": at, "end": at, "base": "", "witness": raw(group)}
+                        {
+                            "kind": grouped("", witness_part),
+                            "start": at,
+                            "end": at,
+                            "base": "",
+                            "witness": witness_part,
+                        }
                     )
     for number, (start, end) in enumerate(regions):
         spans.append(

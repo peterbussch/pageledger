@@ -227,3 +227,25 @@ def test_the_contest_procedure_is_pinned_to_its_rule_set():
         "bab17339b831c7eeb93142864e38c074d9b0c6043e8435d71c7e7c97895f6927",
         "2517cff7f6aa6b857f5c8fbfe68c8cfc54c8dea76c7b1550f1f87fd19e183899",
     )
+
+
+def test_a_grouped_span_with_a_digit_is_a_number_from_rule_set_0_2():
+    # The 1934 embassies page: the reader wrote the later address, and the literal
+    # engine read the printed one with a stray letter, so the words do not pair.
+    base, witness = "Embassy 1125-16th nw", "Embassy E\n1119-16th nw"
+    new = contest(base, witness, rules="ru-print-0.2", engine="rapidocr", known=None)
+    old = contest(base, witness, rules="ru-print-0.1", engine="rapidocr", known=None)
+    assert [s["kind"] for s in new] == ["number"]
+    assert [s["kind"] for s in old] == ["word"]
+    assert [s["span_id"] for s in new] == [s["span_id"] for s in old]
+
+
+def test_a_line_only_one_side_has_is_a_number_when_it_holds_digits():
+    new = contest(
+        "Smith J 12 Main",
+        "Smith J 12 Main\nNAtional 7550",
+        rules="ru-print-0.2",
+        engine="rapidocr",
+        known=None,
+    )
+    assert [(s["kind"], s["witness"]) for s in new] == [("number", "NAtional 7550")]
