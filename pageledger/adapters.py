@@ -205,6 +205,7 @@ class TextAdapter:
 @dataclass(frozen=True)
 class PdfTextAdapter:
     _documents: dict = field(default_factory=dict, init=False, repr=False, compare=False)
+    _pages: dict = field(default_factory=dict, init=False, repr=False, compare=False)
     name: ClassVar[str] = "pdf_text"
     version: ClassVar[str] = "0.1"
     deterministic: ClassVar[bool] = True
@@ -225,13 +226,11 @@ class PdfTextAdapter:
         return {"materials": [material]}
 
     def page_count(self, source: Path) -> int:
-        return len(self._document_text(source))
-
-    def _document_text(self, source: Path) -> tuple[str, ...]:
-        pages = _read_once(self._documents, source, _pdf_page_texts)
-        if not pages:
+        # From the page tree: a sample of a long PDF reads only its own pages' text.
+        count = _read_once(self._documents, source, _pdf_page_count)
+        if not count:
             raise ValueError("PDF source has no pages")
-        return pages
+        return count
 
     def extract(
         self,
@@ -246,10 +245,13 @@ class PdfTextAdapter:
             raise ValueError(f"PDF text adapter does not support action: {action}")
 
         _ = page_id, prompt
-        pages = self._document_text(source)
-        if type(page_number) is not int or not 1 <= page_number <= len(pages):
+        if type(page_number) is not int or not 1 <= page_number <= self.page_count(source):
             raise ValueError(f"page_number {page_number} out of range for {source}")
-        text = pages[page_number - 1]
+        text = _read_once(
+            self._pages.setdefault(page_number, {}),
+            source,
+            lambda path: _pdf_page_text(path, page_number),
+        )
         return ExtractionResult(
             content=text,
             format="text",
@@ -873,11 +875,6 @@ def _pdf_page_count(source: Path) -> int:
 def pdf_page_count(source: Path) -> int:
     """Return a PDF page count using the optional ``pageledger[pdf]`` dependency."""
     return _pdf_page_count(source)
-
-
-def _pdf_page_texts(source: Path) -> tuple[str, ...]:
-    with source.open("rb") as handle, _reading_pdf(source) as open_pdf:
-        return tuple(page.extract_text() or "" for page in open_pdf(handle).pages)
 
 
 def _pdf_page_text(source: Path, page_number: int) -> str:

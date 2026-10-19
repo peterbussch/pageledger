@@ -144,9 +144,15 @@ def test_pdf_ocr_run_without_profile_is_ordinary_but_not_bundleable(
     assert error.value.code == "profile_missing"
 
 
+def _one_text_page(tmp_path: Path, monkeypatch) -> None:
+    (tmp_path / "input.pdf").write_bytes(b"%PDF-1.4 stand-in")
+    monkeypatch.setattr(adapters_module, "_pdf_page_count", lambda source: 1)
+    monkeypatch.setattr(adapters_module, "_pdf_page_text", lambda source, number: "text")
+
+
 def test_pdf_text_records_pypdf_backend_version(tmp_path: Path, monkeypatch) -> None:
     pytest.importorskip("pypdf")
-    monkeypatch.setattr(PdfTextAdapter, "_document_text", lambda self, source: ("text",))
+    _one_text_page(tmp_path, monkeypatch)
     result = PdfTextAdapter().extract(
         tmp_path / "input.pdf",
         page_id="doc_0001_page_0001",
@@ -160,7 +166,7 @@ def test_pdf_text_records_pypdf_backend_version(tmp_path: Path, monkeypatch) -> 
 def test_pdf_text_records_unversioned_backend_when_metadata_is_missing(
     tmp_path: Path, monkeypatch
 ) -> None:
-    monkeypatch.setattr(PdfTextAdapter, "_document_text", lambda self, source: ("text",))
+    _one_text_page(tmp_path, monkeypatch)
 
     def missing_distribution(name: str) -> str:
         raise importlib.metadata.PackageNotFoundError(name)
@@ -174,6 +180,28 @@ def test_pdf_text_records_unversioned_backend_when_metadata_is_missing(
     )
 
     assert result.model == "pypdf"
+
+
+def test_pdf_text_reads_only_the_pages_it_is_asked_for(tmp_path: Path, monkeypatch) -> None:
+    # A four-page sample of a 553-page reel once read every page's text first (teledir finding 1).
+    (tmp_path / "reel.pdf").write_bytes(b"%PDF-1.4 stand-in")
+    read = []
+    monkeypatch.setattr(adapters_module, "_pdf_page_count", lambda source: 553)
+    monkeypatch.setattr(
+        adapters_module, "_pdf_page_text", lambda source, n: read.append(n) or f"page {n}"
+    )
+    adapter = PdfTextAdapter()
+    assert adapter.page_count(tmp_path / "reel.pdf") == 553
+    assert read == []
+    for _ in range(2):
+        result = adapter.extract(
+            tmp_path / "reel.pdf", page_id="p360", page_number=360, action="transcribe_text"
+        )
+    assert result.content == "page 360" and read == [360]
+    with pytest.raises(ValueError, match="out of range"):
+        adapter.extract(
+            tmp_path / "reel.pdf", page_id="p", page_number=554, action="transcribe_text"
+        )
 
 
 @pytest.mark.parametrize("adapter", [TextAdapter(), PdfTextAdapter(), PdfOcrAdapter()])
