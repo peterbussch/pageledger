@@ -216,7 +216,7 @@ def test_contest_records_its_rules_and_may_judge_words_without_the_rough_trigger
         ({"contest": True}, "processing.contest needs rules"),
         (
             {"contest": {"rules": "ru-print-0.1"}, "image": None},
-            "add an image stage",
+            "add an image or local_image stage",
         ),
         (
             {"lexicon": {"provider": "pymorphy3", "language": "ru", "rough_below": 0.9}},

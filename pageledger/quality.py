@@ -42,6 +42,22 @@ _LANGUAGE_MIN_LETTERS = 200
 _SCRIPT_MIN_SHARE = 0.5
 _PREREFORM_MIN_LETTERS = 300
 _FINAL_HARD_SIGN_MIN_SHARE = 0.01
+# A model's remarks about its own reading, which a page never prints: a note on the
+# image's legibility, or a bracket saying what it left out. Seen in the 2026-10
+# telephone-directory dogfood after a model transcribed part of a page and stopped.
+_NOTE_LINE = re.compile(r"^[\s>*_(\[]*(?:note|n\.\s?b\.|disclaimer)\b", re.I)
+_ABOUT_THE_IMAGE = re.compile(
+    r"\b(?:legib\w*|illegib\w*|resolution|too small|blurr\w*|microfilm|"
+    r"(?:the|this) (?:image|scan|photo\w*)|transcri\w+|"
+    r"(?:I|we) (?:cannot|can't|could not|couldn't|am unable|was unable)|unable to (?:read|make out))",
+    re.I,
+)
+_OMISSION = re.compile(
+    r"\[[^\]\n]{0,300}?\b(?:omitted|not transcribed|remaining (?:lines|text|columns?|entries)|"
+    r"rest of (?:the )?(?:page|column|text)|(?:transcription|text) (?:truncated|incomplete))"
+    r"[^\]\n]{0,300}\]",
+    re.I,
+)
 
 
 def _build_quality_entry(
@@ -87,6 +103,8 @@ def _build_quality_entry(
     warnings.extend(repetition_warnings)
     if language:
         warnings.extend(_declared_language_warnings(text, language))
+    if "generative" in getattr(adapter, "capabilities", ()):
+        warnings.extend(_model_remarks(text))
     output_integrity, integrity_warnings = _output_integrity(text, parent_quality)
     warnings.extend(integrity_warnings)
     confidence_detail = getattr(result, "confidence_detail", None)
@@ -120,6 +138,21 @@ def _build_quality_entry(
         "embedded_text_comparison": delta,
         "output_integrity": output_integrity,
     }
+
+
+def _model_remarks(text: str) -> list[str]:
+    """``partial_transcription`` when a model says it left text out, ``model_commentary``
+    when it adds a note about the image or its own reading."""
+    found = []
+    if _OMISSION.search(text):
+        found.append("partial_transcription")
+    paragraphs = re.split(r"\n\s*\n", text)
+    if any(
+        _NOTE_LINE.match(paragraph) and _ABOUT_THE_IMAGE.search(paragraph)
+        for paragraph in paragraphs
+    ):
+        found.append("model_commentary")
+    return found
 
 
 def _has_low_confidence_tail(detail: Any) -> bool:

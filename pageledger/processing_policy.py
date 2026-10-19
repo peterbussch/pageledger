@@ -17,7 +17,7 @@ from decimal import Decimal, InvalidOperation
 from itertools import combinations
 from typing import Any
 
-from .processing_config import STAGES
+from .processing_config import CORE_STAGES, READER_STAGES
 
 REVIEW_DISPOSITIONS = frozenset(
     {
@@ -82,6 +82,8 @@ _WARNING_HOLDS = {
     "foreign_script_characters": "coverage_defect",
     "repeated_page_text": "coverage_defect",
     "repetition_loop": "coverage_defect",
+    "partial_transcription": "coverage_defect",
+    "model_commentary": "coverage_defect",
     "script_mismatch": "coverage_defect",
     "historical_letters_lost": "coverage_defect",
 }
@@ -90,8 +92,17 @@ _WARNING_HOLDS = {
 _LEGACY_WARNING_HOLDS = {**_WARNING_HOLDS, "low_confidence": "coverage_defect"}
 # 0.6.1: clean text from a later engine settles a blank candidate. Jobs written
 # under "0.6" kept the hold and are rebuilt that way.
-HOLD_POLICY = "0.6.1"
-HOLD_POLICIES = frozenset({"0.6", HOLD_POLICY})
+# 0.8: a text layer that two agreeing later readings both disagree with is the
+# suspect, not them; and a reader that returns under half the words of the literal
+# OCR is held as incomplete. Jobs written under 0.6.1 are rebuilt without these.
+HOLD_POLICY = "0.8"
+HOLD_POLICIES = frozenset({"0.6", "0.6.1", HOLD_POLICY})
+BLANK_REFUTING_POLICIES = frozenset({"0.6.1", HOLD_POLICY})
+_DELTA = "suspicious_embedded_text_delta"
+# A reader with fewer words than this share of the literal reading left text out.
+# Below the floor of literal words a page says too little to judge.
+READER_COVERAGE_MIN = 0.5
+READER_COVERAGE_FLOOR = 40
 # Word agreement below which two engines disagree. On the 24 calibration pages it
 # flags 9 for RapidOCR/Apple Vision, 14 for Surya/RapidOCR, 22 for Tesseract/RapidOCR.
 ENGINE_AGREEMENT_THRESHOLD = 0.60
@@ -371,6 +382,9 @@ def assess_page(
     roughness: Callable[[str], dict | None] | None = None,
     rough_below: float | None = None,
     contest: Callable[[dict, dict], dict] | None = None,
+    stages: tuple[str, ...] = CORE_STAGES,
+    layer_outvoted: bool = False,
+    reader_coverage: bool = False,
 ) -> dict:
     """Select evidence deterministically while keeping all recorded review holds.
 
@@ -389,11 +403,30 @@ def assess_page(
     the coverage holds of readings the page no longer rests on. Any span neither
     a rule nor a high-confidence adjudication settled holds the page as
     ``contested``; once none is open, the page is ``adjudicated_text``.
+
+    With ``layer_outvoted`` (hold policy 0.8), when two later readings agree with
+    each other better than either agrees with the text layer, the length warning
+    they carry for differing from the layer is set aside and the layer is held
+    instead. With ``reader_coverage``, a reader with under half the literal OCR's
+    words is held as incomplete.
+
+    ``stages`` is the job's ladder. A local reader (``local_image``) that failed
+    leaves no reading and does not stop the page: it goes on to the next stage.
     """
-    attempts = page.get("attempts", [])
+    every_attempt = page.get("attempts", [])
+    attempts = [
+        item
+        for item in every_attempt
+        if item.get("stage") != "local_image" or item.get("outcome") == "completed"
+    ]
+    local_failed = bool(every_attempt) and every_attempt[-1] not in attempts
     reasons = list(dict.fromkeys(page.get("review_reasons") or []))
     completed = [item for item in attempts if item.get("outcome") == "completed"]
     holds_by_id = {item["attempt_id"]: _attempt_holds(item, holds_for) for item in attempts}
+    if layer_outvoted:
+        _outvote_layer(attempts, holds_by_id, page.get("comparisons", []), holds_for)
+    if reader_coverage:
+        _hold_short_readers(attempts, holds_by_id)
     for holds in holds_by_id.values():
         reasons.extend(hold for hold in holds if hold not in reasons)
     numeric_conflict = any(_numeric_conflict(a, b) for a, b in combinations(completed, 2))
@@ -407,7 +440,14 @@ def assess_page(
         and _blank_refuted(attempts, clean, holds_for)
     ):
         reasons.remove("blank_candidate")
-    readers = [item for item in clean if _generative(item)]
+    readers = sorted(
+        (item for item in clean if _generative(item)),
+        key=lambda item: (
+            READER_STAGES.index(item["stage"])
+            if item.get("stage") in READER_STAGES
+            else len(READER_STAGES)
+        ),
+    )
     if contest is not None and readers:
         # A contested job's text is the reader's, checked word by word against OCR.
         selected = _select(readers, readers, escalate_on, roughness, rough_below)
@@ -422,6 +462,8 @@ def assess_page(
         reasons.append("engine_disagreement")
     if any(item["number_differences"] for item in selected_comparisons):
         reasons.append("numeric_disagreement")
+    # Contest replaces these reasons on the page, but a local reader still climbs on them.
+    disagreements = [reason for reason in _DISAGREEMENTS if reason in reasons]
     if holds_for is _WARNING_HOLDS and selected and _generative(selected):
         confirmed = any(
             item["agreement_ratio"] >= ENGINE_AGREEMENT_THRESHOLD for item in selected_comparisons
@@ -483,20 +525,34 @@ def assess_page(
         if disposition not in reasons:
             reasons.append(disposition)
     stage_index = max(
-        (STAGES.index(item["stage"]) for item in attempts if item.get("stage") in STAGES),
+        (stages.index(item["stage"]) for item in every_attempt if item.get("stage") in stages),
         default=-1,
     )
-    triggers = _triggers(selected, reasons, stage_index, escalate_on, roughness, rough_below)
+    following = stages[stage_index + 1] if stage_index + 1 < len(stages) else None
+    triggers = _triggers(
+        selected,
+        reasons,
+        stages[stage_index] if stage_index >= 0 else None,
+        following,
+        escalate_on,
+        roughness,
+        rough_below,
+        disagreements,
+    )
     held = not clean and not any(reason in reasons for reason in _COMPARISON_REASONS)
-    if (
+    if local_failed and following is None and "provider_failure" not in reasons:
+        reasons.append("provider_failure")
+    if local_failed and following is not None:
+        next_action = following
+    elif (
         not (held or triggers)
         or numeric_conflict
         or disposition in {"source_defect", "outcome_unknown", "provider_failure", "illustration"}
-        or stage_index == len(STAGES) - 1
+        or following is None
     ):
         next_action = "review"
     else:
-        next_action = STAGES[stage_index + 1]
+        next_action = following
     selected_id = selected["attempt_id"] if selected else None
     receipt = review if review is not None else page.get("review")
     if receipt is not None:
@@ -523,7 +579,15 @@ def assess_page(
         # Why the page climbed at each earlier stage, then why it climbs now.
         result["triggers"] = [
             *_trigger_history(
-                page, holds_for, text_refutes_blank, escalate_on, roughness, rough_below
+                page,
+                holds_for,
+                text_refutes_blank,
+                escalate_on,
+                roughness,
+                rough_below,
+                stages,
+                layer_outvoted,
+                reader_coverage,
             ),
             *(triggers if next_action not in {"review", "none"} else []),
         ]
@@ -534,6 +598,65 @@ def _generative(attempt: dict) -> bool:
     return "generative" in attempt.get("adapter_capabilities", ())
 
 
+def _warning_code(warning: Any) -> Any:
+    return warning.get("type", warning.get("code")) if isinstance(warning, dict) else warning
+
+
+def _outvote_layer(
+    attempts: list[dict], holds_by_id: dict[str, list[str]], comparisons: list, holds_for: dict
+) -> None:
+    """Move the length warning from two agreeing later readings to the layer they outvote."""
+    layers = [a for a in _usable(attempts) if a.get("stage") == "local_text"]
+    if len(layers) != 1:
+        return
+    layer = layers[0]["attempt_id"]
+    agreement = {
+        frozenset((c["left_attempt"], c["right_attempt"])): c["agreement_ratio"]
+        for c in comparisons
+    }
+    flagged = [
+        a
+        for a in _usable(attempts)
+        if a["attempt_id"] != layer and any(_warning_code(w) == _DELTA for w in a["warnings"])
+    ]
+    outvoted = False
+    for a, b in combinations(flagged, 2):
+        mutual = agreement.get(frozenset((a["attempt_id"], b["attempt_id"])))
+        with_layer = [agreement.get(frozenset((layer, x["attempt_id"]))) for x in (a, b)]
+        if mutual is None or with_layer[0] is None or with_layer[1] is None:
+            continue
+        if mutual >= ENGINE_AGREEMENT_THRESHOLD and mutual > max(with_layer[0], with_layer[1]):
+            for item in (a, b):
+                kept = [w for w in item["warnings"] if _warning_code(w) != _DELTA]
+                holds_by_id[item["attempt_id"]] = _attempt_holds(
+                    {**item, "warnings": kept}, holds_for
+                )
+            outvoted = True
+    if outvoted and "coverage_defect" not in holds_by_id[layer]:
+        holds_by_id[layer].append("coverage_defect")
+
+
+def _hold_short_readers(attempts: list[dict], holds_by_id: dict[str, list[str]]) -> None:
+    """A reader that returns far fewer words than the literal OCR left text out."""
+    literal = [
+        len(re.findall(r"\w+", a["text"]))
+        for a in _usable(attempts)
+        if a.get("stage") in {"local_ocr", "layout_ocr"} and not _generative(a)
+    ]
+    most = max(literal, default=0)
+    if most < READER_COVERAGE_FLOOR:
+        return
+    for item in _usable(attempts):
+        words = len(re.findall(r"\w+", item["text"]))
+        held = holds_by_id[item["attempt_id"]]
+        if (
+            _generative(item)
+            and words < READER_COVERAGE_MIN * most
+            and "coverage_defect" not in held
+        ):
+            held.append("coverage_defect")
+
+
 def _trigger_history(
     page: dict,
     holds_for: dict[str, str],
@@ -541,14 +664,17 @@ def _trigger_history(
     escalate_on: tuple[str, ...] | list[str],
     roughness: Callable[[str], dict | None] | None,
     rough_below: float | None,
+    stages: tuple[str, ...] = CORE_STAGES,
+    layer_outvoted: bool = False,
+    reader_coverage: bool = False,
 ) -> list[dict]:
     """Re-assess the page as it stood after each earlier stage, from retained attempts only."""
     reached = sorted(
-        {STAGES.index(a["stage"]) for a in page.get("attempts", []) if a.get("stage") in STAGES}
+        {stages.index(a["stage"]) for a in page.get("attempts", []) if a.get("stage") in stages}
     )
     history: list[dict] = []
     for index in reached[:-1]:
-        kept = [a for a in page["attempts"] if a.get("stage") in STAGES[: index + 1]]
+        kept = [a for a in page["attempts"] if a.get("stage") in stages[: index + 1]]
         ids = {a["attempt_id"] for a in kept}
         earlier = {
             **page,
@@ -567,6 +693,9 @@ def _trigger_history(
             escalate_on=escalate_on,
             roughness=roughness,
             rough_below=rough_below,
+            stages=stages,
+            layer_outvoted=layer_outvoted,
+            reader_coverage=reader_coverage,
         )
         # Its list repeats the history found so far; only the tail is this stage's.
         history.extend(before["triggers"][len(history) :])
@@ -576,25 +705,31 @@ def _trigger_history(
 def _triggers(
     selected: dict | None,
     reasons: list[str],
-    stage_index: int,
+    stage: str | None,
+    following: str | None,
     escalate_on: tuple[str, ...] | list[str],
     roughness: Callable[[str], dict | None] | None,
     rough_below: float | None,
+    disagreements: list[str] | None = None,
 ) -> list[dict]:
-    """Why a page whose reading is not held still climbs, with the evidence that fired."""
-    following = STAGES[stage_index + 1] if stage_index + 1 < len(STAGES) else None
-    if selected is None or following not in {"local_ocr", "image"}:
+    """Why a page whose reading is not held still climbs, with the evidence that fired.
+
+    Triggers lift a page at most to the image stage. From a local reader, `always`
+    does not fire: the paid reader is called only on evidence against the local one.
+    """
+    if selected is None or following not in {"local_ocr", "layout_ocr", "local_image", "image"}:
         return []
     fired = []
-    stage = STAGES[stage_index]
     measure = _rough_measure(selected, escalate_on, roughness, rough_below)
     if measure is not None:
         fired.append(
             {"trigger": "rough", "stage": stage, "attempt": selected["attempt_id"], **measure}
         )
-    if "always" in escalate_on:
+    if "always" in escalate_on and stage != "local_image":
         fired.append({"trigger": "always", "stage": stage, "attempt": selected["attempt_id"]})
     found = [reason for reason in _DISAGREEMENTS if reason in reasons]
+    if stage == "local_image" and disagreements:
+        found = disagreements
     if "disagreement" in escalate_on and found:
         fired.append(
             {

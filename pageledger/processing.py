@@ -31,7 +31,7 @@ from .comparison import compare_texts
 from .config import load_config
 from .contest import contest as contest_spans
 from .lexicon import load_lexicon, roughness
-from .processing_config import STAGES, processing_config
+from .processing_config import ladder, processing_config
 from .processing_policy import (
     HOLD_POLICIES,
     HOLD_POLICY,
@@ -150,7 +150,7 @@ def _load(root: Path) -> dict:
             adjudication.validate_receipt(receipt, page)
     for stage in job["stages"]:
         if (
-            stage["stage"] not in STAGES
+            stage["stage"] not in ladder(job["policy"])
             or stage["stage_id"] in identifiers
             or stage["pages"] != sorted(set(stage["pages"]))
             or not stage["pages"]
@@ -617,7 +617,7 @@ def _refresh(job: dict, root: Path, *, materialize: bool = True) -> None:
                     "capabilities", []
                 )
             if (
-                stage["stage"] in {"image", "second_opinion"}
+                stage["stage"] in IMAGE_STAGES
                 and state == "completed"
                 and result.get("input_evidence") is None
             ):
@@ -648,11 +648,15 @@ def _refresh(job: dict, root: Path, *, materialize: bool = True) -> None:
                 page["review"],
                 holds_for=holds,
                 # Only jobs written under the current policy clear a blank hold this way.
-                text_refutes_blank=job.get("hold_policy") == processing_policy.HOLD_POLICY,
+                text_refutes_blank=job.get("hold_policy")
+                in processing_policy.BLANK_REFUTING_POLICIES,
+                layer_outvoted=job.get("hold_policy") == processing_policy.HOLD_POLICY,
+                reader_coverage=job.get("hold_policy") == processing_policy.HOLD_POLICY,
                 escalate_on=escalate_on,
                 roughness=roughness_of,
                 rough_below=rough_below,
                 contest=contest,
+                stages=ladder(job["policy"]),
             )
         )
         result = page.pop("contested", None)
@@ -668,6 +672,12 @@ def _refresh(job: dict, root: Path, *, materialize: bool = True) -> None:
     job["usage"] = {
         "attempt_pages": len(attempts),
         "image_calls": len(paid),
+        # Present only in jobs with a local reader, which keeps its own budget.
+        **(
+            {"local_image_calls": sum(a["stage"] == "local_image" for a in attempts)}
+            if "local_image" in job["policy"]
+            else {}
+        ),
         "tokens": sum(t for t in token_values if t is not None),
         "tokens_known": all(t is not None for t in token_values),
         "cost_usd": known_cost if all(c is not None for c in cost_values) else None,
@@ -689,6 +699,11 @@ def _budget_reason(job: dict, stage: str, count: int) -> str | None:
         return "max_tokens"
     if limits["max_cost_usd"] is not None and usage["known_cost_usd"] >= limits["max_cost_usd"]:
         return "max_cost_usd"
+    if (
+        stage == "local_image"
+        and usage["local_image_calls"] + count > limits["max_local_image_pages"]
+    ):
+        return "max_local_image_pages"
     if stage in {"image", "second_opinion"}:
         if usage["image_calls"] + count > limits["max_image_pages"]:
             return "max_image_pages"
@@ -701,7 +716,15 @@ def _budget_reason(job: dict, stage: str, count: int) -> str | None:
 
 # Limits a paused job can raise on resume. Unknown paid usage still halts:
 # no higher limit makes an unmeasured spend measurable.
-_RAISABLE_LIMITS = ("max_attempt_pages", "max_image_pages", "max_tokens", "max_cost_usd")
+_RAISABLE_LIMITS = (
+    "max_attempt_pages",
+    "max_image_pages",
+    "max_local_image_pages",
+    "max_tokens",
+    "max_cost_usd",
+)
+# Stages that send a page image to a model and keep the exact image as evidence.
+IMAGE_STAGES = ("local_image", "image", "second_opinion")
 
 
 def _attempt_allowance(job: dict) -> int:
@@ -764,7 +787,7 @@ def _raise_limits(job: dict, raised: dict[str, int | float]) -> None:
             raise ValueError(
                 f"{key} is not a processing limit; use one of {', '.join(_RAISABLE_LIMITS)}"
             )
-        current = job["limits"][key]
+        current = job["limits"].get(key)
         if current is None:
             raise ValueError(f"{key} is not limited in this job")
         if not _is_raise(value, current):
@@ -800,7 +823,7 @@ def _plan_stage(
     profile = job["policy"][stage]
     options = dict(profile["adapter_options"])
     path = f"attempts/{stage_id}"
-    if stage in {"image", "second_opinion"}:
+    if stage in IMAGE_STAGES:
         options["evidence_dir"] = str(root / path / "evidence")
     config = copy.deepcopy(job["config"])
     config.pop("processing", None)
@@ -903,19 +926,22 @@ def _execute(job: dict, root: Path, stage: dict, adapter_path: Path | None) -> b
                 for attempt in page["attempts"]
                 if attempt["run_path"] == stage["run_path"] and attempt["outcome"] != "completed"
             ]
-            if (
-                stage["stage"] == "second_opinion"
-                and failures
-                and all(
-                    attempt["outcome"] == "failed"
-                    and (attempt.get("failure") or {}).get("http_status") == 429
-                    and not attempt.get("raw_artifact")
-                    for attempt in failures
-                )
+            if failures and all(
+                attempt["outcome"] == "failed" and not attempt.get("raw_artifact")
+                for attempt in failures
             ):
-                # A rejected optional witness remains a provider_failure hold on its page.
-                job.update(status="processing", halt_reason=None)
-                return True
+                failure_codes = [attempt.get("failure") or {} for attempt in failures]
+                quota = all(
+                    item.get("http_status") == 429 or item.get("code") == "MODEL_QUOTA"
+                    for item in failure_codes
+                )
+                # A rejected optional witness remains a provider_failure hold on its page,
+                # and a local reader that failed costs nothing: its page climbs past it.
+                if (stage["stage"] == "second_opinion" and quota) or stage[
+                    "stage"
+                ] == "local_image":
+                    job.update(status="processing", halt_reason=None)
+                    return True
             if _retry_local(job, root, stage, adapter_path):
                 return True
         return False
@@ -933,7 +959,7 @@ def _continue(job: dict, root: Path, adapter_path: Path | None) -> dict:
             if not _execute(job, root, stage, adapter_path):
                 return _publish(job, root)
     _refresh(job, root)
-    for name in STAGES:
+    for name in ladder(job["policy"]):
         if job["policy"][name] is None:
             continue
         eligible = [p["page_number"] for p in job["pages"] if p["next_action"] == name]

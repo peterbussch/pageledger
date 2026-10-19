@@ -5,7 +5,15 @@ from __future__ import annotations
 import math
 from typing import Any
 
-STAGES = ("local_text", "local_ocr", "image", "second_opinion")
+STAGES = ("local_text", "local_ocr", "layout_ocr", "local_image", "image", "second_opinion")
+# The 0.6 ladder. A job's policy names these four even when unset; the 0.8 stages
+# appear only when configured, so an older config compiles to the policy its jobs
+# recorded.
+CORE_STAGES = ("local_text", "local_ocr", "image", "second_opinion")
+OPTIONAL_STAGES = ("layout_ocr", "local_image")
+# Stages whose reading comes from a model that writes text (a reader), in the order
+# a contested page prefers them as its base: the paid reader, then the local one.
+READER_STAGES = ("image", "local_image", "second_opinion")
 # Why a page climbs to the next stage. `hold` is 0.6's rule and always applies;
 # `rough` and `disagreement` let a page whose reading looks clean climb too, and
 # `always` sends every page up, so a contested reader checks every page.
@@ -35,6 +43,8 @@ def processing_config(data: dict[str, Any], *, pdf: bool) -> dict[str, Any]:
         raise ValueError(f"Unknown processing key: {sorted(unknown)[0]}")
     result: dict[str, Any] = {}
     for name in STAGES:
+        if name in OPTIONAL_STAGES and value.get(name) is None:
+            continue
         default = None
         if name == "local_text":
             default = {"adapter": "pdf_text" if pdf else "text"}
@@ -67,14 +77,24 @@ def processing_config(data: dict[str, Any], *, pdf: bool) -> dict[str, Any]:
         raise ValueError("second_opinion requires an image stage")
     if result["image"] is not None and result["local_ocr"] is None:
         raise ValueError("An image stage requires an explicit local_ocr stage")
+    for name in OPTIONAL_STAGES:
+        if name in result and result["local_ocr"] is None:
+            raise ValueError(f"processing.{name} requires an explicit local_ocr stage")
+    local_image = "local_image" in result
     limits = value.get("limits", {})
     keys = {"max_attempt_pages", "max_image_pages", "max_tokens", "max_cost_usd"}
+    if local_image:
+        keys.add("max_local_image_pages")
     if not isinstance(limits, dict) or set(limits) - keys:
+        if isinstance(limits, dict) and "max_local_image_pages" in limits:
+            raise ValueError("processing.limits.max_local_image_pages needs a local_image stage")
         raise ValueError("Invalid processing.limits")
     normalized: dict[str, Any] = {key: limits.get(key) for key in keys}
     normalized["max_image_pages"] = limits.get("max_image_pages", 0)
+    if local_image:
+        normalized["max_local_image_pages"] = limits.get("max_local_image_pages", 0)
     for key, number in normalized.items():
-        if number is None and key != "max_image_pages":
+        if number is None and key not in {"max_image_pages", "max_local_image_pages"}:
             continue
         if (
             isinstance(number, bool)
@@ -86,6 +106,8 @@ def processing_config(data: dict[str, Any], *, pdf: bool) -> dict[str, Any]:
             raise ValueError(f"processing.limits.{key} must be a nonnegative number")
     if result["image"] is not None and normalized["max_image_pages"] < 1:
         raise ValueError("An image stage requires a positive max_image_pages bound")
+    if local_image and normalized["max_local_image_pages"] < 1:
+        raise ValueError("A local_image stage requires a positive max_local_image_pages bound")
     result["limits"] = normalized
     links = value.get("links", {})
     if not isinstance(links, dict) or set(links) - {"article", "custody"}:
@@ -105,7 +127,7 @@ def processing_config(data: dict[str, Any], *, pdf: bool) -> dict[str, Any]:
             raise ValueError(
                 "processing.benchmark must contain a configured stage and a positive integer every_nth_page"
             )
-        if result[benchmark["stage"]] is None:
+        if result.get(benchmark["stage"]) is None:
             raise ValueError("processing.benchmark.stage must name an enabled stage")
         result["benchmark"] = dict(benchmark)
     contest = value.get("contest")
@@ -120,8 +142,10 @@ def processing_config(data: dict[str, Any], *, pdf: bool) -> dict[str, Any]:
             raise ValueError(
                 f"processing.contest needs rules, one of: {', '.join(sorted(RULE_SETS))}"
             )
-        if result["image"] is None:
-            raise ValueError("processing.contest compares a reader's text; add an image stage")
+        if result["image"] is None and not local_image:
+            raise ValueError(
+                "processing.contest compares a reader's text; add an image or local_image stage"
+            )
     triggers, lexicon = _escalation(value, contest=contest is not None)
     # Each key only when used, so a 0.6 config still compiles to the policy its jobs recorded.
     if triggers != ["hold"]:
@@ -173,3 +197,8 @@ def _escalation(value: dict[str, Any], *, contest: bool) -> tuple[list[str], dic
     ):
         raise ValueError("processing.lexicon.rough_below must be a share above 0 and at most 1")
     return [name for name in TRIGGERS if name in triggers], dict(lexicon)
+
+
+def ladder(policy: dict[str, Any]) -> tuple[str, ...]:
+    """The stages a job's policy names, in climbing order: the 0.6 four plus any 0.8 ones."""
+    return tuple(name for name in STAGES if name in policy)

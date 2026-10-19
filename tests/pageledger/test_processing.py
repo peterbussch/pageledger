@@ -1450,7 +1450,11 @@ def test_interrupted_builtin_local_stage_retries_only_unfinished_pages(setup, mo
     assert verify_job(setup[2])["status"] == "pass"
 
 
-def test_optional_quota_failure_holds_page_and_continues_other_pages(setup, monkeypatch):
+@pytest.mark.parametrize(
+    "status",
+    [429, None],  # None: a subscription reader reports a usage limit without an HTTP status
+)
+def test_optional_quota_failure_holds_page_and_continues_other_pages(setup, monkeypatch, status):
     from pageledger.adapters import AdapterFailure
 
     data = yaml.safe_load(setup[1].read_text())
@@ -1461,7 +1465,7 @@ def test_optional_quota_failure_holds_page_and_continues_other_pages(setup, monk
 
     def quota(self, source, **kwargs):
         if self.stage == "second_opinion":
-            raise AdapterFailure("MODEL_QUOTA", http_status=429)
+            raise AdapterFailure("MODEL_QUOTA", http_status=status)
         return original(self, source, **kwargs)
 
     monkeypatch.setattr(StageAdapter, "extract", quota)

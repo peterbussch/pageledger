@@ -27,6 +27,8 @@ _REPORT_FORMATS = {"0.5.1", _CURRENT_REPORT_FORMAT}
 _STAGE_LABELS = {
     "local_text": "Local text",
     "local_ocr": "Local OCR",
+    "layout_ocr": "Layout OCR",
+    "local_image": "Local model",
     "image": "Image extraction",
     "second_opinion": "Second opinion",
 }
