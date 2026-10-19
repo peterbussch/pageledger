@@ -147,18 +147,21 @@ def _check_decisions(decisions: Any, page_id: str) -> None:
     if not isinstance(decisions, list) or not decisions:
         raise ValueError(f"Adjudication for {page_id} has no decisions")
     seen = set()
-    for decision in decisions:
-        if (
-            not isinstance(decision, dict)
-            or set(decision) != {"span_id", "text", "confidence", "note"}
-            or not isinstance(decision["span_id"], str)
-            or decision["span_id"] in seen
-            or not isinstance(decision["text"], str)
-            or decision["confidence"] not in CONFIDENCE
-            or not isinstance(decision["note"], str)
-        ):
-            raise ValueError(f"Adjudication for {page_id} has an invalid or repeated decision")
-        seen.add(decision["span_id"])
+    for number, decision in enumerate(decisions, start=1):
+        if not isinstance(decision, dict):
+            problem = "is not an object"
+        elif set(decision) != {"span_id", "text", "confidence", "note"}:
+            problem = "needs exactly span_id, text, confidence and note"
+        elif not isinstance(decision["span_id"], str) or decision["span_id"] in seen:
+            problem = "repeats a span or names none"
+        elif not isinstance(decision["text"], str) or not isinstance(decision["note"], str):
+            problem = "needs text and note as strings"
+        elif decision["confidence"] not in CONFIDENCE:
+            problem = "needs confidence high, medium or low"
+        else:
+            seen.add(decision["span_id"])
+            continue
+        raise ValueError(f"Adjudication for {page_id}: decision {number} {problem}")
 
 
 def receipt_for(
@@ -171,12 +174,18 @@ def receipt_for(
         )
     if answer["page_id"] != page["page_id"] or answer["contested_sha256"] != sha256:
         raise ValueError(f"Decisions for {page['page_id']} answer other spans; write packets again")
-    _check_decisions(answer["decisions"], page["page_id"])
+    decisions = answer["decisions"]
+    if isinstance(decisions, list):
+        # The note is the adjudicator's own remark: an answer without one is recorded with "".
+        decisions = [
+            {**d, "note": ""} if isinstance(d, dict) and "note" not in d else d for d in decisions
+        ]
+    _check_decisions(decisions, page["page_id"])
     # Only spans still open: answers already recorded are not recorded again, under
     # whoever runs the command this time.
     still_open, _ = settle(record, sha256, page.get("adjudications", []))
     open_ids = {span["span_id"] for span in still_open}
-    unknown = [d["span_id"] for d in answer["decisions"] if d["span_id"] not in open_ids]
+    unknown = [d["span_id"] for d in decisions if d["span_id"] not in open_ids]
     if unknown:
         raise ValueError(f"Decisions for {page['page_id']} name no open span: {unknown[0]}")
     base = next(a for a in page["attempts"] if a["attempt_id"] == record["base"]["attempt"])
@@ -187,7 +196,7 @@ def receipt_for(
         "page_number": page["page_number"],
         "contested_sha256": sha256,
         "image_sha256": (base.get("input_evidence") or {}).get("sha256"),
-        "decisions": answer["decisions"],
+        "decisions": decisions,
         "reviewer": reviewer,
         "reviewed_at": reviewed_at,
     }

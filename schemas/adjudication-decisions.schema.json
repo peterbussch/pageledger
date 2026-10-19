@@ -13,12 +13,12 @@
       "minItems": 1,
       "items": {
         "type": "object",
-        "required": ["span_id", "text", "confidence", "note"],
+        "required": ["span_id", "text", "confidence"],
         "properties": {
           "span_id": { "type": "string", "pattern": "^sp_[0-9a-f]{16}$" },
           "text": { "type": "string", "description": "What the page prints between the span's before and after; misprints as printed." },
           "confidence": { "enum": ["high", "medium", "low"], "description": "Only high settles the span." },
-          "note": { "type": "string" }
+          "note": { "type": "string", "description": "Optional; recorded as an empty string when absent." }
         },
         "additionalProperties": false
       }

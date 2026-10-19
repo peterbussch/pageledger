@@ -394,7 +394,7 @@ model family than the reader, and check its answers on pages you have verified. 
 ```
 
 `text` is what the page prints at that place: the model's reading, the literal
-one, other text, or nothing. A printed misprint is written as printed.
+one, other text, or nothing. `note` is optional and recorded as empty when absent. A printed misprint is written as printed.
 Packets and answers have schemas
 ([packet](../schemas/adjudication-packet.schema.json),
 [decisions](../schemas/adjudication-decisions.schema.json)).

@@ -837,6 +837,29 @@ def _answer(root, out, text, confidence="high"):
     return answer
 
 
+def test_an_answer_without_a_note_is_recorded_and_a_bad_one_is_named(setup, monkeypatch, tmp_path):
+    from pageledger.processing import adjudicate_job
+
+    _contesting(setup, monkeypatch)
+    assert launch(setup, pages="1")["status"] == "completed"
+    answer = _answer(setup[2], tmp_path / "packets", "полные")
+    path = tmp_path / "packets" / "doc_0001_page_0001.decisions.json"
+    # Gemini 3.1 Pro left the note out of all 39 answers on a page in the 0.8 dogfood.
+    answer["decisions"][1]["confidence"] = "certain"
+    for decision in answer["decisions"]:
+        del decision["note"]
+    path.write_text(json.dumps(answer, ensure_ascii=False))
+    with pytest.raises(ValueError, match="decision 2 needs confidence high, medium or low"):
+        adjudicate_job(setup[2], tmp_path / "packets", reviewer="agent:test")
+    answer["decisions"][1]["confidence"] = "high"
+    path.write_text(json.dumps(answer, ensure_ascii=False))
+    adjudicate_job(setup[2], tmp_path / "packets", reviewer="agent:test")
+    page = read_record(setup[2] / "job.json")["pages"][0]
+    assert {d["note"] for d in page["adjudications"][0]["decisions"]} == {""}
+    assert page["disposition"] == "adjudicated_text"
+    assert verify_job(setup[2])["status"] == "pass"
+
+
 def test_adjudicated_decisions_make_an_edition_that_verifies_and_exports(
     setup, monkeypatch, tmp_path
 ):
