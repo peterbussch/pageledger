@@ -249,6 +249,10 @@ processing:
 - `disagreement`: the selected reading and another clean one agree on fewer than
   60% of their words, or read a number differently. Without this trigger the page
   goes to review, as before.
+- `ocr_layer` (no configuration; jobs written by 0.8): a page whose text
+  layer is an earlier OCR of the scan (warning `ocr_text_layer`) climbs from
+  local text to local OCR, whatever its text looks like. An inherited OCR layer
+  is a reading of unknown quality, and 0.7 accepted it unchecked.
 - `always`: every page climbs to the image stage. Use it with
   [`contest`](#contest-a-models-reading) when the goal is an edition: the model
   reads every page and each place it differs from the OCR is checked.

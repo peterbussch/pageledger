@@ -93,3 +93,24 @@ def test_a_reader_with_half_the_literal_words_is_held():
 )
 def test_a_model_remarking_on_its_own_reading_is_flagged(text, expected):
     assert _model_remarks(text) == expected
+
+
+def test_an_inherited_ocr_layer_is_read_again_by_local_ocr():
+    layer = _attempt(
+        "a1", "local_text", "Readable text from an old OCR", warnings=["ocr_text_layer"]
+    )
+    stays = assess_page(_page(layer))
+    assert stays["next_action"] == "review"
+    climbs = assess_page(_page(layer), ocr_layer_climbs=True)
+    assert climbs["next_action"] == "local_ocr"
+    assert climbs["triggers"] == [{"trigger": "ocr_layer", "stage": "local_text", "attempt": "a1"}]
+    assert climbs["disposition"] == "unreviewed_text"
+    # Once our own OCR agrees, the page rests on the layer it confirmed.
+    ocr = _attempt("a2", "local_ocr", "Readable text from an old OCR")
+    agreed = assess_page(
+        _page(layer, ocr, comparisons=[_compared("a1", "a2", 1.0)]),
+        ocr_layer_climbs=True,
+        escalate_on=("hold", "disagreement"),
+    )
+    assert (agreed["next_action"], agreed["selected_attempt"]) == ("review", "a1")
+    assert [t["trigger"] for t in agreed["triggers"]] == ["ocr_layer"]

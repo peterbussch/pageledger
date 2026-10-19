@@ -385,6 +385,7 @@ def assess_page(
     stages: tuple[str, ...] = CORE_STAGES,
     layer_outvoted: bool = False,
     reader_coverage: bool = False,
+    ocr_layer_climbs: bool = False,
 ) -> dict:
     """Select evidence deterministically while keeping all recorded review holds.
 
@@ -408,7 +409,9 @@ def assess_page(
     each other better than either agrees with the text layer, the length warning
     they carry for differing from the layer is set aside and the layer is held
     instead. With ``reader_coverage``, a reader with under half the literal OCR's
-    words is held as incomplete.
+    words is held as incomplete. With ``ocr_layer_climbs``, a text layer that is an
+    earlier OCR of the scan (``ocr_text_layer``) is read again by local OCR, so the
+    two readings confirm or challenge each other.
 
     ``stages`` is the job's ladder. A local reader (``local_image``) that failed
     leaves no reading and does not stop the page: it goes on to the next stage.
@@ -538,6 +541,7 @@ def assess_page(
         roughness,
         rough_below,
         disagreements,
+        ocr_layer_climbs,
     )
     held = not clean and not any(reason in reasons for reason in _COMPARISON_REASONS)
     if local_failed and following is None and "provider_failure" not in reasons:
@@ -575,7 +579,7 @@ def assess_page(
     }
     if contest is not None:
         result["contested"] = contested
-    if tuple(escalate_on) != ("hold",):
+    if tuple(escalate_on) != ("hold",) or ocr_layer_climbs:
         # Why the page climbed at each earlier stage, then why it climbs now.
         result["triggers"] = [
             *_trigger_history(
@@ -588,6 +592,7 @@ def assess_page(
                 stages,
                 layer_outvoted,
                 reader_coverage,
+                ocr_layer_climbs,
             ),
             *(triggers if next_action not in {"review", "none"} else []),
         ]
@@ -667,6 +672,7 @@ def _trigger_history(
     stages: tuple[str, ...] = CORE_STAGES,
     layer_outvoted: bool = False,
     reader_coverage: bool = False,
+    ocr_layer_climbs: bool = False,
 ) -> list[dict]:
     """Re-assess the page as it stood after each earlier stage, from retained attempts only."""
     reached = sorted(
@@ -696,6 +702,7 @@ def _trigger_history(
             stages=stages,
             layer_outvoted=layer_outvoted,
             reader_coverage=reader_coverage,
+            ocr_layer_climbs=ocr_layer_climbs,
         )
         # Its list repeats the history found so far; only the tail is this stage's.
         history.extend(before["triggers"][len(history) :])
@@ -711,6 +718,7 @@ def _triggers(
     roughness: Callable[[str], dict | None] | None,
     rough_below: float | None,
     disagreements: list[str] | None = None,
+    ocr_layer_climbs: bool = False,
 ) -> list[dict]:
     """Why a page whose reading is not held still climbs, with the evidence that fired.
 
@@ -727,6 +735,12 @@ def _triggers(
         )
     if "always" in escalate_on and stage != "local_image":
         fired.append({"trigger": "always", "stage": stage, "attempt": selected["attempt_id"]})
+    if (
+        ocr_layer_climbs
+        and stage == "local_text"
+        and any(_warning_code(w) == "ocr_text_layer" for w in selected.get("warnings") or [])
+    ):
+        fired.append({"trigger": "ocr_layer", "stage": stage, "attempt": selected["attempt_id"]})
     found = [reason for reason in _DISAGREEMENTS if reason in reasons]
     if stage == "local_image" and disagreements:
         found = disagreements

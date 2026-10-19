@@ -247,17 +247,18 @@ class PdfTextAdapter:
         _ = page_id, prompt
         if type(page_number) is not int or not 1 <= page_number <= self.page_count(source):
             raise ValueError(f"page_number {page_number} out of range for {source}")
-        text = _read_once(
+        text, ocr_layer = _read_once(
             self._pages.setdefault(page_number, {}),
             source,
-            lambda path: _pdf_page_text(path, page_number),
+            lambda path: _pdf_page_reading(path, page_number),
         )
         return ExtractionResult(
             content=text,
             format="text",
             confidence=None,
             model=_pypdf_model_string(),
-            warnings=[],
+            # The layer is an earlier OCR of a scan, not text the author typeset.
+            warnings=["ocr_text_layer"] if ocr_layer and text.strip() else [],
             usage={"pages": 1, "tokens": None, "compute_seconds": None, "cost_usd": None},
         )
 
@@ -875,6 +876,45 @@ def _pdf_page_count(source: Path) -> int:
 def pdf_page_count(source: Path) -> int:
     """Return a PDF page count using the optional ``pageledger[pdf]`` dependency."""
     return _pdf_page_count(source)
+
+
+# The invisible font Tesseract, OCRmyPDF and the Internet Archive draw their OCR text in.
+_OCR_LAYER_FONTS = (b"GlyphLessFont",)
+
+
+def _pdf_page_reading(source: Path, page_number: int) -> tuple[str, bool]:
+    """A page's text layer, and whether that layer is an earlier OCR of a scanned image."""
+    with source.open("rb") as handle, _reading_pdf(source) as open_pdf:
+        pages = open_pdf(handle).pages
+        if not 1 <= page_number <= len(pages):
+            raise ValueError(f"page_number {page_number} out of range for {source}")
+        page = pages[page_number - 1]
+        return page.extract_text() or "", _ocr_layer(page)
+
+
+def _ocr_layer(page: Any) -> bool:
+    """True when the page draws text in a known OCR font, at page level or in its forms."""
+    seen: set[int] = set()
+
+    def fonts(resources: Any, depth: int) -> bool:
+        resources = resources.get_object() if resources is not None else None
+        if not resources or id(resources) in seen or depth > 3:
+            return False
+        seen.add(id(resources))
+        for font in (resources.get("/Font") or {}).values():
+            name = str(font.get_object().get("/BaseFont", "")).encode()
+            if any(marker in name for marker in _OCR_LAYER_FONTS):
+                return True
+        for xobject in (resources.get("/XObject") or {}).values():
+            xobject = xobject.get_object()
+            if xobject.get("/Subtype") == "/Form" and fonts(xobject.get("/Resources"), depth + 1):
+                return True
+        return False
+
+    try:
+        return fonts(page.get("/Resources"), 0)
+    except (AttributeError, KeyError, TypeError, ValueError):
+        return False
 
 
 def _pdf_page_text(source: Path, page_number: int) -> str:

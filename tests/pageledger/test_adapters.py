@@ -147,7 +147,7 @@ def test_pdf_ocr_run_without_profile_is_ordinary_but_not_bundleable(
 def _one_text_page(tmp_path: Path, monkeypatch) -> None:
     (tmp_path / "input.pdf").write_bytes(b"%PDF-1.4 stand-in")
     monkeypatch.setattr(adapters_module, "_pdf_page_count", lambda source: 1)
-    monkeypatch.setattr(adapters_module, "_pdf_page_text", lambda source, number: "text")
+    monkeypatch.setattr(adapters_module, "_pdf_page_reading", lambda source, n: ("text", False))
 
 
 def test_pdf_text_records_pypdf_backend_version(tmp_path: Path, monkeypatch) -> None:
@@ -188,7 +188,9 @@ def test_pdf_text_reads_only_the_pages_it_is_asked_for(tmp_path: Path, monkeypat
     read = []
     monkeypatch.setattr(adapters_module, "_pdf_page_count", lambda source: 553)
     monkeypatch.setattr(
-        adapters_module, "_pdf_page_text", lambda source, n: read.append(n) or f"page {n}"
+        adapters_module,
+        "_pdf_page_reading",
+        lambda source, n: read.append(n) or (f"page {n}", False),
     )
     adapter = PdfTextAdapter()
     assert adapter.page_count(tmp_path / "reel.pdf") == 553
@@ -1766,7 +1768,9 @@ def test_max_render_pixels_is_validated() -> None:
 # ---------------------------------------------------------------------------
 
 
-def _text_pdf(path: Path, *, algorithm: str | None = None, user_password: str = "") -> Path:
+def _text_pdf(
+    path: Path, *, algorithm: str | None = None, user_password: str = "", font: str = "Helvetica"
+) -> Path:
     """One page reading 'Hello PageLedger', optionally encrypted by pypdf."""
     from pypdf import PdfWriter
     from pypdf.generic import DecodedStreamObject, DictionaryObject, NameObject
@@ -1777,7 +1781,7 @@ def _text_pdf(path: Path, *, algorithm: str | None = None, user_password: str = 
         {
             NameObject("/Type"): NameObject("/Font"),
             NameObject("/Subtype"): NameObject("/Type1"),
-            NameObject("/BaseFont"): NameObject("/Helvetica"),
+            NameObject("/BaseFont"): NameObject(f"/{font}"),
         }
     )
     page[NameObject("/Resources")] = DictionaryObject(
@@ -1790,6 +1794,21 @@ def _text_pdf(path: Path, *, algorithm: str | None = None, user_password: str = 
         writer.encrypt(user_password=user_password, owner_password="owner", algorithm=algorithm)
     writer.write(path)
     return path
+
+
+def test_pdf_text_marks_a_layer_drawn_in_an_ocr_font(tmp_path: Path) -> None:
+    pytest.importorskip("pypdf")
+    scanned = _text_pdf(tmp_path / "scan.pdf", font="GlyphLessFont")
+    typeset = _text_pdf(tmp_path / "typeset.pdf")
+    read = PdfTextAdapter().extract(
+        scanned, page_id="doc_0001_page_0001", page_number=1, action="transcribe_text"
+    )
+    assert read.warnings == ["ocr_text_layer"]
+    assert read.content.strip() == "Hello PageLedger"
+    plain = PdfTextAdapter().extract(
+        typeset, page_id="doc_0001_page_0001", page_number=1, action="transcribe_text"
+    )
+    assert plain.warnings == []
 
 
 def _lending_copy_pdf(path: Path) -> Path:
