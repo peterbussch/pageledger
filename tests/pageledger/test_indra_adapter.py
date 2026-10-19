@@ -97,9 +97,11 @@ def test_indra_reads_one_page_with_layout_and_confidence(monkeypatch, tmp_path):
     assert result.format == "text"
     assert result.model.startswith("indra-ocr 1.1.1; models sha256:")
     assert result.model.endswith("; mode=ocr; dpi=300; source=ocr")
-    assert result.confidence == 0.69
+    # The line Indra found but could not read counts as unread.
+    assert result.confidence == 0.46
     detail = result.confidence_detail
-    assert (detail["word_count"], detail["below_60_count"], detail["unit"]) == (2, 1, "line")
+    assert (detail["word_count"], detail["below_60_count"], detail["unit"]) == (3, 2, "line")
+    assert detail["empty_lines"] == 1
     assert detail["layout"]["blocks"] == [
         {"label": "Section-Header", "bbox": [10.0, 10.0, 200.0, 30.0]}
     ]
@@ -145,3 +147,16 @@ def test_indra_missing_package_says_how_to_install(monkeypatch):
     monkeypatch.setitem(sys.modules, "indra_ocr", None)
     with pytest.raises(ValueError, match=r"pageledger\[indra\]"):
         load_adapter("indra", {})
+
+
+def test_a_page_indra_left_half_unread_is_low_confidence(monkeypatch, tmp_path):
+    # FBI Silvermaster p2: 106 lines found, 46 returned empty.
+    from pageledger.quality import _has_low_confidence_tail
+
+    unread = [Line([0, i, 1, i + 1], "", 0.3) for i in range(46)]
+    read = [Line([0, i, 1, i + 1], "the next step", 0.9) for i in range(60)]
+    _fake_indra(monkeypatch, tmp_path, Page(lines=read + unread))
+    result = load_adapter("indra", {}).extract(
+        Path("b.pdf"), page_id="p1", page_number=1, action="transcribe_text"
+    )
+    assert _has_low_confidence_tail(result.confidence_detail)

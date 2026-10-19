@@ -129,15 +129,20 @@ class IndraAdapter:
             page = converter.pdf_page(str(source), document, page_number - 1)
         finally:
             document.close()
-        lines = [line for line in page.lines if line.text.strip()]
+        detected = list(page.lines)
+        lines = [line for line in detected if line.text.strip()]
         markdown = self.output == "markdown" and page.markdown is not None
         content = page.markdown if markdown else "\n".join(line.text for line in lines)
-        scores = [float(line.conf) * 100 for line in lines]
+        # A line Indra found but could not read counts as unread, confidence 0. On degraded
+        # typescript and cursive it leaves up to half its lines empty, and dropping them
+        # would hide the one sign that the reading is missing text.
+        scores = [float(line.conf) * 100 if line.text.strip() else 0.0 for line in detected]
         detail: dict[str, Any] | None = None
         if scores:
             detail = {
                 # Indra scores lines, not words; the names match the other engines'.
                 "word_count": len(scores),
+                "empty_lines": len(detected) - len(lines),
                 "mean": round(mean(scores), 2),
                 "min": round(min(scores), 2),
                 "below_60_count": sum(score < 60 for score in scores),
