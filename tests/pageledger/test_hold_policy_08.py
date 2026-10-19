@@ -105,12 +105,28 @@ def test_an_inherited_ocr_layer_is_read_again_by_local_ocr():
     assert climbs["next_action"] == "local_ocr"
     assert climbs["triggers"] == [{"trigger": "ocr_layer", "stage": "local_text", "attempt": "a1"}]
     assert climbs["disposition"] == "unreviewed_text"
-    # Once our own OCR agrees, the page rests on the layer it confirmed.
+    # Once our own OCR has read the page, the page rests on that reading.
     ocr = _attempt("a2", "local_ocr", "Readable text from an old OCR")
     agreed = assess_page(
         _page(layer, ocr, comparisons=[_compared("a1", "a2", 1.0)]),
         ocr_layer_climbs=True,
         escalate_on=("hold", "disagreement"),
     )
-    assert (agreed["next_action"], agreed["selected_attempt"]) == ("review", "a1")
+    assert (agreed["next_action"], agreed["selected_attempt"]) == ("review", "a2")
     assert [t["trigger"] for t in agreed["triggers"]] == ["ocr_layer"]
+
+
+def test_an_inherited_layer_is_set_aside_once_our_own_ocr_has_read_the_page():
+    # The 1922 pamphlet: IA's layer misreads 170 and the words under the underlining; every
+    # better reading then disagreed with it and the page climbed to the paid reader.
+    layer = _attempt(
+        "a1", "local_text", "170 ра очих даже Да-. ЛЕКИХ", warnings=["ocr_text_layer", "sparse"]
+    )
+    ocr = _attempt("a2", "local_ocr", "170 рабочих даже далеких")
+    page = _page(layer, ocr, comparisons=[{**_compared("a1", "a2", 0.3), "number_differences": []}])
+    result = assess_page(page, ocr_layer_climbs=True, escalate_on=("hold", "disagreement"))
+    assert result["selected_attempt"] == "a2"
+    assert result["next_action"] == "review"
+    assert "engine_disagreement" not in result["review_reasons"]
+    assert "coverage_defect" not in result["review_reasons"]  # the layer's own hold
+    assert result["disposition"] == "unreviewed_text"

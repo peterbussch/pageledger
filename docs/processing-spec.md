@@ -254,7 +254,13 @@ processing:
 - `ocr_layer` (no configuration; jobs written by 0.8): a page whose text
   layer is an earlier OCR of the scan (warning `ocr_text_layer`) climbs from
   local text to local OCR, whatever its text looks like. An inherited OCR layer
-  is a reading of unknown quality, and 0.7 accepted it unchecked.
+  is a reading of unknown quality, and 0.7 accepted it unchecked. Once local
+  OCR has read the page, the layer is kept but set aside: it is not selected,
+  its own holds are not the page's, and its disagreement with later readings
+  does not count. On 9 of the 10 Internet Archive pages checked in the 0.8
+  dogfood the layer read worse than a fresh OCR (on the tenth, slightly
+  better), and its misreadings made each better reading look like a
+  disagreement.
 - `always`: every page climbs to the image stage. Use it with
   [`contest`](#contest-a-models-reading) when the goal is an edition: the model
   reads every page and each place it differs from the OCR is checked.

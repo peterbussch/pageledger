@@ -333,18 +333,43 @@ def _usable(attempts: list[dict]) -> list[dict]:
     ]
 
 
+def inherited_layers(attempts: list[dict]) -> set[str]:
+    """Text layers that are an earlier OCR of the scan, once our own literal OCR has read the page.
+
+    Such a layer (warning ``ocr_text_layer``, only written by 0.8) is kept as evidence but no
+    longer selected or compared: on 9 of the 10 Internet Archive pages checked in the 0.8
+    dogfood it read worse than a fresh OCR, and its own misreadings made every better reading
+    look like a disagreement, sending each page up to the paid reader.
+    """
+    fresh = any(
+        item.get("stage") in {"local_ocr", "second_ocr"} and not _generative(item)
+        for item in _usable(attempts)
+    )
+    return (
+        {
+            item["attempt_id"]
+            for item in attempts
+            if any(_warning_code(w) == "ocr_text_layer" for w in item.get("warnings") or [])
+        }
+        if fresh
+        else set()
+    )
+
+
 def selected_clean_comparisons(
     page: dict, selected_attempt: str, holds_for: dict[str, str]
 ) -> list[dict]:
     """Comparisons of the selected attempt with an attempt that has no hold of its own.
 
     A held attempt is why the page moved on to another engine, so its
-    disagreement with that engine is expected and is not evidence.
+    disagreement with that engine is expected and is not evidence. Neither is an
+    inherited OCR layer's once the page has been read again.
     """
+    set_aside = inherited_layers(page["attempts"])
     clean = {
         item["attempt_id"]
         for item in _usable(page["attempts"])
-        if not _attempt_holds(item, holds_for)
+        if not _attempt_holds(item, holds_for) and item["attempt_id"] not in set_aside
     }
     return [
         item
@@ -430,12 +455,15 @@ def assess_page(
         _outvote_layer(attempts, holds_by_id, page.get("comparisons", []), holds_for)
     if reader_coverage:
         _hold_short_readers(attempts, holds_by_id)
-    for holds in holds_by_id.values():
-        reasons.extend(hold for hold in holds if hold not in reasons)
+    # An inherited OCR layer the page no longer rests on raises no review reason of its own.
+    set_aside = inherited_layers(completed)
+    for attempt_id, holds in holds_by_id.items():
+        if attempt_id not in set_aside:
+            reasons.extend(hold for hold in holds if hold not in reasons)
     numeric_conflict = any(_numeric_conflict(a, b) for a, b in combinations(completed, 2))
     if numeric_conflict and "numeric_column_conflict" not in reasons:
         reasons.append("numeric_column_conflict")
-    usable = _usable(completed)
+    usable = [item for item in _usable(completed) if item["attempt_id"] not in set_aside]
     clean = [item for item in usable if not holds_by_id[item["attempt_id"]]]
     if (
         text_refutes_blank
