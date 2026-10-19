@@ -1178,6 +1178,47 @@ def test_initialization_interruption_produces_explicit_halt_without_calls(setup,
     assert verify_job(setup[2])["status"] == "pass"
 
 
+def test_a_bad_stage_option_fails_before_the_job_exists(setup, monkeypatch):
+    from pageledger.adapters import load_adapter
+
+    # The real loader, so the vision adapter checks its own options.
+    monkeypatch.setattr(runner, "load_adapter", load_adapter)
+    data = yaml.safe_load(setup[1].read_text())
+    data["processing"]["local_text"] = {"adapter": "text"}
+    data["processing"]["local_ocr"] = {"adapter": "text"}
+    data["processing"]["image"] = {
+        "adapter": "vision",
+        "adapter_options": {
+            "base_url": "http://127.0.0.1:1/v1",
+            "model": "m",
+            "timeout_seconds": 900,
+        },
+    }
+    setup[1].write_text(yaml.safe_dump(data))
+    with pytest.raises(ValueError, match="processing.image: vision timeout_seconds"):
+        launch(setup)
+    assert not setup[2].exists()
+
+
+def test_a_child_that_raises_during_setup_leaves_a_job_that_verifies(setup, monkeypatch):
+    # 0.7 recorded attempt_stopped, then verify rebuilt it as initialization_incomplete
+    # and refused the job's own report.
+    original = runner.run
+
+    def broken(*args, **kwargs):
+        if "image" in str(kwargs.get("out_dir")):
+            Path(kwargs["out_dir"]).mkdir()
+            raise ValueError("adapter refused its options")
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(runner, "run", broken)
+    result = launch(setup)
+    job = read_record(setup[2] / "job.json")
+    assert result["status"] == "halted"
+    assert job["halt_reason"].startswith("attempt_stopped:image-")
+    assert verify_job(setup[2])["status"] == "pass"
+
+
 @pytest.mark.parametrize("field", ["page_id", "disposition"])
 def test_malformed_review_scalar_leaves_job_unchanged(setup, tmp_path, field):
     launch(setup)

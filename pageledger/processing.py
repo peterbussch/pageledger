@@ -272,6 +272,15 @@ def _process(
     if config.max_retries or config.on_page_error != "stop":
         raise ValueError("process requires zero retries and on_page_error: stop")
     policy = processing_config(config.data, pdf=source.suffix.lower() == ".pdf")
+    # Build every stage's adapter now, so a bad option fails before the job exists
+    # rather than when the first page reaches that stage. Constructors make no requests.
+    runner._apply_adapter_path(adapter_path)
+    for name in ladder(policy):
+        if policy[name] is not None:
+            try:
+                runner.load_adapter(policy[name]["adapter"], policy[name]["adapter_options"])
+            except ValueError as exc:
+                raise ValueError(f"processing.{name}: {exc}") from exc
     source_sha = file_digest(source)
     container_error = None
     container_action = "Obtain a valid source container and start a new job."
@@ -522,11 +531,14 @@ def _refresh(job: dict, root: Path, *, materialize: bool = True) -> None:
             if stage["status"] == "completed":
                 raise ValueError("Completed child recovery plan is missing")
             stage["status"] = "halted"
-            job.update(
-                status="halted",
-                halt_reason="initialization_incomplete",
-                next_action="Inspect the retained incomplete initialization before starting a new job; no calls were scheduled without a durable plan.",
-            )
+            # A child that raised before its plan was durable keeps the reason recorded
+            # then, so verification rebuilds the report the job published.
+            if not str(job.get("halt_reason")).startswith(f"attempt_stopped:{stage['stage_id']}:"):
+                job.update(
+                    status="halted",
+                    halt_reason="initialization_incomplete",
+                    next_action="Inspect the retained incomplete initialization before starting a new job; no calls were scheduled without a durable plan.",
+                )
             continue
         # The shared source was checked above; bind each child's claims to it
         # without rereading the whole input for every historical attempt.
