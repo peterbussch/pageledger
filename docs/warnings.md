@@ -28,6 +28,9 @@ state. A document job can finish while pages remain unresolved; see
 | `private_use_characters` | Several characters use font-specific private code points. They may stand for lost digits, ligatures, bullets, or icons. | Inspect their positions in the page. Try OCR or a better text extraction; do not guess replacements. |
 | `repeated_page_text` | The same short text is the entire output on at least three pages, often a stamp or watermark. | Check whether the page content is missing. Use OCR or another source if it is. |
 | `repetition_loop` | Text repeats in a pattern consistent with a vision model looping. | Do not use the output without comparison to the image. Retry with a changed model or prompt only as a new recorded attempt. |
+| `partial_transcription` | A generative reader says, in brackets, that it left text out ("[Remaining lines … are omitted]"). | Treat the reading as incomplete. Read the page in pieces (tiles or columns) or with another engine; do not publish it as the page. |
+| `model_commentary` | A generative reader added a note about the image or its own reading ("Note: the page is a low-resolution microfilm image …"). The note is not on the page. | Check how much of the page the reading covers, and remove nothing by hand: read the page again or with another engine. |
+| `page_rotated` | Indra found the page turned a quarter or half turn and read it upright. | Check that the reading order follows the printed page; nothing else to do. |
 | `script_mismatch` | When a script is configured, fewer than half of the page's letters match it. The wrong language/model or a mixed-script page may be involved. | Check the declared `language.script` and page content. Correct the configuration or review the mixed-script source; PageLedger does not guess a language. |
 | `historical_letters_lost` | With `orthography: prereform`, a large Cyrillic output lacks expected historical letters and word-final hard signs. OCR may have modernized the spelling. | Compare against the page and use a model suited to pre-reform spelling. Do not restore letters automatically. |
 | `render_dpi_capped` | PDF OCR rendered below the requested DPI to fit the configured pixel limit. | Inspect the rendered output. If it is not legible, increase `max_render_pixels` within available memory or use a different source. |
@@ -52,7 +55,7 @@ the source evidence. The built-in PDF OCR currently reports
 |---|---|---|
 | `pending` | No attempt has been recorded. | Run or resume the configured job. |
 | `unreviewed_text` | Usable text is selected, but no human receipt confirms it. | Compare it with the source and record a bound review if review is required. |
-| `coverage_defect` | A warning or structure check suggests possible missing or damaged content. | Inspect source coverage; use another configured stage or an alternate source. |
+| `coverage_defect` | A warning or structure check suggests possible missing or damaged content. In jobs written by 0.8, also: two later readings that agree with each other outvoted the PDF's text layer, or a model's reading has under half the words of the literal OCR. | Inspect source coverage; use another configured stage or an alternate source. |
 | `low_confidence` | The engine doubts some words; this is distinct from missing-content evidence. | Inspect uncertain passages and consider better resolution, language settings, or another engine. |
 | `numeric_column_conflict` | Structured numeric evidence disagrees or cannot be safely checked. | Check the named columns and row identities against the source. |
 | `engine_disagreement` | Independent readings disagree substantially. | Review the source and both attempts. |

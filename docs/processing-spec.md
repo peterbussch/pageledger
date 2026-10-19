@@ -80,7 +80,9 @@ or `review-job` to record them afterward. All job commands accept `--json`.
 
 `processing` is separate from `run.adapter_order`. The latter still chooses an
 adapter by explicit rerun generation; `process` rejects it. A document job has
-ordered stages `local_text`, `local_ocr`, `image`, and optional `second_opinion`.
+ordered stages `local_text`, `local_ocr`, `image`, and optional `second_opinion`,
+and two optional stages between local OCR and the image stage, `layout_ocr` and
+`local_image` (see [the ladder](#the-ladder-a-second-ocr-engine-and-a-local-model)).
 Each stage is an adapter profile with `adapter`, optional `adapter_options`,
 and optional `prompt`. Set an optional stage to `null` to disable it;
 `local_text` is required. Local text defaults to `pdf_text` for PDFs or `text`
@@ -111,6 +113,66 @@ unreadable text and source defects have separate dispositions. Human receipts
 can clear a hold only when they bind the source/page and, for reviewed text,
 the selected attempt and output hash. A known source defect directs the user to
 an alternate source and prevents further automatic extraction.
+
+## The ladder: a second OCR engine and a local model
+
+Between local OCR and a paid image stage, a job can try two cheaper rungs:
+
+```yaml
+schema_version: "0.1"
+processing:
+  local_text:
+    adapter: pdf_text
+  local_ocr:
+    adapter: pdf_ocr
+  layout_ocr:            # a second literal engine, read when OCR is held
+    adapter: indra
+    adapter_options:
+      mode: ocr
+  local_image:           # a vision model on this machine
+    adapter: vision
+    adapter_options:
+      base_url: http://127.0.0.1:8080/v1
+      model: YOUR_LOCAL_MODEL
+      timeout_seconds: 900
+  image:                 # the paid reader, called only when the local one is not enough
+    adapter: vision
+    adapter_options:
+      base_url: https://gateway.example.org/v1
+      model: YOUR_HOSTED_MODEL
+      env_key: GATEWAY_API_KEY
+      allow_remote: true
+  escalate_on: [hold, disagreement]
+  limits:
+    max_image_pages: 20
+    max_local_image_pages: 100
+```
+
+A page climbs one rung at a time, on the same triggers as before. `layout_ocr`
+is another literal engine, such as the built-in [`indra`](engine-recipes.md#indra-ocr-macos-and-linux-cpu)
+adapter: its reading is compared with the first OCR's like any other, and
+either can be a contested page's literal witness. `local_image` reads the page
+image with a model on this machine through the `vision` adapter; it keeps the
+exact image it sent, like the image stage, and has its own page budget,
+`max_local_image_pages`, which `max_image_pages` does not count.
+
+The local model is a reader, so its text is held as `unconfirmed_model_output`
+until another engine agrees with it, as any model's is. From `local_image` a
+page climbs to `image` only on evidence against the local reading: a warning
+hold on it, or, with the `disagreement` trigger, word agreement with a clean
+literal reading below 60% or a number read differently. `always` does not lift
+a clean local reading to the paid one. In a contested job the local reader's
+disagreement still counts, though the spans replace the page's disagreement
+reasons. When both have read a page, the paid reader is the contested base.
+
+A local model that fails (its server is down, it times out) costs nothing and
+leaves no reading: its attempt is kept as failed and the page goes on to the
+next stage. With no stage left, the page waits for review with
+`provider_failure` among its reasons.
+
+The two stages appear in a job's policy only when configured, so a job made
+without them keeps the policy it recorded and verifies as before. Each needs
+an explicit `local_ocr` stage.
 
 ## Compare engines on a page
 
@@ -358,10 +420,11 @@ page as before.
 |---|---|
 | `max_attempt_pages` | Before scheduling: every attempted source page across all stages counts, including failed/uncertain attempts. A local batch larger than the remaining allowance is cut to fit; the job then pauses. |
 | `max_image_pages` | Required positive limit when image processing is enabled. Counts both image and second-opinion attempts; checked before every call. |
+| `max_local_image_pages` | Required positive limit when a `local_image` stage is configured, and accepted only then. Counts that stage's attempts; checked before every call. |
 | `max_tokens` | Accumulates reported usage across stages. Stops at the cap before new work and after a response crosses it. A response can exceed the remaining amount; this is not a provider billing ceiling. Unknown paid token usage prevents another image attempt when this cap is configured. |
 | `max_cost_usd` | Accumulates reported dollar charges. Stops at the cap before new work and after a response crosses it. Unknown paid cost stops another image attempt. The first charge can be unknown or exceed the remaining amount; use a provider-side spending limit for a hard monetary ceiling. |
 
-A job that reaches `max_attempt_pages`, `max_image_pages`, `max_tokens` or
+A job that reaches `max_attempt_pages`, `max_image_pages`, `max_local_image_pages`, `max_tokens` or
 `max_cost_usd` ends with status `paused_budget`, keeping everything it has
 done. It continues only when resumed with a higher limit:
 

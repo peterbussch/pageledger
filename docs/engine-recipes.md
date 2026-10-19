@@ -108,6 +108,49 @@ Each page is rendered with `pdftoppm` before recognition, and a render that
 takes longer than `render_timeout_seconds` (default 120) fails the page. Raise
 it for very large scans or sources on a slow disk.
 
+## Indra OCR (macOS and Linux, CPU)
+
+[Indra OCR](https://huggingface.co/datalab-to/indra-ocr) is a small OCR model
+from Datalab that runs on the CPU through ONNX Runtime. It finds the lines of a
+page, reads them with a recognizer for the line's script (Latin and Cyrillic,
+CJK, right-to-left, and the Indic and Southeast Asian scripts), labels layout
+blocks and puts them in reading order. It also straightens tilted pages and
+turns pages set sideways. PageLedger's built-in `indra` adapter reads one page
+at a time:
+
+```yaml
+schema_version: "0.1"
+run:
+  adapter: indra
+  adapter_options:
+    mode: ocr          # or auto: Indra reads a sound text layer itself
+    dpi: 300
+taxonomy:
+  page_types:
+    prose:
+      default_action: transcribe_text
+```
+
+Install with `pip install 'pageledger[indra]'`. The first page downloads the
+models (about 76 MB) from Hugging Face into its cache; if that download stalls,
+`HF_HUB_DISABLE_XET=1` has worked. To pin a downloaded copy, set `model_dir`
+or `INDRA_OCR_MODEL_DIR` to the folder. `math: true` writes formulas as LaTeX
+and downloads the math models; `output: markdown` keeps headings and tables
+(as HTML) instead of plain lines. Each page's provenance records the indra-ocr
+version, a hash of the model files, the mode and the dpi; the line confidences
+become the page's quality evidence, and the layout blocks, rotation and skew
+are kept with them.
+
+Indra is a literal engine, but when it is unsure of a line it rescores the
+candidates with a character language model, which can prefer a common spelling
+to the printed one. In a document job it fits as `layout_ocr`, the second
+literal reading after Tesseract or RapidOCR.
+
+The code is Apache-2.0. The model weights use a modified OpenRAIL-M licence:
+free for research, personal use and organizations under $20M in funding or
+revenue, and not for use that competes with Datalab's API. PageLedger never
+ships them; read the licence before commercial use.
+
 ## Tesseract with the community orus model (macOS and Linux)
 
 The `orus` model source is [AButon-8/iskra_ocr](https://github.com/AButon-8/iskra_ocr),
