@@ -439,7 +439,8 @@ def assess_page(
     earlier OCR of the scan (``ocr_text_layer``) is read again by local OCR, so the
     two readings confirm or challenge each other. With ``corroborate``, a local OCR
     reading that no other reading confirms climbs to the job's second OCR engine
-    (trigger ``uncorroborated``); an inherited OCR layer that agrees with it counts as
+    (trigger ``uncorroborated``), and from there to a reader if the second engine
+    could not confirm it either; an inherited OCR layer that agrees with it counts as
     confirmation, though its disagreement still does not count against it.
 
     ``stages`` is the job's ladder. A local reader (``local_image``) that failed
@@ -495,9 +496,12 @@ def assess_page(
     )
     if any(item["agreement_ratio"] < ENGINE_AGREEMENT_THRESHOLD for item in selected_comparisons):
         reasons.append("engine_disagreement")
+    # No clean reading to compare with, and none that confirms it. A clean reading that
+    # disagrees is the disagreement trigger's evidence, not this one's.
     uncorroborated = (
         corroborate
         and selected is not None
+        and not selected_comparisons
         and not _corroborated(page, selected["attempt_id"], holds_by_id)
     )
     if any(item["number_differences"] for item in selected_comparisons):
@@ -817,11 +821,15 @@ def _triggers(
     if (
         uncorroborated
         and not fired
-        and following == "second_ocr"
         and selected.get("stage") == "local_ocr"
         and not _generative(selected)
+        and (
+            following == "second_ocr"
+            or (stage == "second_ocr" and following in {"local_image", "image"})
+        )
     ):
-        # One engine's reading, unconfirmed: the second OCR engine is the cheap witness.
+        # One engine's reading, unconfirmed: the second OCR engine is the cheap witness,
+        # and when its own reading is held or disagrees, a reader is the next.
         fired.append(
             {"trigger": "uncorroborated", "stage": stage, "attempt": selected["attempt_id"]}
         )

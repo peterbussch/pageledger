@@ -263,14 +263,16 @@ processing:
   disagreement.
 - `uncorroborated` (no configuration; jobs written by 0.8 whose ladder has a
   `second_ocr` stage): a page whose selected reading is one local OCR engine's,
-  with no other reading agreeing with it on at least 60% of words, climbs to the
-  second OCR engine. An inherited OCR layer that agrees counts as confirmation;
-  its disagreement still does not count against the reading, and a typeset text
+  with no clean reading to compare it with and none agreeing with it on at least
+  60% of words, climbs to the second OCR engine; if that engine's own reading is
+  held (so it can neither confirm nor challenge), the page climbs on to the next
+  reader. An inherited OCR layer that agrees counts as confirmation; its
+  disagreement still does not count against the reading, and a typeset text
   layer with no warning is not read again. On the 20 truth pages of the 0.8
   dogfood, five of the six pages that were wrong but not held were one engine's
   unconfirmed reading (Indra, after the Internet Archive layer was set aside).
-  When the two engines then disagree, `disagreement` takes the page on, or the
-  page is held as `engine_disagreement`.
+  When two clean readings disagree, that is `disagreement`'s evidence: the page
+  climbs if that trigger is on, and is otherwise held as `engine_disagreement`.
 - `always`: every page climbs to the image stage. Use it with
   [`contest`](#contest-a-models-reading) when the goal is an edition: the model
   reads every page and each place it differs from the OCR is checked.

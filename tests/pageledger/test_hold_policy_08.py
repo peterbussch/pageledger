@@ -217,3 +217,44 @@ def test_the_trigger_history_names_each_climb_once():
         ("uncorroborated", "local_ocr"),
     ]
     assert (result["selected_attempt"], result["disposition"]) == ("a2", "unreviewed_text")
+
+
+def _second_ocr_held(stages):
+    # junk-text-layer p6 (pageledger-08b): RapidOCR's own reading is held as low confidence,
+    # so it neither confirms nor challenges Indra, and the page stopped there.
+    page = _layer_and_indra(0.10)
+    page["attempts"].append(_attempt("a3", "second_ocr", "в Кар", warnings=["low_confidence"]))
+    page["comparisons"] += [_compared("a1", "a3", 0.07), _compared("a2", "a3", 0.11)]
+    return assess_page(page, ocr_layer_climbs=True, corroborate=True, stages=stages)
+
+
+def test_a_reading_the_second_ocr_could_not_confirm_climbs_to_the_reader():
+    result = _second_ocr_held(LADDER)
+    assert result["next_action"] == "local_image"
+    assert result["triggers"][-1] == {
+        "trigger": "uncorroborated",
+        "stage": "second_ocr",
+        "attempt": "a2",
+    }
+
+
+def test_without_a_reader_an_unconfirmed_reading_is_held_with_the_second_ocr_s_reason():
+    result = _second_ocr_held(("local_text", "local_ocr", "second_ocr"))
+    assert (result["next_action"], result["disposition"]) == ("review", "low_confidence")
+
+
+def test_a_clean_disagreement_is_left_to_the_disagreement_trigger():
+    page = _layer_and_indra(0.10)
+    page["attempts"].append(_attempt("a3", "second_ocr", "в Кар"))
+    page["comparisons"] += [_compared("a1", "a3", 0.07), _compared("a2", "a3", 0.3)]
+    held = assess_page(page, ocr_layer_climbs=True, corroborate=True, stages=LADDER)
+    assert (held["next_action"], held["disposition"]) == ("review", "engine_disagreement")
+    climbs = assess_page(
+        page,
+        ocr_layer_climbs=True,
+        corroborate=True,
+        stages=LADDER,
+        escalate_on=("hold", "disagreement"),
+    )
+    assert [t["trigger"] for t in climbs["triggers"]][-1] == "disagreement"
+    assert climbs["next_action"] == "local_image"
