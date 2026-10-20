@@ -55,7 +55,8 @@ recommended as a page reader.
 
 Start the server with mlx-vlm (tested with 0.7.3) on a free port, from a
 local copy of `mlx-community/dots.ocr-4bit`:
-`mlx_vlm.server --model PATH --host 127.0.0.1 --port 8081`. Use the
+`mlx_vlm.server --model PATH --host 127.0.0.1 --port 8081 --trust-remote-code`
+(dots.ocr ships its own model code). Use the
 model's own prompt:
 
 ```yaml

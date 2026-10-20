@@ -161,11 +161,8 @@ class IndraAdapter:
             ],
         }
         detail = {**(detail or {}), "layout": layout}
-        warnings = []
         if page.source == "error":
             raise RuntimeError(f"Indra could not read page {page_number}: {page.note}")
-        if page.rotation:
-            warnings.append("page_rotated")
         return ExtractionResult(
             content=content,
             format="markdown" if markdown else "text",
@@ -176,7 +173,7 @@ class IndraAdapter:
                 + ("; math" if self.math else "")
                 + f"; source={page.source}"
             ),
-            warnings=warnings,
+            warnings=[],
             usage={
                 "pages": 1,
                 "tokens": None,

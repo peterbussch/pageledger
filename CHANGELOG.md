@@ -11,7 +11,7 @@ Release changes follow the [artifact compatibility policy](docs/run-manifest-spe
   default) or `auto`, at a chosen `dpi`, optionally with `math: true` (formulas as LaTeX) or `output:
   markdown`. Provenance records the indra-ocr version, a hash of the model files, the mode and the dpi; line
   confidences become quality evidence, with a line Indra found but could not read counted as unread, and the
-  layout blocks, rotation and skew are kept with them. A page Indra turned upright carries `page_rotated`. The model weights are not shipped and have their own licence
+  layout blocks, rotation and skew are kept with them. The model weights are not shipped and have their own licence
   (modified OpenRAIL-M); `THIRD_PARTY_NOTICES.md` and `doctor` say so.
 - Two optional ladder stages between local OCR and the image stage: `second_ocr`, a second literal engine,
   and `local_image`, a vision model on this machine read through the `vision` adapter. A page climbs one rung
@@ -26,7 +26,9 @@ Release changes follow the [artifact compatibility policy](docs/run-manifest-spe
 - `model_commentary` and `partial_transcription` warnings for a generative reader's own remarks: a note about
   the image or its legibility, or a bracket saying what it left out. Both hold the page as a coverage defect.
 - `ocr_text_layer`, a `pdf_text` warning for a page whose text layer is drawn in an OCR font
-  (`GlyphLessFont`: Tesseract, OCRmyPDF and Internet Archive scans), that is, an earlier OCR of the scan.
+  (`GlyphLessFont`: Tesseract, OCRmyPDF and Internet Archive scans), that is, an earlier OCR of the scan. Like
+  any warning, it puts the page in a plain run's review queue and counts against its signals grade, so a `run`
+  of such a scan with `pdf_text` now queues every page that has layer text.
 - `doctor` reports the `pymorphy3` (`ru` extra) and `indra_ocr` packages, with the extra that installs each.
 
 ### Changed

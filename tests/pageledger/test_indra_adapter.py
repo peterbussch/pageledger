@@ -122,7 +122,8 @@ def test_indra_records_a_turned_page(monkeypatch, tmp_path):
     result = load_adapter("indra", {}).extract(
         Path("b.pdf"), page_id="p1", page_number=1, action="transcribe_text"
     )
-    assert result.warnings == ["page_rotated"]
+    # Evidence, not a review concern: a page set sideways was read upright.
+    assert result.warnings == []
     assert result.confidence_detail["layout"]["rotation"] == 90
 
 
