@@ -179,6 +179,16 @@ version, a hash of the model files, the mode and the dpi; the line confidences
 become the page's quality evidence, and the layout blocks, rotation and skew
 are kept with them.
 
+On the 20 hand-checked pages of the 0.8 dogfood, Indra in `ocr` mode measured
+a median character error of 0.159 against Tesseract's 0.242, at a median of 0.7
+seconds a page against 1.8 (M4 Pro, one thread per page). It was much better
+on a typescript tilted 3 to 4.5 degrees (0.04 against 0.48), on a born-digital
+paper whose fonts have no Unicode map (0.012 against 0.146) and on Cyrillic print
+(0.004 and 0.033), and weak on a degraded carbon typescript (0.37 and 0.66) and
+cursive handwriting (0.32 and 0.39), where it finds lines but leaves many of them
+empty. The adapter counts those as unread, so such a page is held as
+`low_confidence` and climbs.
+
 Indra is a literal engine, but when it is unsure of a line it rescores the
 candidates with a character language model, which can prefer a common spelling
 to the printed one. In a document job it can be the first OCR (`local_ocr`),
