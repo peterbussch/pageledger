@@ -39,6 +39,44 @@ taxonomy:
       default_action: transcribe_text
 ```
 
+## dots.ocr with mlx-vlm as the local reader (macOS)
+
+In the 0.8 dogfood (20 hand-checked pages from 10 difficult PDFs: degraded
+typescript, handwriting, a broadsheet newspaper, Cyrillic print, census tables,
+a math paper, a Japanese-English dictionary, tilted pages), the 4-bit MLX
+conversion of dots.ocr was the strongest model that runs on the Mac: median
+character error 0.061 against Claude Haiku 5.5's 0.032, at a median of 31
+seconds a page on an M4 Pro. It looped until `max_tokens` on 6 of the 20 pages
+(both handwriting pages, both newspaper pages, both pages of a tilted
+typescript), 70 to 86 seconds each. In a document job that is a failed
+`local_image` attempt and the page goes on to the next stage. PaddleOCR-VL 1.6
+read whole pages badly (it repeated lines and invented headlines) and is not
+recommended as a page reader.
+
+Start the server with mlx-vlm (tested with 0.7.3) on a free port, from a
+local copy of `mlx-community/dots.ocr-4bit`:
+`mlx_vlm.server --model PATH --host 127.0.0.1 --port 8081`. Use the
+model's own prompt:
+
+```yaml
+schema_version: "0.1"
+run:
+  adapter: vision
+  adapter_options:
+    base_url: http://127.0.0.1:8081/v1
+    model: PATH
+    timeout_seconds: 600
+    max_tokens: 8192
+taxonomy:
+  page_types:
+    prose:
+      default_action: transcribe_text
+      prompt: Extract the text content from this image.
+```
+
+In a document job it fits as `local_image`, with its own
+`max_local_image_pages`. dots.ocr is MIT-licensed.
+
 ## GGUF vision model through llama.cpp (macOS and Linux)
 
 This path was not run in the evaluation. A GGUF vision model runs locally
