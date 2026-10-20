@@ -2,6 +2,64 @@
 
 Release changes follow the [artifact compatibility policy](docs/run-manifest-spec.md#compatibility-policy).
 
+## 0.8.0 - 2026-10-19
+
+### Added
+
+- A built-in `indra` adapter for [Indra OCR](https://huggingface.co/datalab-to/indra-ocr), a small OCR model
+  that runs on the CPU: `pip install 'pageledger[indra]'`. It reads one page at a time in `mode: ocr` (the
+  default) or `auto`, at a chosen `dpi`, optionally with `math: true` (formulas as LaTeX) or `output:
+  markdown`. Provenance records the indra-ocr version, a hash of the model files, the mode and the dpi; line
+  confidences become quality evidence, with a line Indra found but could not read counted as unread, and the
+  layout blocks, rotation and skew are kept with them. A page Indra turned upright carries `page_rotated`. The model weights are not shipped and have their own licence
+  (modified OpenRAIL-M); `THIRD_PARTY_NOTICES.md` and `doctor` say so.
+- Two optional ladder stages between local OCR and the image stage: `second_ocr`, a second literal engine,
+  and `local_image`, a vision model on this machine read through the `vision` adapter. A page climbs one rung
+  at a time on the configured triggers. The local model has its own budget, `max_local_image_pages`, keeps
+  the image it read as evidence, and a failed local call hands its page to the next stage instead of halting
+  the job. From `local_image` a page climbs to the paid `image` stage only on evidence against the local
+  reading (a hold, or disagreement with a literal reading); `always` does not lift a clean local reading. In
+  a contested job the paid reader is the base over the local one. See
+  [the ladder](docs/processing-spec.md#the-ladder-a-second-ocr-engine-and-a-local-model).
+- Contest rule set `ru-print-0.2`: a grouped span (an unpaired run, or words only one side has) with a digit
+  on either side is a `number`, as paired words always were. `ru-print-0.1` is unchanged.
+- `model_commentary` and `partial_transcription` warnings for a generative reader's own remarks: a note about
+  the image or its legibility, or a bracket saying what it left out. Both hold the page as a coverage defect.
+- `ocr_text_layer`, a `pdf_text` warning for a page whose text layer is drawn in an OCR font
+  (`GlyphLessFont`: Tesseract, OCRmyPDF and Internet Archive scans), that is, an earlier OCR of the scan.
+- `doctor` reports the `pymorphy3` (`ru` extra) and `indra_ocr` packages, with the extra that installs each.
+
+### Changed
+
+- New jobs record hold policy `0.8`, which adds three rules. A text layer that two agreeing later readings
+  both disagree with is held, and the length warning those readings carried for differing from it is set
+  aside, so a junk layer no longer wins the transcript. A reader that returns under half the literal OCR's
+  words is held as incomplete. A page with an `ocr_text_layer` climbs to local OCR (trigger `ocr_layer`), so
+  an inherited OCR is checked instead of accepted. Jobs written under 0.6 and 0.6.1 are rebuilt by their own
+  rules and verify unchanged.
+- `pdf_text` counts pages from the page tree and reads only the pages a job selects. A `--pages` sample of a
+  long PDF no longer extracts the whole document's text first.
+
+### Fixed
+
+- An optional second opinion that reports `MODEL_QUOTA` without an HTTP status (a subscription reader's usage
+  limit) now holds its page like a 429 instead of halting the job.
+- `process` builds every configured stage's adapter before the job exists, so a bad option on a later stage
+  (a vision `timeout_seconds` above 600, say) fails at once and names the stage, instead of halting the job when
+  the first page reaches it.
+- A job halted while a child run was still setting up can be verified. The job recorded
+  `attempt_stopped:<stage>:<error>`, but `verify-job` rebuilt it as `initialization_incomplete` and refused the
+  job's own report.
+- `adjudicate --decisions` records an answer without a `note` with an empty note, and names a refused decision by
+  its position and what is wrong with it, instead of refusing the page as "an invalid or repeated decision".
+
+### Compatibility
+
+- `job.schema.json` and `document.schema.json` accept the stages `second_ocr` and `local_image`, hold policy
+  `0.8`, the trigger `ocr_layer`, the usage field `local_image_calls` and the limit `max_local_image_pages`.
+  The new stages and limit appear in a job's policy only when configured, so older configs compile to the
+  policy their jobs recorded.
+
 ## 0.7.1 - 2026-10-07
 
 ### Added
