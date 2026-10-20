@@ -108,7 +108,10 @@ Use `process` when one document needs local text, OCR for defective pages, and
 optional image stages under a shared budget. The `processing` section defines
 `local_text`, `local_ocr`, `image`, and optional `second_opinion`, and two
 optional rungs between OCR and the image stage: `second_ocr` (a second literal
-engine) and `local_image` (a vision model on this machine). Local text is
+engine) and `local_image` (a vision model on this machine). Under hold
+policy 0.8 a local OCR reading that nothing else confirms climbs to
+`second_ocr` (trigger `uncorroborated`), so configure one when OCR text
+should not be accepted on one engine's word. Local text is
 required; other stages can be disabled with `null`. Image stages require a
 positive `processing.limits.max_image_pages`, and `local_image` its own
 `max_local_image_pages`. The limits also accept `max_attempt_pages`,

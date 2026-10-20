@@ -33,12 +33,16 @@ Release changes follow the [artifact compatibility policy](docs/run-manifest-spe
 
 ### Changed
 
-- New jobs record hold policy `0.8`, which adds three rules. A text layer that two agreeing later readings
+- New jobs record hold policy `0.8`, which adds four rules. A text layer that two agreeing later readings
   both disagree with is held, and the length warning those readings carried for differing from it is set
   aside, so a junk layer no longer wins the transcript. A reader that returns under half the literal OCR's
   words is held as incomplete. A page with an `ocr_text_layer` climbs to local OCR (trigger `ocr_layer`), so
-  an inherited OCR is checked instead of accepted. Jobs written under 0.6 and 0.6.1 are rebuilt by their own
-  rules and verify unchanged.
+  an inherited OCR is checked instead of accepted. And in a ladder with a `second_ocr` stage, a local OCR
+  reading that no other clean reading confirms climbs to the second engine, and on to a reader when that
+  engine's own reading is held (trigger `uncorroborated`); an inherited OCR layer that agrees counts as
+  confirmation. One engine's unconfirmed reading was how five of the six wrong-but-accepted truth pages of the
+  0.8 dogfood got through. Jobs written under 0.6 and 0.6.1 are rebuilt by their own rules and verify
+  unchanged.
 - `pdf_text` counts pages from the page tree and reads only the pages a job selects. A `--pages` sample of a
   long PDF no longer extracts the whole document's text first.
 
@@ -58,7 +62,7 @@ Release changes follow the [artifact compatibility policy](docs/run-manifest-spe
 ### Compatibility
 
 - `job.schema.json` and `document.schema.json` accept the stages `second_ocr` and `local_image`, hold policy
-  `0.8`, the trigger `ocr_layer`, the usage field `local_image_calls` and the limit `max_local_image_pages`.
+  `0.8`, the triggers `ocr_layer` and `uncorroborated`, the usage field `local_image_calls` and the limit `max_local_image_pages`.
   The new stages and limit appear in a job's policy only when configured, so older configs compile to the
   policy their jobs recorded.
 

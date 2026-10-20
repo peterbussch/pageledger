@@ -127,7 +127,7 @@ processing:
     adapter: indra
     adapter_options:
       mode: ocr
-  second_ocr:            # a second literal engine, read when the first is held
+  second_ocr:            # a second literal engine, read when the first is held or unconfirmed
     adapter: pdf_ocr
   local_image:           # a vision model on this machine
     adapter: vision
@@ -153,7 +153,9 @@ is another literal engine: its reading is compared with the first OCR's like
 any other, and either can be a contested page's literal witness. The example
 reads first with the built-in [`indra`](engine-recipes.md#indra-ocr-macos-and-linux-cpu)
 adapter, which was the stronger and much faster engine in the measurement
-there, and asks Tesseract only when Indra's reading is held. `local_image` reads the page
+there, and asks Tesseract when Indra's reading is held or when nothing else
+confirms it (the `uncorroborated` trigger below): a page whose text layer
+agrees with Indra stops there, a scan without a layer is read twice. `local_image` reads the page
 image with a model on this machine through the `vision` adapter; it keeps the
 exact image it sent, like the image stage, and has its own page budget,
 `max_local_image_pages`, which `max_image_pages` does not count.
@@ -264,9 +266,9 @@ processing:
 - `uncorroborated` (no configuration; jobs written by 0.8 whose ladder has a
   `second_ocr` stage): a page whose selected reading is one local OCR engine's,
   with no clean reading to compare it with and none agreeing with it on at least
-  60% of words, climbs to the second OCR engine; if that engine's own reading is
-  held (so it can neither confirm nor challenge), the page climbs on to the next
-  reader. An inherited OCR layer that agrees counts as confirmation; its
+  60% of words, climbs to the second OCR engine; while each later engine's own
+  reading is held (so it can neither confirm nor challenge), the page climbs on
+  to the next reader, up to the image stage. An inherited OCR layer that agrees counts as confirmation; its
   disagreement still does not count against the reading, and a typeset text
   layer with no warning is not read again. On the 20 truth pages of the 0.8
   dogfood, five of the six pages that were wrong but not held were one engine's

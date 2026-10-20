@@ -439,8 +439,8 @@ def assess_page(
     earlier OCR of the scan (``ocr_text_layer``) is read again by local OCR, so the
     two readings confirm or challenge each other. With ``corroborate``, a local OCR
     reading that no other reading confirms climbs to the job's second OCR engine
-    (trigger ``uncorroborated``), and from there to a reader if the second engine
-    could not confirm it either; an inherited OCR layer that agrees with it counts as
+    (trigger ``uncorroborated``), and from there to the readers while each one's own
+    reading is held and so cannot confirm it; an inherited OCR layer that agrees with it counts as
     confirmation, though its disagreement still does not count against it.
 
     ``stages`` is the job's ladder. A local reader (``local_image``) that failed
@@ -825,11 +825,12 @@ def _triggers(
         and not _generative(selected)
         and (
             following == "second_ocr"
-            or (stage == "second_ocr" and following in {"local_image", "image"})
+            or (stage in {"second_ocr", "local_image"} and following in {"local_image", "image"})
         )
     ):
-        # One engine's reading, unconfirmed: the second OCR engine is the cheap witness,
-        # and when its own reading is held or disagrees, a reader is the next.
+        # One engine's reading, unconfirmed: the second OCR engine is the cheap witness;
+        # when its own reading is held, a reader is next, and the paid one when the
+        # local reader's is held too.
         fired.append(
             {"trigger": "uncorroborated", "stage": stage, "attempt": selected["attempt_id"]}
         )

@@ -258,3 +258,25 @@ def test_a_clean_disagreement_is_left_to_the_disagreement_trigger():
     )
     assert [t["trigger"] for t in climbs["triggers"]][-1] == "disagreement"
     assert climbs["next_action"] == "local_image"
+
+
+def test_a_held_local_reading_sends_an_unconfirmed_page_on_to_the_paid_reader():
+    # junk-text-layer p4: dots.ocr's reading was held too, and the page stopped on Indra's.
+    page = _layer_and_indra(0.23)
+    page["attempts"] += [
+        _attempt("a3", "second_ocr", "в Кар", warnings=["suspicious_symbol_density"]),
+        _attempt(
+            "a4",
+            "local_image",
+            "въ Кар",
+            warnings=["suspicious_symbol_density"],
+            adapter_capabilities=GENERATIVE,
+        ),
+    ]
+    page["comparisons"] += [_compared("a2", "a3", 0.32), _compared("a2", "a4", 0.35)]
+    result = assess_page(page, ocr_layer_climbs=True, corroborate=True, stages=LADDER)
+    assert result["next_action"] == "image"
+    assert [(t["trigger"], t["stage"]) for t in result["triggers"]][-1] == (
+        "uncorroborated",
+        "local_image",
+    )
