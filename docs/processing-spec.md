@@ -261,6 +261,16 @@ processing:
   dogfood the layer read worse than a fresh OCR (on the tenth, slightly
   better), and its misreadings made each better reading look like a
   disagreement.
+- `uncorroborated` (no configuration; jobs written by 0.8 whose ladder has a
+  `second_ocr` stage): a page whose selected reading is one local OCR engine's,
+  with no other reading agreeing with it on at least 60% of words, climbs to the
+  second OCR engine. An inherited OCR layer that agrees counts as confirmation;
+  its disagreement still does not count against the reading, and a typeset text
+  layer with no warning is not read again. On the 20 truth pages of the 0.8
+  dogfood, five of the six pages that were wrong but not held were one engine's
+  unconfirmed reading (Indra, after the Internet Archive layer was set aside).
+  When the two engines then disagree, `disagreement` takes the page on, or the
+  page is held as `engine_disagreement`.
 - `always`: every page climbs to the image stage. Use it with
   [`contest`](#contest-a-models-reading) when the goal is an edition: the model
   reads every page and each place it differs from the OCR is checked.

@@ -665,6 +665,7 @@ def _refresh(job: dict, root: Path, *, materialize: bool = True) -> None:
                 layer_outvoted=job.get("hold_policy") == processing_policy.HOLD_POLICY,
                 reader_coverage=job.get("hold_policy") == processing_policy.HOLD_POLICY,
                 ocr_layer_climbs=job.get("hold_policy") == processing_policy.HOLD_POLICY,
+                corroborate=job.get("hold_policy") == processing_policy.HOLD_POLICY,
                 escalate_on=escalate_on,
                 roughness=roughness_of,
                 rough_below=rough_below,

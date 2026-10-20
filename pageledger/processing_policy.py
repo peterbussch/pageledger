@@ -411,6 +411,7 @@ def assess_page(
     layer_outvoted: bool = False,
     reader_coverage: bool = False,
     ocr_layer_climbs: bool = False,
+    corroborate: bool = False,
 ) -> dict:
     """Select evidence deterministically while keeping all recorded review holds.
 
@@ -436,7 +437,10 @@ def assess_page(
     instead. With ``reader_coverage``, a reader with under half the literal OCR's
     words is held as incomplete. With ``ocr_layer_climbs``, a text layer that is an
     earlier OCR of the scan (``ocr_text_layer``) is read again by local OCR, so the
-    two readings confirm or challenge each other.
+    two readings confirm or challenge each other. With ``corroborate``, a local OCR
+    reading that no other reading confirms climbs to the job's second OCR engine
+    (trigger ``uncorroborated``); an inherited OCR layer that agrees with it counts as
+    confirmation, though its disagreement still does not count against it.
 
     ``stages`` is the job's ladder. A local reader (``local_image``) that failed
     leaves no reading and does not stop the page: it goes on to the next stage.
@@ -491,6 +495,11 @@ def assess_page(
     )
     if any(item["agreement_ratio"] < ENGINE_AGREEMENT_THRESHOLD for item in selected_comparisons):
         reasons.append("engine_disagreement")
+    uncorroborated = (
+        corroborate
+        and selected is not None
+        and not _corroborated(page, selected["attempt_id"], holds_by_id)
+    )
     if any(item["number_differences"] for item in selected_comparisons):
         reasons.append("numeric_disagreement")
     # Contest replaces these reasons on the page, but a local reader still climbs on them.
@@ -570,6 +579,7 @@ def assess_page(
         rough_below,
         disagreements,
         ocr_layer_climbs,
+        uncorroborated,
     )
     held = not clean and not any(reason in reasons for reason in _COMPARISON_REASONS)
     if local_failed and following is None and "provider_failure" not in reasons:
@@ -607,7 +617,7 @@ def assess_page(
     }
     if contest is not None:
         result["contested"] = contested
-    if tuple(escalate_on) != ("hold",) or ocr_layer_climbs:
+    if tuple(escalate_on) != ("hold",) or ocr_layer_climbs or corroborate:
         # Why the page climbed at each earlier stage, then why it climbs now.
         result["triggers"] = [
             *_trigger_history(
@@ -621,6 +631,7 @@ def assess_page(
                 layer_outvoted,
                 reader_coverage,
                 ocr_layer_climbs,
+                corroborate,
             ),
             *(triggers if next_action not in {"review", "none"} else []),
         ]
@@ -633,6 +644,25 @@ def _generative(attempt: dict) -> bool:
 
 def _warning_code(warning: Any) -> Any:
     return warning.get("type", warning.get("code")) if isinstance(warning, dict) else warning
+
+
+def _corroborated(page: dict, selected: str, holds_by_id: dict[str, list[str]]) -> bool:
+    """Another reading of the page, with no hold of its own, agrees with the selected one.
+
+    An inherited OCR layer set aside once our OCR read the page still confirms: it is an
+    independent engine's reading. Its disagreement is not evidence (see ``inherited_layers``).
+    """
+    for item in page.get("comparisons", []):
+        if selected not in (item["left_attempt"], item["right_attempt"]):
+            continue
+        other = item["right_attempt"] if item["left_attempt"] == selected else item["left_attempt"]
+        if (
+            item["agreement_ratio"] >= ENGINE_AGREEMENT_THRESHOLD
+            and other in holds_by_id
+            and not holds_by_id[other]
+        ):
+            return True
+    return False
 
 
 def _outvote_layer(
@@ -701,6 +731,7 @@ def _trigger_history(
     layer_outvoted: bool = False,
     reader_coverage: bool = False,
     ocr_layer_climbs: bool = False,
+    corroborate: bool = False,
 ) -> list[dict]:
     """Re-assess the page as it stood after each earlier stage, from retained attempts only."""
     reached = sorted(
@@ -731,6 +762,7 @@ def _trigger_history(
             layer_outvoted=layer_outvoted,
             reader_coverage=reader_coverage,
             ocr_layer_climbs=ocr_layer_climbs,
+            corroborate=corroborate,
         )
         # Its list repeats the history found so far; only the tail is this stage's.
         history.extend(before["triggers"][len(history) :])
@@ -747,6 +779,7 @@ def _triggers(
     rough_below: float | None,
     disagreements: list[str] | None = None,
     ocr_layer_climbs: bool = False,
+    uncorroborated: bool = False,
 ) -> list[dict]:
     """Why a page whose reading is not held still climbs, with the evidence that fired.
 
@@ -780,6 +813,17 @@ def _triggers(
                 "attempt": selected["attempt_id"],
                 "reasons": found,
             }
+        )
+    if (
+        uncorroborated
+        and not fired
+        and following == "second_ocr"
+        and selected.get("stage") == "local_ocr"
+        and not _generative(selected)
+    ):
+        # One engine's reading, unconfirmed: the second OCR engine is the cheap witness.
+        fired.append(
+            {"trigger": "uncorroborated", "stage": stage, "attempt": selected["attempt_id"]}
         )
     return fired
 

@@ -130,3 +130,90 @@ def test_an_inherited_layer_is_set_aside_once_our_own_ocr_has_read_the_page():
     assert "engine_disagreement" not in result["review_reasons"]
     assert "coverage_defect" not in result["review_reasons"]  # the layer's own hold
     assert result["disposition"] == "unreviewed_text"
+
+
+LADDER = ("local_text", "local_ocr", "second_ocr", "local_image", "image", "second_opinion")
+
+
+def _layer_and_indra(ratio):
+    # The 1914 pre-reform book (pageledger-08b): IA's layer agrees with Indra on 15% of
+    # words, P18 sets it aside, and Indra's reading (CER 0.18) was accepted unread by anyone else.
+    layer = _attempt("a1", "local_text", "въ Карпатской Руси", warnings=["ocr_text_layer"])
+    ocr = _attempt("a2", "local_ocr", "в Карпатской Руси")
+    return _page(layer, ocr, comparisons=[_compared("a1", "a2", ratio)])
+
+
+def test_an_ocr_reading_no_other_engine_confirms_climbs_to_the_second_ocr():
+    result = assess_page(
+        _layer_and_indra(0.15), ocr_layer_climbs=True, corroborate=True, stages=LADDER
+    )
+    assert result["selected_attempt"] == "a2"
+    assert result["next_action"] == "second_ocr"
+    assert result["triggers"][-1] == {
+        "trigger": "uncorroborated",
+        "stage": "local_ocr",
+        "attempt": "a2",
+    }
+    # 0.8 as first written: accepted on Indra's word alone.
+    alone = assess_page(_layer_and_indra(0.15), ocr_layer_climbs=True, stages=LADDER)
+    assert (alone["next_action"], alone["disposition"]) == ("review", "unreviewed_text")
+
+
+def test_an_inherited_layer_that_agrees_confirms_the_ocr_but_cannot_challenge_it():
+    confirmed = assess_page(
+        _layer_and_indra(0.9), ocr_layer_climbs=True, corroborate=True, stages=LADDER
+    )
+    assert confirmed["next_action"] == "review"
+    assert confirmed["disposition"] == "unreviewed_text"
+    assert "uncorroborated" not in [t["trigger"] for t in confirmed["triggers"]]
+
+
+def test_a_held_layer_does_not_confirm_anything():
+    page = _layer_and_indra(0.9)
+    page["attempts"][0]["warnings"].append("sparse")
+    result = assess_page(page, ocr_layer_climbs=True, corroborate=True, stages=LADDER)
+    assert result["next_action"] == "second_ocr"
+
+
+def test_a_scan_without_a_layer_is_read_twice():
+    # The CIA transcript and FBI pages have no layer: Indra alone was accepted.
+    page = _page(_attempt("a1", "local_text", " "), _attempt("a2", "local_ocr", "SECRET"))
+    result = assess_page(page, corroborate=True, text_refutes_blank=True, stages=LADDER)
+    assert (result["next_action"], result["disposition"]) == ("second_ocr", "unreviewed_text")
+    assert [t["trigger"] for t in result["triggers"]] == ["uncorroborated"]
+
+
+def test_two_agreeing_ocr_engines_settle_the_page_and_a_clean_typeset_layer_is_not_reread():
+    two = _page(
+        _attempt("a1", "local_text", " "),
+        _attempt("a2", "local_ocr", "the same words"),
+        _attempt("a3", "second_ocr", "the same words"),
+        comparisons=[_compared("a2", "a3", 0.95)],
+    )
+    agreed = assess_page(two, corroborate=True, text_refutes_blank=True, stages=LADDER)
+    assert (agreed["next_action"], agreed["disposition"]) == ("review", "unreviewed_text")
+    typeset = assess_page(
+        _page(_attempt("a1", "local_text", "Born-digital text")), corroborate=True, stages=LADDER
+    )
+    assert typeset["next_action"] == "review"
+
+
+def test_without_a_second_ocr_stage_an_unconfirmed_reading_is_not_held_for_it():
+    stages = ("local_text", "local_ocr", "image", "second_opinion")
+    result = assess_page(
+        _layer_and_indra(0.15), ocr_layer_climbs=True, corroborate=True, stages=stages
+    )
+    assert result["disposition"] == "unreviewed_text"
+    assert result["next_action"] == "review"
+
+
+def test_the_trigger_history_names_each_climb_once():
+    page = _layer_and_indra(0.15)
+    page["attempts"].append(_attempt("a3", "second_ocr", "в Карпатской Руси"))
+    page["comparisons"] += [_compared("a1", "a3", 0.15), _compared("a2", "a3", 0.9)]
+    result = assess_page(page, ocr_layer_climbs=True, corroborate=True, stages=LADDER)
+    assert [(t["trigger"], t["stage"]) for t in result["triggers"]] == [
+        ("ocr_layer", "local_text"),
+        ("uncorroborated", "local_ocr"),
+    ]
+    assert (result["selected_attempt"], result["disposition"]) == ("a2", "unreviewed_text")

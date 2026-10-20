@@ -557,7 +557,7 @@
             "items": {
               "type": "object",
               "properties": {
-                "trigger": {"enum": ["rough", "disagreement", "always", "ocr_layer"]},
+                "trigger": {"enum": ["rough", "disagreement", "always", "ocr_layer", "uncorroborated"]},
                 "attempt": {"type": "string", "minLength": 1}
               },
               "required": ["trigger", "attempt"]
