@@ -71,7 +71,8 @@ def test_pdf_document_text_is_cached_and_changed_source_rejected(tmp_path, monke
             ).content
             == "page"
         )
-    assert reads == ["reader", "text", "text"]
+    # The count opens the PDF once; each page is read once, when first asked for.
+    assert reads == ["reader", "reader", "text", "reader", "text"]
     with pytest.raises(ValueError, match="out of range"):
         adapter.extract(source, page_id="p", page_number=3, action="transcribe_text")
     source.write_bytes(b"PDF changed")
