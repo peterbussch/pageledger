@@ -8,6 +8,8 @@ import hashlib
 import json
 import math
 from collections import Counter
+from collections.abc import Iterator
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from dataclasses import asdict
 from pathlib import Path
 from typing import Any
@@ -739,6 +741,12 @@ _RAISABLE_LIMITS = (
 )
 # Stages that send a page image to a model and keep the exact image as evidence.
 IMAGE_STAGES = ("local_image", "image", "second_opinion")
+# Remote readers wait on a provider, not the machine: processing.batch runs their pages at once.
+CONCURRENT_STAGES = ("image", "second_opinion")
+# A remote reader's failure that a second request may not repeat. Each page gets one retry.
+TRANSIENT_FAILURES = frozenset(
+    {"MODEL_TIMEOUT", "MODEL_HTTP_ERROR", "MODEL_NETWORK_ERROR", "MODEL_UNAVAILABLE"}
+)
 
 
 def _attempt_allowance(job: dict) -> int:
@@ -906,16 +914,15 @@ def _retry_local(job: dict, root: Path, stage: dict, adapter_path: Path | None) 
     return _execute(job, root, retry, adapter_path)
 
 
-def _execute(job: dict, root: Path, stage: dict, adapter_path: Path | None) -> bool:
-    stage["status"] = "running"
-    _save(job, root)
+def _launch(root: Path, source: Path, stage: dict, adapter_path: Path | None) -> Exception | None:
+    """Run one planned child. Called from worker threads, so it reads the stage and never the job."""
     child = _safe(root, stage["run_path"])
     try:
         if child.exists():
             runner.resume(child, adapter_path=adapter_path)
         else:
             runner.run(
-                inputs=[_check_source(job)],
+                inputs=[source],
                 config_path=root / stage["config_path"],
                 out_dir=child,
                 dry_run=False,
@@ -924,44 +931,138 @@ def _execute(job: dict, root: Path, stage: dict, adapter_path: Path | None) -> b
                 resumable=True,
             )
     except (RuntimeError, ValueError, OSError) as exc:
-        stage["status"] = "halted"
+        return exc
+    return None
+
+
+def _failure_action(job: dict, root: Path, stage: dict) -> str:
+    """After a refresh: whether a stopped child halts the job, continues past it, or retries it."""
+    # Initialization may fail before a durable page plan exists; it made no
+    # verified request, and the directory remains evidence rather than reusable output.
+    if not (_safe(root, stage["run_path"]) / "checkpoint.json").exists():
+        return "halt"
+    failures = [
+        attempt
+        for page in job["pages"]
+        for attempt in page["attempts"]
+        if attempt["run_path"] == stage["run_path"] and attempt["outcome"] != "completed"
+    ]
+    if failures and all(attempt["outcome"] == "failed" for attempt in failures):
+        # A rejected optional witness remains a provider_failure hold on its page,
+        # and a local reader that failed costs nothing: its page climbs past it,
+        # even when it kept a partial reading (a loop cut off at max_tokens).
+        if stage["stage"] in {"second_opinion", "local_image"}:
+            return "continue"
+        transient = all(
+            (attempt.get("failure") or {}).get("code") in TRANSIENT_FAILURES
+            and not attempt.get("raw_artifact")
+            for attempt in failures
+        )
+        if stage["stage"] in CONCURRENT_STAGES and transient:
+            # One more request; a page that fails twice is held as provider_failure.
+            return "continue" if "-retry-" in stage["stage_id"] else "retry"
+    return "retry_local"
+
+
+def _run_concurrently(
+    job: dict,
+    root: Path,
+    source: Path,
+    stages: Iterator[dict],
+    adapter_path: Path | None,
+    concurrent: int,
+    done: list,
+) -> None:
+    with ThreadPoolExecutor(max_workers=concurrent) as pool:
+        running: dict = {}
+
+        def start() -> bool:
+            stage = next(stages, None)
+            if stage is None:
+                return False
+            stage["status"] = "running"
+            _save(job, root)
+            running[pool.submit(_launch, root, source, stage, adapter_path)] = stage
+            return True
+
+        while len(running) < concurrent and start():
+            pass
+        while running:
+            finished, _ = wait(tuple(running), return_when=FIRST_COMPLETED)
+            for future in finished:
+                stage = running.pop(future)
+                error = future.result()
+                stage["status"] = "halted" if error else "completed"
+                done.append((stage, error))
+            while not any(error for _, error in done) and len(running) < concurrent and start():
+                pass
+
+
+def _execute(job: dict, root: Path, stage: dict, adapter_path: Path | None) -> bool:
+    return _execute_stages(job, root, iter([stage]), adapter_path)
+
+
+def _execute_stages(
+    job: dict, root: Path, stages: Iterator[dict], adapter_path: Path | None, concurrent: int = 1
+) -> bool:
+    """Run planned stages, up to `concurrent` at a time, then refresh and publish once.
+
+    `stages` plans lazily on this thread, so each child is durable in job.json before it starts;
+    after the first failure nothing new is started and the running children finish.
+    """
+    source = _check_source(job)
+    done: list[tuple[dict, Exception | None]] = []
+    if concurrent == 1:
+        for stage in stages:
+            stage["status"] = "running"
+            _save(job, root)
+            error = _launch(root, source, stage, adapter_path)
+            stage["status"] = "halted" if error else "completed"
+            done.append((stage, error))
+            if error:
+                break
+    else:
+        _run_concurrently(job, root, source, stages, adapter_path, concurrent, done)
+        done.sort(key=lambda item: job["stages"].index(item[0]))
+    failed = [(stage, error) for stage, error in done if error]
+    if not failed:
+        _refresh(job, root)
+        _publish(job, root)
+        return job["status"] != "halted"
+
+    def halt(stage: dict, error: Exception) -> None:
         job["status"] = "halted"
-        job["halt_reason"] = f"attempt_stopped:{stage['stage_id']}:{type(exc).__name__}"
+        job["halt_reason"] = f"attempt_stopped:{stage['stage_id']}:{type(error).__name__}"
         job["next_action"] = (
             "Inspect the retained failure or uncertain request; reconcile it before starting new work."
         )
-        # Initialization may fail before a durable page plan exists; it made no
-        # verified request, and the directory remains evidence rather than reusable output.
-        if (child / "checkpoint.json").exists():
-            _refresh(job, root)
-            failures = [
-                attempt
-                for page in job["pages"]
-                for attempt in page["attempts"]
-                if attempt["run_path"] == stage["run_path"] and attempt["outcome"] != "completed"
-            ]
-            if failures and all(attempt["outcome"] == "failed" for attempt in failures):
-                failure_codes = [attempt.get("failure") or {} for attempt in failures]
-                quota = all(
-                    (item.get("http_status") == 429 or item.get("code") == "MODEL_QUOTA")
-                    and not attempt.get("raw_artifact")
-                    for item, attempt in zip(failure_codes, failures, strict=True)
-                )
-                # A rejected optional witness remains a provider_failure hold on its page,
-                # and a local reader that failed costs nothing: its page climbs past it,
-                # even when it kept a partial reading (a loop cut off at max_tokens).
-                if (stage["stage"] == "second_opinion" and quota) or stage[
-                    "stage"
-                ] == "local_image":
-                    job.update(status="processing", halt_reason=None)
-                    return True
-            if _retry_local(job, root, stage, adapter_path):
-                return True
+
+    halt(*failed[0])
+    if not (_safe(root, failed[0][0]["run_path"]) / "checkpoint.json").exists():
         return False
-    stage["status"] = "completed"
     _refresh(job, root)
+    actions = [(stage, error, _failure_action(job, root, stage)) for stage, error in failed]
+    stuck = [item for item in actions if item[2] in {"halt", "retry_local"}]
+    if stuck:
+        stage, error, action = stuck[0]
+        halt(stage, error)
+        if action == "retry_local" and len(failed) == 1:
+            return _retry_local(job, root, stage, adapter_path)
+        return False
+    retries = [stage for stage, _, action in actions if action == "retry"]
+    if retries:
+        reason = _budget_reason(job, retries[0]["stage"], len(retries))
+        if reason:
+            _stop_for_budget(job, reason)
+            return False
+    job.update(status="processing", halt_reason=None)
+    if retries:
+        planned = (
+            _plan_stage(job, root, stage["stage"], stage["pages"], retry=True) for stage in retries
+        )
+        return _execute_stages(job, root, planned, adapter_path, concurrent)
     _publish(job, root)
-    return job["status"] != "halted"
+    return True
 
 
 def _continue(job: dict, root: Path, adapter_path: Path | None) -> dict:
@@ -988,27 +1089,52 @@ def _continue(job: dict, root: Path, adapter_path: Path | None) -> dict:
                 }
             )
         groups = [eligible] if name == "local_text" and eligible else [[n] for n in eligible]
-        for numbers in groups:
-            reason = _budget_reason(job, name, len(numbers))
-            allowance = _attempt_allowance(job)
-            prefix_only = reason == "max_attempt_pages" and 0 < allowance < len(numbers)
-            if prefix_only:
-                # Process what the limit allows, then pause for the rest.
-                numbers = numbers[:allowance]
-                reason = _budget_reason(job, name, len(numbers))
-            if reason:
-                _stop_for_budget(job, reason)
-                return _publish(job, root)
-            stage = _plan_stage(job, root, name, numbers)
-            if not _execute(job, root, stage, adapter_path):
-                return _publish(job, root)
-            if prefix_only:
-                _refresh(job, root)
-                _stop_for_budget(job, "max_attempt_pages")
+        size, concurrent = _batching(job, name)
+        while groups:
+            batch: list[list[int]] = []
+            stop: str | None = None
+            for numbers in groups[:size]:
+                count = sum(len(item) for item in batch)
+                reason = _budget_reason(job, name, count + len(numbers))
+                allowance = _attempt_allowance(job) - count
+                if reason == "max_attempt_pages" and 0 < allowance < len(numbers):
+                    # Process what the limit allows, then pause for the rest.
+                    numbers = numbers[:allowance]
+                    reason = _budget_reason(job, name, count + len(numbers))
+                    if not reason:
+                        batch.append(numbers)
+                        reason = "max_attempt_pages"
+                if reason:
+                    stop = reason
+                    break
+                batch.append(numbers)
+            groups = groups[len(batch) :]
+            if batch:
+                planned = (_plan_stage(job, root, name, numbers) for numbers in batch)
+                if not _execute_stages(job, root, planned, adapter_path, concurrent):
+                    return _publish(job, root)
+            if stop:
+                _stop_for_budget(job, stop)
                 return _publish(job, root)
     job["status"] = "completed"
     job["next_action"] = _review_next_action(job)
     return _publish(job, root)
+
+
+def _batching(job: dict, stage: str) -> tuple[int, int]:
+    """Pages a stage runs between refreshes, and how many of them at once.
+
+    A token or cost limit is checked against usage measured after each page, so it keeps
+    pages one at a time.
+    """
+    batch = job["policy"].get("batch")
+    if (
+        batch is None
+        or job["limits"]["max_tokens"] is not None
+        or job["limits"]["max_cost_usd"] is not None
+    ):
+        return 1, 1
+    return batch["pages"], batch["concurrent"] if stage in CONCURRENT_STAGES else 1
 
 
 def _review_next_action(job: dict) -> str:

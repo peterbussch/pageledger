@@ -35,6 +35,7 @@ def processing_config(data: dict[str, Any], *, pdf: bool) -> dict[str, Any]:
         "limits",
         "links",
         "benchmark",
+        "batch",
         "escalate_on",
         "lexicon",
         "contest",
@@ -130,6 +131,18 @@ def processing_config(data: dict[str, Any], *, pdf: bool) -> dict[str, Any]:
         if result.get(benchmark["stage"]) is None:
             raise ValueError("processing.benchmark.stage must name an enabled stage")
         result["benchmark"] = dict(benchmark)
+    batch = value.get("batch")
+    if batch is not None:
+        if (
+            not isinstance(batch, dict)
+            or set(batch) != {"pages", "concurrent"}
+            or any(type(batch[key]) is not int or batch[key] < 1 for key in batch)
+            or batch["concurrent"] > batch["pages"]
+        ):
+            raise ValueError(
+                "processing.batch needs positive integers pages and concurrent, concurrent no more than pages"
+            )
+        result["batch"] = dict(batch)
     contest = value.get("contest")
     if contest is not None:
         from .contest import RULE_SETS

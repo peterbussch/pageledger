@@ -484,6 +484,7 @@ Configuration sections and defaults:
 | `processing.limits.max_image_pages` | non-negative integer | `0`. Must be positive to enable image stage. |
 | `processing.links.article`, `.custody` | non-empty strings | Optional caller-supplied links; PageLedger does not verify them. |
 | `processing.benchmark` | mapping | Optional; `{stage, every_nth_page}` requires an enabled stage and positive integer interval. |
+| `processing.batch` | mapping | Optional; `{pages, concurrent}` positive integers, `concurrent` no more than `pages`. Rebuilds the job once per batch and reads `image` and `second_opinion` pages concurrently; ignored when `max_tokens` or `max_cost_usd` is set. |
 
 Built-in `pdf_ocr` adapter options are `dpi` (integer 50–1200, default 300),
 `lang` (Tesseract language codes separated by `+`, default `eng`) and

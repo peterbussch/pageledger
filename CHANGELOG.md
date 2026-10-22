@@ -30,6 +30,9 @@ Release changes follow the [artifact compatibility policy](docs/run-manifest-spe
   any warning, it puts the page in a plain run's review queue and counts against its signals grade, so a `run`
   of such a scan with `pdf_text` now queues every page that has layer text.
 - `doctor` reports the `pymorphy3` (`ru` extra) and `indra_ocr` packages, with the extra that installs each.
+- `processing.batch: {pages, concurrent}` rebuilds the job index once per batch instead of after every page, and
+  reads `image` and `second_opinion` pages concurrently. Records are those of an unbatched job. See
+  [batches](docs/processing-spec.md#batches-and-concurrent-readers).
 
 ### Changed
 
@@ -45,6 +48,11 @@ Release changes follow the [artifact compatibility policy](docs/run-manifest-spe
   unchanged.
 - `pdf_text` counts pages from the page tree and reads only the pages a job selects. A `--pages` sample of a
   long PDF no longer extracts the whole document's text first.
+- A remote reader's page that times out or meets a network, HTTP or availability error is requested once more;
+  if the retry fails too, the page is held as `provider_failure` and the job goes on. Any failure of the
+  optional `second_opinion` witness now holds only its page. 0.7 halted the whole job, and the vault's intake
+  then started the document again: one Haiku timeout on page 159 of 274 cost a seven-hour job. See
+  [failed remote reads](docs/processing-spec.md#failed-remote-reads).
 
 ### Fixed
 

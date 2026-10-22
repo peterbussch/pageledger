@@ -473,6 +473,42 @@ bounded even when a provider does not report prices. Budgets persist across
 resume; saved responses are counted once. Local batches check the remaining
 budget before each pending call, including after recovering a saved response.
 
+## Batches and concurrent readers
+
+A job rebuilds its index from every child run after each page by default. On a
+long document that rebuild costs more than the pages: in a 274-page vault job
+the gap between image pages grew from 18 seconds to 100 while each call took
+about 15. `processing.batch` rebuilds once per batch, and lets the remote
+readers (`image` and `second_opinion`) read the batch's pages at once:
+
+```yaml
+processing:
+  batch:
+    pages: 16       # pages a stage runs between rebuilds
+    concurrent: 4   # remote reader pages in flight; local stages stay one at a time
+```
+
+Both are positive integers, `concurrent` no more than `pages`. Every page is
+still its own child run, planned in page order and recorded in `job.json`
+before it starts, so a job interrupted mid-batch resumes as before and its
+attempts, selections and reports are those of a job without `batch`. After the
+first failure in a batch nothing new starts; pages already in flight finish and
+are kept. Budgets count the whole batch before it starts. A job with
+`max_tokens` or `max_cost_usd` set ignores `batch`, because those limits are
+checked against usage measured after each page.
+
+## Failed remote reads
+
+A remote reader's page that fails with `MODEL_TIMEOUT`, `MODEL_HTTP_ERROR`,
+`MODEL_NETWORK_ERROR` or `MODEL_UNAVAILABLE`, keeping no output, is requested
+once more as a retry attempt (`image-0159-retry-1`), whether or not the job
+uses `batch`; the retry counts against `max_image_pages`. A page whose retry
+fails the same way is held as `provider_failure` for review, and the job goes
+on to its other pages. Any failure of the optional `second_opinion` witness
+holds only its page. A quota failure (`MODEL_QUOTA`, HTTP 429) of the `image`
+stage, a partial output, a refusal, and an outcome the job cannot know still
+halt the job.
+
 ## Durable job and attempts
 
 `job.json` uses the checksummed envelope defined by `schemas/job.schema.json`.

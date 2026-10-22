@@ -1580,3 +1580,145 @@ def test_uncertain_custom_local_stage_still_requires_reconciliation(setup, monke
     before = list(setup[3]["calls"])
     assert resume_job(setup[2])["status"] == "halted"
     assert setup[3]["calls"] == before
+
+
+def _batched(setup, *, pages=4, concurrent=2, count=6, **limits):
+    source, config, _, shared = setup
+    source.write_text("\f".join([TEXT] * count))
+    shared["defective"] = set(range(1, count + 1))
+    data = yaml.safe_load(config.read_text())
+    data["processing"]["limits"].update(
+        {"max_image_pages": count, "max_attempt_pages": 4 * count, **limits}
+    )
+    if pages:
+        data["processing"]["batch"] = {"pages": pages, "concurrent": concurrent}
+    config.write_text(yaml.safe_dump(data))
+
+
+def _readings(root):
+    job = read_record(root / "job.json")
+    return [
+        (page["disposition"], page["selected_attempt"], [a["attempt_id"] for a in page["attempts"]])
+        for page in job["pages"]
+    ]
+
+
+def test_a_batch_reads_image_pages_at_once_and_records_what_a_serial_job_does(
+    setup, monkeypatch, tmp_path
+):
+    import threading
+    import time
+
+    from pageledger import processing
+
+    _batched(setup, pages=4, concurrent=3)
+    original = StageAdapter.extract
+    lock, active, peak = threading.Lock(), [0], [0]
+
+    def slow(self, *args, **kwargs):
+        if self.stage == "image":
+            with lock:
+                active[0] += 1
+                peak[0] = max(peak[0], active[0])
+            time.sleep(0.05)
+            with lock:
+                active[0] -= 1
+        return original(self, *args, **kwargs)
+
+    refreshes = []
+    refresh = processing._refresh
+    monkeypatch.setattr(StageAdapter, "extract", slow)
+    monkeypatch.setattr(
+        processing, "_refresh", lambda *a, **k: (refreshes.append(1), refresh(*a, **k))[1]
+    )
+    assert launch(setup)["status"] == "completed"
+    assert peak[0] == 3
+    assert verify_job(setup[2])["status"] == "pass"
+    batched, batched_refreshes = _readings(setup[2]), len(refreshes)
+
+    data = yaml.safe_load(setup[1].read_text())
+    del data["processing"]["batch"]
+    setup[1].write_text(yaml.safe_dump(data))
+    refreshes.clear()
+    serial = tmp_path / "serial"
+    process(source=setup[0], config_path=setup[1], out_dir=serial)
+    assert _readings(serial) == batched
+    # local_text in one child, then six local_ocr and six image pages in batches of four
+    assert batched_refreshes < len(refreshes)
+
+
+def _failing_image(monkeypatch, fails):
+    from pageledger.adapters import AdapterFailure
+
+    original = StageAdapter.extract
+
+    def flaky(self, source, **kwargs):
+        if self.stage == "image" and fails.get(kwargs["page_number"]):
+            fails[kwargs["page_number"]] -= 1
+            raise AdapterFailure(fails.get("code", "MODEL_TIMEOUT"))
+        return original(self, source, **kwargs)
+
+    monkeypatch.setattr(StageAdapter, "extract", flaky)
+
+
+def test_a_timed_out_image_page_is_read_again_once(setup, monkeypatch):
+    _batched(setup)
+    _failing_image(monkeypatch, {2: 1})
+    assert launch(setup)["status"] == "completed"
+    page = read_record(setup[2] / "job.json")["pages"][1]
+    assert [a["outcome"] for a in page["attempts"] if a["stage"] == "image"] == [
+        "failed",
+        "completed",
+    ]
+    assert page["attempts"][-1]["attempt_id"] == "image-0002-retry-1:doc_0001_page_0002"
+    assert verify_job(setup[2])["status"] == "pass"
+
+
+def test_an_image_page_that_fails_twice_is_held_and_the_job_goes_on(setup, monkeypatch):
+    # the retry is a request like any other and counts against the image budget
+    _batched(setup, pages=None, max_image_pages=7)
+    _failing_image(monkeypatch, {2: 2})
+    assert launch(setup)["status"] == "completed"
+    job = read_record(setup[2] / "job.json")
+    assert job["pages"][1]["disposition"] == "provider_failure"
+    assert job["pages"][1]["next_action"] == "review"
+    assert all(
+        any(a["stage"] == "image" and a["outcome"] == "completed" for a in page["attempts"])
+        for page in job["pages"]
+        if page["page_number"] != 2
+    )
+    assert verify_job(setup[2])["status"] == "pass"
+
+
+def test_an_image_quota_failure_still_halts_the_job(setup, monkeypatch):
+    _batched(setup)
+    _failing_image(monkeypatch, {2: 1, "code": "MODEL_QUOTA"})
+    result = launch(setup)
+    assert result["status"] == "halted"
+    assert read_record(setup[2] / "job.json")["halt_reason"].startswith(
+        "attempt_stopped:image-0002:"
+    )
+    assert verify_job(setup[2])["status"] == "pass"
+
+
+def test_a_token_limit_keeps_pages_one_at_a_time(setup):
+    from pageledger.processing import _batching
+
+    _batched(setup, max_tokens=10_000)
+    launch(setup)
+    job = read_record(setup[2] / "job.json")
+    assert job["policy"]["batch"] == {"pages": 4, "concurrent": 2}
+    assert _batching(job, "image") == (1, 1)
+
+
+@pytest.mark.parametrize(
+    "batch",
+    [{"pages": 0, "concurrent": 1}, {"pages": 2, "concurrent": 3}, {"pages": 2}, [2, 1]],
+)
+def test_a_bad_batch_is_refused(batch):
+    from pageledger.processing_config import processing_config
+
+    with pytest.raises(ValueError, match="processing.batch"):
+        processing_config(
+            {"processing": {"local_text": {"adapter": "text"}, "batch": batch}}, pdf=False
+        )
