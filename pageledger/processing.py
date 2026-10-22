@@ -948,19 +948,21 @@ def _failure_action(job: dict, root: Path, stage: dict) -> str:
         if attempt["run_path"] == stage["run_path"] and attempt["outcome"] != "completed"
     ]
     if failures and all(attempt["outcome"] == "failed" for attempt in failures):
-        # A rejected optional witness remains a provider_failure hold on its page,
-        # and a local reader that failed costs nothing: its page climbs past it,
-        # even when it kept a partial reading (a loop cut off at max_tokens).
-        if stage["stage"] in {"second_opinion", "local_image"}:
-            return "continue"
         transient = all(
             (attempt.get("failure") or {}).get("code") in TRANSIENT_FAILURES
             and not attempt.get("raw_artifact")
             for attempt in failures
         )
-        if stage["stage"] in CONCURRENT_STAGES and transient:
-            # One more request; a page that fails twice is held as provider_failure.
-            return "continue" if "-retry-" in stage["stage_id"] else "retry"
+        if stage["stage"] in CONCURRENT_STAGES and transient and "-retry-" not in stage["stage_id"]:
+            return "retry"
+        # A rejected optional witness remains a provider_failure hold on its page,
+        # and a local reader that failed costs nothing: its page climbs past it,
+        # even when it kept a partial reading (a loop cut off at max_tokens).
+        # An image page that fails transiently twice is held the same way.
+        if stage["stage"] in {"second_opinion", "local_image"} or (
+            stage["stage"] == "image" and transient
+        ):
+            return "continue"
     return "retry_local"
 
 

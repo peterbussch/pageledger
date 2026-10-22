@@ -1722,3 +1722,50 @@ def test_a_bad_batch_is_refused(batch):
         processing_config(
             {"processing": {"local_text": {"adapter": "text"}, "batch": batch}}, pdf=False
         )
+
+
+def _with_second_opinion(setup, monkeypatch, code, fails):
+    from pageledger.adapters import AdapterFailure
+
+    _batched(setup, max_image_pages=20)
+    data = yaml.safe_load(setup[1].read_text())
+    data["processing"]["second_opinion"] = {"adapter": "second_opinion"}
+    setup[1].write_text(yaml.safe_dump(data))
+    original = StageAdapter.extract
+
+    def failing(self, source, **kwargs):
+        if self.stage == "second_opinion" and fails.get(kwargs["page_number"]):
+            fails[kwargs["page_number"]] -= 1
+            raise AdapterFailure(code)
+        return original(self, source, **kwargs)
+
+    monkeypatch.setattr(StageAdapter, "extract", failing)
+
+
+def test_a_truncated_second_opinion_holds_its_page_and_the_job_goes_on(setup, monkeypatch):
+    _with_second_opinion(setup, monkeypatch, "MODEL_OUTPUT_TRUNCATED", {2: 1})
+    assert launch(setup)["status"] == "completed"
+    job = read_record(setup[2] / "job.json")
+    page = job["pages"][1]
+    assert page["disposition"] == "provider_failure"
+    assert page["attempts"][-1]["attempt_id"] == "second_opinion-0002:doc_0001_page_0002"
+    later = [
+        a
+        for p in job["pages"]
+        if p["page_number"] > 2
+        for a in p["attempts"]
+        if a["stage"] == "second_opinion"
+    ]
+    assert later and all(a["outcome"] == "completed" for a in later)
+    assert verify_job(setup[2])["status"] == "pass"
+
+
+def test_a_timed_out_second_opinion_is_asked_again_once(setup, monkeypatch):
+    _with_second_opinion(setup, monkeypatch, "MODEL_TIMEOUT", {2: 1})
+    assert launch(setup)["status"] == "completed"
+    page = read_record(setup[2] / "job.json")["pages"][1]
+    assert [a["outcome"] for a in page["attempts"] if a["stage"] == "second_opinion"] == [
+        "failed",
+        "completed",
+    ]
+    assert verify_job(setup[2])["status"] == "pass"
