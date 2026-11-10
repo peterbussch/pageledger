@@ -1,8 +1,9 @@
 """The built-in ``rapidocr`` adapter: RapidOCR 3 with a PP-OCRv5 recognizer you supply.
 
 Install with ``pip install 'pageledger[rapidocr]'`` and point ``rec_model_dir`` at a
-recognizer directory containing ``inference.onnx`` and ``keys.txt``, such as the
-Cyrillic one, which keeps ѣ where RapidOCR's generic Russian model does not.
+recognizer directory containing ``inference.onnx`` and either ``keys.txt`` or
+``inference.yml`` with ``PostProcess.character_dict``. The Cyrillic model keeps
+ѣ where RapidOCR's generic Russian model does not.
 Without ``det_model_dir``, RapidOCR may download its default detection model on
 first use.
 """
@@ -21,6 +22,8 @@ from functools import cached_property
 from pathlib import Path
 from statistics import mean
 from typing import Any, ClassVar
+
+import yaml
 
 from .adapters import ExtractionResult, ocr_pdf_page_count
 
@@ -44,11 +47,11 @@ class RapidOCRAdapter:
         if (
             not model_dir.is_dir()
             or not (model_dir / "inference.onnx").is_file()
-            or not (model_dir / "keys.txt").is_file()
+            or not ((model_dir / "keys.txt").is_file() or (model_dir / "inference.yml").is_file())
         ):
             raise ValueError(
-                "rapidocr rec_model_dir must contain inference.onnx and keys.txt from a "
-                "PP-OCRv5 recognizer"
+                "rapidocr rec_model_dir must contain inference.onnx and either keys.txt or "
+                "inference.yml with PostProcess.character_dict from a PP-OCRv5 recognizer"
             )
         if type(self.max_side) is not int or not 256 <= self.max_side <= 10000:
             raise ValueError(
@@ -78,7 +81,7 @@ class RapidOCRAdapter:
             "Global.max_side_len": self.max_side,
             "Global.log_level": "warning",
             "Rec.model_path": str(Path(self.rec_model_dir).expanduser() / "inference.onnx"),
-            "Rec.rec_keys_path": str(Path(self.rec_model_dir).expanduser() / "keys.txt"),
+            "Rec.rec_keys_path": str(self._recognizer_keys_path),
             "Rec.ocr_version": rapidocr.OCRVersion.PPOCRV5,
         }
         if self.det_model_dir is not None:
@@ -89,6 +92,23 @@ class RapidOCRAdapter:
     def _recognizer_sha256(self) -> str:
         model = Path(self.rec_model_dir).expanduser() / "inference.onnx"
         return hashlib.sha256(model.read_bytes()).hexdigest()[:12]
+
+    @cached_property
+    def _recognizer_keys_path(self) -> Path:
+        model_dir = Path(self.rec_model_dir).expanduser()
+        keys = model_dir / "keys.txt"
+        if keys.is_file():
+            return keys
+        dictionary = _character_dictionary(model_dir / "inference.yml")
+        directory = tempfile.TemporaryDirectory(prefix="pageledger-rapidocr-keys-")
+        path = Path(directory.name) / "keys.txt"
+        path.write_text("\n".join(dictionary) + "\n", encoding="utf-8")
+        self.__dict__["_keys_directory"] = directory
+        return path
+
+    @cached_property
+    def _recognizer_keys_sha256(self) -> str:
+        return hashlib.sha256(self._recognizer_keys_path.read_bytes()).hexdigest()
 
     @staticmethod
     def _rapidocr_module() -> Any:
@@ -168,6 +188,11 @@ class RapidOCRAdapter:
                 }
             )
         content = assemble(lines, reading_order=self.reading_order)
+        warnings = (
+            ["multi_column_rows"]
+            if self.reading_order == "rows" and _multi_column_rows(lines)
+            else []
+        )
         scores = [line["score"] * 100 for line in lines]
         detail = (
             None
@@ -186,10 +211,11 @@ class RapidOCRAdapter:
             confidence=None if not scores else round(mean(line["score"] for line in lines), 4),
             model=(
                 f"rapidocr {importlib.metadata.version('rapidocr')}; rec PP-OCRv5 "
-                f"sha256:{self._recognizer_sha256}; scale-to={self.max_side}"
+                f"sha256:{self._recognizer_sha256}; keys-sha256:{self._recognizer_keys_sha256}; "
+                f"scale-to={self.max_side}"
                 + ("; reading-order=columns" if self.reading_order == "columns" else "")
             ),
-            warnings=[],
+            warnings=warnings,
             usage={
                 "pages": 1,
                 "tokens": None,
@@ -349,3 +375,41 @@ def _rows(lines: list[dict[str, Any]]) -> str:
         " | ".join(item["text"] for item in sorted(row, key=lambda item: item["cx"]))
         for row in rows
     )
+
+
+def _multi_column_rows(lines: list[dict[str, Any]]) -> bool:
+    """Flag when most row clusters join four or more OCR lines across the page."""
+    if not lines:
+        return False
+    heights = sorted(line["h"] for line in lines)
+    tolerance = heights[len(heights) // 2] * 0.55
+    rows: list[list[dict[str, Any]]] = []
+    for line in sorted(lines, key=lambda item: item["cy"]):
+        if rows and abs(rows[-1][0]["cy"] - line["cy"]) <= tolerance:
+            rows[-1].append(line)
+        else:
+            rows.append([line])
+    # `_rows` joins each OCR line with " | ", so three joins mean at least
+    # four independently detected line segments in a visual row.
+    wide = sum(len(row) - 1 >= 3 for row in rows)
+    return wide * 2 > len(rows)
+
+
+def _character_dictionary(path: Path) -> list[str]:
+    try:
+        data = yaml.safe_load(path.read_text(encoding="utf-8"))
+        dictionary = data["PostProcess"]["character_dict"]
+    except (OSError, UnicodeError, yaml.YAMLError, KeyError, TypeError) as exc:
+        raise ValueError(
+            "rapidocr recognizer needs keys.txt or inference.yml with PostProcess.character_dict"
+        ) from exc
+    if (
+        not isinstance(dictionary, list)
+        or not dictionary
+        or not all(isinstance(item, str) for item in dictionary)
+    ):
+        raise ValueError(
+            "rapidocr recognizer inference.yml must contain a nonempty "
+            "PostProcess.character_dict list"
+        )
+    return dictionary

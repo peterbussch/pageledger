@@ -461,7 +461,7 @@ page as before.
 
 | Field | Enforcement |
 |---|---|
-| `max_attempt_pages` | Before scheduling: every attempted source page across all stages counts, including failed/uncertain attempts. A local batch larger than the remaining allowance is cut to fit; the job then pauses. |
+| `max_attempt_pages` | Counts attempts, not unique pages: every attempted source page at every stage counts, including failed/uncertain attempts. A local batch larger than the remaining allowance is cut to fit; the job then pauses. At process start, PageLedger prints the maximum possible attempts for the selected pages and configured stages when that projection exceeds this limit. |
 | `max_image_pages` | Required positive limit when image processing is enabled. Counts both image and second-opinion attempts; checked before every call. |
 | `max_local_image_pages` | Required positive limit when a `local_image` stage is configured, and accepted only then. Counts that stage's attempts; checked before every call. |
 | `max_tokens` | Accumulates reported usage across stages. Stops at the cap before new work and after a response crosses it. A response can exceed the remaining amount; this is not a provider billing ceiling. Unknown paid token usage prevents another image attempt when this cap is configured. |

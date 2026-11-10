@@ -560,6 +560,30 @@ def test_current_report_labels_numeric_hold_without_hiding_selected_output(tmp_p
     assert "not reviewed" in rendered
 
 
+def test_report_accounts_for_configured_stage_that_read_no_pages(tmp_path):
+    job = job_fixture(tmp_path)
+    job["policy"] = {"local_text": {"adapter": "text"}, "second_opinion": {"adapter": "vision"}}
+    report = write_document_report(job, tmp_path)
+
+    second = next(item for item in report["stage_accounting"] if item["stage"] == "second_opinion")
+    assert second == {
+        "stage": "second_opinion",
+        "pages_read": 0,
+        "reason": "no page met its trigger",
+    }
+    assert "Second opinion | 0 (no page met its trigger)" in (tmp_path / "report.md").read_text()
+
+    old_shape = build_document_report(job, tmp_path, include_stage_accounting=False)
+    assert "stage_accounting" not in old_shape
+
+
+def test_report_shows_multi_column_warning_without_reclassifying_page(tmp_path):
+    job = job_fixture(tmp_path)
+    job["pages"][0]["attempts"][0]["warnings"] = ["multi_column_rows"]
+    rendered = render_document_report(build_document_report(job, tmp_path))
+    assert "quality warning multi_column_rows" in rendered
+
+
 def test_current_report_attributes_explicit_selected_attempt_warning_only_to_that_attempt(tmp_path):
     job = job_fixture(tmp_path)
     page = job["pages"][0]

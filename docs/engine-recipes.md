@@ -134,6 +134,34 @@ taxonomy:
 
 Run with `pageledger run book.pdf --config pageledger.yml --out runs/rapidocr`.
 
+## RapidOCR with PP-OCRv5 English (macOS and Linux, CPU)
+
+The English [PaddlePaddle/en_PP-OCRv5_mobile_rec_onnx](https://huggingface.co/PaddlePaddle/en_PP-OCRv5_mobile_rec_onnx)
+recognizer publishes its character list as `PostProcess.character_dict` in
+`inference.yml` instead of `keys.txt`. Put `inference.onnx` and `inference.yml` in the recognizer
+directory; PageLedger reads that list when `keys.txt` is absent and records
+hashes for both the recognizer weights and the dictionary actually used. The
+adapter uses the same RapidOCR and Poppler setup described above. The model is
+Apache-2.0.
+
+```yaml
+schema_version: "0.1"
+run:
+  adapter: rapidocr
+  adapter_options:
+    rec_model_dir: /models/ppocrv5-english
+    det_model_dir: /models/ppocrv5-mobile-det
+    max_side: 3200
+taxonomy:
+  page_types:
+    prose:
+      default_action: transcribe_text
+```
+
+In the 2026 telephone-directory dogfood, RapidOCR read 24 of 32 lines exactly
+on one hand-checked directory column. This is one column sample, not a general
+accuracy estimate.
+
 RapidOCR finds lines of text, and the adapter puts them in order. By default
 (`reading_order: rows`) it reads each row across the whole page, which keeps
 the cells of a table together. On a page set in two columns, such as a journal

@@ -26,6 +26,7 @@ reviewed as text or blank. For meanings and suggested actions, see the
 | `pages` | The selected-page inventory, including pages without attempts or selected text |
 | `usage` | `attempt_pages`, `image_calls`, `tokens`, `cost_usd`, and `cost_known`; optional `known_cost_usd`, `tokens_known`, `paid_cost_known`, and `paid_tokens_known` |
 | `limits` | The job's recorded execution limits |
+| `stage_accounting` | Optional configured-stage attempt counts; a stage with zero pages includes why it did not run. Absent from older reports, which still verify with their original fields. |
 | `links` | Nullable `article` and `custody` references supplied by the job |
 | `source_retention` | Explicit source capture, preservation, removal eligibility, and removal state |
 | `next_action` | One human-readable action for the document |
@@ -50,6 +51,12 @@ alternate source.
 `paid_tokens_known` records whether token usage is known for the image/model
 attempts used by model-token budget checks. Native engines without token usage
 can leave the aggregate `tokens_known` false without making model usage unknown.
+
+Each `stage_accounting` entry names a configured stage, counts its attempts,
+and gives a reason when no page reached it. A zero-page stage reports no pages
+selected, a reached attempt or stage limit, a prior job halt, or that no page
+met its trigger. The Markdown report renders this count and reason in its
+stage-work table.
 
 The source retention values in this version are `capture: "present"`,
 `preservation: "unverified"`, `removal_eligibility: "not_assessed"`, and

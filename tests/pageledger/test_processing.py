@@ -1151,7 +1151,29 @@ def test_process_cli_and_resume_job_dispatch(setup, capsys):
     assert json.loads(capsys.readouterr().out)["job_id"]
     assert main(["verify-job", str(setup[2]), "--json"]) == 0
     assert json.loads(capsys.readouterr().out)["status"] == "pass"
-    assert setup[3]["calls"] == [("local_text", 1), ("local_text", 2), ("local_text", 3)]
+    from pageledger.document_report import render_document_report
+
+    report_path = setup[2] / "document.json"
+    report = json.loads(report_path.read_text())
+    report.pop("stage_accounting")
+    report_path.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n")
+    (setup[2] / "report.md").write_text(render_document_report(report))
+    assert verify_job(setup[2])["status"] == "pass"
+
+
+def test_process_projects_attempts_before_extraction(setup, capsys):
+    source, config, out, _shared = setup
+    data = yaml.safe_load(config.read_text())
+    data["processing"]["limits"]["max_attempt_pages"] = 2
+    config.write_text(yaml.safe_dump(data))
+
+    result = process(source=source, config_path=config, out_dir=out)
+
+    assert result["status"] == "paused_budget"
+    assert (
+        "up to 9 attempts are possible for 3 selected pages across 3 configured stages"
+        in capsys.readouterr().err
+    )
 
 
 @pytest.mark.parametrize("failure", [False, True])

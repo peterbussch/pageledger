@@ -27,6 +27,20 @@
         "additionalProperties": false
       }
     },
+    "stage_accounting": {
+      "type": "array",
+      "description": "Configured stage attempt counts. A zero-page stage includes the recorded reason it did not run. Absent in older reports.",
+      "items": {
+        "type": "object",
+        "properties": {
+          "stage": {"enum": ["local_text", "local_ocr", "second_ocr", "local_image", "image", "second_opinion"]},
+          "pages_read": {"type": "integer", "minimum": 0},
+          "reason": {"type": ["string", "null"]}
+        },
+        "required": ["stage", "pages_read", "reason"],
+        "additionalProperties": false
+      }
+    },
     "hold_policy": {
       "enum": ["0.6", "0.6.1", "0.8"],
       "description": "Warning-to-hold mapping the job used; 0.6.1 lets clean text from a later engine clear a blank candidate; 0.8 also holds a text layer two agreeing later readings outvote, and a reader with under half the literal OCR's words. Absent on reports written before 0.6, whose jobs filed low_confidence under coverage_defect."

@@ -24,7 +24,7 @@ used across the reference.
 | `run` with `text`, `pdf_text`, `pdf_ocr`, `rapidocr` or `vision`; custom adapters follow the adapter protocol. | Page-level attempts and recorded source, extractor, quality and cost details. `--pages` preserves source page numbers. | `pdf_text` reads a text layer; `pdf_ocr` needs locally installed Poppler and Tesseract. Quality signals do not establish accuracy. See [PDF first run](pdf-ocr-first-run.md) and [quality warnings](provenance-spec.md#warning-taxonomy). |
 | Built-in adapter defaults, `adapter_options`, `--adapter-path`, and dry-run planning. | Defaults are recorded; dry runs do not call extractors. | Only explicitly supplied configuration is read. See [CLI](cli.md), [adapter protocol](adapter-protocol.md), and [OCR options](ocr-options.md). |
 | Page budgets, retries and optional continue-on-error. | Page, token and dollar limits; failed or unattempted pages can enter rerun work. | Cost may be unknown or estimated, not provider-billed spend. See [plan time and cost](plan-time-and-cost.md) and [warnings](warnings.md). |
-| Text-quality warnings, OCR confidence, historical-orthography signals and grades. | Diagnostics identify some risks and can guide review. | They are not calibrated accuracy measures. See [warnings](warnings.md) and [multilingual OCR](multilingual-ocr.md). |
+| Text-quality warnings, OCR confidence, historical-orthography signals and grades. | Diagnostics identify some risks and can guide review. RapidOCR warns when rows mode joins several page columns; choose `reading_order: columns` for such pages. | They are not calibrated accuracy measures. See [warnings](warnings.md) and [multilingual OCR](multilingual-ocr.md). |
 
 ### Route pages
 
@@ -37,7 +37,9 @@ used across the reference.
 `process` manages configured local-text, OCR and optional image stages, shared
 limits, retained attempts and review holds. It keeps the attempts available for
 inspection; completion does not mean that the text is accurate or reviewed.
-See [document processing](processing-spec.md) for stages and limits.
+Its report accounts for configured stages that read no pages, and startup notes
+when the configured ladder could exceed the attempt limit. See
+[document processing](processing-spec.md) for stages and limits.
 
 Pages climb on warning holds and, when configured, on a Russian lexicon's
 judgement (`rough`), engine disagreement or every page (`always`). With

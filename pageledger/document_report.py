@@ -33,6 +33,50 @@ _STAGE_LABELS = {
     "second_opinion": "Second opinion",
 }
 
+
+def _stage_accounting(job: dict, pages: list[dict]) -> list[dict]:
+    policy = job.get("policy", {})
+    configured = [name for name in _STAGE_LABELS if policy.get(name) is not None]
+    result = []
+    for stage in configured:
+        count = sum(attempt["stage"] == stage for page in pages for attempt in page["attempts"])
+        reason = None
+        if count == 0:
+            limits = job["limits"]
+            if not job["selected_pages"]:
+                reason = "no pages were selected"
+            elif limits.get("max_attempt_pages") == 0:
+                reason = "the attempt limit is 0"
+            elif job["status"] == "paused_budget":
+                budget = str(job.get("halt_reason", "")).removeprefix("budget:")
+                if budget == "max_attempt_pages":
+                    reason = "the attempt limit was reached"
+                elif budget == "max_local_image_pages":
+                    reason = "the local image page limit was reached"
+                elif budget == "max_image_pages":
+                    reason = "the image page limit was reached"
+                elif budget:
+                    reason = f"the {budget} budget was reached"
+            elif (
+                stage == "local_image"
+                and limits.get("max_local_image_pages") is not None
+                and job["usage"].get("local_image_calls", 0) >= limits["max_local_image_pages"]
+            ):
+                reason = "its page limit was reached"
+            elif (
+                stage in {"image", "second_opinion"}
+                and limits.get("max_image_pages") is not None
+                and job["usage"].get("image_calls", 0) >= limits["max_image_pages"]
+            ):
+                reason = "the image page limit was reached"
+            elif job["status"] == "halted" and job.get("halt_reason"):
+                reason = "the job halted before this stage"
+            else:
+                reason = "no page met its trigger"
+        result.append({"stage": stage, "pages_read": count, "reason": reason})
+    return result
+
+
 _DISPOSITION_LABELS = {
     "unreviewed_text": "Text selected; source review pending",
     "coverage_defect": "Possible missing or incomplete content",
@@ -274,12 +318,22 @@ def _recorded_concerns(page: dict, holds_for: dict[str, str]) -> str:
 
 def _escalation_accounting(report: dict) -> list[str]:
     """Work done at each stage and why pages climbed; only for jobs that escalate on triggers."""
-    if not any("triggers" in page for page in report["pages"]):
+    if not any("triggers" in page for page in report["pages"]) and not report.get(
+        "stage_accounting"
+    ):
         return []
     rows = []
     for stage, label in _STAGE_LABELS.items():
         attempts = [a for page in report["pages"] for a in page["attempts"] if a["stage"] == stage]
+        accounting = next(
+            (item for item in report.get("stage_accounting", []) if item["stage"] == stage),
+            None,
+        )
+        if not attempts and accounting is None:
+            continue
         if not attempts:
+            assert accounting is not None
+            rows.append(f"| {label} | 0 ({_escape(accounting['reason'])}) | not reported | 0 |")
             continue
         tokens = [a["usage"].get("tokens") for a in attempts]
         seconds = sum(a["usage"].get("compute_seconds") or 0 for a in attempts)
@@ -421,6 +475,8 @@ def render_document_report(report: dict) -> str:
             )
             failure = (attempt.get("failure") or {}).get("code")
             detail = f"; failure {_escape(failure)}" if failure else ""
+            if "multi_column_rows" in attempt.get("warnings", []):
+                detail += "; quality warning multi_column_rows"
             stage = _stage_label(attempt["stage"]) if current else attempt["stage"]
             lines.append(
                 f"- Page {page['page_number']}: {evidence}; stage {stage}; "
@@ -453,7 +509,11 @@ def render_document_report(report: dict) -> str:
 
 
 def build_document_report(
-    job: dict, root: Path, *, report_format: str | None = _CURRENT_REPORT_FORMAT
+    job: dict,
+    root: Path,
+    *,
+    report_format: str | None = _CURRENT_REPORT_FORMAT,
+    include_stage_accounting: bool | None = None,
 ) -> dict:
     """Read and verify evidence, deriving the complete report without writing files."""
     root = Path(root)
@@ -476,6 +536,10 @@ def build_document_report(
     for optional in ("hold_policy", "limits_history"):
         if optional in job:
             report[optional] = copy.deepcopy(job[optional])
+    if include_stage_accounting is None:
+        include_stage_accounting = report_format is not None
+    if include_stage_accounting:
+        report["stage_accounting"] = _stage_accounting(job, job["pages"])
     if report_format is not None:
         if report_format not in _REPORT_FORMATS:
             raise ValueError(f"Unsupported document report format: {report_format}")

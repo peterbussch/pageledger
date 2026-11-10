@@ -19,6 +19,9 @@ Release changes follow the [artifact compatibility policy](docs/run-manifest-spe
   to the processing guide. `docs/examples/processing.yml` is now that file.
 - A completed `process` prints how many pages need a person and the next commands (`inspect-job`, then
   `review-sheet` or `export`). `--json` output and exit codes are unchanged.
+- RapidOCR warns `multi_column_rows` when rows mode joins at least four detected lines in most visual rows; use `reading_order: columns` for columnar pages. The warning is recorded and graded but does not hold document-job pages.
+- RapidOCR accepts recognizer dictionaries from `inference.yml` (`PostProcess.character_dict`) when `keys.txt` is absent, and records hashes for both model weights and the dictionary used.
+- Document reports state why a configured stage read no pages. `process` also prints a start notice when the configured ladder's maximum possible attempts exceed `max_attempt_pages`.
 
 ### Changed
 

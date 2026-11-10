@@ -7,6 +7,7 @@ import functools
 import hashlib
 import json
 import math
+import sys
 from collections import Counter
 from collections.abc import Iterator
 from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
@@ -306,6 +307,16 @@ def _process(
         raise ValueError("Selected page exceeds the verified source page inventory")
     if container_error:
         selected = []
+    attempt_limit = policy["limits"].get("max_attempt_pages")
+    configured_stages = [name for name in ladder(policy) if policy.get(name) is not None]
+    projected_attempts = len(selected) * len(configured_stages)
+    if selected and attempt_limit is not None and projected_attempts > attempt_limit:
+        print(
+            f"Notice: up to {projected_attempts} attempts are possible for {len(selected)} selected "
+            f"pages across {len(configured_stages)} configured stages; max_attempt_pages is "
+            f"{attempt_limit}.",
+            file=sys.stderr,
+        )
     root = out_dir.expanduser().resolve()
     from .checkpoint import _sync_directory
 
@@ -1311,7 +1322,12 @@ def verify_job(job_dir: Path) -> dict:
         # Reports written before 0.5.1 have no format marker and must be
         # rebuilt with their original renderer for byte/evidence comparison.
         report_format = report.get("report_format")
-        if report != build_document_report(job, root, report_format=report_format):
+        if report != build_document_report(
+            job,
+            root,
+            report_format=report_format,
+            include_stage_accounting="stage_accounting" in report,
+        ):
             raise ValueError("Document report differs from verified job evidence")
         return {"status": "pass", "job_id": job["job_id"], "out_dir": str(root)}
     except (ValueError, OSError, KeyError, TypeError) as exc:
