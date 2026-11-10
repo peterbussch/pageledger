@@ -20,7 +20,8 @@ page lists supported workflows and limits; the
 
 | Task | Command |
 |---|---|
-| Process a document with staged attempts | `pageledger process book.pdf --config processing.yml --out jobs/book` |
+| Process a document with staged attempts | `pageledger process book.pdf --out jobs/book` (Tesseract, English; `--lang`, `--engine`) or `--config processing.yml` |
+| Write a document-job config to edit | `pageledger init-config --processing --out processing.yml` |
 | Read or verify a document report | `pageledger inspect-job jobs/book`; `pageledger verify-job jobs/book` |
 | Record human review | `pageledger review-job jobs/book --review reviewed-pages.json` |
 | Settle a model's contested words | `pageledger adjudicate jobs/book --packets DIR`, answer each packet against its page image, then `pageledger adjudicate jobs/book --decisions DIR --reviewer agent:NAME` |

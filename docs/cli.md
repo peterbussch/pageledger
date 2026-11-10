@@ -21,7 +21,7 @@ such as stage, route and disposition are defined in the
 
 | Command | Synopsis and options | Exit code 0 | Exit code 1 |
 |---|---|---|---|
-| `process` | `process SOURCE --config FILE --out DIR [--pages RANGE] [--adapter-path DIR] [--review FILE] [--json]` | Job completed or paused by a limit. | Job halted or failed, or runtime error. |
+| `process` | `process SOURCE [--config FILE | --engine ENGINE --lang LANGS --model-dir DIR] --out DIR [--pages RANGE] [--adapter-path DIR] [--review FILE] [--json]` | Job completed or paused by a limit. | Job halted or failed, or runtime error. |
 | `inspect-job` | `inspect-job JOB_DIR [--json]` | Report read. | Runtime error, or with `--json`, the job is halted or failed. |
 | `verify-job` | `verify-job JOB_DIR [--json]` | Job verifies. | Verification fails or runtime error. |
 | `review-sheet` | `review-sheet JOB_DIR --out FILE [--json]` | Sheet written. | Runtime error. |
@@ -33,7 +33,7 @@ such as stage, route and disposition are defined in the
 | `rerun` | `rerun PARENT_DIR --config FILE --out DIR [--dry-run] [--json] [--log-level LEVEL] [--adapter-path DIR]` | Rerun completed. | Any partial execution result or runtime error. |
 | `classify` | `classify [INPUT...] --out FILE [--config FILE] [--from-run DIR] [--adapter SPEC] [--adapter-path DIR] [--json]` | Route map written. | Runtime error. |
 | `doctor` | `doctor [--config FILE] [--json]` | Diagnostics reported; findings do not change the exit code. | Runtime error. |
-| `init-config` | `init-config [--out FILE] [--adapter text|pdf_text|pdf_ocr]` | Config written or printed. | Runtime error. |
+| `init-config` | `init-config [--out FILE] [--adapter text|pdf_text|pdf_ocr | --processing [--engine ENGINE] [--lang LANGS] [--model-dir DIR]]` | Config written or printed. | Runtime error. |
 | `inspect-run` | `inspect-run RUN_DIR [--json | --csv]` | Summary written. | Runtime error. `--json` and `--csv` are mutually exclusive (usage error 2). |
 | `align` | `align RUN_DIR [--schema FILE] [--json] [--dry-run]` | Alignment applied or previewed. | Runtime error. |
 | `compare-runs` | `compare-runs RUN_A RUN_B [--json]` | Comparison written, including when changes are unranked. | Runtime error. |
@@ -47,12 +47,29 @@ unrecognized option, exits 2. `--version` exits 0.
 ## process
 
 ```bash
+pageledger process book.pdf --out jobs/book
 pageledger process book.pdf --config processing.yml --pages "1-10" --out jobs/book
 ```
 
 Processes one source document through local text, OCR, and optional image
-stages. `--config` and `--out` are required, and the output directory must be
-new. Use the [processing guide](processing-spec.md) to create the config.
+stages. `--out` is required, and the output directory must be new.
+
+Without `--config`, the job runs with exactly the configuration
+`init-config --processing` writes for the same `--engine`, `--lang` and
+`--model-dir` options (see [init-config](#init-config)) and records it as it
+would record that file, so the job verifies, resumes and rebuilds like any
+other. No config file is read from the working directory and nothing is
+detected from the machine: the engine is `pdf_ocr` with `--lang eng` unless
+the options say otherwise, and `none` for a `.txt` source. Two lines on
+stderr name the configuration used and the `init-config` command that writes
+it out for editing. Before the job directory is created, the engine is loaded
+and its preflight run; a missing package or tool is an error naming what to
+install, and pointing to `pageledger doctor` where the engine's own message
+does not. `--engine`, `--lang` and `--model-dir` together with `--config` are
+a usage error (exit 2).
+
+With `--config`, use the [processing guide](processing-spec.md) to write the
+config, or start from `init-config --processing`.
 Document jobs retain checkpoints automatically. Stages use `processing`
 profiles; `run.adapter_order` is reserved for explicit rerun generations and
 is rejected here. So are `run` budget, pricing, grading, rerun and retry
@@ -65,7 +82,14 @@ warning.
 | `--pages "1-10,25"` | Select source pages while preserving original numbering. |
 | `--adapter-path DIR` | Add a trusted import directory for custom adapters. |
 | `--review FILE` | Apply source-bound human review receipts before extraction. |
+| `--engine pdf_ocr\|rapidocr\|indra\|none` | Without `--config`: the local OCR engine, or no OCR stage. |
+| `--lang LANGS` | Without `--config`: Tesseract languages for `pdf_ocr`, e.g. `rus+eng`. |
+| `--model-dir DIR` | Without `--config`: the recognizer directory `rapidocr` requires, or a model directory for `indra`. |
 | `--json` | Print the job result as JSON. |
+
+A job that completes also prints, after its status, how many pages need a
+person and the next commands (`inspect-job`, then `review-sheet` or `export`).
+`--json` output is unchanged.
 
 A job can finish with unresolved pages. `completed` means processing finished,
 `paused_budget` means a processing limit was reached (continue with
@@ -417,6 +441,30 @@ pageledger init-config --adapter pdf_ocr --out pageledger-ocr.yml
 Writes a minimal valid config. With `--adapter pdf_ocr` the config
 includes `adapter_options` (`dpi: 300`, `lang: eng`) so the knobs
 non-English collections need are visible from the start.
+
+```bash
+pageledger init-config --processing --out processing.yml
+pageledger init-config --processing --lang rus+eng --out processing.yml
+pageledger init-config --processing --engine rapidocr --model-dir models/cyrillic-rec --out processing.yml
+```
+
+`--processing` writes a commented `processing.yml` for `process` instead: a
+local OCR stage after the source's own text, `max_image_pages: 0` so no paid
+stage can run, and the optional stages (`second_ocr`, `local_image`, `image`,
+`second_opinion`, `contest`) as commented blocks, each with one line on what
+it does and a link to its section of the [processing guide](processing-spec.md).
+`local_text` is left out, so the source decides it.
+
+| Option | Effect |
+|---|---|
+| `--engine pdf_ocr` | Tesseract, the default. `--lang` sets its languages (default `eng`). |
+| `--engine rapidocr` | RapidOCR; `--model-dir` (required) names the PP-OCRv5 recognizer directory, which sets the language. |
+| `--engine indra` | Indra OCR; it picks a recognizer for each line's script, so it takes no `--lang`. `--model-dir` is optional. |
+| `--engine none` | No OCR stage, for text files; the optional stages are left out because they need one. |
+
+`--model-dir` is written as an absolute path. A language or model option the
+engine does not take, `--processing` with `--adapter`, or an engine option
+without `--processing` is a usage error (exit 2).
 
 ## doctor
 

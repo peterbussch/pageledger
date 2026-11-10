@@ -8,24 +8,40 @@ for inspection.
 ## Start with local text and OCR
 
 Document jobs require POSIX advisory locks, available on macOS and Linux.
-Install `"pageledger[pdf]"`, Poppler, and Tesseract for a PDF job. Create
-`processing.yml` with the following configuration, or copy the repository's
-[processing example](examples/processing.yml):
+Install `"pageledger[pdf]"`, Poppler, and Tesseract for a PDF job. The
+simplest job needs no config file:
+
+```bash
+pageledger process book.pdf --out jobs/book
+```
+
+It runs with the configuration `pageledger init-config --processing` writes:
+local text, then Tesseract OCR in English, and no image stage. `--lang`,
+`--engine` and `--model-dir` choose the OCR engine and its language the same
+way for both commands (see [the CLI reference](cli.md#process)); a `.txt`
+source gets no OCR stage. The job records that configuration exactly as it
+would record the file, and nothing is read from the working directory.
+
+To change it, write the configuration out with
+`pageledger init-config --processing --out processing.yml` and pass
+`--config processing.yml`. The file, the repository's
+[processing example](examples/processing.yml), reads without its comments:
 
 ```yaml
 schema_version: "0.1"
 processing:
-  local_text:
-    adapter: pdf_text
   local_ocr:
     adapter: pdf_ocr
     adapter_options:
       lang: eng
       dpi: 300
   limits:
-    max_attempt_pages: 100
     max_image_pages: 0
 ```
+
+`local_text` is left out so that the source decides it (`pdf_text` for a
+PDF, `text` otherwise). Its comments list the optional stages described
+below, each with a link to its section.
 
 Sample the first ten source pages of a PDF:
 
@@ -41,8 +57,9 @@ for the full document. The output directory must be new. Open
 source links, attempts, and unresolved review work. A completed job means its
 configured processing finished; human review may still be needed.
 
-For text files, set `processing.local_text.adapter` to `text` and set
-`processing.local_ocr` to `null`. Form-feed characters separate pages.
+For text files, set `processing.local_ocr` to `null`, as
+`init-config --processing --engine none` does. Form-feed characters separate
+pages.
 
 A document job reads only the `processing` section. Budget, pricing, grading
 and rerun settings under `run` would be ignored, so `process` rejects them and

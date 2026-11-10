@@ -2,6 +2,29 @@
 
 Release changes follow the [artifact compatibility policy](docs/run-manifest-spec.md#compatibility-policy).
 
+## 0.9.0 - unreleased
+
+### Added
+
+- `pageledger process SOURCE --out DIR` runs without `--config`. The job uses exactly the configuration
+  `init-config --processing` writes for the same options and records it as it would record that file, so
+  it verifies, resumes and rebuilds like any other job. No file is read from the working directory and
+  nothing is detected from the machine: the engine is `pdf_ocr` in English unless `--engine`
+  (`pdf_ocr`, `rapidocr`, `indra` or `none`), `--lang` or `--model-dir` say otherwise, and `none` for a
+  `.txt` source. Two lines on stderr name the configuration and how to write it out. A missing engine
+  package or tool stops the command before the job exists, naming what to install and pointing to
+  `pageledger doctor`.
+- `pageledger init-config --processing` writes a commented `processing.yml`: the source's own text, then
+  local OCR, `max_image_pages: 0`, and the optional stages as commented blocks with a line each and a link
+  to the processing guide. `docs/examples/processing.yml` is now that file.
+- A completed `process` prints how many pages need a person and the next commands (`inspect-job`, then
+  `review-sheet` or `export`). `--json` output and exit codes are unchanged.
+
+### Changed
+
+- The README's "Process a document" and the document-job tutorial start with the one-command job and
+  introduce the config file second, as the way to change it.
+
 ## 0.8.0 - 2026-10-19
 
 ### Added

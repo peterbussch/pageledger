@@ -5,12 +5,17 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shlex
 import sys
 import tempfile
 import textwrap
+from collections.abc import Callable
 from pathlib import Path
 
+import yaml
+
 from ._version import __version__
+from .adapters import _LANG_PATTERN, PageLedgerDiagnostic, load_adapter
 from .aligner import align_run
 from .classifier import classify
 from .compare import compare_runs, render_comparison
@@ -63,6 +68,160 @@ def _config_template(adapter: str) -> str:
     return text + ADAPTER_OPTION_TEMPLATES.get(adapter, "")
 
 
+# The local OCR engines a document job can start with. pdf_ocr is the default, and
+# none (no OCR stage) the default for a plain-text source, which has no page images.
+OCR_ENGINES = ("pdf_ocr", "rapidocr", "indra", "none")
+DEFAULT_OCR_LANG = "eng"
+_SPEC = "https://github.com/peterbussch/pageledger/blob/main/docs/processing-spec.md"
+
+PROCESSING_HEADER = f"""\
+# A PageLedger document job, as written by `pageledger init-config --processing`.
+# The job reads the text each page already carries{{then_ocr}}
+# Nothing below calls a paid service. Every stage and setting is explained in
+# {_SPEC}
+schema_version: "0.1"
+processing:
+  # local_text is read first. It is left out so that the source decides it:
+  # pdf_text reads a PDF's own text layer, text reads a plain-text file.
+"""
+
+PROCESSING_OPTIONAL = f"""\
+
+  # Optional stages. To use one, remove the leading "# " from its lines.
+  #
+  # second_ocr reads a page with a second literal engine when the first OCR
+  # reading is held for review. {_SPEC}#the-ladder-a-second-ocr-engine-and-a-local-model
+  # second_ocr:
+  #   adapter: {{second_engine}}
+  #
+  # local_image sends the page image to a vision model on this machine; it needs
+  # limits.max_local_image_pages above 0. {_SPEC}#the-ladder-a-second-ocr-engine-and-a-local-model
+  # local_image:
+  #   adapter: vision
+  #   adapter_options:
+  #     base_url: http://127.0.0.1:8080/v1
+  #     model: YOUR_LOCAL_MODEL
+  #
+  # image sends the pages the local stages could not settle to a vision model,
+  # which may be a paid service; it needs limits.max_image_pages above 0.
+  # {_SPEC}#image-adapter-boundary
+  # image:
+  #   adapter: vision
+  #   adapter_options:
+  #     base_url: http://127.0.0.1:8080/v1
+  #     model: YOUR_VISION_MODEL
+  #
+  # second_opinion asks a second model to read the pages the image stage read;
+  # its calls count against limits.max_image_pages. {_SPEC}#image-adapter-boundary
+  # second_opinion:
+  #   adapter: vision
+  #   adapter_options:
+  #     base_url: http://127.0.0.1:8081/v1
+  #     model: YOUR_SECOND_MODEL
+  #
+  # contest compares a model's reading word by word with the best OCR reading
+  # and records every place they differ; it needs an image or local_image stage.
+  # {_SPEC}#contest-a-models-reading
+  # contest:
+  #   rules: ru-print-0.2
+"""
+
+
+PROCESSING_NO_OCR = f"""\
+
+  # The second_ocr, local_image, image, second_opinion and contest stages all
+  # build on a local_ocr stage. {_SPEC}#policy-and-configuration
+"""
+
+
+def _ocr_options(engine: str, lang: str | None, model_dir: str | None) -> str:
+    """The adapter_options lines for the chosen engine, or a usage error."""
+    if engine == "pdf_ocr":
+        if model_dir is not None:
+            raise _UsageError("--model-dir applies to rapidocr and indra, not pdf_ocr")
+        lang = lang or DEFAULT_OCR_LANG
+        if not _LANG_PATTERN.match(lang):
+            raise _UsageError("--lang must be Tesseract language codes such as eng or eng+deu")
+        return (
+            f"      lang: {lang}   # Tesseract languages; `pageledger doctor` lists those installed\n"
+            "      dpi: 300\n"
+        )
+    if lang is not None:
+        reason = (
+            "its language is the recognizer model in --model-dir"
+            if engine == "rapidocr"
+            else "it chooses a recognizer for each line's script"
+        )
+        raise _UsageError(f"--lang applies to pdf_ocr; {engine} takes none, because {reason}")
+    if engine == "rapidocr":
+        if model_dir is None:
+            raise _UsageError(
+                "rapidocr needs --model-dir, a PP-OCRv5 recognizer directory with "
+                "inference.onnx and keys.txt (see docs/engine-recipes.md)"
+            )
+        return f"      rec_model_dir: {json.dumps(_absolute(model_dir))}\n"
+    options = "      mode: ocr\n"
+    if model_dir is not None:
+        options += f"      model_dir: {json.dumps(_absolute(model_dir))}\n"
+    return options
+
+
+def _absolute(path: str) -> str:
+    return str(Path(path).expanduser().resolve())
+
+
+def _processing_template(engine: str, lang: str | None, model_dir: str | None) -> str:
+    limits = (
+        "  limits:\n"
+        "    max_image_pages: 0   # pages a paid image stage may read; 0 allows none\n"
+        "    # max_attempt_pages: 500   # pause after this many page attempts, all stages together\n"
+    )
+    if engine == "none":
+        if lang is not None or model_dir is not None:
+            raise _UsageError("--lang and --model-dir need an OCR engine, not --engine none")
+        return (
+            PROCESSING_HEADER.replace("{then_ocr}", ".")
+            + "  # No OCR: every page is read only from its own text.\n"
+            + "  local_ocr: null\n"
+            + limits
+            + PROCESSING_NO_OCR
+        )
+    return (
+        PROCESSING_HEADER.replace(
+            "{then_ocr}", ", then sends the pages\n# that look wrong to OCR on this machine."
+        )
+        + f"  local_ocr:\n    adapter: {engine}\n    adapter_options:\n"
+        + _ocr_options(engine, lang, model_dir)
+        + limits
+        + "    # max_local_image_pages: 20   # needed by a local_image stage\n"
+        + PROCESSING_OPTIONAL.replace(
+            "{second_engine}", "indra" if engine == "pdf_ocr" else "pdf_ocr"
+        )
+    )
+
+
+def _engine(args: argparse.Namespace) -> str:
+    """The chosen engine, or its documented default."""
+    if args.engine is not None:
+        return args.engine
+    source = getattr(args, "source", None)
+    return "none" if source is not None and source.suffix.lower() == ".txt" else "pdf_ocr"
+
+
+def _processing_command(engine: str, lang: str | None, model_dir: str | None) -> str:
+    """The init-config command that writes the config these options select."""
+    parts = ["pageledger", "init-config", "--processing", "--engine", engine]
+    if engine == "pdf_ocr":
+        parts += ["--lang", lang or DEFAULT_OCR_LANG]
+    if model_dir is not None:
+        parts += ["--model-dir", _absolute(model_dir)]
+    return shlex.join([*parts, "--out", "processing.yml"])
+
+
+class _UsageError(Exception):
+    """A combination of options that argparse cannot express; exits 2 like other usage errors."""
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="pageledger")
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
@@ -72,8 +231,14 @@ def build_parser() -> argparse.ArgumentParser:
         "process", help="Process one document through local text, OCR and bounded image stages"
     )
     process_parser.add_argument("source", type=Path)
-    process_parser.add_argument("--config", type=Path, required=True)
+    process_parser.add_argument(
+        "--config",
+        type=Path,
+        default=None,
+        help="processing.yml; without it, the job uses the config init-config --processing writes",
+    )
     process_parser.add_argument("--out", type=Path, required=True)
+    _add_engine_options(process_parser, "without --config")
     process_parser.add_argument("--pages", default=None)
     process_parser.add_argument("--adapter-path", type=Path, default=None)
     process_parser.add_argument(
@@ -289,6 +454,12 @@ def build_parser() -> argparse.ArgumentParser:
         default="text",
         help="Default adapter for the generated config (default: text)",
     )
+    init_parser.add_argument(
+        "--processing",
+        action="store_true",
+        help="Write a commented processing.yml for pageledger process instead",
+    )
+    _add_engine_options(init_parser, "with --processing")
 
     inspect_parser = subparsers.add_parser(
         "inspect-run",
@@ -363,8 +534,36 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _add_engine_options(parser: argparse.ArgumentParser, when: str) -> None:
+    parser.add_argument(
+        "--engine",
+        choices=OCR_ENGINES,
+        default=None,
+        help=f"Local OCR engine or none, {when} (default: pdf_ocr; process uses none for a .txt source)",
+    )
+    parser.add_argument(
+        "--lang",
+        default=None,
+        help=f"Tesseract languages for pdf_ocr, {when} (default: {DEFAULT_OCR_LANG})",
+    )
+    parser.add_argument(
+        "--model-dir",
+        default=None,
+        help=f"Recognizer directory for rapidocr (required) or model directory for indra, {when}",
+    )
+
+
+def _engine_options_given(args: argparse.Namespace) -> bool:
+    return any(value is not None for value in (args.engine, args.lang, args.model_dir))
+
+
 def main(argv: list[str] | None = None) -> int:
-    args = build_parser().parse_args(argv)
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    try:
+        _check_usage(args)
+    except _UsageError as exc:
+        parser.error(str(exc))
     handlers = {
         "process": _cmd_job,
         "inspect-job": _cmd_job,
@@ -402,8 +601,29 @@ def main(argv: list[str] | None = None) -> int:
 # -- init-config --------------------------------------------------------------
 
 
+def _check_usage(args: argparse.Namespace) -> None:
+    if args.command == "init-config":
+        if args.processing:
+            if args.adapter != "text":
+                raise _UsageError("--adapter writes a run config; it does not go with --processing")
+            _processing_template(_engine(args), args.lang, args.model_dir)
+        elif _engine_options_given(args):
+            raise _UsageError("--engine, --lang and --model-dir go with --processing")
+    elif args.command == "process":
+        if args.config is None:
+            _processing_template(_engine(args), args.lang, args.model_dir)
+        elif _engine_options_given(args):
+            raise _UsageError(
+                "--engine, --lang and --model-dir choose the config when there is no --config; "
+                "set them in the config file instead"
+            )
+
+
 def _cmd_init_config(args: argparse.Namespace) -> int:
-    config_text = _config_template(args.adapter)
+    if args.processing:
+        config_text = _processing_template(_engine(args), args.lang, args.model_dir)
+    else:
+        config_text = _config_template(args.adapter)
     if args.out:
         args.out.write_text(config_text, encoding="utf-8")
         print(f"Wrote {args.out}", file=sys.stderr)
@@ -724,7 +944,9 @@ def _cmd_job(args: argparse.Namespace) -> int:
         verify_job,
     )
 
-    if args.command == "process":
+    if args.command == "process" and args.config is None:
+        result = _process_without_config(args, process)
+    elif args.command == "process":
         result = process(
             source=args.source,
             config_path=args.config,
@@ -774,7 +996,85 @@ def _cmd_job(args: argparse.Namespace) -> int:
             print(f"Config warning: {warning}")
         if result.get("error"):
             print(result["error"], file=sys.stderr)
+        if args.command == "process" and result.get("status") == "completed":
+            _print_job_next_steps(args)
     return 1 if result.get("status") in {"halted", "failed", "fail"} else 0
+
+
+def _process_without_config(args: argparse.Namespace, process: Callable[..., dict]) -> dict:
+    """Run a job with the config init-config --processing writes for these options.
+
+    Nothing is read from the working directory or guessed from the machine; the
+    job records this config exactly as it would record the same file.
+    """
+    engine = _engine(args)
+    config_text = _processing_template(engine, args.lang, args.model_dir)
+    if engine == "none":
+        described = "the text each page carries, no OCR"
+    else:
+        options = yaml.safe_load(config_text)["processing"]["local_ocr"]["adapter_options"]
+        _check_engine(engine, options, args.source)
+        described = "the text layer, then " + (
+            f"{engine} (lang {options['lang']})" if engine == "pdf_ocr" else engine
+        )
+        described += " for pages that need OCR"
+    print(
+        f"pageledger: no --config given, so this job uses the default document config: "
+        f"{described}, and no paid stages.",
+        file=sys.stderr,
+    )
+    print(
+        f"To change it, write it out with `{_processing_command(engine, args.lang, args.model_dir)}`"
+        " and pass --config processing.yml.",
+        file=sys.stderr,
+    )
+    fd, temp_config = tempfile.mkstemp(prefix="pageledger-", suffix=".yml")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(config_text)
+        return process(
+            source=args.source,
+            config_path=Path(temp_config),
+            out_dir=args.out,
+            pages=args.pages,
+            adapter_path=args.adapter_path,
+            review_path=args.review,
+        )
+    finally:
+        os.unlink(temp_config)
+
+
+def _check_engine(engine: str, options: dict, source: Path) -> None:
+    """Refuse before the job exists when the engine or its tools are missing."""
+    try:
+        adapter = load_adapter(engine, options)
+        preflight = getattr(adapter, "preflight", None)
+        if callable(preflight):
+            preflight([source])
+    except PageLedgerDiagnostic:
+        raise
+    except (ValueError, RuntimeError, OSError) as exc:
+        message = str(exc).rstrip(".")
+        if "install" in message and "doctor" not in message:
+            message += ". Run 'pageledger doctor' to see which tools are installed"
+        raise ValueError(f"{engine}: {message}.") from exc
+
+
+def _print_job_next_steps(args: argparse.Namespace) -> None:
+    """Two lines for a person: how much needs them, and what to run next."""
+    from .document_report import _needs_person
+
+    document = json.loads((args.out / "document.json").read_text(encoding="utf-8"))
+    pages = document["pages"]
+    job = shlex.quote(str(args.out))
+    needed = sum(_needs_person(page) for page in pages)
+    print(f"Pages needing a person: {needed} of {len(pages)}, listed first in the report.")
+    print(f"Next: pageledger inspect-job {job} to read the report.")
+    export = f"pageledger export {job} --format md --out {shlex.quote(args.source.stem + '.md')}"
+    if needed:
+        print(f"Then: pageledger review-sheet {job} --out review.csv to review them, or {export}")
+    else:
+        print(f"Then: {export}")
 
 
 def _cmd_export(args: argparse.Namespace) -> int:

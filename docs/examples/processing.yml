@@ -1,22 +1,56 @@
-# Document job: local PDF text followed by OCR for weak pages.
+# A PageLedger document job, as written by `pageledger init-config --processing`.
+# The job reads the text each page already carries, then sends the pages
+# that look wrong to OCR on this machine.
+# Nothing below calls a paid service. Every stage and setting is explained in
+# https://github.com/peterbussch/pageledger/blob/main/docs/processing-spec.md
 schema_version: "0.1"
 processing:
-  local_text:
-    adapter: pdf_text
+  # local_text is read first. It is left out so that the source decides it:
+  # pdf_text reads a PDF's own text layer, text reads a plain-text file.
   local_ocr:
     adapter: pdf_ocr
     adapter_options:
-      lang: eng
+      lang: eng   # Tesseract languages; `pageledger doctor` lists those installed
       dpi: 300
   limits:
-    max_attempt_pages: 100
-    max_image_pages: 0
-  # Optional: send the pages OCR could not read to a vision model. This needs
-  # an OpenAI-compatible endpoint that serves the model (see
-  # docs/vision-adapter.md) and a positive limits.max_image_pages.
+    max_image_pages: 0   # pages a paid image stage may read; 0 allows none
+    # max_attempt_pages: 500   # pause after this many page attempts, all stages together
+    # max_local_image_pages: 20   # needed by a local_image stage
+
+  # Optional stages. To use one, remove the leading "# " from its lines.
+  #
+  # second_ocr reads a page with a second literal engine when the first OCR
+  # reading is held for review. https://github.com/peterbussch/pageledger/blob/main/docs/processing-spec.md#the-ladder-a-second-ocr-engine-and-a-local-model
+  # second_ocr:
+  #   adapter: indra
+  #
+  # local_image sends the page image to a vision model on this machine; it needs
+  # limits.max_local_image_pages above 0. https://github.com/peterbussch/pageledger/blob/main/docs/processing-spec.md#the-ladder-a-second-ocr-engine-and-a-local-model
+  # local_image:
+  #   adapter: vision
+  #   adapter_options:
+  #     base_url: http://127.0.0.1:8080/v1
+  #     model: YOUR_LOCAL_MODEL
+  #
+  # image sends the pages the local stages could not settle to a vision model,
+  # which may be a paid service; it needs limits.max_image_pages above 0.
+  # https://github.com/peterbussch/pageledger/blob/main/docs/processing-spec.md#image-adapter-boundary
   # image:
   #   adapter: vision
   #   adapter_options:
   #     base_url: http://127.0.0.1:8080/v1
   #     model: YOUR_VISION_MODEL
-  # A second_opinion stage can ask a second model in the same way.
+  #
+  # second_opinion asks a second model to read the pages the image stage read;
+  # its calls count against limits.max_image_pages. https://github.com/peterbussch/pageledger/blob/main/docs/processing-spec.md#image-adapter-boundary
+  # second_opinion:
+  #   adapter: vision
+  #   adapter_options:
+  #     base_url: http://127.0.0.1:8081/v1
+  #     model: YOUR_SECOND_MODEL
+  #
+  # contest compares a model's reading word by word with the best OCR reading
+  # and records every place they differ; it needs an image or local_image stage.
+  # https://github.com/peterbussch/pageledger/blob/main/docs/processing-spec.md#contest-a-models-reading
+  # contest:
+  #   rules: ru-print-0.2

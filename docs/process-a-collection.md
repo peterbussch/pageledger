@@ -45,8 +45,9 @@ adapters. It does not measure OCR quality or predict processing time or cost.
 Use [Plan time and cost](plan-time-and-cost.md) to estimate from your sample.
 The dry-run directory is a run-planning record, not a document job to resume;
 choose a new output path for the actual process job. `run --adapter pdf_ocr`
-uses the built-in PDF OCR adapter without a YAML config. The actual job needs a
-processing config, such as [`docs/examples/processing.yml`](examples/processing.yml).
+uses the built-in PDF OCR adapter without a YAML config. For the actual job,
+`pageledger init-config --processing --out processing.yml` writes a processing
+config to edit, the same as [`docs/examples/processing.yml`](examples/processing.yml).
 
 ## 3. Set limits from the sample
 

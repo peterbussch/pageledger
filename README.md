@@ -91,38 +91,64 @@ connects any other engine.
 
 ## Process a document
 
-Use `process` when one job should manage a whole document: it reads the text
-layer, sends pages with defects to OCR and, if you allow it, to a vision model,
-and keeps every attempt. Create `processing.yml`:
+Use `process` when one job should manage a whole document. It reads the text a
+PDF already carries, sends the pages whose text is missing or looks wrong to an
+OCR engine on your machine, and keeps every attempt, so you can later see where
+each page's text came from. With the PDF extra, Poppler and Tesseract
+installed, one command starts a job:
+
+```bash
+pageledger process book.pdf --out jobs/book
+```
+
+Without a config file the job uses Tesseract (`pdf_ocr`) for English and never
+calls a paid service; its first lines on screen say so. Choose the language
+with `--lang`, in Tesseract's codes such as `rus` or `deu+eng`
+(`pageledger doctor` lists the installed ones), or another engine on your
+machine with `--engine rapidocr` or `--engine indra`. If the engine or its
+tools are missing, `process` stops before the job starts and names what to
+install. A plain-text file (`.txt`) is read without OCR.
+
+When the job finishes, `process` says how many pages need a person and what to
+run next. `jobs/book/report.md` lists those pages first, with the text the job
+selected, whether engines agree and any review so far:
+
+```bash
+pageledger inspect-job jobs/book
+pageledger verify-job jobs/book
+```
+
+Review those pages in a spreadsheet with `pageledger review-sheet`, record the
+decisions with `review-job`, and write the text out as plain text, Markdown,
+JSONL or TEI with `pageledger export`.
+
+To change what a job does, write its configuration to a file, edit it, and
+pass it with `--config`. A job started without `--config` records exactly the
+configuration this file holds, so the two are verified and resumed alike:
+
+```bash
+pageledger init-config --processing --out processing.yml
+pageledger process book.pdf --config processing.yml --pages "1-10" --out jobs/book-sample
+```
+
+Without its comments, the file reads:
 
 ```yaml
 schema_version: "0.1"
 processing:
-  local_text:
-    adapter: pdf_text
   local_ocr:
     adapter: pdf_ocr
     adapter_options:
       lang: eng
       dpi: 300
   limits:
-    max_attempt_pages: 100
     max_image_pages: 0
 ```
 
-With the PDF extra, Poppler and Tesseract installed, sample a document:
-
-```bash
-pageledger process book.pdf --config processing.yml --pages "1-10" --out jobs/book
-pageledger inspect-job jobs/book
-pageledger verify-job jobs/book
-```
-
-`jobs/book/report.md` lists first the pages that need a person, with the text
-the job selected, whether engines agree and any review so far. Review those
-pages in a spreadsheet with `pageledger review-sheet`, record the decisions with
-`review-job`, and write the text out as plain text, Markdown, JSONL or TEI with
-`pageledger export`. See [document processing](https://github.com/peterbussch/pageledger/blob/main/docs/processing-spec.md),
+Its comments describe the optional stages, with a link for each: a second OCR
+engine, a vision model on your machine or a paid one, a second opinion, and a
+word-by-word contest between a model's reading and the OCR. See
+[document processing](https://github.com/peterbussch/pageledger/blob/main/docs/processing-spec.md),
 [warnings and holds](https://github.com/peterbussch/pageledger/blob/main/docs/warnings.md) and
 [export](https://github.com/peterbussch/pageledger/blob/main/docs/export.md). The
 [document-job tutorial](https://github.com/peterbussch/pageledger/blob/main/docs/document-first-run.md) walks through a job from

@@ -23,11 +23,11 @@ The helper supplies the recovery helper path as
 of the helper, set that variable to the checkout's
 `examples/run_document_recovery.py` first.
 
-## Make a synthetic source and configuration
+## Make a synthetic source
 
 The form-feed character creates three source pages. The text is intentionally
-ordinary and synthetic. A completed job means the configured processing stages
-finished; it does not mean a person reviewed or approved the pages.
+ordinary and synthetic. A completed job means the processing stages finished;
+it does not mean a person reviewed or approved the pages.
 
 ```bash pageledger-tutorial
 PYTHON="${PYTHON:-python}"
@@ -42,23 +42,24 @@ Path("sample-document.txt").write_text(
     encoding="utf-8",
 )
 PY
-cat > document-job.yml <<'YAML'
-schema_version: "0.1"
-processing:
-  local_text:
-    adapter: text
-  local_ocr: null
-YAML
 ```
 
 ## Process, inspect, and verify a completed job
 
-`process` writes the job and its child run to disk. `inspect-job` reads the
-document report, while `verify-job` checks the source fingerprint (a SHA-256
-hash of the file), saved attempts, selected output, and report consistency.
+One command starts the job. Without a config file, `process` uses the
+configuration `init-config --processing` writes for the same options. A
+plain-text file has no page images, so for a `.txt` source that configuration
+has no OCR stage; for a PDF it would add Tesseract OCR for the pages whose own
+text is missing or looks wrong. The first lines on screen name the
+configuration and the command that writes it out.
+
+`process` writes the job and its child run to disk, then says how many pages
+need a person and what to run next. `inspect-job` reads the document report,
+while `verify-job` checks the source fingerprint (a SHA-256 hash of the file),
+saved attempts, selected output, and report consistency.
 
 ```bash pageledger-tutorial
-pageledger process sample-document.txt --config document-job.yml --out jobs/complete
+pageledger process sample-document.txt --out jobs/complete
 pageledger inspect-job jobs/complete
 pageledger verify-job jobs/complete
 ```
@@ -66,6 +67,21 @@ pageledger verify-job jobs/complete
 The report shows unknown cost because the local adapter supplies no charge.
 Unknown cost is different from a known zero. The selected text remains subject
 to source review even though processing completed.
+
+## Write the configuration out
+
+To change what a job does, write its configuration to a file and pass it with
+`--config`. This is the configuration the first job used; its comments say
+what each setting does and which stages need an OCR engine. The recovery step
+below uses it.
+
+```bash pageledger-tutorial
+pageledger init-config --processing --engine none --out document-job.yml
+grep -v '^ *#' document-job.yml
+```
+
+A job started with this file records the same configuration as the job above,
+so `verify-job`, `resume` and `review-job` treat the two alike.
 
 ## Optional: interrupt after saving a response, then resume
 
