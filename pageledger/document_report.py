@@ -33,6 +33,9 @@ _STAGE_LABELS = {
     "second_opinion": "Second opinion",
 }
 
+# Warnings that hold nothing and would otherwise go unseen in the report.
+_NOTED_WARNINGS = ("multi_column_rows",)
+
 
 def _stage_accounting(job: dict, pages: list[dict]) -> list[dict]:
     policy = job.get("policy", {})
@@ -47,6 +50,10 @@ def _stage_accounting(job: dict, pages: list[dict]) -> list[dict]:
                 reason = "no pages were selected"
             elif limits.get("max_attempt_pages") == 0:
                 reason = "the attempt limit is 0"
+            elif stage == "local_image" and limits.get("max_local_image_pages") == 0:
+                reason = "its page limit is 0"
+            elif stage in {"image", "second_opinion"} and limits.get("max_image_pages") == 0:
+                reason = "the image page limit is 0"
             elif job["status"] == "paused_budget":
                 budget = str(job.get("halt_reason", "")).removeprefix("budget:")
                 if budget == "max_attempt_pages":
@@ -475,8 +482,9 @@ def render_document_report(report: dict) -> str:
             )
             failure = (attempt.get("failure") or {}).get("code")
             detail = f"; failure {_escape(failure)}" if failure else ""
-            if "multi_column_rows" in attempt.get("warnings", []):
-                detail += "; quality warning multi_column_rows"
+            noted = [w for w in attempt.get("warnings", []) if w in _NOTED_WARNINGS]
+            if noted:
+                detail += f"; quality warning {', '.join(noted)}"
             stage = _stage_label(attempt["stage"]) if current else attempt["stage"]
             lines.append(
                 f"- Page {page['page_number']}: {evidence}; stage {stage}; "

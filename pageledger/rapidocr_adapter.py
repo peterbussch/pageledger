@@ -361,8 +361,8 @@ def _xy_cut(lines: list[dict[str, Any]], gap: float) -> list[list[dict[str, Any]
     return _columns(lines, cuts, gap) if cuts else [lines]
 
 
-def _rows(lines: list[dict[str, Any]]) -> str:
-    """Cluster OCR lines into rows, preserving left-to-right order."""
+def _row_groups(lines: list[dict[str, Any]]) -> list[list[dict[str, Any]]]:
+    """Cluster OCR lines into visual rows by their vertical centres."""
     heights = sorted(line["h"] for line in lines)
     tolerance = heights[len(heights) // 2] * 0.55
     rows: list[list[dict[str, Any]]] = []
@@ -371,28 +371,23 @@ def _rows(lines: list[dict[str, Any]]) -> str:
             rows[-1].append(line)
         else:
             rows.append([line])
+    return rows
+
+
+def _rows(lines: list[dict[str, Any]]) -> str:
+    """Write each visual row left to right, its lines joined by " | "."""
     return "\n".join(
         " | ".join(item["text"] for item in sorted(row, key=lambda item: item["cx"]))
-        for row in rows
+        for row in _row_groups(lines)
     )
 
 
 def _multi_column_rows(lines: list[dict[str, Any]]) -> bool:
-    """Flag when most row clusters join four or more OCR lines across the page."""
+    """Whether most rows join four or more lines: columns read side by side."""
     if not lines:
         return False
-    heights = sorted(line["h"] for line in lines)
-    tolerance = heights[len(heights) // 2] * 0.55
-    rows: list[list[dict[str, Any]]] = []
-    for line in sorted(lines, key=lambda item: item["cy"]):
-        if rows and abs(rows[-1][0]["cy"] - line["cy"]) <= tolerance:
-            rows[-1].append(line)
-        else:
-            rows.append([line])
-    # `_rows` joins each OCR line with " | ", so three joins mean at least
-    # four independently detected line segments in a visual row.
-    wide = sum(len(row) - 1 >= 3 for row in rows)
-    return wide * 2 > len(rows)
+    rows = _row_groups(lines)
+    return sum(len(row) >= 4 for row in rows) * 2 > len(rows)
 
 
 def _character_dictionary(path: Path) -> list[str]:
