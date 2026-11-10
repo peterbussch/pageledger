@@ -1,0 +1,25 @@
+schema_version: '0.1'
+pageledger_version: 0.6.0
+run_id: run-20261110T225555937666Z
+generated_at: '2026-11-10T22:55:55Z'
+classifier:
+  adapter: null
+  model: null
+  prompt_hash: null
+documents:
+- source: /private/tmp/pageledger-golden/sample.txt
+  source_sha256: c842bcf925261b10dc47e807d963703301d70918d5b8d3d2936c5f11facdc00d
+  page_count: 2
+  pages:
+  - page_id: doc_0001_page_0001
+    page_number: 1
+    type: prose
+    confidence: null
+    action: transcribe_text
+    reason: configured_adapter
+  - page_id: doc_0001_page_0002
+    page_number: 2
+    type: prose
+    confidence: null
+    action: transcribe_text
+    reason: configured_adapter

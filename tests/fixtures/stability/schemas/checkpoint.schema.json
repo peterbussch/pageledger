@@ -1,0 +1,311 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "payload": {
+      "additionalProperties": false,
+      "properties": {
+        "config_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "config_source_path": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "documents": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "page_count": {
+                "minimum": 1,
+                "type": "integer"
+              },
+              "pages": {
+                "items": {
+                  "additionalProperties": true,
+                  "properties": {
+                    "action": {
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "confidence": {
+                      "maximum": 1,
+                      "minimum": 0,
+                      "type": [
+                        "number",
+                        "null"
+                      ]
+                    },
+                    "page_id": {
+                      "pattern": "^[A-Za-z0-9_-]+$",
+                      "type": "string"
+                    },
+                    "page_number": {
+                      "minimum": 1,
+                      "type": "integer"
+                    },
+                    "prompt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "reason": {
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "type": {
+                      "minLength": 1,
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "page_id",
+                    "page_number",
+                    "type",
+                    "confidence",
+                    "action",
+                    "reason"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "source": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "source_sha256": {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              }
+            },
+            "required": [
+              "source",
+              "source_sha256",
+              "page_count",
+              "pages"
+            ],
+            "type": "object"
+          },
+          "minItems": 1,
+          "type": "array"
+        },
+        "identity": {
+          "additionalProperties": false,
+          "properties": {
+            "code_sha256": {
+              "anyOf": [
+                {
+                  "pattern": "^[0-9a-f]{64}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "metadata": {
+              "additionalProperties": false,
+              "properties": {
+                "capabilities": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "deterministic": {
+                  "type": [
+                    "boolean",
+                    "null"
+                  ]
+                },
+                "input_types": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "output_types": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                }
+              },
+              "required": [
+                "input_types",
+                "output_types",
+                "capabilities",
+                "deterministic"
+              ],
+              "type": "object"
+            },
+            "name": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "package_sha256": {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            "profile": {
+              "type": [
+                "object",
+                "null"
+              ]
+            },
+            "version": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "name",
+            "version",
+            "code_sha256",
+            "package_sha256",
+            "profile",
+            "metadata"
+          ],
+          "type": "object"
+        },
+        "imported_routes": {
+          "type": [
+            "object",
+            "null"
+          ]
+        },
+        "inputs": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "page_count": {
+                "minimum": 1,
+                "type": "integer"
+              },
+              "pages": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "path": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "sha256": {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              }
+            },
+            "required": [
+              "path",
+              "sha256",
+              "page_count"
+            ],
+            "type": "object"
+          },
+          "minItems": 1,
+          "type": "array"
+        },
+        "log_level": {
+          "enum": [
+            "DEBUG",
+            "INFO",
+            "WARNING",
+            "ERROR"
+          ]
+        },
+        "root": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "route_warnings": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "routing": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "sha256": {
+                  "pattern": "^[0-9a-f]{64}$",
+                  "type": "string"
+                },
+                "source_path": {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "source_run_id": {
+                  "minLength": 1,
+                  "type": "string"
+                }
+              },
+              "required": [
+                "source_path",
+                "sha256",
+                "source_run_id"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "run_id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "skipped_inputs": {
+          "description": "Hidden files (names starting with '.', such as .DS_Store and AppleDouble '._*' sidecars) found while expanding input directories and skipped. Present only when something was skipped.",
+          "items": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "started_at": {
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "run_id",
+        "started_at",
+        "root",
+        "config_sha256",
+        "config_source_path",
+        "identity",
+        "inputs",
+        "documents",
+        "imported_routes",
+        "route_warnings",
+        "routing",
+        "log_level"
+      ],
+      "type": "object"
+    },
+    "schema_version": {
+      "const": "0.1"
+    },
+    "sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema_version",
+    "sha256",
+    "payload"
+  ],
+  "title": "PageLedger immutable recovery job",
+  "type": "object"
+}

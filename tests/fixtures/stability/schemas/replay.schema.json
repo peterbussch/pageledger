@@ -1,0 +1,155 @@
+{
+  "$defs": {
+    "extractor": {
+      "additionalProperties": false,
+      "properties": {
+        "adapter": {
+          "type": "string"
+        },
+        "capabilities": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "uniqueItems": true
+        },
+        "deterministic": {
+          "type": "boolean"
+        },
+        "input_types": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "uniqueItems": true
+        },
+        "options": {
+          "type": "object"
+        },
+        "output_types": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "uniqueItems": true
+        },
+        "reproducibility_profile_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "version": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "adapter",
+        "version",
+        "deterministic",
+        "input_types",
+        "output_types",
+        "capabilities",
+        "options",
+        "reproducibility_profile_sha256"
+      ],
+      "type": "object"
+    }
+  },
+  "$id": "https://github.com/peterbussch/pageledger/schemas/replay.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "baseline_extractor": {
+      "$ref": "#/$defs/extractor"
+    },
+    "baseline_run_id": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "bundle_manifest_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "comparison": {
+      "type": "object"
+    },
+    "local_extractor": {
+      "$ref": "#/$defs/extractor"
+    },
+    "outcome": {
+      "enum": [
+        "exact",
+        "evidence_compared",
+        "deterministic_mismatch"
+      ]
+    },
+    "profile_match": {
+      "type": [
+        "boolean",
+        "null"
+      ]
+    },
+    "raw": {
+      "additionalProperties": false,
+      "properties": {
+        "different": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "different_page_ids": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "uniqueItems": true
+        },
+        "equal": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "missing": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "missing_page_ids": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "uniqueItems": true
+        }
+      },
+      "required": [
+        "equal",
+        "different",
+        "missing",
+        "different_page_ids",
+        "missing_page_ids"
+      ],
+      "type": "object"
+    },
+    "replay_run_id": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "replay_schema_version": {
+      "const": "0.1"
+    }
+  },
+  "required": [
+    "replay_schema_version",
+    "bundle_manifest_sha256",
+    "baseline_run_id",
+    "replay_run_id",
+    "baseline_extractor",
+    "local_extractor",
+    "profile_match",
+    "outcome",
+    "raw",
+    "comparison"
+  ],
+  "title": "PageLedger verified replay evidence",
+  "type": "object"
+}

@@ -57,6 +57,8 @@ Review and results:
 - [Page image input evidence](image-evidence-spec.md)
 - [JSON Schemas](../schemas/): the machine-readable artifact contract. Artifacts
   keep `schema_version: "0.1"` across package releases.
+- [Stability and compatibility](stability.md): what stays stable from 1.0, what
+  does not, and which older runs and jobs still verify
 
 ## Explanation
 

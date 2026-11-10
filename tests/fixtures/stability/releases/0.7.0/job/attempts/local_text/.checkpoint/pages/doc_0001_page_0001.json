@@ -1,0 +1,126 @@
+{
+  "payload": {
+    "completion": {
+      "alignment": null,
+      "provenance": {
+        "cost": {
+          "basis": null,
+          "usd": null
+        },
+        "extraction_seconds": 0.0,
+        "extractor": {
+          "adapter": "text",
+          "adapter_version": "0.1",
+          "capabilities": [
+            "embedded_text",
+            "local"
+          ],
+          "deterministic": true,
+          "input_types": [
+            "text"
+          ],
+          "model": null,
+          "output_types": [
+            "text"
+          ],
+          "prompt_hash": "168e2e8be0b9c0ffe1d0052893a125d587312fcda2ed794037283989dc9456bf"
+        },
+        "metrics": {
+          "compute_seconds": null,
+          "cost_usd": null,
+          "pages": 1,
+          "tokens": null
+        },
+        "page_id": "doc_0001_page_0001",
+        "result": {
+          "confidence": null,
+          "format": "text",
+          "raw_artifact": "raw/doc_0001_page_0001.txt",
+          "raw_sha256": "9ce6a9ee515f74b503953aa66a4b2f9d8391a85e5f9639e8349bb902a07aeac1",
+          "warnings": []
+        },
+        "route": {
+          "action": "transcribe_text",
+          "route_confidence": null,
+          "type": "prose"
+        },
+        "run_id": "run-20261110T225530092353Z",
+        "schema_version": "0.1",
+        "source": {
+          "page_number": 1,
+          "path": "/private/tmp/pageledger-golden/sample.txt",
+          "sha256": "c842bcf925261b10dc47e807d963703301d70918d5b8d3d2936c5f11facdc00d"
+        },
+        "timestamp": "2026-11-10T22:55:30Z",
+        "usage": {
+          "compute_seconds": null,
+          "cost_usd": null,
+          "pages": 1,
+          "tokens": null
+        }
+      },
+      "quality": {
+        "adapter": "text",
+        "character_count": 76,
+        "confidence": null,
+        "confidence_detail": null,
+        "embedded_text_comparison": null,
+        "output_integrity": {
+          "character_delta": null,
+          "character_ratio": null,
+          "instruction_markers": [],
+          "parent_character_count": null
+        },
+        "page_id": "doc_0001_page_0001",
+        "page_number": 1,
+        "schema_version": "0.1",
+        "text_quality": {
+          "alpha_token_count": 12,
+          "control_character_count": 0,
+          "digit_count": 4,
+          "foreign_script_count": 0,
+          "largest_identical_line_count": 1,
+          "latin_letter_ratio": 1.0,
+          "letter_count": 58,
+          "longest_letter_run": 2,
+          "longest_repeated_tail_length": 0,
+          "max_token_length": 9,
+          "mean_token_length": 4.83,
+          "mixed_script_token_ratio": 0.0,
+          "prereform_letter_count": 0,
+          "private_use_count": 0,
+          "replacement_character_count": 0,
+          "short_token_ratio": 0.1667,
+          "suspicious_symbol_count": 0,
+          "suspicious_symbol_ratio": 0.0,
+          "terminal_hard_sign_count": 0,
+          "whitespace_character_ratio": 0.1579
+        },
+        "warnings": [],
+        "word_count": 12
+      }
+    },
+    "extraction_seconds": 0.0,
+    "page_id": "doc_0001_page_0001",
+    "result": {
+      "confidence": null,
+      "confidence_detail": null,
+      "content": "First page of the sample ledger, written for the stability fixtures in 1914.",
+      "format": "text",
+      "input_evidence": null,
+      "model": null,
+      "usage": {
+        "compute_seconds": null,
+        "cost_usd": null,
+        "pages": 1,
+        "tokens": null
+      },
+      "warnings": []
+    },
+    "run_id": "run-20261110T225530092353Z",
+    "started_at": "2026-11-10T22:55:30Z",
+    "state": "completed"
+  },
+  "schema_version": "0.1",
+  "sha256": "5307f4faff76194e988f6445def290ad426f41e2eb130ae780d2cce331377a39"
+}

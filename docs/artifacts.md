@@ -282,5 +282,7 @@ compatible within a schema version. The current package therefore retains
 `schema_version: "0.1"` for its optional classifier, escalation, alert, and
 rollup, and replay-linkage fields. The schemas in
 [`schemas/`](../schemas/) define the machine-readable contract, enforced by
-`tests/pageledger/test_schemas.py`. Built wheels install the same contracts
-under the environment's `share/pageledger/schemas/` directory.
+`tests/pageledger/test_schemas.py`. `tests/pageledger/test_stability.py`
+checks that each schema still accepts everything the 0.8.0 schema did; see
+[stability](stability.md). Built wheels install the same contracts under the
+environment's `share/pageledger/schemas/` directory.

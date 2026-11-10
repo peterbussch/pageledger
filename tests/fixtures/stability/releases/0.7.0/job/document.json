@@ -1,0 +1,180 @@
+{
+  "schema_version": "0.1",
+  "job_id": "job_63d1f9d1307d483e8a6de87e6dc3f042",
+  "created_at": "2026-11-10T22:55:30Z",
+  "source": {
+    "path": "../sample.txt",
+    "sha256": "c842bcf925261b10dc47e807d963703301d70918d5b8d3d2936c5f11facdc00d",
+    "page_count": 2,
+    "annotations": {
+      "status": "none",
+      "count": 0
+    }
+  },
+  "selected_pages": [
+    1,
+    2
+  ],
+  "status": "completed",
+  "usage": {
+    "attempt_pages": 2,
+    "image_calls": 0,
+    "tokens": 0,
+    "tokens_known": false,
+    "cost_usd": null,
+    "known_cost_usd": 0,
+    "cost_known": false,
+    "paid_cost_known": true,
+    "paid_tokens_known": true
+  },
+  "limits": {
+    "max_attempt_pages": null,
+    "max_tokens": null,
+    "max_cost_usd": null,
+    "max_image_pages": 0
+  },
+  "links": {
+    "article": null,
+    "custody": null
+  },
+  "source_retention": {
+    "capture": "present",
+    "preservation": "unverified",
+    "removal_eligibility": "not_assessed",
+    "removed": false
+  },
+  "next_action": "Inspect unresolved source pages and record identity-bound review decisions.",
+  "hold_policy": "0.6.1",
+  "report_format": "0.6",
+  "pages": [
+    {
+      "page_id": "doc_0001_page_0001",
+      "page_number": 1,
+      "source_sha256": "c842bcf925261b10dc47e807d963703301d70918d5b8d3d2936c5f11facdc00d",
+      "attempts": [
+        {
+          "attempt_id": "local_text:doc_0001_page_0001",
+          "stage": "local_text",
+          "run_path": "attempts/local_text",
+          "run_id": "run-20261110T225530092353Z",
+          "page_id": "doc_0001_page_0001",
+          "page_number": 1,
+          "source_sha256": "c842bcf925261b10dc47e807d963703301d70918d5b8d3d2936c5f11facdc00d",
+          "outcome": "completed",
+          "raw_artifact": "attempts/local_text/raw/doc_0001_page_0001.txt",
+          "raw_sha256": "9ce6a9ee515f74b503953aa66a4b2f9d8391a85e5f9639e8349bb902a07aeac1",
+          "format": "text",
+          "warnings": [],
+          "classification": {
+            "type": "sparse",
+            "confidence": 0.6,
+            "reason": "sparse_text",
+            "action": null,
+            "prompt": null
+          },
+          "alignment": null,
+          "usage": {
+            "compute_seconds": null,
+            "cost_usd": null,
+            "pages": 1,
+            "tokens": null
+          },
+          "failure": null,
+          "input_evidence": null,
+          "adapter_capabilities": [
+            "embedded_text",
+            "local"
+          ]
+        }
+      ],
+      "selected_attempt": "local_text:doc_0001_page_0001",
+      "disposition": "coverage_defect",
+      "review_reasons": [
+        "coverage_defect"
+      ],
+      "review": null,
+      "review_history": [],
+      "next_action": "local_ocr",
+      "comparisons": [],
+      "selected_output": {
+        "attempt_id": "local_text:doc_0001_page_0001",
+        "path": "attempts/local_text/raw/doc_0001_page_0001.txt",
+        "sha256": "9ce6a9ee515f74b503953aa66a4b2f9d8391a85e5f9639e8349bb902a07aeac1",
+        "format": "text",
+        "text": "First page of the sample ledger, written for the stability fixtures in 1914."
+      },
+      "source_link": "../sample.txt#page=1"
+    },
+    {
+      "page_id": "doc_0001_page_0002",
+      "page_number": 2,
+      "source_sha256": "c842bcf925261b10dc47e807d963703301d70918d5b8d3d2936c5f11facdc00d",
+      "attempts": [
+        {
+          "attempt_id": "local_text:doc_0001_page_0002",
+          "stage": "local_text",
+          "run_path": "attempts/local_text",
+          "run_id": "run-20261110T225530092353Z",
+          "page_id": "doc_0001_page_0002",
+          "page_number": 2,
+          "source_sha256": "c842bcf925261b10dc47e807d963703301d70918d5b8d3d2936c5f11facdc00d",
+          "outcome": "completed",
+          "raw_artifact": "attempts/local_text/raw/doc_0001_page_0002.txt",
+          "raw_sha256": "c962fa1be311981f0f965857e89b000707f9cea07a069d073461308f3019200f",
+          "format": "text",
+          "warnings": [
+            "short_text"
+          ],
+          "classification": {
+            "type": "sparse",
+            "confidence": 0.6,
+            "reason": "sparse_text",
+            "action": null,
+            "prompt": null
+          },
+          "alignment": null,
+          "usage": {
+            "compute_seconds": null,
+            "cost_usd": null,
+            "pages": 1,
+            "tokens": null
+          },
+          "failure": null,
+          "input_evidence": null,
+          "adapter_capabilities": [
+            "embedded_text",
+            "local"
+          ]
+        }
+      ],
+      "selected_attempt": "local_text:doc_0001_page_0002",
+      "disposition": "coverage_defect",
+      "review_reasons": [
+        "coverage_defect"
+      ],
+      "review": null,
+      "review_history": [],
+      "next_action": "local_ocr",
+      "comparisons": [],
+      "selected_output": {
+        "attempt_id": "local_text:doc_0001_page_0002",
+        "path": "attempts/local_text/raw/doc_0001_page_0002.txt",
+        "sha256": "c962fa1be311981f0f965857e89b000707f9cea07a069d073461308f3019200f",
+        "format": "text",
+        "text": "short\n"
+      },
+      "source_link": "../sample.txt#page=2"
+    }
+  ],
+  "counts": {
+    "source_pages": 2,
+    "selected_pages": 2,
+    "processed_pages": 2,
+    "selected_outputs": 2,
+    "unresolved_pages": 2
+  },
+  "transcript": {
+    "path": "transcript.md",
+    "sha256": "656bd1626b4ec9947d012352f35cfccbbb95123eab1a611f6eab79f8d0403821"
+  }
+}

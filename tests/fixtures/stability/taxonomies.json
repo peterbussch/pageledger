@@ -1,0 +1,352 @@
+{
+  "mappings": {
+    "contest_rule_sets": {
+      "ru-print-0.1": {
+        "glyph_pairs": {
+          "rapidocr": [
+            [
+              "н",
+              "п"
+            ],
+            [
+              "п",
+              "н"
+            ],
+            [
+              "н",
+              "и"
+            ],
+            [
+              "и",
+              "н"
+            ],
+            [
+              "ш",
+              "п"
+            ],
+            [
+              "п",
+              "и"
+            ],
+            [
+              "и",
+              "п"
+            ],
+            [
+              "с",
+              "е"
+            ],
+            [
+              "ц",
+              "щ"
+            ],
+            [
+              "щ",
+              "ш"
+            ],
+            [
+              "т",
+              "х"
+            ],
+            [
+              "й",
+              "и"
+            ],
+            [
+              "к",
+              "н"
+            ],
+            [
+              "д",
+              "ц"
+            ],
+            [
+              "н",
+              "м"
+            ],
+            [
+              "ш",
+              "н"
+            ],
+            [
+              "r",
+              "г"
+            ]
+          ]
+        }
+      },
+      "ru-print-0.2": {
+        "glyph_pairs": {
+          "rapidocr": [
+            [
+              "н",
+              "п"
+            ],
+            [
+              "п",
+              "н"
+            ],
+            [
+              "н",
+              "и"
+            ],
+            [
+              "и",
+              "н"
+            ],
+            [
+              "ш",
+              "п"
+            ],
+            [
+              "п",
+              "и"
+            ],
+            [
+              "и",
+              "п"
+            ],
+            [
+              "с",
+              "е"
+            ],
+            [
+              "ц",
+              "щ"
+            ],
+            [
+              "щ",
+              "ш"
+            ],
+            [
+              "т",
+              "х"
+            ],
+            [
+              "й",
+              "и"
+            ],
+            [
+              "к",
+              "н"
+            ],
+            [
+              "д",
+              "ц"
+            ],
+            [
+              "н",
+              "м"
+            ],
+            [
+              "ш",
+              "н"
+            ],
+            [
+              "r",
+              "г"
+            ]
+          ]
+        },
+        "grouped_numbers": true
+      }
+    },
+    "run_artifacts": {
+      "audit": "audit.json",
+      "audit_md": "audit.md",
+      "config_snapshot": "config-snapshot.yml",
+      "cost": "cost.json",
+      "normalized_dir": "normalized/",
+      "provenance": "provenance.jsonl",
+      "quality": "quality.jsonl",
+      "raw_dir": "raw/",
+      "rerun_manifest": "rerun-manifest.yml",
+      "route_map": "route-map.yml",
+      "run_log": "run.log"
+    },
+    "warning_holds": {
+      "blank": "blank_candidate",
+      "blank_candidate": "blank_candidate",
+      "clipped_text": "coverage_defect",
+      "column_conflict": "numeric_column_conflict",
+      "control_characters": "coverage_defect",
+      "coverage_defect": "coverage_defect",
+      "digits_only_text": "coverage_defect",
+      "empty_text": "blank_candidate",
+      "foreign_script_characters": "coverage_defect",
+      "fragmented": "coverage_defect",
+      "fragmented_text": "coverage_defect",
+      "handwriting": "handwriting",
+      "historical_letters_lost": "coverage_defect",
+      "illustration": "illustration",
+      "instruction_echo": "coverage_defect",
+      "joined": "coverage_defect",
+      "joined_text": "coverage_defect",
+      "low_confidence": "low_confidence",
+      "missing_content": "coverage_defect",
+      "missing_required_columns": "coverage_defect",
+      "mixed_script_tokens": "coverage_defect",
+      "model_commentary": "coverage_defect",
+      "numeric_column_conflict": "numeric_column_conflict",
+      "output_truncated": "coverage_defect",
+      "partial_transcription": "coverage_defect",
+      "private_use_characters": "coverage_defect",
+      "repeated_page_text": "coverage_defect",
+      "repetition_loop": "coverage_defect",
+      "replacement_characters": "coverage_defect",
+      "script_mismatch": "coverage_defect",
+      "source_defect": "source_defect",
+      "sparse": "coverage_defect",
+      "suspicious_embedded_text_delta": "coverage_defect",
+      "suspicious_symbol_density": "coverage_defect",
+      "truncated_text": "coverage_defect",
+      "unknown": "coverage_defect",
+      "unreadable": "unreadable"
+    }
+  },
+  "sets": {
+    "adapter_failure_codes": [
+      "IMAGE_EVIDENCE_INVALID",
+      "IMAGE_RENDER_ERROR",
+      "MODEL_CONTENT_FILTERED",
+      "MODEL_EMPTY_RESPONSE",
+      "MODEL_HTTP_ERROR",
+      "MODEL_INVALID_RESPONSE",
+      "MODEL_NETWORK_ERROR",
+      "MODEL_OUTPUT_TRUNCATED",
+      "MODEL_QUOTA",
+      "MODEL_RECITATION",
+      "MODEL_TIMEOUT",
+      "MODEL_UNAVAILABLE"
+    ],
+    "contest_rule_sets": [
+      "ru-print-0.1",
+      "ru-print-0.2"
+    ],
+    "diagnostic_codes": [
+      "engine_timeout",
+      "malformed_pdf",
+      "missing_binary",
+      "missing_crypto_dependency",
+      "missing_language_pack",
+      "render_limit",
+      "unsupported_encryption"
+    ],
+    "document_report_formats": [
+      "0.5.1",
+      "0.6"
+    ],
+    "escalation_triggers": [
+      "hold",
+      "rough",
+      "disagreement",
+      "always"
+    ],
+    "export_formats": [
+      "txt",
+      "md",
+      "jsonl",
+      "tei"
+    ],
+    "grades": [
+      "A",
+      "B",
+      "C",
+      "D",
+      "F"
+    ],
+    "hold_policies": [
+      "0.6",
+      "0.6.1",
+      "0.8"
+    ],
+    "hold_reasons": [
+      "blank_candidate",
+      "contested",
+      "coverage_defect",
+      "engine_disagreement",
+      "handwriting",
+      "illustration",
+      "low_confidence",
+      "numeric_column_conflict",
+      "numeric_disagreement",
+      "source_defect",
+      "unconfirmed_model_output",
+      "unreadable"
+    ],
+    "lexicon_providers": [
+      "pymorphy3"
+    ],
+    "page_states": [
+      "completed",
+      "failed",
+      "outcome_unknown",
+      "pending",
+      "response",
+      "started"
+    ],
+    "processing_stages": [
+      "local_text",
+      "local_ocr",
+      "second_ocr",
+      "local_image",
+      "image",
+      "second_opinion"
+    ],
+    "review_dispositions": [
+      "handwriting",
+      "illustration",
+      "reviewed_blank",
+      "reviewed_text",
+      "source_defect",
+      "unreadable"
+    ],
+    "warning_codes": [
+      "blank",
+      "blank_candidate",
+      "clipped_text",
+      "column_conflict",
+      "control_characters",
+      "coverage_defect",
+      "digits_only_text",
+      "empty_text",
+      "engine_disagreement",
+      "foreign_script_characters",
+      "fragmented",
+      "fragmented_text",
+      "handwriting",
+      "historical_letters_lost",
+      "historical_orthography",
+      "illustration",
+      "instruction_echo",
+      "joined",
+      "joined_text",
+      "low_confidence",
+      "missing_content",
+      "missing_required_columns",
+      "mixed_script_tokens",
+      "model_commentary",
+      "numeric_column_conflict",
+      "numeric_disagreement",
+      "ocr_text_layer",
+      "output_inflation",
+      "output_truncated",
+      "partial_transcription",
+      "private_use_characters",
+      "render_dpi_capped",
+      "repeated_page_text",
+      "repetition_loop",
+      "replacement_characters",
+      "script_mismatch",
+      "short_text",
+      "source_defect",
+      "sparse",
+      "suspicious_embedded_text_delta",
+      "suspicious_symbol_density",
+      "truncated_text",
+      "unconfirmed_model_output",
+      "unknown",
+      "unreadable"
+    ]
+  }
+}

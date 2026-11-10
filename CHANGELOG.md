@@ -1,6 +1,33 @@
 # Changelog
 
-Release changes follow the [artifact compatibility policy](docs/run-manifest-spec.md#compatibility-policy).
+Release changes follow the [artifact compatibility policy](docs/run-manifest-spec.md#compatibility-policy)
+and, from 1.0, [stability](docs/stability.md).
+
+## 0.9.0 - unreleased
+
+### Added
+
+- [`docs/stability.md`](docs/stability.md): what stays stable from 1.0 (commands and options, exit
+  codes, configuration keys, the adapter protocol, artifact schemas, warning codes and holds, hold
+  policies, contest rule sets), what does not (Markdown wording, logs, `--json` output keys, grades
+  across versions, examples), the deprecation rule, and which older runs and jobs verify.
+- `tests/pageledger/test_stability.py` holds the package to snapshots of the 0.8.0 contract in
+  `tests/fixtures/stability/`: removing or narrowing anything fails, and an addition needs a deliberate
+  snapshot update. It also holds a run and a job written by each of 0.5.2, 0.6.0 and 0.7.0 from PyPI:
+  the runs and the jobs' stage runs verify after a move, all of them validate against the current
+  schemas, and a moved job is shown not to verify (below).
+
+### Changed
+
+- `docs/adapter-protocol.md`: a new required adapter attribute or a change to the `extract()` call
+  now waits for a major release, not a minor one.
+
+### Known limits
+
+- A document job verifies only in the directory where it was written: `job.json` records its absolute
+  path, so `verify-job` on a moved or copied job fails with "Document job identity changed". This is
+  true of jobs from every release so far. Runs verify after a move, if their empty `normalized/`
+  directory moves with them.
 
 ## 0.9.0 - unreleased
 

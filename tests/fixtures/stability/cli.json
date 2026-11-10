@@ -1,0 +1,570 @@
+{
+  "commands": {
+    "adjudicate": {
+      "exclusive": [
+        {
+          "options": [
+            "--decisions",
+            "--packets"
+          ],
+          "required": true
+        }
+      ],
+      "options": {
+        "--decisions": {
+          "choices": null,
+          "required": false,
+          "takes_value": true
+        },
+        "--dry-run": {
+          "choices": null,
+          "required": false,
+          "takes_value": false
+        },
+        "--json": {
+          "choices": null,
+          "required": false,
+          "takes_value": false
+        },
+        "--packets": {
+          "choices": null,
+          "required": false,
+          "takes_value": true
+        },
+        "--reviewer": {
+          "choices": null,
+          "required": false,
+          "takes_value": true
+        }
+      },
+      "positionals": [
+        {
+          "dest": "job_dir",
+          "nargs": null
+        }
+      ]
+    },
+    "align": {
+      "exclusive": [],
+      "options": {
+        "--dry-run": {
+          "choices": null,
+          "required": false,
+          "takes_value": false
+        },
+        "--json": {
+          "choices": null,
+          "required": false,
+          "takes_value": false
+        },
+        "--schema": {
+          "choices": null,
+          "required": false,
+          "takes_value": true
+        }
+      },
+      "positionals": [
+        {
+          "dest": "run_dir",
+          "nargs": null
+        }
+      ]
+    },
+    "bundle": {
+      "exclusive": [],
+      "options": {
+        "--json": {
+          "choices": null,
+          "required": false,
+          "takes_value": false
+        },
+        "--out": {
+          "choices": null,
+          "required": true,
+          "takes_value": true
+        }
+      },
+      "positionals": [
+        {
+          "dest": "run_dir",
+          "nargs": null
+        }
+      ]
+    },
+    "classify": {
+      "exclusive": [],
+      "options": {
+        "--adapter": {
+          "choices": null,
+          "required": false,
+          "takes_value": true
+        },
+        "--adapter-path": {
+          "choices": null,
+          "required": false,
+          "takes_value": true
+        },
+        "--config": {
+          "choices": null,
+          "required": false,
+          "takes_value": true
+        },
+        "--from-run": {
+          "choices": null,
+          "required": false,
+          "takes_value": true
+        },
+        "--json": {
+          "choices": null,
+          "required": false,
+          "takes_value": false
+        },
+        "--out": {
+          "choices": null,
+          "required": true,
+          "takes_value": true
+        }
+      },
+      "positionals": [
+        {
+          "dest": "inputs",
+          "nargs": "*"
+        }
+      ]
+    },
+    "compare-runs": {
+      "exclusive": [],
+      "options": {
+        "--json": {
+          "choices": null,
+          "required": false,
+          "takes_value": false
+        }
+      },
+      "positionals": [
+        {
+          "dest": "run_a",
+          "nargs": null
+        },
+        {
+          "dest": "run_b",
+          "nargs": null
+        }
+      ]
+    },
+    "doctor": {
+      "exclusive": [],
+      "options": {
+        "--config": {
+          "choices": null,
+          "required": false,
+          "takes_value": true
+        },
+        "--json": {
+          "choices": null,
+          "required": false,
+          "takes_value": false
+        }
+      },
+      "positionals": []
+    },
+    "export": {
+      "exclusive": [],
+      "options": {
+        "--format": {
+          "choices": [
+            "jsonl",
+            "md",
+            "tei",
+            "txt"
+          ],
+          "required": true,
+          "takes_value": true
+        },
+        "--out": {
+          "choices": null,
+          "required": true,
+          "takes_value": true
+        },
+        "--reviewed-only": {
+          "choices": null,
+          "required": false,
+          "takes_value": false
+        }
+      },
+      "positionals": [
+        {
+          "dest": "job_dir",
+          "nargs": null
+        }
+      ]
+    },
+    "init-config": {
+      "exclusive": [],
+      "options": {
+        "--adapter": {
+          "choices": [
+            "pdf_ocr",
+            "pdf_text",
+            "text"
+          ],
+          "required": false,
+          "takes_value": true
+        },
+        "--out": {
+          "choices": null,
+          "required": false,
+          "takes_value": true
+        }
+      },
+      "positionals": []
+    },
+    "inspect-job": {
+      "exclusive": [],
+      "options": {
+        "--json": {
+          "choices": null,
+          "required": false,
+          "takes_value": false
+        }
+      },
+      "positionals": [
+        {
+          "dest": "job_dir",
+          "nargs": null
+        }
+      ]
+    },
+    "inspect-run": {
+      "exclusive": [
+        {
+          "options": [
+            "--csv",
+            "--json"
+          ],
+          "required": false
+        }
+      ],
+      "options": {
+        "--csv": {
+          "choices": null,
+          "required": false,
+          "takes_value": false
+        },
+        "--json": {
+          "choices": null,
+          "required": false,
+          "takes_value": false
+        }
+      },
+      "positionals": [
+        {
+          "dest": "run_dir",
+          "nargs": null
+        }
+      ]
+    },
+    "process": {
+      "exclusive": [],
+      "options": {
+        "--adapter-path": {
+          "choices": null,
+          "required": false,
+          "takes_value": true
+        },
+        "--config": {
+          "choices": null,
+          "required": true,
+          "takes_value": true
+        },
+        "--json": {
+          "choices": null,
+          "required": false,
+          "takes_value": false
+        },
+        "--out": {
+          "choices": null,
+          "required": true,
+          "takes_value": true
+        },
+        "--pages": {
+          "choices": null,
+          "required": false,
+          "takes_value": true
+        },
+        "--review": {
+          "choices": null,
+          "required": false,
+          "takes_value": true
+        }
+      },
+      "positionals": [
+        {
+          "dest": "source",
+          "nargs": null
+        }
+      ]
+    },
+    "replay": {
+      "exclusive": [],
+      "options": {
+        "--adapter-path": {
+          "choices": null,
+          "required": false,
+          "takes_value": true
+        },
+        "--json": {
+          "choices": null,
+          "required": false,
+          "takes_value": false
+        },
+        "--out": {
+          "choices": null,
+          "required": true,
+          "takes_value": true
+        }
+      },
+      "positionals": [
+        {
+          "dest": "bundle_dir",
+          "nargs": null
+        }
+      ]
+    },
+    "rerun": {
+      "exclusive": [],
+      "options": {
+        "--adapter-path": {
+          "choices": null,
+          "required": false,
+          "takes_value": true
+        },
+        "--config": {
+          "choices": null,
+          "required": true,
+          "takes_value": true
+        },
+        "--dry-run": {
+          "choices": null,
+          "required": false,
+          "takes_value": false
+        },
+        "--json": {
+          "choices": null,
+          "required": false,
+          "takes_value": false
+        },
+        "--log-level": {
+          "choices": null,
+          "required": false,
+          "takes_value": true
+        },
+        "--out": {
+          "choices": null,
+          "required": true,
+          "takes_value": true
+        }
+      },
+      "positionals": [
+        {
+          "dest": "parent_dir",
+          "nargs": null
+        }
+      ]
+    },
+    "resume": {
+      "exclusive": [],
+      "options": {
+        "--adapter-path": {
+          "choices": null,
+          "required": false,
+          "takes_value": true
+        },
+        "--json": {
+          "choices": null,
+          "required": false,
+          "takes_value": false
+        },
+        "--raise-limit": {
+          "choices": null,
+          "required": false,
+          "takes_value": true
+        }
+      },
+      "positionals": [
+        {
+          "dest": "run_dir",
+          "nargs": null
+        }
+      ]
+    },
+    "review-job": {
+      "exclusive": [],
+      "options": {
+        "--dry-run": {
+          "choices": null,
+          "required": false,
+          "takes_value": false
+        },
+        "--json": {
+          "choices": null,
+          "required": false,
+          "takes_value": false
+        },
+        "--review": {
+          "choices": null,
+          "required": true,
+          "takes_value": true
+        },
+        "--reviewer": {
+          "choices": null,
+          "required": false,
+          "takes_value": true
+        }
+      },
+      "positionals": [
+        {
+          "dest": "job_dir",
+          "nargs": null
+        }
+      ]
+    },
+    "review-sheet": {
+      "exclusive": [],
+      "options": {
+        "--json": {
+          "choices": null,
+          "required": false,
+          "takes_value": false
+        },
+        "--out": {
+          "choices": null,
+          "required": true,
+          "takes_value": true
+        }
+      },
+      "positionals": [
+        {
+          "dest": "job_dir",
+          "nargs": null
+        }
+      ]
+    },
+    "run": {
+      "exclusive": [
+        {
+          "options": [
+            "--adapter",
+            "--config"
+          ],
+          "required": true
+        }
+      ],
+      "options": {
+        "--adapter": {
+          "choices": [
+            "pdf_ocr",
+            "pdf_text",
+            "text"
+          ],
+          "required": false,
+          "takes_value": true
+        },
+        "--adapter-path": {
+          "choices": null,
+          "required": false,
+          "takes_value": true
+        },
+        "--config": {
+          "choices": null,
+          "required": false,
+          "takes_value": true
+        },
+        "--dry-run": {
+          "choices": null,
+          "required": false,
+          "takes_value": false
+        },
+        "--json": {
+          "choices": null,
+          "required": false,
+          "takes_value": false
+        },
+        "--log-level": {
+          "choices": null,
+          "required": false,
+          "takes_value": true
+        },
+        "--out": {
+          "choices": null,
+          "required": true,
+          "takes_value": true
+        },
+        "--pages": {
+          "choices": null,
+          "required": false,
+          "takes_value": true
+        },
+        "--resumable": {
+          "choices": null,
+          "required": false,
+          "takes_value": false
+        },
+        "--routes": {
+          "choices": null,
+          "required": false,
+          "takes_value": true
+        }
+      },
+      "positionals": [
+        {
+          "dest": "inputs",
+          "nargs": "+"
+        }
+      ]
+    },
+    "verify-job": {
+      "exclusive": [],
+      "options": {
+        "--json": {
+          "choices": null,
+          "required": false,
+          "takes_value": false
+        }
+      },
+      "positionals": [
+        {
+          "dest": "job_dir",
+          "nargs": null
+        }
+      ]
+    },
+    "verify-run": {
+      "exclusive": [],
+      "options": {
+        "--json": {
+          "choices": null,
+          "required": false,
+          "takes_value": false
+        }
+      },
+      "positionals": [
+        {
+          "dest": "run_dir",
+          "nargs": null
+        }
+      ]
+    }
+  },
+  "global": {
+    "exclusive": [],
+    "options": {
+      "--version": {
+        "choices": null,
+        "required": false,
+        "takes_value": false
+      }
+    },
+    "positionals": []
+  }
+}

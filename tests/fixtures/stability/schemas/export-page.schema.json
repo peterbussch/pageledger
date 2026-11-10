@@ -1,0 +1,111 @@
+{
+  "$id": "https://github.com/peterbussch/pageledger/schemas/export-page.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "One line of `pageledger export --format jsonl`: a page's selected text with its review state and attempt identity.",
+  "properties": {
+    "attempt": {
+      "additionalProperties": false,
+      "description": "The attempt whose output is the page's text; null when the page has none.",
+      "properties": {
+        "adapter": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "attempt_id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "model": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "output_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "stage": {
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "attempt_id",
+        "stage",
+        "adapter",
+        "model",
+        "output_sha256"
+      ],
+      "type": [
+        "object",
+        "null"
+      ]
+    },
+    "disposition": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "edition": {
+      "additionalProperties": false,
+      "description": "Present when the text is an edition: the attempt's output with its adjudicated changes applied.",
+      "properties": {
+        "path": {
+          "pattern": "^editions/",
+          "type": "string"
+        },
+        "sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "path",
+        "sha256"
+      ],
+      "type": "object"
+    },
+    "job_id": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "page_id": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "page_number": {
+      "minimum": 1,
+      "type": "integer"
+    },
+    "review": {
+      "description": "This page's decision from its human review receipt (see job-review.schema.json); null when the page was not reviewed.",
+      "type": [
+        "object",
+        "null"
+      ]
+    },
+    "source_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "text": {
+      "type": [
+        "string",
+        "null"
+      ]
+    }
+  },
+  "required": [
+    "job_id",
+    "source_sha256",
+    "page_number",
+    "page_id",
+    "disposition",
+    "attempt",
+    "text",
+    "review"
+  ],
+  "title": "PageLedger JSONL Export Page",
+  "type": "object"
+}

@@ -61,8 +61,11 @@ allows it.
 New 0.6 reports and exports use relative source links and do not include
 absolute local paths. Older reports may contain absolute paths. Check all
 retained files before deposit, including logs, custom adapter output, and
-screenshots. Document job directories cannot be bundled as run replay bundles;
-deposit a verified copy of the job tree and its hashes instead.
+screenshots. Document job directories cannot be bundled as run replay bundles.
+Verify the job where it was written, then deposit a copy of the job tree with
+the verification result and its hashes: a moved or copied job does not verify,
+because `job.json` records the job's absolute directory (see
+[stability](stability.md#older-runs-and-jobs)).
 
 ## Cite PageLedger as software
 

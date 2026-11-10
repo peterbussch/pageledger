@@ -1,0 +1,34 @@
+{
+  "processing_stages": [
+    "local_text",
+    "local_ocr",
+    "second_ocr",
+    "local_image",
+    "image",
+    "second_opinion"
+  ],
+  "run": [
+    "adapter",
+    "adapter_options",
+    "adapter_order",
+    "budget",
+    "grading",
+    "max_consecutive_failures",
+    "max_rerun_depth",
+    "on_page_error",
+    "pricing",
+    "quarantine_if",
+    "rerun_if",
+    "retry"
+  ],
+  "top_level": [
+    "classify",
+    "dataset_citation",
+    "language",
+    "processing",
+    "run",
+    "schema",
+    "schema_version",
+    "taxonomy"
+  ]
+}

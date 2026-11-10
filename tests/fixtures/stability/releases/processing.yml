@@ -1,0 +1,4 @@
+schema_version: "0.1"
+processing:
+  local_text:
+    adapter: text

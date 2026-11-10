@@ -1,0 +1,1121 @@
+{
+  "$id": "https://github.com/peterbussch/pageledger/schemas/document.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "Authoritative document report; report.md and transcript.md derive from these fields. Selected text preserves raw UTF-8 bytes.",
+  "properties": {
+    "counts": {
+      "additionalProperties": false,
+      "properties": {
+        "adjudicated_pages": {
+          "description": "Pages whose every difference from the literal reading is settled, none of them read by a person. Counted apart from unresolved_pages, which keeps its 0.6 meaning. Present only in jobs with processing.contest.",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "processed_pages": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "selected_outputs": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "selected_pages": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "source_pages": {
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "unresolved_pages": {
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "source_pages",
+        "selected_pages",
+        "processed_pages",
+        "selected_outputs",
+        "unresolved_pages"
+      ],
+      "type": "object"
+    },
+    "created_at": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "hold_policy": {
+      "description": "Warning-to-hold mapping the job used; 0.6.1 lets clean text from a later engine clear a blank candidate; 0.8 also holds a text layer two agreeing later readings outvote, and a reader with under half the literal OCR's words. Absent on reports written before 0.6, whose jobs filed low_confidence under coverage_defect.",
+      "enum": [
+        "0.6",
+        "0.6.1",
+        "0.8"
+      ]
+    },
+    "job_id": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "limits": {
+      "type": "object"
+    },
+    "limits_history": {
+      "description": "Limits raised on resume after a budget pause, oldest first. Absent until a limit is raised.",
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "at": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "limit": {
+            "enum": [
+              "max_attempt_pages",
+              "max_image_pages",
+              "max_local_image_pages",
+              "max_tokens",
+              "max_cost_usd"
+            ]
+          },
+          "previous": {
+            "type": "number"
+          },
+          "value": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "at",
+          "limit",
+          "previous",
+          "value"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "links": {
+      "additionalProperties": false,
+      "properties": {
+        "article": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "custody": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "article",
+        "custody"
+      ],
+      "type": "object"
+    },
+    "next_action": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "pages": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "adjudications": {
+            "description": "Adjudication receipts (schema 0.2), oldest first. Each binds its decisions to the contested-spans artifact they answer; a receipt bound to an earlier artifact no longer applies.",
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "contested_sha256": {
+                  "pattern": "^[0-9a-f]{64}$",
+                  "type": "string"
+                },
+                "decisions": {
+                  "items": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "confidence": {
+                        "enum": [
+                          "high",
+                          "medium",
+                          "low"
+                        ]
+                      },
+                      "note": {
+                        "type": "string"
+                      },
+                      "span_id": {
+                        "pattern": "^sp_[0-9a-f]{16}$",
+                        "type": "string"
+                      },
+                      "text": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "span_id",
+                      "text",
+                      "confidence",
+                      "note"
+                    ],
+                    "type": "object"
+                  },
+                  "minItems": 1,
+                  "type": "array"
+                },
+                "image_sha256": {
+                  "pattern": "^[0-9a-f]{64}$",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "page_id": {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "page_number": {
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                "reviewed_at": {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "reviewer": {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "schema_version": {
+                  "const": "0.2"
+                },
+                "source_sha256": {
+                  "pattern": "^[0-9a-f]{64}$",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "schema_version",
+                "source_sha256",
+                "page_id",
+                "page_number",
+                "contested_sha256",
+                "image_sha256",
+                "decisions",
+                "reviewer",
+                "reviewed_at"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "attempts": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "adapter_capabilities": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "alignment": {
+                  "type": [
+                    "object",
+                    "null"
+                  ]
+                },
+                "attempt_id": {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "classification": {
+                  "type": [
+                    "object",
+                    "null"
+                  ]
+                },
+                "failure": {
+                  "type": [
+                    "object",
+                    "null"
+                  ]
+                },
+                "format": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "input_evidence": {
+                  "type": [
+                    "object",
+                    "null"
+                  ]
+                },
+                "outcome": {
+                  "enum": [
+                    "completed",
+                    "failed",
+                    "outcome_unknown",
+                    "response"
+                  ]
+                },
+                "page_id": {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "page_number": {
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                "raw_artifact": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "raw_sha256": {
+                  "anyOf": [
+                    {
+                      "pattern": "^[0-9a-f]{64}$",
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "run_id": {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "run_path": {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "source_sha256": {
+                  "pattern": "^[0-9a-f]{64}$",
+                  "type": "string"
+                },
+                "stage": {
+                  "enum": [
+                    "local_text",
+                    "local_ocr",
+                    "second_ocr",
+                    "local_image",
+                    "image",
+                    "second_opinion"
+                  ]
+                },
+                "usage": {
+                  "type": "object"
+                },
+                "warnings": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                }
+              },
+              "required": [
+                "attempt_id",
+                "stage",
+                "outcome",
+                "raw_artifact",
+                "raw_sha256",
+                "format",
+                "warnings",
+                "classification",
+                "alignment",
+                "usage",
+                "failure"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "comparisons": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "agreement_ratio": {
+                  "maximum": 1,
+                  "minimum": 0,
+                  "type": "number"
+                },
+                "left_attempt": {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "number_differences": {
+                  "items": {
+                    "type": "object"
+                  },
+                  "maxItems": 20,
+                  "type": "array"
+                },
+                "right_attempt": {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "spans": {
+                  "items": {
+                    "type": "object"
+                  },
+                  "maxItems": 20,
+                  "type": "array"
+                },
+                "truncated": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "left_attempt",
+                "right_attempt",
+                "agreement_ratio",
+                "spans",
+                "number_differences",
+                "truncated"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "contested": {
+            "additionalProperties": false,
+            "description": "Where the selected reader's text differs from the best literal reading. The spans are in the artifact; the job keeps its hash and counts. Present only in jobs with processing.contest.",
+            "properties": {
+              "artifact": {
+                "pattern": "^contested/doc_[0-9]{4}_page_[0-9]{4,}\\.json$",
+                "type": "string"
+              },
+              "base_attempt": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "by_review": {
+                "description": "Spans settled by a high-confidence decision in an adjudication receipt.",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "by_rule": {
+                "minimum": 0,
+                "type": "integer"
+              },
+              "kinds": {
+                "additionalProperties": {
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                "propertyNames": {
+                  "enum": [
+                    "homoglyph",
+                    "glyph",
+                    "misprint_guard",
+                    "word",
+                    "number",
+                    "region"
+                  ]
+                },
+                "type": "object"
+              },
+              "open": {
+                "description": "Spans neither a rule nor a high-confidence adjudication settled.",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "sha256": {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              "superseded": {
+                "description": "Coverage, confidence and blank holds set aside: those of readings the page no longer rests on, and the witness's own once no span is open.",
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "attempt": {
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "reason": {
+                      "enum": [
+                        "coverage_defect",
+                        "low_confidence",
+                        "blank_candidate"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "reason",
+                    "attempt"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "witness_attempt": {
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "required": [
+              "artifact",
+              "sha256",
+              "base_attempt",
+              "witness_attempt",
+              "kinds",
+              "open",
+              "by_rule",
+              "by_review",
+              "superseded"
+            ],
+            "type": "object"
+          },
+          "disposition": {
+            "enum": [
+              "unreviewed_text",
+              "coverage_defect",
+              "low_confidence",
+              "numeric_column_conflict",
+              "engine_disagreement",
+              "numeric_disagreement",
+              "unconfirmed_model_output",
+              "contested",
+              "adjudicated_text",
+              "blank_candidate",
+              "provider_failure",
+              "outcome_unknown",
+              "pending",
+              "reviewed_text",
+              "reviewed_blank",
+              "illustration",
+              "handwriting",
+              "unreadable",
+              "source_defect"
+            ]
+          },
+          "edition": {
+            "additionalProperties": false,
+            "description": "The selected reading with its adjudicated changes applied, once no span is open. The attempt itself is never edited.",
+            "properties": {
+              "artifact": {
+                "pattern": "^editions/doc_[0-9]{4}_page_[0-9]{4,}\\.txt$",
+                "type": "string"
+              },
+              "base_attempt": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "sha256": {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              }
+            },
+            "required": [
+              "artifact",
+              "sha256",
+              "base_attempt"
+            ],
+            "type": "object"
+          },
+          "next_action": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "page_id": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "page_number": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "review": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "decisions": {
+                    "items": {
+                      "additionalProperties": false,
+                      "allOf": [
+                        {
+                          "if": {
+                            "properties": {
+                              "disposition": {
+                                "const": "reviewed_text"
+                              }
+                            }
+                          },
+                          "then": {
+                            "properties": {
+                              "output_sha256": {
+                                "pattern": "^[0-9a-f]{64}$",
+                                "type": "string"
+                              },
+                              "selected_attempt": {
+                                "minLength": 1,
+                                "type": "string"
+                              }
+                            }
+                          }
+                        },
+                        {
+                          "else": {
+                            "properties": {
+                              "output_sha256": {
+                                "pattern": "^[0-9a-f]{64}$",
+                                "type": "string"
+                              },
+                              "selected_attempt": {
+                                "minLength": 1,
+                                "type": "string"
+                              }
+                            }
+                          },
+                          "if": {
+                            "properties": {
+                              "selected_attempt": {
+                                "type": "null"
+                              }
+                            }
+                          },
+                          "then": {
+                            "properties": {
+                              "output_sha256": {
+                                "type": "null"
+                              }
+                            }
+                          }
+                        }
+                      ],
+                      "properties": {
+                        "disposition": {
+                          "enum": [
+                            "reviewed_text",
+                            "reviewed_blank",
+                            "illustration",
+                            "handwriting",
+                            "unreadable",
+                            "source_defect"
+                          ]
+                        },
+                        "output_sha256": {
+                          "anyOf": [
+                            {
+                              "pattern": "^[0-9a-f]{64}$",
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "page_id": {
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "page_number": {
+                          "minimum": 1,
+                          "type": "integer"
+                        },
+                        "reason": {
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "reviewed_at": {
+                          "format": "date-time",
+                          "type": "string"
+                        },
+                        "reviewer": {
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "selected_attempt": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "page_id",
+                        "page_number",
+                        "disposition",
+                        "selected_attempt",
+                        "output_sha256",
+                        "reason",
+                        "reviewer",
+                        "reviewed_at"
+                      ],
+                      "type": "object"
+                    },
+                    "type": "array"
+                  },
+                  "schema_version": {
+                    "const": "0.1"
+                  },
+                  "source_sha256": {
+                    "pattern": "^[0-9a-f]{64}$",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "schema_version",
+                  "source_sha256",
+                  "decisions"
+                ],
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "review_history": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "decisions": {
+                  "items": {
+                    "additionalProperties": false,
+                    "allOf": [
+                      {
+                        "if": {
+                          "properties": {
+                            "disposition": {
+                              "const": "reviewed_text"
+                            }
+                          }
+                        },
+                        "then": {
+                          "properties": {
+                            "output_sha256": {
+                              "pattern": "^[0-9a-f]{64}$",
+                              "type": "string"
+                            },
+                            "selected_attempt": {
+                              "minLength": 1,
+                              "type": "string"
+                            }
+                          }
+                        }
+                      },
+                      {
+                        "else": {
+                          "properties": {
+                            "output_sha256": {
+                              "pattern": "^[0-9a-f]{64}$",
+                              "type": "string"
+                            },
+                            "selected_attempt": {
+                              "minLength": 1,
+                              "type": "string"
+                            }
+                          }
+                        },
+                        "if": {
+                          "properties": {
+                            "selected_attempt": {
+                              "type": "null"
+                            }
+                          }
+                        },
+                        "then": {
+                          "properties": {
+                            "output_sha256": {
+                              "type": "null"
+                            }
+                          }
+                        }
+                      }
+                    ],
+                    "properties": {
+                      "disposition": {
+                        "enum": [
+                          "reviewed_text",
+                          "reviewed_blank",
+                          "illustration",
+                          "handwriting",
+                          "unreadable",
+                          "source_defect"
+                        ]
+                      },
+                      "output_sha256": {
+                        "anyOf": [
+                          {
+                            "pattern": "^[0-9a-f]{64}$",
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "page_id": {
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "page_number": {
+                        "minimum": 1,
+                        "type": "integer"
+                      },
+                      "reason": {
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "reviewed_at": {
+                        "format": "date-time",
+                        "type": "string"
+                      },
+                      "reviewer": {
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "selected_attempt": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "page_id",
+                      "page_number",
+                      "disposition",
+                      "selected_attempt",
+                      "output_sha256",
+                      "reason",
+                      "reviewer",
+                      "reviewed_at"
+                    ],
+                    "type": "object"
+                  },
+                  "type": "array"
+                },
+                "schema_version": {
+                  "const": "0.1"
+                },
+                "source_sha256": {
+                  "pattern": "^[0-9a-f]{64}$",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "schema_version",
+                "source_sha256",
+                "decisions"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "review_reasons": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "selected_attempt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "selected_output": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "attempt_id": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "edition": {
+                    "const": true,
+                    "description": "Present when the text is the selected attempt's edition: its adjudicated changes applied."
+                  },
+                  "format": {
+                    "type": "string"
+                  },
+                  "path": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "sha256": {
+                    "pattern": "^[0-9a-f]{64}$",
+                    "type": "string"
+                  },
+                  "text": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "attempt_id",
+                  "path",
+                  "sha256",
+                  "format",
+                  "text"
+                ],
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "source_link": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "source_sha256": {
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          },
+          "triggers": {
+            "description": "Why a page climbed although its reading was not held, with the evidence that fired. Present only in jobs with escalate_on beyond hold.",
+            "items": {
+              "properties": {
+                "attempt": {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "trigger": {
+                  "enum": [
+                    "rough",
+                    "disagreement",
+                    "always",
+                    "ocr_layer",
+                    "uncorroborated"
+                  ]
+                }
+              },
+              "required": [
+                "trigger",
+                "attempt"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "page_id",
+          "page_number",
+          "source_sha256",
+          "attempts",
+          "selected_attempt",
+          "disposition",
+          "review_reasons",
+          "review",
+          "next_action",
+          "selected_output",
+          "source_link"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "report_format": {
+      "description": "0.5.1 uses the historical absolute source links; 0.6 uses paths relative to the job directory. Reports without this marker use the 0.5.0 renderer.",
+      "enum": [
+        "0.5.1",
+        "0.6"
+      ]
+    },
+    "schema_version": {
+      "const": "0.1"
+    },
+    "selected_pages": {
+      "items": {
+        "minimum": 1,
+        "type": "integer"
+      },
+      "type": "array",
+      "uniqueItems": true
+    },
+    "source": {
+      "additionalProperties": false,
+      "properties": {
+        "annotations": {
+          "additionalProperties": false,
+          "properties": {
+            "count": {
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "status": {
+              "enum": [
+                "present",
+                "none",
+                "unknown"
+              ]
+            }
+          },
+          "required": [
+            "status",
+            "count"
+          ],
+          "type": "object"
+        },
+        "page_count": {
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "path": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "path",
+        "sha256",
+        "page_count",
+        "annotations"
+      ],
+      "type": "object"
+    },
+    "source_retention": {
+      "additionalProperties": false,
+      "properties": {
+        "capture": {
+          "const": "present"
+        },
+        "preservation": {
+          "const": "unverified"
+        },
+        "removal_eligibility": {
+          "const": "not_assessed"
+        },
+        "removed": {
+          "const": false
+        }
+      },
+      "required": [
+        "capture",
+        "preservation",
+        "removal_eligibility",
+        "removed"
+      ],
+      "type": "object"
+    },
+    "status": {
+      "enum": [
+        "processing",
+        "completed",
+        "halted",
+        "paused_budget"
+      ]
+    },
+    "transcript": {
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "const": "transcript.md"
+        },
+        "sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "path",
+        "sha256"
+      ],
+      "type": "object"
+    },
+    "usage": {
+      "additionalProperties": false,
+      "properties": {
+        "attempt_pages": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "cost_known": {
+          "type": "boolean"
+        },
+        "cost_usd": {
+          "minimum": 0,
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "image_calls": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "known_cost_usd": {
+          "minimum": 0,
+          "type": "number"
+        },
+        "local_image_calls": {
+          "description": "Calls to the local_image stage. Present only in jobs that configure one.",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "paid_cost_known": {
+          "type": "boolean"
+        },
+        "paid_tokens_known": {
+          "type": "boolean"
+        },
+        "tokens": {
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "tokens_known": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "attempt_pages",
+        "image_calls",
+        "tokens",
+        "cost_usd",
+        "cost_known"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "schema_version",
+    "job_id",
+    "created_at",
+    "source",
+    "selected_pages",
+    "status",
+    "pages",
+    "usage",
+    "limits",
+    "links",
+    "source_retention",
+    "next_action",
+    "counts",
+    "transcript"
+  ],
+  "title": "PageLedger Document Report",
+  "type": "object"
+}

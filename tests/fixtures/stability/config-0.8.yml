@@ -1,0 +1,118 @@
+# Every documented 0.8 configuration key, set away from its default where it has
+# one. test_stability.py reads it with the current package and compares the
+# effective values with config-0.8.effective.json. Do not edit: write a new file
+# for a later release.
+schema_version: "0.1"
+dataset_citation:
+  label: Sample ledger
+  text: A sample ledger, 1914.
+language:
+  script: Cyrillic
+  orthography: prereform
+taxonomy:
+  page_types:
+    blank: {default_action: skip}
+    prose: {default_action: transcribe_text, prompt: Transcribe the page.}
+    table_likely: {default_action: transcribe_text, review: true}
+    unknown: {default_action: review}
+classify:
+  adapter: text
+  adapter_options: {}
+  hook: my_project.routes:Classifier
+  hook_options: {strict: true}
+  min_confidence: 0.7
+  thresholds:
+    table_column_line_ratio: 0.02
+schema:
+  name: demographic_table
+  columns:
+    - name: place_name
+      aliases: [place, locality]
+      type: string
+      required: true
+    - name: population_total
+      type: integer
+      required: true
+    - name: population_male
+      type: integer
+    - name: population_female
+      type: number
+  checks:
+    - name: population_sum
+      expression: population_total == population_male + population_female
+      tolerance: 1
+  quality:
+    minimum_required_column_coverage: 0.5
+    low_confidence_threshold: 0.4
+run:
+  adapter_order:
+    - pdf_text
+    - adapter: pdf_ocr
+      adapter_options: {dpi: 400, lang: rus}
+  budget:
+    max_pages: 500
+    max_tokens: 100000
+    max_usd: 2.5
+    warn_pages: 400
+    warn_tokens: 80000
+    warn_usd: 2
+    warn_at_percent: 75
+  pricing:
+    cost_per_page: 0.002
+    cost_per_1k_tokens: 0.01
+  retry:
+    max_retries: 2
+    backoff: exponential
+  on_page_error: continue
+  max_consecutive_failures: 5
+  max_rerun_depth: 3
+  grading:
+    review_below_grade: C
+    thresholds:
+      confidence: {A: 0.95}
+  rerun_if:
+    - grade_below: C
+    - missing_required_columns: true
+    - arithmetic_failure_rate_above: 0.05
+  quarantine_if:
+    - grade_below: D
+processing:
+  local_text:
+    adapter: pdf_text
+  local_ocr:
+    adapter: pdf_ocr
+    adapter_options: {lang: rus, dpi: 300}
+  second_ocr:
+    adapter: rapidocr
+  local_image:
+    adapter: vision
+    adapter_options: {base_url: "http://127.0.0.1:8080/v1", model: local-reader}
+  image:
+    adapter: vision
+    adapter_options: {base_url: "http://127.0.0.1:8081/v1", model: paid-reader}
+    prompt: Transcribe only the text on this page.
+  second_opinion:
+    adapter: vision
+    adapter_options: {base_url: "http://127.0.0.1:8082/v1", model: second-reader}
+  limits:
+    max_attempt_pages: 100
+    max_image_pages: 10
+    max_local_image_pages: 20
+    max_tokens: 50000
+    max_cost_usd: 1.5
+  links:
+    article: https://example.org/article
+    custody: https://example.org/custody
+  benchmark:
+    stage: local_ocr
+    every_nth_page: 10
+  batch:
+    pages: 8
+    concurrent: 4
+  escalate_on: [hold, rough, disagreement]
+  lexicon:
+    provider: pymorphy3
+    language: ru
+    rough_below: 0.8
+  contest:
+    rules: ru-print-0.2

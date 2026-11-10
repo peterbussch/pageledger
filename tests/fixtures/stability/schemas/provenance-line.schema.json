@@ -1,0 +1,283 @@
+{
+  "$id": "https://github.com/peterbussch/pageledger/schemas/provenance-line.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "One line of provenance.jsonl — a single extractor activity record. Schema version 0.1.",
+  "properties": {
+    "cost": {
+      "additionalProperties": false,
+      "description": "Per-page cost derived by PageLedger; adapter-reported usage remains unchanged.",
+      "properties": {
+        "basis": {
+          "enum": [
+            "adapter_reported",
+            "configured_rate",
+            null
+          ],
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "usd": {
+          "type": [
+            "number",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "usd",
+        "basis"
+      ],
+      "type": "object"
+    },
+    "extraction_seconds": {
+      "description": "Wall-clock seconds for the successful extraction attempt, measured by the runner. Null in artifacts predating this field.",
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "extractor": {
+      "additionalProperties": false,
+      "properties": {
+        "adapter": {
+          "type": "string"
+        },
+        "adapter_version": {
+          "type": "string"
+        },
+        "capabilities": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "deterministic": {
+          "type": "boolean"
+        },
+        "input_types": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "model": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "output_types": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "prompt_hash": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "adapter",
+        "adapter_version",
+        "deterministic",
+        "input_types",
+        "output_types",
+        "capabilities"
+      ],
+      "type": "object"
+    },
+    "input_evidence": {
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "$ref": "image-evidence.schema.json"
+        }
+      ]
+    },
+    "metrics": {
+      "additionalProperties": false,
+      "description": "Flat copy of usage for analytical workflows.",
+      "properties": {
+        "compute_seconds": {
+          "minimum": 0,
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "cost_usd": {
+          "minimum": 0,
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "pages": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "tokens": {
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "pages"
+      ],
+      "type": "object"
+    },
+    "page_id": {
+      "type": "string"
+    },
+    "result": {
+      "additionalProperties": false,
+      "properties": {
+        "confidence": {
+          "maximum": 1,
+          "minimum": 0,
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "format": {
+          "type": "string"
+        },
+        "raw_artifact": {
+          "type": "string"
+        },
+        "raw_sha256": {
+          "description": "SHA-256 of the exact raw artifact bytes. Optional in the schema so older schema-0.1 provenance remains readable; current writers always emit it and verify-run cannot pass without it.",
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "warnings": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "format",
+        "warnings",
+        "raw_artifact"
+      ],
+      "type": "object"
+    },
+    "route": {
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "type": "string"
+        },
+        "route_confidence": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "type": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "action"
+      ],
+      "type": "object"
+    },
+    "run_id": {
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "0.1",
+      "type": "string"
+    },
+    "source": {
+      "additionalProperties": false,
+      "properties": {
+        "page_number": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "path": {
+          "type": "string"
+        },
+        "sha256": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "path",
+        "page_number",
+        "sha256"
+      ],
+      "type": "object"
+    },
+    "timestamp": {
+      "description": "Extraction time in UTC ISO 8601.",
+      "type": "string"
+    },
+    "usage": {
+      "additionalProperties": false,
+      "properties": {
+        "compute_seconds": {
+          "minimum": 0,
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "cost_usd": {
+          "minimum": 0,
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "pages": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "tokens": {
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "pages"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "schema_version",
+    "run_id",
+    "page_id",
+    "source",
+    "route",
+    "extractor",
+    "result",
+    "usage",
+    "metrics",
+    "extraction_seconds",
+    "timestamp"
+  ],
+  "title": "PageLedger Provenance Line (JSONL)",
+  "type": "object"
+}

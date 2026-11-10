@@ -1,0 +1,202 @@
+{
+  "payload": {
+    "config": {
+      "processing": {
+        "local_text": {
+          "adapter": "text"
+        }
+      },
+      "schema_version": "0.1"
+    },
+    "config_sha256": "64e32c65f217c070eff44fcf717a155136aeeff99d8fbd36f1aec8dfdcabc385",
+    "created_at": "2026-11-10T22:55:30Z",
+    "halt_reason": null,
+    "hold_policy": "0.6.1",
+    "job_id": "job_63d1f9d1307d483e8a6de87e6dc3f042",
+    "limits": {
+      "max_attempt_pages": null,
+      "max_cost_usd": null,
+      "max_image_pages": 0,
+      "max_tokens": null
+    },
+    "links": {
+      "article": null,
+      "custody": null
+    },
+    "next_action": "Inspect unresolved source pages and record identity-bound review decisions.",
+    "package_sha256": "658aee00460467e9c8d13ecd191d5b4837f397a292a5753683b5a78101b820d6",
+    "pages": [
+      {
+        "attempts": [
+          {
+            "adapter_capabilities": [
+              "embedded_text",
+              "local"
+            ],
+            "alignment": null,
+            "attempt_id": "local_text:doc_0001_page_0001",
+            "classification": {
+              "action": null,
+              "confidence": 0.6,
+              "prompt": null,
+              "reason": "sparse_text",
+              "type": "sparse"
+            },
+            "failure": null,
+            "format": "text",
+            "input_evidence": null,
+            "outcome": "completed",
+            "page_id": "doc_0001_page_0001",
+            "page_number": 1,
+            "raw_artifact": "attempts/local_text/raw/doc_0001_page_0001.txt",
+            "raw_sha256": "9ce6a9ee515f74b503953aa66a4b2f9d8391a85e5f9639e8349bb902a07aeac1",
+            "run_id": "run-20261110T225530092353Z",
+            "run_path": "attempts/local_text",
+            "source_sha256": "c842bcf925261b10dc47e807d963703301d70918d5b8d3d2936c5f11facdc00d",
+            "stage": "local_text",
+            "usage": {
+              "compute_seconds": null,
+              "cost_usd": null,
+              "pages": 1,
+              "tokens": null
+            },
+            "warnings": []
+          }
+        ],
+        "comparisons": [],
+        "disposition": "coverage_defect",
+        "next_action": "local_ocr",
+        "page_id": "doc_0001_page_0001",
+        "page_number": 1,
+        "review": null,
+        "review_history": [],
+        "review_reasons": [
+          "coverage_defect"
+        ],
+        "selected_attempt": "local_text:doc_0001_page_0001",
+        "source_sha256": "c842bcf925261b10dc47e807d963703301d70918d5b8d3d2936c5f11facdc00d"
+      },
+      {
+        "attempts": [
+          {
+            "adapter_capabilities": [
+              "embedded_text",
+              "local"
+            ],
+            "alignment": null,
+            "attempt_id": "local_text:doc_0001_page_0002",
+            "classification": {
+              "action": null,
+              "confidence": 0.6,
+              "prompt": null,
+              "reason": "sparse_text",
+              "type": "sparse"
+            },
+            "failure": null,
+            "format": "text",
+            "input_evidence": null,
+            "outcome": "completed",
+            "page_id": "doc_0001_page_0002",
+            "page_number": 2,
+            "raw_artifact": "attempts/local_text/raw/doc_0001_page_0002.txt",
+            "raw_sha256": "c962fa1be311981f0f965857e89b000707f9cea07a069d073461308f3019200f",
+            "run_id": "run-20261110T225530092353Z",
+            "run_path": "attempts/local_text",
+            "source_sha256": "c842bcf925261b10dc47e807d963703301d70918d5b8d3d2936c5f11facdc00d",
+            "stage": "local_text",
+            "usage": {
+              "compute_seconds": null,
+              "cost_usd": null,
+              "pages": 1,
+              "tokens": null
+            },
+            "warnings": [
+              "short_text"
+            ]
+          }
+        ],
+        "comparisons": [],
+        "disposition": "coverage_defect",
+        "next_action": "local_ocr",
+        "page_id": "doc_0001_page_0002",
+        "page_number": 2,
+        "review": null,
+        "review_history": [],
+        "review_reasons": [
+          "coverage_defect"
+        ],
+        "selected_attempt": "local_text:doc_0001_page_0002",
+        "source_sha256": "c842bcf925261b10dc47e807d963703301d70918d5b8d3d2936c5f11facdc00d"
+      }
+    ],
+    "policy": {
+      "image": null,
+      "limits": {
+        "max_attempt_pages": null,
+        "max_cost_usd": null,
+        "max_image_pages": 0,
+        "max_tokens": null
+      },
+      "links": {
+        "article": null,
+        "custody": null
+      },
+      "local_ocr": null,
+      "local_text": {
+        "adapter": "text",
+        "adapter_options": {},
+        "prompt": "Transcribe only text visible on this source page, preserving page order, headings, footnotes and named table columns. Do not reconstruct missing or invisible text. Mark unreadable spans explicitly. Return the transcript without interpretation."
+      },
+      "second_opinion": null
+    },
+    "root": "/private/tmp/pageledger-golden/job-0.7.0",
+    "schema_version": "0.1",
+    "selected_pages": [
+      1,
+      2
+    ],
+    "source": {
+      "annotations": {
+        "count": 0,
+        "status": "none"
+      },
+      "page_count": 2,
+      "path": "/private/tmp/pageledger-golden/sample.txt",
+      "sha256": "c842bcf925261b10dc47e807d963703301d70918d5b8d3d2936c5f11facdc00d"
+    },
+    "source_retention": {
+      "capture": "present",
+      "preservation": "unverified",
+      "removal_eligibility": "not_assessed",
+      "removed": false
+    },
+    "stages": [
+      {
+        "config_path": ".job/local_text.yml",
+        "config_sha256": "347d7f1a84e3633857998f23c3e57e49ab511264272d3759c803455173daec30",
+        "pages": [
+          1,
+          2
+        ],
+        "run_path": "attempts/local_text",
+        "stage": "local_text",
+        "stage_id": "local_text",
+        "status": "completed"
+      }
+    ],
+    "status": "completed",
+    "usage": {
+      "attempt_pages": 2,
+      "cost_known": false,
+      "cost_usd": null,
+      "image_calls": 0,
+      "known_cost_usd": 0,
+      "paid_cost_known": true,
+      "paid_tokens_known": true,
+      "tokens": 0,
+      "tokens_known": false
+    }
+  },
+  "schema_version": "0.1",
+  "sha256": "c4c61d84e4cd413492e8b98eb4ae5ba704d09f0e0795e2fb07717c1fe6e8af5f"
+}

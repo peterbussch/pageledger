@@ -207,6 +207,8 @@ The current generation's effective adapter is also the extractor recorded in
 ## Compatibility policy
 
 PageLedger artifacts carry `schema_version: "0.1"` as their release contract.
+[Stability](stability.md) lists everything else that stays stable from 1.0
+(commands, configuration, the adapter protocol, codes) and how it is tested.
 
 The package release and artifact schema are versioned independently.
 PageLedger keeps artifact `schema_version: "0.1"`: its newer classifier,

@@ -1,0 +1,152 @@
+{
+  "$id": "https://github.com/peterbussch/pageledger/schemas/audit.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "Machine-readable audit result. audit.md is a rendering of this file, not a separate source of truth. Schema version 0.1.",
+  "properties": {
+    "quarantine_queue": {
+      "description": "Pages excluded from rerun because they matched a quarantine policy.",
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "type": "string"
+          },
+          "confidence": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "grade": {
+            "enum": [
+              "A",
+              "B",
+              "C",
+              "D",
+              "F",
+              null
+            ],
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "grade_basis": {
+            "enum": [
+              "signals_only",
+              "schema_aware",
+              null
+            ],
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "page_id": {
+            "type": "string"
+          },
+          "page_number": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "page_id",
+          "page_number",
+          "type",
+          "action",
+          "reason"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "review_queue": {
+      "description": "Pages a human should inspect before trusting the run.",
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "type": "string"
+          },
+          "confidence": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "grade": {
+            "description": "Page grade at queue time. Absent or null for entries queued before grading (configured-review pages).",
+            "enum": [
+              "A",
+              "B",
+              "C",
+              "D",
+              "F",
+              null
+            ],
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "grade_basis": {
+            "enum": [
+              "signals_only",
+              "schema_aware",
+              null
+            ],
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "page_id": {
+            "type": "string"
+          },
+          "page_number": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "page_id",
+          "page_number",
+          "type",
+          "action",
+          "reason"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "run_id": {
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "0.1",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema_version",
+    "run_id",
+    "review_queue",
+    "quarantine_queue"
+  ],
+  "title": "PageLedger Audit",
+  "type": "object"
+}

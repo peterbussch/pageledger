@@ -1,0 +1,183 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "artifact": {
+      "pattern": "^evidence/(?!\\.{1,2}/)(?!.*\\/\\.{1,2}/)(?!.*//)[^\\\\\\u0000]+\\.[jJ][pP][eE]?[gG]$",
+      "type": "string"
+    },
+    "bytes": {
+      "maximum": 3145728,
+      "minimum": 1,
+      "type": "integer"
+    },
+    "color_space": {
+      "const": "RGB"
+    },
+    "crop": {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "full_page"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "height": {
+              "exclusiveMinimum": 0,
+              "type": "number"
+            },
+            "kind": {
+              "const": "box"
+            },
+            "units": {
+              "const": "pdf_points"
+            },
+            "width": {
+              "exclusiveMinimum": 0,
+              "type": "number"
+            },
+            "x": {
+              "minimum": 0,
+              "type": "number"
+            },
+            "y": {
+              "minimum": 0,
+              "type": "number"
+            }
+          },
+          "required": [
+            "kind",
+            "units",
+            "x",
+            "y",
+            "width",
+            "height"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "height": {
+      "maximum": 4096,
+      "minimum": 1,
+      "type": "integer"
+    },
+    "kind": {
+      "const": "page_image"
+    },
+    "media_type": {
+      "const": "image/jpeg"
+    },
+    "model": {
+      "anyOf": [
+        {
+          "minLength": 1,
+          "pattern": "\\S",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "page_number": {
+      "minimum": 1,
+      "type": "integer"
+    },
+    "prompt_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "provider": {
+      "anyOf": [
+        {
+          "minLength": 1,
+          "pattern": "\\S",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "renderer": {
+      "additionalProperties": false,
+      "properties": {
+        "command": {
+          "minLength": 1,
+          "pattern": "\\S",
+          "type": "string"
+        },
+        "parameters": {
+          "type": "object"
+        },
+        "version": {
+          "minLength": 1,
+          "pattern": "\\S",
+          "type": "string"
+        }
+      },
+      "required": [
+        "command",
+        "version",
+        "parameters"
+      ],
+      "type": "object"
+    },
+    "requested_model": {
+      "minLength": 1,
+      "pattern": "\\S",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "0.1"
+    },
+    "sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "source_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "system_prompt_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "width": {
+      "maximum": 4096,
+      "minimum": 1,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "schema_version",
+    "kind",
+    "source_sha256",
+    "page_number",
+    "artifact",
+    "sha256",
+    "media_type",
+    "bytes",
+    "width",
+    "height",
+    "color_space",
+    "requested_model",
+    "model",
+    "provider",
+    "prompt_sha256",
+    "crop",
+    "renderer"
+  ],
+  "title": "PageLedger exact transmitted page image evidence",
+  "type": "object"
+}

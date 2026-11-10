@@ -1,0 +1,357 @@
+{
+  "$id": "https://github.com/peterbussch/pageledger/schemas/quality-line.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "One line of quality.jsonl — per-page diagnostic signals, not calibrated accuracy. Schema version 0.1.",
+  "properties": {
+    "adapter": {
+      "type": "string"
+    },
+    "character_count": {
+      "minimum": 0,
+      "type": "integer"
+    },
+    "confidence": {
+      "description": "Adapter-reported page confidence, 0–1. Evidence, not calibrated probability. Null when the engine reports none.",
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "confidence_detail": {
+      "description": "Engine-native confidence evidence, adapter-defined shape. pdf_ocr reports Tesseract per-word statistics: scale, word_count, mean, min, below_60_count, below_60_ratio.",
+      "type": [
+        "object",
+        "null"
+      ]
+    },
+    "embedded_text_comparison": {
+      "additionalProperties": false,
+      "description": "Comparison against the PDF's embedded text layer. Null when source is not a PDF or adapter already reports embedded_text capability.",
+      "properties": {
+        "character_delta": {
+          "type": "integer"
+        },
+        "character_ratio": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "embedded_character_count": {
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "embedded_character_count",
+        "character_delta",
+        "character_ratio"
+      ],
+      "type": [
+        "object",
+        "null"
+      ]
+    },
+    "grade": {
+      "description": "Deterministic evidence summary, not calibrated accuracy. Worst of the signal and schema axes. Only comparable within one adapter.",
+      "enum": [
+        "A",
+        "B",
+        "C",
+        "D",
+        "F"
+      ],
+      "type": "string"
+    },
+    "grade_basis": {
+      "description": "signals_only: graded on text signals alone (no alignment). schema_aware: schema column/check evidence contributed. A signals-only A is weaker evidence than a schema-aware A.",
+      "enum": [
+        "signals_only",
+        "schema_aware"
+      ],
+      "type": "string"
+    },
+    "grade_detail": {
+      "additionalProperties": false,
+      "properties": {
+        "arithmetic_pass_rate": {
+          "maximum": 1,
+          "minimum": 0,
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "confidence_band": {
+          "description": "Null when the adapter reports no confidence — the signals grade then rests on warnings alone.",
+          "enum": [
+            "A",
+            "B",
+            "C",
+            "D",
+            "F",
+            null
+          ],
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "reasons": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "required_column_coverage": {
+          "maximum": 1,
+          "minimum": 0,
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "schema_grade": {
+          "enum": [
+            "A",
+            "B",
+            "C",
+            "D",
+            "F",
+            null
+          ],
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "signals_grade": {
+          "enum": [
+            "A",
+            "B",
+            "C",
+            "D",
+            "F"
+          ],
+          "type": "string"
+        },
+        "warning_count": {
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "signals_grade",
+        "schema_grade",
+        "confidence_band",
+        "warning_count",
+        "required_column_coverage",
+        "arithmetic_pass_rate",
+        "reasons"
+      ],
+      "type": "object"
+    },
+    "output_integrity": {
+      "additionalProperties": false,
+      "description": "Conservative evidence of leaked chat-template markers and rerun output inflation. Added in PageLedger 0.1.4; optional for compatibility with older quality lines.",
+      "properties": {
+        "character_delta": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "character_ratio": {
+          "minimum": 0,
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "instruction_markers": {
+          "items": {
+            "enum": [
+              "<think>",
+              "</think>",
+              "<|channel",
+              "<|im_start|>",
+              "<|im_end|>",
+              "[INST]",
+              "[/INST]"
+            ],
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "parent_character_count": {
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "instruction_markers",
+        "parent_character_count",
+        "character_delta",
+        "character_ratio"
+      ],
+      "type": "object"
+    },
+    "page_id": {
+      "type": "string"
+    },
+    "page_number": {
+      "minimum": 1,
+      "type": "integer"
+    },
+    "schema_version": {
+      "const": "0.1",
+      "type": "string"
+    },
+    "text_quality": {
+      "additionalProperties": false,
+      "properties": {
+        "alpha_token_count": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "control_character_count": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "digit_count": {
+          "description": "Decimal digits in the output. With letter_count it identifies text layers that kept a table's digits and lost its words. Optional for compatibility with older quality lines.",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "foreign_script_count": {
+          "description": "Letters and marks from scripts other than Latin, Cyrillic or Greek, letterlike symbols and mathematical alphanumerics excepted. Optional for compatibility with older quality lines.",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "largest_identical_line_count": {
+          "description": "How often the most repeated non-empty line occurs, ignoring dot leaders and rules. Optional for compatibility with older quality lines.",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "latin_letter_ratio": {
+          "description": "Share of Unicode letters whose names identify the Latin script. Added as a conservative joined-text guard; optional for compatibility with older quality lines.",
+          "maximum": 1,
+          "minimum": 0,
+          "type": "number"
+        },
+        "letter_count": {
+          "description": "Unicode letters in the output. Optional for compatibility with older quality lines.",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "longest_letter_run": {
+          "description": "Longest run of one letter repeated, such as a model stuck on one character; 0 when no letter repeats. Optional for compatibility with older quality lines.",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "longest_repeated_tail_length": {
+          "description": "Length in characters of the longest ending made of one unit of up to 200 characters repeated at least 20 times. Optional for compatibility with older quality lines.",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "max_token_length": {
+          "description": "Maximum Unicode letter-plus-mark token length. Added as joined-text evidence; optional for compatibility with older quality lines.",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "mean_token_length": {
+          "description": "Mean Unicode letter-plus-mark token length. Null when the page has none. The <3 boundary is a fragment-noise heuristic, not a cross-language quality score.",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "mixed_script_token_ratio": {
+          "description": "Share of letter tokens that mix Latin, Cyrillic or Greek letters, as look-alike substitutions do. Optional for compatibility with older quality lines.",
+          "maximum": 1,
+          "minimum": 0,
+          "type": "number"
+        },
+        "prereform_letter_count": {
+          "description": "Occurrences of Cyrillic letters abolished by the 1918 Russian orthographic reform (ѣ, ѳ, ѵ). Modern Ukrainian/Belarusian і is deliberately not counted.",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "private_use_count": {
+          "description": "Private Use Area code points, except one that opens a line before a space (a bullet or icon glyph). Optional for compatibility with older quality lines.",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "replacement_character_count": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "short_token_ratio": {
+          "description": "Share of Unicode letter-plus-mark tokens with 1-2 code points. Null when the page has none.",
+          "maximum": 1,
+          "minimum": 0,
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "suspicious_symbol_count": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "suspicious_symbol_ratio": {
+          "maximum": 1,
+          "minimum": 0,
+          "type": "number"
+        },
+        "terminal_hard_sign_count": {
+          "description": "Word-final hard signs (ъ) — mandatory in pre-1918 Russian orthography, absent from modern text. Survives OCR even when abolished letters do not.",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "whitespace_character_ratio": {
+          "description": "Share of output characters for which str.isspace() is true. Added as joined-text evidence; optional for compatibility with older quality lines.",
+          "maximum": 1,
+          "minimum": 0,
+          "type": "number"
+        }
+      },
+      "required": [
+        "replacement_character_count",
+        "control_character_count",
+        "suspicious_symbol_count",
+        "suspicious_symbol_ratio"
+      ],
+      "type": "object"
+    },
+    "warnings": {
+      "description": "Adapter-native warnings plus PageLedger-derived quality warnings such as empty_text, short_text, replacement_characters, control_characters, suspicious_symbol_density, fragmented_text, joined_text, suspicious_embedded_text_delta, historical_orthography, low_confidence, instruction_echo, output_inflation, digits_only_text, mixed_script_tokens, private_use_characters, foreign_script_characters, repeated_page_text, repetition_loop, script_mismatch, and historical_letters_lost.",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "word_count": {
+      "description": "Count of Unicode letter tokens; combining marks remain attached to their base-letter token.",
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "schema_version",
+    "page_id",
+    "page_number",
+    "adapter",
+    "character_count",
+    "word_count",
+    "warnings",
+    "text_quality",
+    "embedded_text_comparison"
+  ],
+  "title": "PageLedger Quality Line (JSONL)",
+  "type": "object"
+}

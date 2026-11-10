@@ -1,0 +1,104 @@
+{
+  "$id": "https://github.com/peterbussch/pageledger/schemas/adjudication-packet.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "<page_id>.json written by `pageledger adjudicate JOB --packets DIR`: one page's open contested spans, blind to which engine read which. Schema version 0.1.",
+  "properties": {
+    "contested_sha256": {
+      "description": "The spans these answers must be bound to; copied into the decisions file.",
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "image": {
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "path": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "sha256": {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            }
+          },
+          "required": [
+            "path",
+            "sha256"
+          ],
+          "type": "object"
+        }
+      ],
+      "description": "The exact page image the model read, copied beside the packet; null when the reading has no image evidence."
+    },
+    "job_id": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "page_id": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "page_number": {
+      "minimum": 1,
+      "type": "integer"
+    },
+    "schema_version": {
+      "const": "0.1"
+    },
+    "source_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "spans": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "after": {
+            "type": "string"
+          },
+          "before": {
+            "type": "string"
+          },
+          "candidates": {
+            "description": "The two readings, sorted; an empty string means a reading has nothing there.",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 2,
+            "minItems": 1,
+            "type": "array"
+          },
+          "span_id": {
+            "pattern": "^sp_[0-9a-f]{16}$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "span_id",
+          "candidates",
+          "before",
+          "after"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "schema_version",
+    "job_id",
+    "source_sha256",
+    "page_id",
+    "page_number",
+    "contested_sha256",
+    "image",
+    "spans"
+  ],
+  "title": "PageLedger Adjudication Packet",
+  "type": "object"
+}

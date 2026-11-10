@@ -1,0 +1,58 @@
+{
+  "$id": "https://github.com/peterbussch/pageledger/schemas/adjudication-decisions.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "<page_id>.decisions.json, an adjudicator's answers to one packet, read by `pageledger adjudicate JOB --decisions DIR --reviewer NAME`.",
+  "properties": {
+    "contested_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "decisions": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "confidence": {
+            "description": "Only high settles the span.",
+            "enum": [
+              "high",
+              "medium",
+              "low"
+            ]
+          },
+          "note": {
+            "description": "Optional; recorded as an empty string when absent.",
+            "type": "string"
+          },
+          "span_id": {
+            "pattern": "^sp_[0-9a-f]{16}$",
+            "type": "string"
+          },
+          "text": {
+            "description": "What the page prints between the span's before and after; misprints as printed.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "span_id",
+          "text",
+          "confidence"
+        ],
+        "type": "object"
+      },
+      "minItems": 1,
+      "type": "array"
+    },
+    "page_id": {
+      "minLength": 1,
+      "type": "string"
+    }
+  },
+  "required": [
+    "page_id",
+    "contested_sha256",
+    "decisions"
+  ],
+  "title": "PageLedger Adjudication Decisions",
+  "type": "object"
+}

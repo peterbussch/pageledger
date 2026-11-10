@@ -1,0 +1,2 @@
+{"adapter": "text", "attempt": 1, "budget_warning": null, "error": null, "level": "INFO", "page_id": "doc_0001_page_0001", "run_id": "run-20261110T225531417643Z", "schema_version": "0.1", "status": "extracted", "timestamp": "2026-11-10T22:55:31Z"}
+{"adapter": "text", "attempt": 1, "budget_warning": null, "error": null, "level": "INFO", "page_id": "doc_0001_page_0002", "run_id": "run-20261110T225531417643Z", "schema_version": "0.1", "status": "extracted", "timestamp": "2026-11-10T22:55:31Z"}

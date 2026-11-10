@@ -1,0 +1,100 @@
+{
+  "$id": "https://github.com/peterbussch/pageledger/schemas/run-log-line.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "One line of run.log — an extraction event or summary entry. Schema version 0.1.",
+  "properties": {
+    "adapter": {
+      "description": "Adapter name. Present on extraction entries only.",
+      "type": "string"
+    },
+    "attempt": {
+      "minimum": 1,
+      "type": "integer"
+    },
+    "budget_warning": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "error": {
+      "description": "Adapter error envelope for failed/retry entries, or budget error string.",
+      "oneOf": [
+        {
+          "type": "object"
+        },
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "execution_mode": {
+      "description": "Present on summary entries only.",
+      "enum": [
+        "dry_run",
+        "execute"
+      ],
+      "type": "string"
+    },
+    "level": {
+      "enum": [
+        "DEBUG",
+        "INFO",
+        "WARNING",
+        "ERROR"
+      ],
+      "type": "string"
+    },
+    "max_retries": {
+      "minimum": 0,
+      "type": "integer"
+    },
+    "page_id": {
+      "description": "Present on per-extraction entries only.",
+      "type": "string"
+    },
+    "pages_extracted": {
+      "description": "Present on summary entries only.",
+      "type": "integer"
+    },
+    "pages_routed_review": {
+      "description": "Pages deliberately deferred by a review route. Present on summary entries only in current writers.",
+      "type": "integer"
+    },
+    "pages_skipped": {
+      "description": "Present on summary entries only.",
+      "type": "integer"
+    },
+    "pages_total": {
+      "description": "Present on summary entries only.",
+      "type": "integer"
+    },
+    "run_id": {
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "0.1",
+      "type": "string"
+    },
+    "status": {
+      "description": "dry_run_complete, run_complete, extracted, budget_exceeded, failed, retry, aligned.",
+      "type": "string"
+    },
+    "timestamp": {
+      "description": "Event time in UTC ISO 8601.",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema_version",
+    "timestamp",
+    "level",
+    "run_id"
+  ],
+  "title": "PageLedger Run Log Line (JSONL)",
+  "type": "object"
+}

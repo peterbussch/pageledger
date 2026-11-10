@@ -4,9 +4,9 @@ PageLedger calls existing OCR/VLM tools through a small adapter interface.
 This keeps the package focused on routing, provenance, audit queues, and
 rerun control.
 
-The protocol is frozen for the 0.1 schema version. Patch releases may add
-optional attributes; minor releases may add required attributes after a
-`schema_version` bump.
+The protocol is frozen for the 0.1 schema version. Releases may add optional
+attributes; a new required attribute or a change to the `extract()` call waits
+for a major release. See [stability](stability.md).
 
 This document describes extraction adapters. Classifier hooks are a separate,
 smaller protocol used only by `pageledger classify`; see
