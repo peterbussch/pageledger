@@ -85,6 +85,12 @@ and [CLI alignment](cli.md#align).
 saved outcomes. A request with no saved outcome is not retried; it is reported
 as `outcome_unknown`. See [checkpoint specification](checkpoint-spec.md).
 
+### Fetch page images from IIIF
+
+| Supported | What to rely on | Limit |
+|---|---|---|
+| `fetch-iiif` for Presentation API 2 and 3 manifests and Image API 2 and 3 services. | A snapshot folder of page JPEGs at native size or the largest the server allows, with a record binding each file's hash to its URLs; `--resume` checks what is there and fetches only what is missing. | No authentication, JPEG only, whole images only (no regions), no ALTO or other OCR discovered from the manifest. The snapshot must be kept for its record to mean anything. See [the IIIF how-to](iiif.md#limits). |
+
 ## Adapter-supported, user-supplied
 
 - OCRmyPDF preprocessing, or any external engine wrapped as a custom

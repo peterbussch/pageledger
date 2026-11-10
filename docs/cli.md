@@ -41,6 +41,7 @@ such as stage, route and disposition are defined in the
 | `verify-run` | `verify-run RUN_DIR [--json]` | Verification passes. | Verification fails or runtime error. |
 | `bundle` | `bundle RUN_DIR --out DIR [--json]` | Bundle written. | Runtime error. |
 | `replay` | `replay BUNDLE_DIR --out DIR [--adapter-path DIR] [--json]` | Outcome is `exact` or `evidence_compared`. | `deterministic_mismatch` or runtime error. |
+| `fetch-iiif` | `fetch-iiif URL --out DIR [--pages RANGE] [--delay SECONDS] [--max-image-bytes N] [--resume] [--json]` | Every selected canvas fetched. | Some canvases missing (the snapshot is `incomplete`), or runtime error. |
 
 Any command-line syntax error, including a missing required argument or an
 unrecognized option, exits 2. `--version` exits 0.
@@ -425,6 +426,29 @@ boundary](capabilities-and-limits.md#verified-replay-boundary).
 
 See the [command index](#command-index) for exit codes. `--json` includes
 replay `outcome` and structured `error`/`code` fields on failure.
+
+## fetch-iiif
+
+```bash
+pageledger fetch-iiif https://example.org/iiif/item/manifest.json --out sources/item
+pageledger fetch-iiif https://example.org/iiif/item/manifest.json --out sources/item --resume
+```
+
+Fetches the page images of a IIIF Presentation 2 or 3 manifest, an Image API
+2 or 3 `info.json`, or an image service base URL into a new folder: one JPEG
+per canvas at the top level (`0001.jpg`, named by canvas position), the
+manifest and each `info.json` under `iiif/`, and the
+[fetch record](iiif-fetch-spec.md) `iiif-fetch.json`. `--out` must not exist
+unless `--resume` is given. `--pages` selects canvases by their position in
+the manifest. `--delay` sets the seconds between requests (default 1).
+`--max-image-bytes` refuses larger images (default 268435456, 256 MiB).
+`--resume` checks the images already fetched against the record and fetches
+only the missing canvases; it needs the same URL and `--pages` as the first
+fetch. Without `--json`, progress goes to stderr and the result, each
+`iiif_below_native` warning and each missing canvas to stdout; `--json`
+prints a summary with `status`, `fetched`, `fetched_now`, `missing`,
+`warnings` and `stopped_by`. See [Fetch page images from a IIIF
+server](iiif.md) for what is fetched and the limits.
 
 ## inspect-run
 

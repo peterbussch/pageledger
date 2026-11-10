@@ -554,6 +554,30 @@ def build_parser() -> argparse.ArgumentParser:
     replay_parser.add_argument("--adapter-path", type=Path, default=None)
     replay_parser.add_argument("--json", action="store_true", dest="json_output")
 
+    iiif_parser = subparsers.add_parser(
+        "fetch-iiif",
+        help="Fetch the page images of a IIIF manifest or image service into a folder",
+        allow_abbrev=False,
+    )
+    iiif_parser.add_argument("url", help="A IIIF manifest, an info.json, or an image service URL")
+    iiif_parser.add_argument("--out", required=True, type=Path)
+    iiif_parser.add_argument(
+        "--pages", default=None, help="Canvases by position in the manifest, e.g. '1-8,81'"
+    )
+    iiif_parser.add_argument(
+        "--delay", type=float, default=1.0, help="Seconds between requests (default 1.0)"
+    )
+    iiif_parser.add_argument(
+        "--max-image-bytes",
+        type=int,
+        default=256 * 1024 * 1024,
+        help="Refuse any image larger than this (default 268435456)",
+    )
+    iiif_parser.add_argument(
+        "--resume", action="store_true", help="Fetch only what an earlier fetch into --out missed"
+    )
+    iiif_parser.add_argument("--json", action="store_true", dest="json_output")
+
     return parser
 
 
@@ -608,6 +632,7 @@ def main(argv: list[str] | None = None) -> int:
         "resume": _cmd_resume,
         "rerun": _cmd_rerun,
         "doctor": _cmd_doctor,
+        "fetch-iiif": _cmd_fetch_iiif,
     }
     try:
         return handlers[args.command](args)
@@ -773,6 +798,39 @@ def _cmd_replay(args: argparse.Namespace) -> int:
             f"{raw['missing']} missing"
         )
     return 0 if result.get("outcome") in {"exact", "evidence_compared"} else 1
+
+
+# -- fetch-iiif ----------------------------------------------------------------
+
+
+def _cmd_fetch_iiif(args: argparse.Namespace) -> int:
+    from .iiif import fetch_iiif
+
+    def progress(message: str) -> None:
+        print(message, file=sys.stderr)
+
+    summary = fetch_iiif(
+        args.url,
+        args.out,
+        pages=args.pages,
+        delay=args.delay,
+        max_image_bytes=args.max_image_bytes,
+        resume=args.resume,
+        progress=None if args.json_output else progress,
+    )
+    if args.json_output:
+        print(json.dumps(summary, ensure_ascii=False, sort_keys=True))
+    else:
+        print(
+            f"{summary['status'].capitalize()}: {summary['fetched']} of "
+            f"{summary['fetched'] + len(summary['missing'])} selected canvases in {summary['out']} "
+            f"({summary['fetched_now']} fetched now)"
+        )
+        for warning in summary["warnings"]:
+            print(f"warning: {warning['code']}: {warning['message']}")
+        for item in summary["missing"]:
+            print(f"missing: canvas {item['canvas_index']}: {item['error'] or 'not fetched yet'}")
+    return 0 if summary["status"] == "complete" else 1
 
 
 # -- compare-runs --------------------------------------------------------------

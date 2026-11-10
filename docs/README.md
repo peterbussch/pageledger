@@ -17,6 +17,7 @@ your own documents. The [glossary](glossary.md) defines the terms.
 Your documents:
 
 - [Process a collection](process-a-collection.md)
+- [Fetch page images from a IIIF server](iiif.md)
 - [Choose OCR settings](choose-ocr-settings.md)
 - [Run OCR on non-English and historical documents](multilingual-ocr.md)
 - [Plan time and cost](plan-time-and-cost.md)
@@ -55,6 +56,7 @@ Review and results:
 - [Rerun manifest](rerun-manifest-spec.md)
 - [Checkpoint and page-attempt records](checkpoint-spec.md)
 - [Page image input evidence](image-evidence-spec.md)
+- [IIIF fetch record](iiif-fetch-spec.md)
 - [JSON Schemas](../schemas/): the machine-readable artifact contract. Artifacts
   keep `schema_version: "0.1"` across package releases.
 - [Stability and compatibility](stability.md): what stays stable from 1.0, what
