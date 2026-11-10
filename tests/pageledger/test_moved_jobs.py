@@ -99,13 +99,22 @@ def test_tampering_with_a_moved_job_still_fails(setup, tmp_path):  # noqa: F811
         return verify_job(copy)
 
     raw = job["pages"][0]["attempts"][0]["raw_artifact"]
-    for change in (
-        lambda copy: (copy / raw).write_text("changed"),
-        lambda copy: (copy / "report.md").write_text("changed"),
-        lambda copy: shutil.rmtree(copy / image["run_path"]),
-        lambda copy: (copy / image["run_path"] / "evidence" / evidence.name).write_bytes(b"x"),
+    for change, error in (
+        (
+            lambda copy: (copy / raw).write_text("changed"),
+            "Recovery output changed or completed output is missing",
+        ),
+        (
+            lambda copy: (copy / "report.md").write_text("changed"),
+            "Derived document report does not match document.json",
+        ),
+        (lambda copy: shutil.rmtree(copy / image["run_path"]), "Completed child run is missing"),
+        (
+            lambda copy: (copy / image["run_path"] / "evidence" / evidence.name).write_bytes(b"x"),
+            "Image evidence invalid: artifact bytes or SHA-256 changed",
+        ),
     ):
-        assert tampered(change)["status"] == "fail"
+        assert tampered(change)["error"] == error
 
 
 def test_a_stage_run_from_another_tree_is_refused(setup, tmp_path):  # noqa: F811
@@ -147,14 +156,20 @@ def test_a_colleague_reviews_a_copy_and_the_record_says_where(setup, tmp_path): 
     assert _codes(verify_job(again)) == ["job_relocated", "job_changed_elsewhere"]
 
     # Hiding the relocation, or changing the receipt, does not verify.
-    for edit in (
-        lambda value: value.pop("relocations"),
-        lambda value: value["pages"][0]["review"]["decisions"][0].update(reason="changed"),
+    for edit, error in (
+        (
+            lambda value: value.pop("relocations"),
+            "Document report differs from verified job evidence",
+        ),
+        (
+            lambda value: value["pages"][0]["review"]["decisions"][0].update(reason="changed"),
+            "Active review differs from retained review history",
+        ),
     ):
         job = read_record(again / "job.json")
         edit(job)
         write_record(again / "job.json", job)
-        assert verify_job(again)["status"] == "fail"
+        assert verify_job(again)["error"] == error
         shutil.rmtree(again)
         again = _copy(copy, tmp_path, "archive")
 

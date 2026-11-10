@@ -19,7 +19,8 @@ removed or narrowed.
 
 `releases/<version>/` holds a run and a document job written by that release from
 PyPI, unmodified except that Git drops their empty directories (`normalized/`,
-`partials/`), which the test recreates on its copy. They were written on
+`partials/`); the tests verify them that way, since verification reads a missing
+empty directory as empty. They were written on
 2026-11-10 in `/tmp/pageledger-golden` (recorded as `/private/tmp/...` on macOS),
 from `releases/sample.txt` (two pages; the second, `short`, raises `short_text`):
 
@@ -37,7 +38,7 @@ record hold policy none (0.5.2), `0.6` (0.6.0) and `0.6.1` (0.7.0).
 Each release's own `verify-run` and `verify-job` passed on what it wrote, and the
 0.8.0 `verify_run` and `verify_job` passed on all six in place (checked once, by
 hand: the suite cannot recreate the recorded directory). Moved, the runs
-still verify (with `source_missing`, or `source_relocated` through a source
-index). The jobs do not: a job binds its absolute directory, and verification
-of a moved job fails with "Document job identity changed". This is true of jobs
-written by 0.8.0 too.
+verify with `source_missing`, or `source_relocated` through a source index.
+From 0.9.0 the jobs verify after a move too, adding warning `job_relocated`:
+`root` in `job.json` records where a job was written and is no longer part of
+its identity.

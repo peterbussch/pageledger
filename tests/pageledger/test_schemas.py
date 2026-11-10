@@ -935,6 +935,28 @@ def test_normalized_pages_validate_and_grades_flow_through(tmp_path: Path) -> No
     assert "normalized_record_count_mismatch" in {issue["code"] for issue in report["errors"]}
 
 
+def test_a_schema_run_without_its_normalized_directory_fails(tmp_path: Path) -> None:
+    """Pages that aligned to no records still leave files, so the directory is required."""
+    from pageledger.verify import verify_run
+
+    (tmp_path / "table_adapter.py").write_text(_TABLE_ADAPTER, encoding="utf-8")
+    source = tmp_path / "volume.txt"
+    source.write_text(_PROSE_PAGE + "\f" + _PROSE_PAGE, encoding="utf-8")
+    out_dir = _run_pageledger(
+        tmp_path,
+        config_yaml=CONFIG_WITH_SCHEMA,
+        inputs=[str(source)],
+        extra_args=["--adapter-path", str(tmp_path)],
+    )
+    manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
+    assert manifest["summary"]["records_normalized"] == 0
+    assert verify_run(out_dir)["status"] == "pass"
+    shutil.rmtree(out_dir / "normalized")
+    report = verify_run(out_dir)
+    assert report["status"] == "fail"
+    assert "artifact_missing" in {issue["code"] for issue in report["errors"]}
+
+
 def test_dict_content_raw_artifact_is_valid_json(tmp_path: Path) -> None:
     """Raw artifacts for dict/list content are JSON, not Python repr."""
     adapter = """\

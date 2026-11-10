@@ -230,10 +230,10 @@ def _location_warnings(job: dict, root: Path) -> list[dict]:
         )
     recorded = job["source"]["path"]
     try:
-        located = resolve_source(recorded, job["source"]["sha256"])
-    except SourceUnavailable as exc:
+        located = _check_source(job)
+    except ValueError:
         if Path(recorded).expanduser().exists():
-            raise ValueError("Document job source changed or is missing") from exc
+            raise
         warnings.append(
             {
                 "code": "source_missing",

@@ -144,6 +144,7 @@ def verify_run(
 
     loaded: dict[str, Any] = {}
     paths: dict[str, Path] = {}
+    absent: set[str] = set()
     for key, relative in declarations.items():
         if not isinstance(relative, str) or not relative:
             _add(
@@ -173,8 +174,9 @@ def verify_run(
         paths[key] = path
         expects_directory = key in {"raw_dir", "normalized_dir"}
         if expects_directory and not path.exists() and not path.is_symlink():
-            # Read as empty: Git and some archive tools drop empty directories, and
-            # every file the run records inside one is still checked below.
+            # Git and some archive tools drop empty directories. Every raw file is named
+            # by provenance; normalized files are not, so they are checked after the loop.
+            absent.add(key)
             continue
         exists = path.is_dir() if expects_directory else path.is_file()
         if not exists:
@@ -214,6 +216,19 @@ def verify_run(
                 artifact=relative,
             )
 
+    snapshot = loaded.get("config_snapshot")
+    if "normalized_dir" in absent and (
+        not isinstance(snapshot, dict)
+        or snapshot.get("schema") is not None
+        or manifest.get("alignment") is not None
+    ):
+        # Only a run with no schema can never have written a normalized page.
+        _add(
+            errors,
+            "artifact_missing",
+            f"Manifest-declared artifact is missing: {declarations['normalized_dir']}",
+            artifact=declarations["normalized_dir"],
+        )
     manifest_config = manifest.get("config")
     if not isinstance(manifest_config, dict):
         manifest_config = {}

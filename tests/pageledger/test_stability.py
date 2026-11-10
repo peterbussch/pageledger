@@ -969,16 +969,20 @@ def _remove_attempt(job: Path) -> None:
 
 @pytest.mark.parametrize("version", RELEASE_VERSIONS)
 @pytest.mark.parametrize(
-    "tamper",
-    [_change_raw_page, _change_report, _remove_attempt],
+    ("tamper", "error"),
+    [
+        (_change_raw_page, "Recovery output changed or completed output is missing"),
+        (_change_report, "Derived document report does not match document.json"),
+        (_remove_attempt, "Completed child run is missing"),
+    ],
     ids=["raw page", "report", "attempt"],
 )
 def test_a_tampered_copy_of_an_old_job_fails(
-    version: str, tamper: Callable[[Path], None], tmp_path: Path
+    version: str, tamper: Callable[[Path], None], error: str, tmp_path: Path
 ) -> None:
     job = _copy_release(version, "job", tmp_path)
     tamper(job)
-    assert verify_job(job)["status"] == "fail"
+    assert verify_job(job) == {"status": "fail", "out_dir": str(job), "error": error}
 
 
 @pytest.mark.parametrize("version", RELEASE_VERSIONS)
@@ -1028,7 +1032,7 @@ def test_a_copy_of_an_old_job_can_be_reviewed_and_its_receipt_is_bound(
 
     record["pages"][0]["review"]["decisions"][0]["reason"] = "changed"
     checkpoint.write_record(job / "job.json", record)
-    assert verify_job(job)["status"] == "fail"
+    assert verify_job(job)["error"] == "Active review differs from retained review history"
 
 
 def test_a_current_job_verifies_after_moving(
