@@ -291,6 +291,20 @@ def build_parser() -> argparse.ArgumentParser:
                 "--dry-run", action="store_true", help="Check every decision without recording any"
             )
 
+    review_html_parser = subparsers.add_parser(
+        "review-html",
+        help="Write a folder of HTML showing each page's image beside its text, for review",
+    )
+    review_html_parser.add_argument("job_dir", type=Path)
+    review_html_parser.add_argument("--out", type=Path, required=True, help="New folder to write")
+    review_html_parser.add_argument(
+        "--images",
+        choices=("all", "held", "none"),
+        default="all",
+        help="Page images for every page, only pages that need a person, or none (no Poppler)",
+    )
+    review_html_parser.add_argument("--json", action="store_true", dest="json_output")
+
     export_parser = subparsers.add_parser(
         "export", help="Write a verified document job's text as txt, md, jsonl or TEI"
     )
@@ -574,6 +588,7 @@ def main(argv: list[str] | None = None) -> int:
         "review-job": _cmd_job,
         "review-sheet": _cmd_job,
         "adjudicate": _cmd_job,
+        "review-html": _cmd_review_html,
         "export": _cmd_export,
         "init-config": _cmd_init_config,
         "inspect-run": _cmd_inspect_run,
@@ -1078,6 +1093,18 @@ def _print_job_next_steps(args: argparse.Namespace) -> None:
         print(f"Then: pageledger review-sheet {job} --out review.csv to review them, or {export}")
     else:
         print(f"Then: {export}")
+
+
+def _cmd_review_html(args: argparse.Namespace) -> int:
+    from .review_html import write_review_html
+
+    result = write_review_html(args.job_dir, args.out, images=args.images)
+    if args.json_output:
+        print(json.dumps(result, ensure_ascii=False, sort_keys=True))
+    else:
+        print(f"Review view: {result['out']} ({result['pages']} pages, {result['images']} images)")
+        print(f"Blank review sheet: {result['sheet']}")
+    return 0
 
 
 def _cmd_export(args: argparse.Namespace) -> int:

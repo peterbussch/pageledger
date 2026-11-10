@@ -637,6 +637,51 @@ job's records changed is refused; write a new one. `--dry-run` checks and
 counts the decisions without recording them. Scripts can keep writing JSON
 receipts.
 
+### Review beside the page image
+
+A transcript can only be checked against the page it claims to read: a dropped
+line, a misread number or a word a model supplied is visible in the image and
+nowhere else. Reading the text beside the image, rather than with the scan open
+in another program, keeps the eye on one line at a time.
+
+```bash
+pageledger review-html jobs/book --out review/
+pageledger review-html jobs/book --out review-held/ --images held
+pageledger review-html jobs/book --out review-text/ --images none
+```
+
+`review-html` verifies the job, as `export` does, then writes a new folder:
+`index.html`, a blank `review.csv` with its `review.csv.binding.json` (the same
+files `review-sheet` writes), and with `--images all` (the default) or `held`, a
+JPEG of each page, or only of the pages that need a person, in `images/`.
+Open `index.html` in a browser; it needs no server and loads nothing from the
+network. It lists the pages, those that need a person first, with their state,
+what holds them and how far the engines agree. Under each page are its image
+beside the selected text, the source page and any image a model was sent, the
+warnings recorded on each reading, and the other readings, each shown in full
+and compared word by word with the selected text. On a contested page, the open
+spans are marked in the reading they were found in and listed with what each
+engine read. Transcripts are shown exactly, with their line breaks and spacing;
+control characters, which a browser cannot show, appear as symbols such as ␍.
+
+Under each page a reviewer can choose one of the decisions in the table above
+and add a note. The browser keeps the choices for that job until they are
+downloaded; nothing is recorded in the job until the downloaded `review.csv`
+is applied:
+
+```bash
+pageledger review-job jobs/book --review review/review.csv --reviewer "A. Reader" --dry-run
+pageledger review-job jobs/book --review review/review.csv --reviewer "A. Reader"
+```
+
+Save the download in the folder in place of the blank `review.csv`, so that the
+binding is beside it, or download the binding too and keep the two together.
+`review-job` checks the sheet as it checks any review sheet, and refuses it if
+the job has changed since the view was written. Like `report.md`, the view is a
+rendering: it is not evidence, and writing it changes nothing in the job. Page
+images need Poppler's `pdftoppm`; `--images none` writes the view without
+them. A source that is not a PDF has no page images.
+
 ### Review at scale
 
 See the [warnings reference](warnings.md) for warning and disposition meanings

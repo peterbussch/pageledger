@@ -166,3 +166,21 @@ echo DOCUMENT_JOURNEY_REVIEW_OK
 The final report contains one reviewed page and two pages that still need
 review. A completed processing status, a source review decision, and cost
 evidence are separate facts.
+
+## Review beside the page image
+
+Checking a transcript means reading it against the page it came from, line by
+line; with the image beside the text, a dropped line or a supplied word shows
+at once. `review-html` writes a folder you open in a browser, with each page's
+image next to its selected text and the other readings compared word by word:
+
+```bash
+pageledger review-html jobs/complete --out review --images none
+```
+
+This synthetic source is a text file, so it has no page images; a PDF's pages
+are rendered with Poppler unless you pass `--images none`. Choose a decision
+under a page, download `review.csv` into the `review` folder in place of the
+blank one, and apply it with `pageledger review-job jobs/complete --review
+review/review.csv --reviewer "Your Name"`. Nothing is recorded until you do.
+See [review beside the page image](processing-spec.md#review-beside-the-page-image).

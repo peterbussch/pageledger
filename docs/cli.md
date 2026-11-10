@@ -26,6 +26,7 @@ such as stage, route and disposition are defined in the
 | `verify-job` | `verify-job JOB_DIR [--json]` | Job verifies. | Verification fails or runtime error. |
 | `review-sheet` | `review-sheet JOB_DIR --out FILE [--json]` | Sheet written. | Runtime error. |
 | `review-job` | `review-job JOB_DIR --review FILE [--reviewer NAME] [--dry-run] [--json]` | Decisions checked or recorded. | Job halted/failed or runtime error. |
+| `review-html` | `review-html JOB_DIR --out DIR [--images all|held|none] [--json]` | View written. | The job does not verify, the folder exists, or runtime error. |
 | `adjudicate` | `adjudicate JOB_DIR (--packets DIR | --decisions DIR --reviewer NAME [--dry-run]) [--json]` | Packets written, or decisions checked or recorded. | Refused decisions, a halted job (decisions are still recorded), or runtime error. |
 | `export` | `export JOB_DIR --format txt|md|jsonl|tei --out FILE [--reviewed-only]` | Verified export written. | Runtime error or refused export. |
 | `run` | `run INPUT... (--config FILE | --adapter text|pdf_text|pdf_ocr) --out DIR [--pages RANGE] [--routes FILE] [--resumable] [--dry-run] [--json] [--log-level LEVEL] [--adapter-path DIR]` | Run completed, including partial results without failed or unattempted pages. | Partial run with failed or unattempted pages, or runtime error. |
@@ -119,6 +120,21 @@ need `--reviewer NAME` or the `PAGELEDGER_REVIEWER` variable; `--dry-run` checks
 and counts them without recording any. See
 [Review in a spreadsheet](processing-spec.md#review-in-a-spreadsheet).
 All four commands accept `--json`.
+
+## review-html
+
+```bash
+pageledger review-html jobs/book --out review/
+pageledger review-html jobs/book --out review/ --images held
+```
+
+Verifies the job, then writes a new folder `DIR` holding `index.html`, a
+reading view of every page with its image beside its text, and the blank
+`review.csv` and binding that `review-sheet` writes. Decisions chosen in the
+view are downloaded as that `review.csv` and recorded only by `review-job`.
+`--images` renders a page image for every page (`all`, the default), only the
+pages that need a person (`held`), or none (`none`, which needs no Poppler).
+See [Review beside the page image](processing-spec.md#review-beside-the-page-image).
 
 ## export
 
