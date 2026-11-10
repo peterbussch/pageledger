@@ -10,7 +10,7 @@ used across the reference.
 |---|---|---|
 | Extract pages | `text`, `pdf_text`, `pdf_ocr`, `rapidocr` and `vision`; custom adapters use the adapter protocol. | Select the extractor, configure it, and judge its output. |
 | Route pages | `classify` assigns structural types and writes a route map and text-free sidecar. | Review decisions; domain labels require a classifier hook. |
-| Process a document | `process` manages local text, OCR and optional image stages with shared limits and retained attempts. | Supply stage config, adapter code and credentials where needed. |
+| Process a document | `process` manages local text, OCR and optional image stages with shared limits and retained attempts. | Supply stage config (or start from the one `init-config --processing` writes), adapter code and credentials where needed. |
 | Review and export | Job reports, source-bound review receipts, review sheets and verified `txt`, `md`, `jsonl`, or `tei` exports. | A human makes and records review decisions. |
 | Align structured output | Schema alignment supports `markdown_table`, `json`, and `csv` output. | Produce structured output and declare columns/checks. Plain text is not aligned. |
 | Compare or replay | Compare-runs reports page differences; bundles and replay check transport and recorded identities. | Comparison is conditional; replay does not reproduce external services or certify accuracy. |

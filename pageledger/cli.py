@@ -178,7 +178,10 @@ def _processing_template(engine: str, lang: str | None, model_dir: str | None) -
     )
     if engine == "none":
         if lang is not None or model_dir is not None:
-            raise _UsageError("--lang and --model-dir need an OCR engine, not --engine none")
+            raise _UsageError(
+                "--lang and --model-dir need an OCR engine, and the engine is none "
+                "(the default for a .txt source); name one with --engine"
+            )
         return (
             PROCESSING_HEADER.replace("{then_ocr}", ".")
             + "  # No OCR: every page is read only from its own text.\n"
