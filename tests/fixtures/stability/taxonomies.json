@@ -1,6 +1,70 @@
 {
   "mappings": {
     "contest_rule_sets": {
+      "latin-print-0.1": {
+        "glyph_pairs": {
+          "rapidocr": [
+            [
+              "e",
+              "c"
+            ],
+            [
+              "i",
+              "l"
+            ],
+            [
+              "i",
+              "I"
+            ],
+            [
+              "i",
+              "t"
+            ],
+            [
+              "I",
+              "l"
+            ],
+            [
+              "l",
+              "i"
+            ],
+            [
+              "l",
+              "I"
+            ],
+            [
+              "t",
+              "l"
+            ],
+            [
+              "h",
+              "b"
+            ],
+            [
+              "r",
+              "t"
+            ],
+            [
+              "f",
+              "t"
+            ],
+            [
+              "y",
+              "v"
+            ],
+            [
+              "m",
+              "n"
+            ],
+            [
+              "u",
+              "n"
+            ]
+          ]
+        },
+        "grouped_numbers": true,
+        "script": "latin"
+      },
       "ru-print-0.1": {
         "glyph_pairs": {
           "rapidocr": [
@@ -220,6 +284,7 @@
       "MODEL_UNAVAILABLE"
     ],
     "contest_rule_sets": [
+      "latin-print-0.1",
       "ru-print-0.1",
       "ru-print-0.2"
     ],
@@ -275,7 +340,8 @@
       "unreadable"
     ],
     "lexicon_providers": [
-      "pymorphy3"
+      "pymorphy3",
+      "wordlist"
     ],
     "page_states": [
       "completed",

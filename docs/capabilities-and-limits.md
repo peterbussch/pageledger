@@ -41,16 +41,23 @@ Its report accounts for configured stages that read no pages, and startup notes
 when the configured ladder could exceed the attempt limit. See
 [document processing](processing-spec.md) for stages and limits.
 
-Pages climb on warning holds and, when configured, on a Russian lexicon's
-judgement (`rough`), engine disagreement or every page (`always`). With
+Pages climb on warning holds and, when configured, on a lexicon's judgement
+(`rough`: the Russian pymorphy3 dictionary, or a plain word list you supply for
+any language), engine disagreement or every page (`always`). A general word list
+judges prose; on telephone directories, where names and abbreviations are most
+of the words, it does not separate good readings from bad. With
 `processing.contest`, a model's reading is compared word by word with the
 literal OCR reading; rules settle look-alike letters and listed glyph confusions,
 and `pageledger adjudicate` settles the rest against the page image through
-packets an agent or a person answers. Settled pages are `adjudicated_text`, kept
-apart from `reviewed_text`. Contest compares words, not punctuation or the order
-of words that moved together; its glyph pairs cover RapidOCR's Cyrillic model
-only; and an adjudicator can be wrong, which is why it should come from another
-model family than the reader. See [contest](processing-spec.md#contest-a-models-reading).
+packets an agent or a person answers, optionally only the spans near named
+terms. Settled pages are `adjudicated_text`, kept apart from `reviewed_text`.
+Contest compares words, not punctuation or the order of words that moved
+together; its glyph pairs cover RapidOCR's Cyrillic model (`ru-print-0.1`,
+`ru-print-0.2`) and its English model (`latin-print-0.1`) only, and on the
+English directory pages measured the Latin rules settled 7% of spans, leaving
+numbers and split exchange names open; an adjudicator can be wrong, which is why it should
+come from another model family than the reader. See
+[contest](processing-spec.md#contest-a-models-reading).
 
 ### Review and export
 

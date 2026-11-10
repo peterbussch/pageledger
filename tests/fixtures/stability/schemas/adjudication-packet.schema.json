@@ -87,6 +87,15 @@
         "type": "object"
       },
       "type": "array"
+    },
+    "terms": {
+      "description": "Present when the packets were written with --term: this packet holds only the open spans near one of these words. The page's other open spans are still open.",
+      "items": {
+        "minLength": 1,
+        "type": "string"
+      },
+      "minItems": 1,
+      "type": "array"
     }
   },
   "required": [

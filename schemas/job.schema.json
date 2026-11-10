@@ -828,16 +828,34 @@
           "type": "object"
         },
         "lexicon": {
-          "type": "object",
-          "description": "Identity of the lexicon the rough trigger used. Present only when the job configures one.",
-          "properties": {
-            "provider": {"type": "string"},
-            "language": {"type": "string"},
-            "version": {"type": "string"},
-            "dictionary": {"type": "string"}
-          },
-          "required": ["provider", "language", "version", "dictionary"],
-          "additionalProperties": false
+          "description": "Identity of the lexicon the rough trigger and contest used. Present only when the job configures one.",
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "provider": {"type": "string"},
+                "language": {"type": "string"},
+                "version": {"type": "string"},
+                "dictionary": {"type": "string"}
+              },
+              "required": ["provider", "language", "version", "dictionary"],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "description": "A plain word list: where the job read it, its hash and size, and how words are matched.",
+              "properties": {
+                "provider": {"const": "wordlist"},
+                "path": {"type": "string", "minLength": 1},
+                "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+                "bytes": {"type": "integer", "minimum": 1},
+                "words": {"type": "integer", "minimum": 1},
+                "match": {"const": "nfc-casefold"}
+              },
+              "required": ["provider", "path", "sha256", "bytes", "words", "match"],
+              "additionalProperties": false
+            }
+          ]
         },
         "limits_history": {
           "type": "array",

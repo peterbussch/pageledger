@@ -284,6 +284,8 @@ def _process(
                 runner.load_adapter(policy[name]["adapter"], policy[name]["adapter_options"])
             except ValueError as exc:
                 raise ValueError(f"processing.{name}: {exc}") from exc
+    # A missing or unreadable word list fails here, before the job exists.
+    lexicon = load_lexicon(policy["lexicon"]).identity if policy.get("lexicon") else None
     source_sha = file_digest(source)
     container_error = None
     container_action = "Obtain a valid source container and start a new job."
@@ -346,7 +348,7 @@ def _process(
         "config_sha256": digest(config.data),
         "policy": policy,
         "hold_policy": HOLD_POLICY,
-        **({"lexicon": load_lexicon(policy["lexicon"]).identity} if policy.get("lexicon") else {}),
+        **({"lexicon": lexicon} if lexicon else {}),
         "package_sha256": _package_code_sha256(),
         "selected_pages": selected,
         "pages": [],
@@ -399,11 +401,12 @@ def _escalation(job: dict) -> tuple[tuple[str, ...], Any, float | None]:
     lexicon_config = policy.get("lexicon")
     if not lexicon_config:
         return tuple(policy.get("escalate_on", ("hold",))), None, None
-    lexicon = load_lexicon(lexicon_config)
+    lexicon = _job_lexicon(job)
     if lexicon.identity != job.get("lexicon"):
         raise ValueError(
             f"This job judged words with {job.get('lexicon')}; the installed lexicon is "
-            f"{lexicon.identity}. Install the recorded version to verify or resume it."
+            f"{lexicon.identity}. Install the recorded version, or restore the recorded "
+            "word list, to verify or resume it."
         )
     return (
         tuple(policy.get("escalate_on", ("hold",))),
@@ -413,12 +416,20 @@ def _escalation(job: dict) -> tuple[tuple[str, ...], Any, float | None]:
     )
 
 
+def _job_lexicon(job: dict) -> Any:
+    """The lexicon a job judged words with; a word list is read from where the job found it."""
+    config = job["policy"]["lexicon"]
+    if config["provider"] == "wordlist" and job.get("lexicon"):
+        config = {**config, "path": job["lexicon"]["path"]}
+    return load_lexicon(config)
+
+
 def _contester(job: dict) -> Any:
     """Compare a page's reader with its literal witness, when the job contests readings."""
     settings = job["policy"].get("contest")
     if not settings:
         return None
-    lexicon = load_lexicon(job["policy"]["lexicon"]) if job["policy"].get("lexicon") else None
+    lexicon = _job_lexicon(job) if job["policy"].get("lexicon") else None
     receipts = {page["page_id"]: page.get("adjudications", []) for page in job["pages"]}
 
     @functools.cache
@@ -1225,7 +1236,7 @@ def review_job(
         return {**_publish(job, root), "decisions": _decision_counts(review)}
 
 
-def adjudication_packets(job_dir: Path, out: Path) -> dict:
+def adjudication_packets(job_dir: Path, out: Path, terms: list[str] | None = None) -> dict:
     """Write a packet for each page with open contested spans, for an adjudicator to answer."""
     root = job_dir.expanduser().resolve()
     with writer_lock(root):
@@ -1233,7 +1244,7 @@ def adjudication_packets(job_dir: Path, out: Path) -> dict:
         if not job["policy"].get("contest"):
             raise ValueError("This job does not contest readings; it has no spans to settle")
         _refresh(job, root, materialize=False)
-        return {"status": "written", **adjudication.write_packets(job, root, out)}
+        return {"status": "written", **adjudication.write_packets(job, root, out, terms)}
 
 
 def adjudicate_job(job_dir: Path, decisions: Path, *, reviewer: str, dry_run: bool = False) -> dict:

@@ -72,6 +72,34 @@ RULE_SETS: dict[str, dict[str, Any]] = {
 # 0.2 files a grouped span (words only one side has, or an unpaired run) with a digit
 # on either side as `number`, as paired words always were: 0.1 called them `word`.
 RULE_SETS["ru-print-0.2"] = {**RULE_SETS["ru-print-0.1"], "grouped_numbers": True}
+# Latin print: the shapes RapidOCR's English model misread at least three times in
+# the 1934 telephone directory tiles (October 2026), where the reader's word was
+# the printed one, judged from the line and the recurring exchange names rather
+# than each against the image. Not a for o: Soloman and Solomon are both printed surnames. Not
+# c for o, rn for m or cl for d, seen twice or less. Pairs are listed exactly,
+# since I for l crosses case.
+RULE_SETS["latin-print-0.1"] = {
+    "script": "latin",
+    "grouped_numbers": True,
+    "glyph_pairs": {
+        "rapidocr": [
+            ("e", "c"),
+            ("i", "l"),
+            ("i", "I"),
+            ("i", "t"),
+            ("I", "l"),
+            ("l", "i"),
+            ("l", "I"),
+            ("t", "l"),
+            ("h", "b"),
+            ("r", "t"),
+            ("f", "t"),
+            ("y", "v"),
+            ("m", "n"),
+            ("u", "n"),
+        ]
+    },
+}
 
 
 def _span_id(*parts: object) -> str:
@@ -128,13 +156,17 @@ def _only_pairs(literal: str, reader: str, pairs: set[tuple[str, str]]) -> bool:
 
 
 def _kind(
-    literal: str, reader: str, known: Callable[[str], bool] | None, pairs: set[tuple[str, str]]
+    literal: str,
+    reader: str,
+    known: Callable[[str], bool] | None,
+    pairs: set[tuple[str, str]],
+    letters: re.Pattern[str] = _CYRILLIC,
 ) -> str:
     if _DIGIT.search(literal) or _DIGIT.search(reader):
         return "number"
     if _homoglyph(literal, reader):
         return "homoglyph"
-    if known is None or not (_CYRILLIC.search(literal) and _CYRILLIC.search(reader)):
+    if known is None or not (letters.search(literal) and letters.search(reader)):
         return "word"
     if known(reader) and not known(literal):
         # A non-word the engine's habits do not explain may be what the page prints.
@@ -246,13 +278,16 @@ def contest(
     """
     listed = RULE_SETS[rules]["glyph_pairs"].get(engine, ())
     grouped_numbers = RULE_SETS[rules].get("grouped_numbers", False)
+    latin = RULE_SETS[rules].get("script") == "latin"
+    letters = _LATIN if latin else _CYRILLIC
 
     def grouped(base_part: str, witness_part: str) -> str:
         digits = _DIGIT.search(base_part) or _DIGIT.search(witness_part)
         return "number" if grouped_numbers and digits else "word"
 
     # A pair holds in either case, never across cases: print's capitals are evidence.
-    pairs = {*listed, *((a.upper(), b.upper()) for a, b in listed)}
+    # A Latin set lists its pairs exactly, since I and l are one confusion across cases.
+    pairs = set(listed) if latin else {*listed, *((a.upper(), b.upper()) for a, b in listed)}
     regions = [(m.start(), m.end()) for m in _REGION.finditer(base)]
     # One placeholder per region, so a formula aligns as a unit and not as letters.
     stream: list[tuple[int, int, str, int | None]] = sorted(
@@ -398,7 +433,7 @@ def contest(
 
     spans: list[dict[str, Any]] = [
         {
-            "kind": _kind(read[j], words[i], known, pairs),
+            "kind": _kind(read[j], words[i], known, pairs, letters),
             "start": stream[i][0],
             "end": stream[i][1],
             "base": base[slice(*stream[i][:2])],

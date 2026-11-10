@@ -249,3 +249,97 @@ def test_a_line_only_one_side_has_is_a_number_when_it_holds_digits():
         known=None,
     )
     assert [(s["kind"], s["witness"]) for s in new] == [("number", "NAtional 7550")]
+
+
+ENGLISH = {"strict", "church", "maryland", "solomon", "star", "world", "herald"}
+
+
+def english(word):
+    return word.lower() in ENGLISH
+
+
+def latin(base, witness, engine="rapidocr", lexicon=english):
+    found = contest(base, witness, rules="latin-print-0.1", engine=engine, known=lexicon)
+    for span in found:
+        assert base[span["start"] : span["end"]] == span["base"]
+    return found
+
+
+@pytest.mark.parametrize(
+    "witness,reader",
+    [("striet", "strict"), ("Chureh", "Church"), ("Maryiand", "Maryland"), ("Worid", "World")],
+)
+def test_latin_print_settles_the_literal_engines_listed_confusions(witness, reader):
+    [span] = latin(f"Falls {reader} Va", f"Falls {witness} Va")
+    assert (span["kind"], span["status"], span["settled_by"], span["text"]) == (
+        "glyph",
+        "settled",
+        "rule:latin-print-0.1/G",
+        reader,
+    )
+
+
+def test_latin_print_keeps_a_surname_the_reader_may_have_normalized_open():
+    # The page prints Soloman; a reader that writes the common Solomon is not settled.
+    [span] = latin("Solomon David H", "Soloman David H")
+    assert (span["kind"], span["status"]) == ("misprint_guard", "open")
+
+
+def test_latin_print_never_settles_digits_or_the_other_direction():
+    spans = latin("CO lumbia-2000 strict", "C0 lumbia-2000 strjct")
+    assert [(s["base"], s["kind"], s["status"]) for s in spans] == [
+        ("CO", "number", "open"),
+        ("strict", "misprint_guard", "open"),
+    ]
+    # c read for e is the reverse of the engine's habit, so the misprint guard holds.
+    [span] = latin("Herald", "Haralc")
+    assert (span["kind"], span["status"]) == ("misprint_guard", "open")
+
+
+def test_latin_pairs_are_listed_exactly_and_belong_to_rapidocr():
+    # e for c is listed in lower case only: a capital C read as E is not settled.
+    [span] = latin("STAR CHURCH", "STAR EHURCH")
+    assert (span["kind"], span["status"]) == ("misprint_guard", "open")
+    [span] = latin("Falls Church", "Falls Chureh", engine="tesseract")
+    assert (span["kind"], span["status"]) == ("misprint_guard", "open")
+
+
+def test_latin_print_does_not_judge_cyrillic_words_or_settle_without_a_lexicon():
+    [span] = latin("Работа", "Рабоша", lexicon=lambda word: word == "Работа")
+    assert (span["kind"], span["status"]) == ("word", "open")
+    [span] = latin("Falls Church", "Falls Chureh", lexicon=None)
+    assert (span["kind"], span["status"]) == ("word", "open")
+
+
+def test_latin_print_files_grouped_spans_with_digits_as_numbers():
+    spans = latin("Embassy 1125-16th nw", "Embassy E\n1119-16th nw")
+    assert [s["kind"] for s in spans] == ["number"]
+
+
+LATIN_GOLDEN = [
+    (
+        "Falls Church Va 1322 N Y av nw DI strict-6040",
+        "Falls Chureh Va 1322 NY av nw Dl striet-6040",
+    ),
+    ("Solomon Marion Miss 918 M nw", "Soloman Marion Miss 9l8 M nw"),
+    ("New York World-Telegram\nWashington Herald", "New York Worid Telegram\nWashington Heraid"),
+]
+
+
+def test_the_latin_procedure_is_pinned_to_its_rule_set():
+    import hashlib
+    import json
+
+    from pageledger.contest import RULE_SETS
+
+    produced = [latin(b, w) for b, w in LATIN_GOLDEN]
+    digest = hashlib.sha256(
+        json.dumps(produced, ensure_ascii=False, sort_keys=True).encode()
+    ).hexdigest()
+    rules = hashlib.sha256(
+        json.dumps(RULE_SETS["latin-print-0.1"], sort_keys=True).encode()
+    ).hexdigest()
+    assert (digest, rules) == (
+        "a53b78f505361bdecbb0c8ffb4c76153e881b794ef50566aa82839213d9b3747",
+        "76c2562932ab2bd416d4c5bf7e77fbf7bc0e0396be488a88c9d20b87709a6559",
+    )

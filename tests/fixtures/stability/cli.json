@@ -35,6 +35,11 @@
           "choices": null,
           "required": false,
           "takes_value": true
+        },
+        "--term": {
+          "choices": null,
+          "required": false,
+          "takes_value": true
         }
       },
       "positionals": [

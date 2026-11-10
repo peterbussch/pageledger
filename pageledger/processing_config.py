@@ -18,7 +18,7 @@ READER_STAGES = ("image", "local_image", "second_opinion")
 # `rough` and `disagreement` let a page whose reading looks clean climb too, and
 # `always` sends every page up, so a contested reader checks every page.
 TRIGGERS = ("hold", "rough", "disagreement", "always")
-LEXICON_PROVIDERS = ("pymorphy3",)
+LEXICON_PROVIDERS = ("pymorphy3", "wordlist")
 PROMPT = (
     "Transcribe only text visible on this source page, preserving page order, headings, "
     "footnotes and named table columns. Do not reconstruct missing or invisible text. "
@@ -192,15 +192,18 @@ def _escalation(value: dict[str, Any], *, contest: bool) -> tuple[list[str], dic
             "processing.lexicon is used by the rough trigger and by contest; enable one of them"
         )
     rough = "rough" in triggers
+    provider = lexicon.get("provider") if isinstance(lexicon, dict) else None
+    named = {"pymorphy3": "language", "wordlist": "path"}.get(str(provider))
     if (
         not isinstance(lexicon, dict)
-        or set(lexicon) != {"provider", "language", *(["rough_below"] if rough else [])}
-        or lexicon["provider"] not in LEXICON_PROVIDERS
-        or lexicon["language"] != "ru"
+        or provider not in LEXICON_PROVIDERS
+        or set(lexicon) != {"provider", named, *(["rough_below"] if rough else [])}
+        or (provider == "pymorphy3" and lexicon["language"] != "ru")
+        or (provider == "wordlist" and not (isinstance(lexicon["path"], str) and lexicon["path"]))
     ):
         raise ValueError(
-            "processing.lexicon needs provider: pymorphy3 and language: ru, "
-            "with rough_below only for the rough trigger"
+            "processing.lexicon needs provider: pymorphy3 with language: ru, or provider: "
+            "wordlist with the path of a word list, and rough_below only for the rough trigger"
         )
     threshold = lexicon.get("rough_below", 1)
     if (

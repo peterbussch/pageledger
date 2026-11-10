@@ -37,29 +37,70 @@
           "type": "string"
         },
         "lexicon": {
-          "additionalProperties": false,
-          "description": "Identity of the lexicon the rough trigger used. Present only when the job configures one.",
-          "properties": {
-            "dictionary": {
-              "type": "string"
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "dictionary": {
+                  "type": "string"
+                },
+                "language": {
+                  "type": "string"
+                },
+                "provider": {
+                  "type": "string"
+                },
+                "version": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "provider",
+                "language",
+                "version",
+                "dictionary"
+              ],
+              "type": "object"
             },
-            "language": {
-              "type": "string"
-            },
-            "provider": {
-              "type": "string"
-            },
-            "version": {
-              "type": "string"
+            {
+              "additionalProperties": false,
+              "description": "A plain word list: where the job read it, its hash and size, and how words are matched.",
+              "properties": {
+                "bytes": {
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                "match": {
+                  "const": "nfc-casefold"
+                },
+                "path": {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "provider": {
+                  "const": "wordlist"
+                },
+                "sha256": {
+                  "pattern": "^[0-9a-f]{64}$",
+                  "type": "string"
+                },
+                "words": {
+                  "minimum": 1,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "provider",
+                "path",
+                "sha256",
+                "bytes",
+                "words",
+                "match"
+              ],
+              "type": "object"
             }
-          },
-          "required": [
-            "provider",
-            "language",
-            "version",
-            "dictionary"
           ],
-          "type": "object"
+          "description": "Identity of the lexicon the rough trigger and contest used. Present only when the job configures one."
         },
         "limits": {
           "type": "object"

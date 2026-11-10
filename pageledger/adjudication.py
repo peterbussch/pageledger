@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 import re
 import shutil
+import unicodedata
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -205,14 +206,38 @@ def receipt_for(
 _AROUND = 80
 
 
-def write_packets(job: dict, root: Path, directory: Path) -> dict:
+def term_patterns(terms: list[str]) -> list[re.Pattern[str]]:
+    """Whole words, in any case; a space in a term matches any run of spaces or a line break."""
+    patterns = []
+    for term in terms:
+        words = unicodedata.normalize("NFC", term).split()
+        if not words:
+            raise ValueError("A term cannot be empty")
+        patterns.append(
+            re.compile(r"(?<!\w)" + r"\s+".join(map(re.escape, words)) + r"(?!\w)", re.IGNORECASE)
+        )
+    return patterns
+
+
+def _touches(text: str, span: dict, patterns: list[re.Pattern[str]]) -> bool:
+    """A term in either reading, or in the text a packet shows around the span."""
+    around = text[max(0, span["start"] - _AROUND) : span["end"] + _AROUND]
+    parts = [unicodedata.normalize("NFC", part) for part in (around, span["witness"])]
+    return any(p.search(part) for p in patterns for part in parts)
+
+
+def write_packets(job: dict, root: Path, directory: Path, terms: list[str] | None = None) -> dict:
     """One packet per page with open spans and the image the reader saw.
 
     Packets are blind: a span shows both readings in sorted order and the words
     around it, never which engine read what. An adjudicator told which reading is
     the model's tends to keep it; the model that made a substitution will vouch
     for it.
+
+    With terms, a packet holds only the open spans that touch one of them. The
+    others stay open, counted in the result, and hold their pages as before.
     """
+    patterns = term_patterns(terms) if terms else []
     if directory.exists() and any(directory.iterdir()):
         raise ValueError(
             f"{directory} is not empty; write packets to a new directory so old answers "
@@ -220,7 +245,7 @@ def write_packets(job: dict, root: Path, directory: Path) -> dict:
         )
     directory.mkdir(parents=True, exist_ok=True)
     atomic_bytes(directory / "INSTRUCTIONS.md", INSTRUCTIONS.encode())
-    written = 0
+    written = in_packets = open_spans = 0
     for page in job["pages"]:
         contested = page.get("contested")
         if not contested or not contested["open"] or page.get("review") is not None:
@@ -229,6 +254,12 @@ def write_packets(job: dict, root: Path, directory: Path) -> dict:
         base = next(a for a in page["attempts"] if a["attempt_id"] == record["base"]["attempt"])
         text = base["text"]
         still_open, _ = settle(record, contested["sha256"], page.get("adjudications", []))
+        open_spans += len(still_open)
+        if patterns:
+            still_open = [span for span in still_open if _touches(text, span, patterns)]
+            if not still_open:
+                continue
+        in_packets += len(still_open)
         image = None
         evidence = base.get("input_evidence")
         if evidence:
@@ -255,7 +286,14 @@ def write_packets(job: dict, root: Path, directory: Path) -> dict:
                 }
                 for span in still_open
             ],
+            **({"terms": list(terms)} if terms else {}),
         }
         atomic_bytes(directory / f"{page['page_id']}.json", encode(packet))
         written += 1
-    return {"packets": written, "out": str(directory)}
+    return {
+        "packets": written,
+        "out": str(directory),
+        "spans": in_packets,
+        "open_spans": open_spans,
+        **({"terms": list(terms), "left_out": open_spans - in_packets} if terms else {}),
+    }

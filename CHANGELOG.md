@@ -42,6 +42,23 @@ and, from 1.0, [stability](docs/stability.md).
   snapshot update. It also holds a run and a job written by each of 0.5.2, 0.6.0 and 0.7.0 from PyPI:
   the runs and the jobs' stage runs verify after a move, all of them validate against the current
   schemas, and a moved job is shown not to verify (below).
+- A word list as the lexicon: `processing.lexicon: {provider: wordlist, path: FILE}` names a plain UTF-8 file
+  with one word per line, so the `rough` trigger and contest's glyph rule work in any language. Words match
+  after NFC normalization and case folding. The job records the list's resolved path, SHA-256, size, word
+  count and matching rule; `resume` and `verify-job` refuse a job whose list is missing or changed. No list
+  ships with PageLedger; [processing spec](docs/processing-spec.md#a-word-list-as-the-lexicon) says where to
+  get one. On the 1934 telephone directory tiles a general English list knew 56 to 58% of the words in good
+  and bad readings alike, so `rough` does not help on directories.
+- Contest rule set `latin-print-0.1` for Latin-script print: rule G settles the confusions RapidOCR's English
+  model made at least three times in the telephone directory dogfood (e for c, i for l, h for b and eleven
+  more), only where the lexicon knows the reader's word and not the literal one. Spans with a digit are never
+  settled by rule, and grouped spans with digits are `number`, as in `ru-print-0.2`. On the 54 directory tiles
+  the pairs were chosen from, it settled 81 of 1,118 spans; the 8 settlements checked against the image or a
+  hand transcription were right.
+- `pageledger adjudicate JOB --packets DIR --term WORD` (repeatable) writes packets only for open spans near
+  the named terms, so review of a large job can start with the entries that matter. Nothing in the job
+  changes: the other spans stay open and counted, and the command reports how many it left out. Packets
+  written this way carry an optional `terms` field.
 
 ### Changed
 

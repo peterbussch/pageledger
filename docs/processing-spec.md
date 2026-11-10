@@ -266,7 +266,8 @@ processing:
 - `rough`: the selected reading's share of words the lexicon knows falls below
   `rough_below`. Words split across a line break are rejoined first, and a page
   with fewer than 20 Cyrillic words is not judged. Install the Russian lexicon
-  with `pip install 'pageledger[ru]'`.
+  with `pip install 'pageledger[ru]'`, or name a word list for any language
+  (below).
 - `disagreement`: the selected reading and another clean one agree on fewer than
   60% of their words, or read a number differently. Without this trigger the page
   goes to review, as before.
@@ -305,8 +306,9 @@ selected text. If every clean reading is rough, the least rough is selected.
 Each trigger that fired is recorded on the page with its stage, the reading it
 judged and the evidence, for example
 `{"trigger": "rough", "stage": "local_ocr", "known_share": 0.89, ...}`. The job
-records the lexicon's provider and package versions. `verify-job` recomputes the
-triggers and refuses a job whose lexicon is not the installed one. The report
+records the lexicon's provider and package versions, or a word list's hash.
+`verify-job` recomputes the triggers and refuses a job whose lexicon is not the
+installed one. The report
 adds the work done at each stage and how many pages each trigger raised.
 
 These numbers came from one test with real documents. Clean born-digital
@@ -317,6 +319,46 @@ misreadings: read in column order, the same article scored 0.95 to 0.97 while
 its OCR still misread about one word in a hundred, and six of its seven pages
 stopped at OCR. Names, abbreviations and a linguist's examples are unknown
 words too; a hand-checked 1962 monograph scored a median 0.97.
+
+### A word list as the lexicon
+
+For a language without a built-in lexicon, name a plain word list: a UTF-8 text
+file with one word per line.
+
+```yaml
+  lexicon:
+    provider: wordlist
+    path: /usr/share/dict/words
+    rough_below: 0.9
+```
+
+A relative `path` is read from the directory `process` runs in. A word on the
+page counts as known when it matches a line of the list after both are put in
+Unicode normal form NFC and case-folded (`str.casefold`), so «Paris», «paris»
+and «PARIS» are one word and «café» written with a combining accent matches
+«café», but «cafe» does not match «café». Blank lines and surrounding spaces are
+ignored; a list must hold at least one word. A word is a run of three or more
+letters in any script; digits and punctuation split words, and a page with fewer
+than 20 such words is not judged. A word hyphenated across a line break is
+rejoined when the next line goes on in lower case.
+
+PageLedger ships no word list. On macOS and many Unix systems
+`/usr/share/dict/words` is an English list (on macOS, Webster's Second
+International, 235,976 lines, many of them rare words); on Debian and Ubuntu the
+`wamerican` or `wbritish` package installs one. A list built from a project's own authority file (the names, places and
+terms its sources use) can sit beside a general one: concatenate them. The job
+records the list's resolved path, SHA-256, size in bytes, number of distinct
+words and the matching rule (`nfc-casefold`) under `lexicon` in `job.json`.
+`resume` and `verify-job` read the list again from that path and refuse a job
+whose list is missing or has changed; restore the recorded list to continue.
+
+A word list says nothing about names and abbreviations it does not hold. On the
+1934 Washington telephone directory tiles of the 2026-10 dogfood (53 judged
+tiles), the macOS list knew a median 58% of the words in the model's readings
+and 56% in RapidOCR's: exchange names (`NA tional`), abbreviations (`Natl`, `bg`)
+and surnames are unknown words. There `rough` cannot tell a good reading from a
+bad one, and the directory needs `always` instead. Measure your own pages before
+choosing `rough_below`.
 
 ## Contest a model's reading
 
@@ -349,7 +391,7 @@ processing:
   escalate_on: [hold, always]   # the model reads every page
   contest:
     rules: ru-print-0.1
-  lexicon:                      # optional; lets the glyph rule judge Russian words
+  lexicon:                      # optional; lets the glyph rule judge words
     provider: pymorphy3
     language: ru
   limits:
@@ -374,10 +416,10 @@ form no literal engine can confirm word by word.
 | Kind | Literal reading against the model's | Settled by |
 |---|---|---|
 | `homoglyph` | Look-alike letters of another script (HAYK for НАУК), two letters or more | Rule H: the model's |
-| `glyph` | A non-word whose difference from the model's known word is only confusions listed for that engine (RapidOCR's н for п) | Rule G: the model's |
+| `glyph` | A non-word whose difference from the model's known word is only confusions listed for that engine (RapidOCR's н for п, or e for c in English print) | Rule G: the model's |
 | `misprint_guard` | A non-word the engine's listed confusions do not explain (назависимости) | Open: it may be what the page prints |
 | `word` | Any other difference, or words only one side has | Open |
-| `number` | Either side has a digit | Open |
+| `number` | Either side has a digit (from `ru-print-0.2`, grouped spans too) | Open |
 | `region` | A formula, figure line or the model's own doubt | Open |
 
 The rule set is versioned data. `ru-print-0.1` lists the confusions RapidOCR's
@@ -387,7 +429,54 @@ adapter. Without a lexicon only rule H applies. On two fully checked Russian
 documents (61 pages) the rules settled 178 spans with no error against the
 image-checked text, and the open spans covered 306 of the 319 corrections the
 model's text needed. The misses were accents and figure labels that neither
-engine read.
+engine read. `ru-print-0.2` is the same, except that a grouped span (words only
+one side has, or an unpaired run) with a digit on either side is `number`, as a
+paired one always was; 0.1 called it `word`.
+
+`latin-print-0.1` is for Latin-script print. It treats spacing, line-break
+hyphenation and punctuation as the Russian sets do, files grouped spans with
+digits as `number` as `ru-print-0.2` does, and judges words with Latin letters
+(rule G needs a lexicon, such as a [word list](#a-word-list-as-the-lexicon)).
+Its glyph pairs are the misreadings RapidOCR's English model made at least three
+times, where the reader's word was the printed one, on the 1934 Washington
+telephone directory tiles of the 2026-10 dogfood. Unlike the Russian pairs, each
+instance was judged from its line and the directory's recurring exchange names
+(`DI strict`, `NA tional`), not checked against the image one by one. The pairs
+are the literal engine's e for the
+reader's c (`striet` for `strict`), i for l, I or t, I for l, l for i or I, t
+for l, h for b, r for t, f for t, y for v, m for n and u for n. Pairs are listed
+exactly, so a capital E for C is not settled. Left out on purpose: a for o,
+because «Soloman» and «Solomon» are both printed surnames on the same page and a
+model that writes the common spelling must not be settled by rule; c for o, rn
+for m and cl for d, seen twice or less; and the digit confusions (O for 0, l or I
+for 1), because a span with a digit is never settled by rule. Several pairs
+(I for l in `NatI`, m for n in `tiomal`) occur mostly in abbreviations and
+exchange names no general word list holds, so they settle little there. In a
+job without the `rough` trigger the lexicon has no `rough_below`:
+
+```yaml
+  contest:
+    rules: latin-print-0.1
+  lexicon:
+    provider: wordlist
+    path: /usr/share/dict/words
+```
+
+Measured on those pages only (54 column tiles of three pages, Claude Haiku 5.5
+as the reader against RapidOCR with the English model, the macOS word list):
+`ru-print-0.2` settled none of 1,118 spans; `latin-print-0.1` settled 81 (7%)
+and left 1,037 open (662 `word`, 211 `number`, 127 `misprint_guard`, 37
+`region`). The pairs were chosen on these same pages, so this is not an
+independent test. Of the 81, 56 are the exchange name `DI strict` read as
+`striet`. Within the one hand-transcribed column (three printed lines, read in
+two overlapping tiles), the four spans the rules settled were all right, and the
+model's lines had no error there for a rule to hide. Four more settlements were
+checked against the tile images (Harold, Stern and two `strict`) and were right;
+the other 73 were read against their lines only. On the 20 crops of later
+directories (1946-1975) kept from that dogfood, the same rules settled 1 of 720
+spans. Most open spans on directories are numbers, exchange names split
+or joined differently (`NA tional` against `NAtional`, where the page prints the
+split) and columns read in another order; the rules leave all of those open.
 
 The spans are kept in `contested/<page_id>.json` ([schema](../schemas/contested.schema.json)),
 and the page records its hash and counts. A page with an open span is held as
@@ -435,6 +524,25 @@ one, other text, or nothing. `note` is optional and recorded as empty when absen
 Packets and answers have schemas
 ([packet](../schemas/adjudication-packet.schema.json),
 [decisions](../schemas/adjudication-decisions.schema.json)).
+
+A large job can have thousands of open spans (a directory of 69 column crops had
+3,511). To work the ones that matter first, name terms:
+
+```bash
+pageledger adjudicate jobs/directory --packets packets/soviet --term Soviet --term USSR --term "U S S R" --term Tass
+```
+
+A packet then holds only the open spans that touch a term: the term appears in
+either reading of the span, or in the text the packet shows around it (80
+characters of the model's reading on each side). A term matches whole words in
+any case, and a space in it matches any spaces or a line break, so `U S S R`
+finds the name split across two lines. An entry whose term is printed further
+away, under a block heading for example, is not matched; name the heading's
+words as terms too. The filter changes nothing in the job: every other open span
+stays open, counted and holding its page, and answers for a subset of a page's
+spans are recorded as usual. The command reports the open spans, how many went
+into packets and how many were left out, and each packet lists its `terms`. Run
+it again with other terms, or with none, into a new directory for the rest.
 `--decisions` checks each answer against the spans it names and records it as an
 adjudication receipt (schema 0.2) on the page, with the reviewer, the time and
 the hash of the image. Answers for spans that have since changed are refused;

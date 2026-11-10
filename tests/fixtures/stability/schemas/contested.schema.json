@@ -28,7 +28,7 @@
       "type": "string"
     },
     "rules": {
-      "description": "The versioned rule set that settled spans, such as ru-print-0.1.",
+      "description": "The versioned rule set that settled spans: ru-print-0.1, ru-print-0.2 or latin-print-0.1.",
       "type": "string"
     },
     "schema_version": {

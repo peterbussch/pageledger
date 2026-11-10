@@ -129,7 +129,10 @@ difference becomes a span; open spans hold the page as `contested`. When you
 answer adjudication packets, write what the page image prints, keep printed
 misprints, use `high` confidence only when the image is plain, and name yourself
 truthfully in `--reviewer` (`agent:...` for an agent, never a person's name).
-Do not adjudicate a reading made by your own model family.
+Do not adjudicate a reading made by your own model family. Choose the rule set
+by script: `ru-print-0.2` for Russian, `latin-print-0.1` for Latin-script print
+(with a `wordlist` lexicon for rule G). On a large job, `--packets DIR --term
+WORD` sends only the spans near named terms; the rest stay open.
 
 `process` retains checkpoints automatically; individual runs require
 `--resumable` at creation. Use `resume DIR` to recover work in place. If it

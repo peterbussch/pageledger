@@ -40,7 +40,8 @@
         },
         "additionalProperties": false
       }
-    }
+    },
+    "terms": { "type": "array", "items": { "type": "string", "minLength": 1 }, "minItems": 1, "description": "Present when the packets were written with --term: this packet holds only the open spans near one of these words. The page's other open spans are still open." }
   },
   "additionalProperties": false
 }

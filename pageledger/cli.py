@@ -288,6 +288,12 @@ def build_parser() -> argparse.ArgumentParser:
                 help="Who settled the spans, e.g. agent:sol or person:NAME",
             )
             job_parser.add_argument(
+                "--term",
+                action="append",
+                default=[],
+                help="With --packets, only spans near this word or phrase (repeatable)",
+            )
+            job_parser.add_argument(
                 "--dry-run", action="store_true", help="Check every decision without recording any"
             )
 
@@ -980,8 +986,10 @@ def _cmd_job(args: argparse.Namespace) -> int:
     elif args.command == "adjudicate" and args.packets:
         if args.reviewer or args.dry_run:
             raise ValueError("--reviewer and --dry-run go with --decisions, not --packets")
-        result = adjudication_packets(args.job_dir, args.packets)
+        result = adjudication_packets(args.job_dir, args.packets, args.term)
     elif args.command == "adjudicate":
+        if args.term:
+            raise ValueError("--term goes with --packets: it chooses which spans to send")
         result = adjudicate_job(
             args.job_dir, args.decisions, reviewer=args.reviewer, dry_run=args.dry_run
         )
@@ -1001,6 +1009,12 @@ def _cmd_job(args: argparse.Namespace) -> int:
             print("Decisions: " + (", ".join(f"{name} {n}" for name, n in counts) or "none"))
         if "packets" in result:
             print(f"Packets: {result['packets']} pages in {result['out']}")
+            print(f"Open spans: {result['open_spans']}; in packets: {result['spans']}")
+            if "terms" in result:
+                print(
+                    f"Left out (no term nearby, still open): {result['left_out']}; "
+                    f"terms: {', '.join(result['terms'])}"
+                )
         if "decisions_high" in result:
             print(f"Pages answered: {result['pages']}; spans settled: {result['decisions_high']}")
         if "binding" in result:
