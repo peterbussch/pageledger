@@ -259,16 +259,21 @@ processing:
 `name` is a template: `{page}` is the PDF's page number counted from 1, written
 with an optional zero-padded width (`{page:04d}`); `{{` and `}}` are literal
 braces. The template must name a file inside `dir`, and a file that resolves
-outside it (through `..` or a symbolic link) is refused. A source made from a
+outside it is refused: `..` in the template when the job starts, a symbolic
+link out of `dir` as an `alto_invalid` page. A source made from a
 folder of page images cannot yet be matched by image file name (`{stem}` is
 refused). The source is still the PDF of the page images: the adapter compares
 each ALTO page's shape with the PDF page and needs `pdfinfo` from Poppler for
 that.
 
 The text is built from the words, not from ALTO's text lines, which can run
-across columns: words close enough to be one line of print are joined, the page
-is cut into columns at its gutters as RapidOCR's `reading_order: columns` does,
-and each column is read top to bottom. Words are kept as printed: a word broken
+across columns: words in one row that stand less than a word's height apart are
+joined, the page is cut into columns at the whitespace between them as
+RapidOCR's `reading_order: columns` does, and each column is read top to
+bottom. So a gutter narrower than a word's height is read as a word space (the
+columns interleave row by row), and text set at a tab stop inside a column, such
+as names with their numbers aligned far to the right, is read as two columns:
+all the names, then all the numbers. Words without boxes keep the file's order. Words are kept as printed: a word broken
 at a line end keeps its hyphen (`HYP`) and the library's suggested whole word
 (`SUBS_CONTENT`) is not used. Word confidence comes from `WC` (0 unsure, 1
 sure) or else from `CC` (one digit a character, 0 sure, 9 unsure), and feeds
@@ -277,7 +282,9 @@ sure) or else from `CC` (one digit a character, 0 sure, 9 unsure), and feeds
 Every reading with text carries `ocr_text_layer`, so in a document job the
 0.8 rules for an inherited OCR layer apply: the page climbs to local OCR, the
 ALTO reading is set aside once that OCR has read the page, and its agreement
-still confirms the OCR while its disagreement does not count against it. A page
+still confirms the OCR while its disagreement does not count against it. An
+ALTO reading held for a reason of its own, such as `low_confidence` when a
+quarter of its words are under 60%, confirms nothing. A page
 without ALTO (`alto_missing`) or with an unusable file (`alto_invalid`) gets an
 empty reading and climbs the same way; boxes that do not fit the page are
 reported as `alto_geometry_mismatch` (see [warnings](warnings.md)).

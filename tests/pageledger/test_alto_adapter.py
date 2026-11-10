@@ -16,6 +16,8 @@ from pageledger.alto_adapter import (
     MAX_BYTES,
     AltoAdapter,
     AltoInvalid,
+    AltoPage,
+    AltoWord,
     alto_name,
     alto_path,
     confidence_detail,
@@ -75,7 +77,7 @@ def alto(
     ).encode()
 
 
-def directory_page(scale=1.0, **kwargs):
+def directory_page(scale=1.0, low="0.5", **kwargs):
     """A heading over two columns of entries; each TextLine runs across both columns."""
     s = scale
     lines = [
@@ -92,7 +94,7 @@ def directory_page(scale=1.0, **kwargs):
                 _string(f"Smith{i}", 50 * s, y, 110 * s, 30 * s, 'WC="0.9"'),
                 _string("John", 170 * s, y, 70 * s, 30 * s, 'WC="0.8"'),
                 _string(f"Jones{i}", 550 * s, y, 110 * s, 30 * s, 'WC="0.95"'),
-                _string("Mary", 670 * s, y, 70 * s, 30 * s, 'WC="0.5"'),
+                _string("Mary", 670 * s, y, 70 * s, 30 * s, f'WC="{low}"'),
             ]
         )
     return alto(lines, width=1000 * s, height=1400 * s, **kwargs)
@@ -220,6 +222,44 @@ def test_a_small_shape_difference_is_tolerated():
     assert layout is not None
 
 
+def _rows_page(rows):
+    words = [
+        AltoWord(text, (x, 100 + 38 * row, x + width, 130 + 38 * row), None, 0)
+        for row, line in enumerate(rows)
+        for text, x, width in line
+    ]
+    return AltoPage(tuple(words), 1000, 1400, "pixel", None)
+
+
+@pytest.mark.parametrize("gutter,columns", [(40, True), (30, True), (25, False)])
+def test_a_gutter_narrower_than_a_word_height_is_read_as_a_word_space(gutter, columns):
+    rows = [
+        [
+            (f"left{i}", 50, 100),
+            ("a", 160, 40),
+            (f"right{i}", 200 + gutter, 100),
+            ("b", 310 + gutter, 40),
+        ]
+        for i in range(6)
+    ]
+    left = [f"left{i} a" for i in range(6)]
+    right = [f"right{i} b" for i in range(6)]
+    by_rows = [f"left{i} a right{i} b" for i in range(6)]
+    assert page_text(_rows_page(rows)).split("\n") == (left + right if columns else by_rows)
+
+
+def test_a_tab_stop_inside_a_column_is_read_as_a_column():
+    # A measured limit: names, then the numbers set at a tab stop to their right.
+    rows = [
+        [(f"Name{i}", 50, 80 + 20 * i), ("clk", 140 + 20 * i, 40), (f"ME5-12{i}", 400, 90)]
+        for i in range(6)
+    ]
+    assert page_text(_rows_page(rows)).split("\n") == [
+        *(f"Name{i} clk" for i in range(6)),
+        *(f"ME5-12{i}" for i in range(6)),
+    ]
+
+
 def test_without_boxes_words_keep_the_file_order():
     page = parse_alto(
         alto([['<String CONTENT="b"/>', '<String CONTENT="a"/>'], ['<String CONTENT="c"/>']])
@@ -292,6 +332,12 @@ def test_a_symlink_out_of_dir_is_refused(tmp_path):
     (folder / "1.xml").symlink_to(tmp_path / "secret.xml")
     with pytest.raises(ValueError, match="outside dir"):
         alto_path(folder, "{page}.xml", 1)
+    source = _pdf(tmp_path / "reel.pdf", [(500, 700, 0)])
+    result = AltoAdapter(dir=str(folder), name="{page}.xml").extract(
+        source, page_id="p1", page_number=1, action="transcribe_text"
+    )
+    assert (result.content, result.warnings) == ("", ["alto_invalid"])
+    assert result.model == "alto; file 1.xml outside dir"
 
 
 def test_constructor_checks_options(tmp_path):
@@ -377,6 +423,8 @@ STUB_OCR = """\
 from pageledger.adapters import ExtractionResult, ocr_pdf_page_count
 
 TEXTS = {}
+SECOND = {}
+CALLS = []
 
 
 class StubOCR:
@@ -386,6 +434,7 @@ class StubOCR:
     input_types = ("pdf",)
     output_types = ("text",)
     capabilities = ("ocr", "local")
+    texts = TEXTS
 
     def supports(self, action):
         return action == "transcribe_text"
@@ -394,14 +443,20 @@ class StubOCR:
         return ocr_pdf_page_count(source)
 
     def extract(self, source, *, page_id, page_number, action, prompt=None):
+        CALLS.append((self.name, page_number))
         return ExtractionResult(
-            content=TEXTS[page_number],
+            content=self.texts[page_number],
             format="text",
             confidence=None,
-            model="stub-ocr",
+            model=self.name,
             warnings=[],
             usage={"pages": 1},
         )
+
+
+class SecondOCR(StubOCR):
+    name = "second_ocr"
+    texts = SECOND
 """
 
 
@@ -409,7 +464,7 @@ class StubOCR:
 def reel(tmp_path, monkeypatch):
     folder = tmp_path / "alto"
     folder.mkdir()
-    (folder / "0001.xml").write_bytes(directory_page())
+    (folder / "0001.xml").write_bytes(directory_page(low="0.9"))
     source = _pdf(tmp_path / "reel.pdf", [(500, 700, 0), (500, 700, 0)])
     module = f"stub_ocr_{os.getpid()}_{abs(hash(tmp_path)) % 10**8}"
     adapters_dir = tmp_path / "adapters"
@@ -428,19 +483,22 @@ def reel(tmp_path, monkeypatch):
                         "adapter_options": {"dir": str(folder), "name": "{page:04d}.xml"},
                     },
                     "local_ocr": {"adapter": f"{module}:StubOCR"},
+                    "second_ocr": {"adapter": f"{module}:SecondOCR"},
                 },
             }
         )
     )
-    return source, config, folder, sys.modules[module].TEXTS
+    return source, config, folder, sys.modules[module]
 
 
 OCR_PAGE_2 = "The second page, read by our own OCR, holds complete readable prose. " * 8
+OTHER = "Completely different words from a fresh reading of this scanned page. " * 8
 
 
-def _job(reel, tmp_path, ocr_page_1):
-    source, config, folder, texts = reel
-    texts.update({1: ocr_page_1, 2: OCR_PAGE_2})
+def _job(reel, tmp_path, ocr_page_1, second_page_1=None):
+    source, config, folder, stub = reel
+    stub.TEXTS.update({1: ocr_page_1, 2: OCR_PAGE_2})
+    stub.SECOND.update({1: second_page_1 or ocr_page_1, 2: OCR_PAGE_2})
     out = tmp_path / "job"
     result = process(source=source, config_path=config, out_dir=out)
     assert result["status"] == "completed"
@@ -449,33 +507,47 @@ def _job(reel, tmp_path, ocr_page_1):
 
 
 @needs_pdfinfo
-def test_a_job_climbs_from_alto_to_local_ocr_and_rests_on_it_when_they_agree(reel, tmp_path):
+def test_alto_that_agrees_with_our_ocr_confirms_it(reel, tmp_path):
     _, pages = _job(reel, tmp_path, COLUMNS_TEXT)
     first = pages[1]
     alto_attempt, ocr_attempt = first["attempts"]
     assert alto_attempt["stage"] == "local_text"
-    assert "ocr_text_layer" in alto_attempt["warnings"]
+    assert alto_attempt["warnings"] == ["ocr_text_layer"]
     assert [t["trigger"] for t in first["triggers"]] == ["ocr_layer"]
     assert first["selected_attempt"] == ocr_attempt["attempt_id"]
     assert first["disposition"] == "unreviewed_text"
     assert first["comparisons"][0]["agreement_ratio"] == 1.0
-    # No ALTO for page 2: an empty reading, held blank until our OCR read text.
+    # Confirmed by the ALTO reading, page 1 never reached the second OCR engine.
+    assert ("second_ocr", 1) not in reel[3].CALLS
+    # No ALTO for page 2: an empty reading, held blank until our OCR read text;
+    # with nothing to confirm that OCR, the second engine read it too.
     second = pages[2]
     assert second["attempts"][0]["outcome"] == "completed"
-    assert "alto_missing" in second["attempts"][0]["warnings"]
+    assert second["attempts"][0]["warnings"] == ["alto_missing", "empty_text"]
+    assert [t["trigger"] for t in second["triggers"]] == ["uncorroborated"]
     assert second["selected_attempt"] == second["attempts"][1]["attempt_id"]
     assert second["disposition"] == "unreviewed_text"
 
 
 @needs_pdfinfo
-def test_a_job_sets_alto_aside_when_our_ocr_disagrees(reel, tmp_path):
-    other = "Completely different words from a fresh reading of this scanned page. " * 8
-    _, pages = _job(reel, tmp_path, other)
+def test_alto_that_disagrees_is_set_aside_and_does_not_count_against_our_ocr(reel, tmp_path):
+    _, pages = _job(reel, tmp_path, OTHER)
     first = pages[1]
-    assert first["comparisons"][0]["agreement_ratio"] < 0.6
+    assert [a["stage"] for a in first["attempts"]] == ["local_text", "local_ocr", "second_ocr"]
+    assert [t["trigger"] for t in first["triggers"]] == ["ocr_layer", "uncorroborated"]
     assert first["selected_attempt"] == first["attempts"][1]["attempt_id"]
     assert "engine_disagreement" not in first["review_reasons"]
     assert first["disposition"] == "unreviewed_text"
+
+
+@needs_pdfinfo
+def test_alto_held_for_low_confidence_cannot_confirm(reel, tmp_path):
+    (reel[2] / "0001.xml").write_bytes(directory_page())  # a quarter of its words under 60
+    _, pages = _job(reel, tmp_path, COLUMNS_TEXT)
+    first = pages[1]
+    assert first["attempts"][0]["warnings"] == ["ocr_text_layer", "low_confidence"]
+    assert [t["trigger"] for t in first["triggers"]] == ["ocr_layer", "uncorroborated"]
+    assert ("second_ocr", 1) in reel[3].CALLS
 
 
 @needs_pdfinfo

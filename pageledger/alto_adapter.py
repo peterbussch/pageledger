@@ -473,7 +473,11 @@ class AltoAdapter:
             raise ValueError(f"{self.name} does not support action: {action}")
         _ = page_id, prompt
         file = alto_name(self.template, page_number)
-        path = alto_path(self.directory, self.template, page_number)
+        try:
+            path = alto_path(self.directory, self.template, page_number)
+        except ValueError:
+            # Only a symbolic link can lead out of dir: the template was checked.
+            return self._empty(f"alto; file {file} outside dir", "alto_invalid")
         if not path.is_file():
             return self._empty(f"alto; file {file} missing", "alto_missing")
         try:
