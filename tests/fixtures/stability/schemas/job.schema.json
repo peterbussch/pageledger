@@ -925,6 +925,35 @@
         "policy": {
           "type": "object"
         },
+        "relocations": {
+          "description": "Each change review-job or adjudicate made to the job in a directory other than root, the one it was written in, oldest first. Absent until such a change.",
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "at": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "command": {
+                "enum": [
+                  "review-job",
+                  "adjudicate"
+                ]
+              },
+              "root": {
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "required": [
+              "root",
+              "command",
+              "at"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
         "root": {
           "minLength": 1,
           "type": "string"

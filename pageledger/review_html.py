@@ -103,7 +103,7 @@ def write_review_html(job_dir: Path, out: Path, *, images: str = "all") -> dict:
             raise ValueError(_NO_POPPLER)
         out.mkdir(parents=True)
         try:
-            written = write_review_sheet(job, out / SHEET)
+            written = write_review_sheet(job, out / SHEET, root)
         except BaseException:
             shutil.rmtree(out, ignore_errors=True)
             raise

@@ -380,9 +380,9 @@ pageledger verify-run runs/run-001/ --json
 Checks that the files in a run directory agree with one another: manifest
 declarations, identifiers, hashes, page counts, raw and normalized references,
 quality totals, audit/rerun items, alignment-schema snapshots, and cost totals.
-A missing `raw/` or `normalized/` directory is read as an empty one, since
-Git and some archive tools drop empty directories; a file the run records in
-it is still required. Missing or changed external source files are warnings, and a source found
+A missing `raw/` directory is read as an empty one, and a missing
+`normalized/` too when the run has no schema, since Git and some archive tools
+drop empty directories; a file the run records in either is still required. Missing or changed external source files are warnings, and a source found
 through the [source index](checkpoint-spec.md#moved-source-files) is reported
 as `source_relocated`; malformed or inconsistent ledger artifacts are errors
 and produce exit code 1. Verification

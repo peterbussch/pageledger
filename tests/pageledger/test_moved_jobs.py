@@ -28,6 +28,7 @@ from pageledger.processing import (
     review_job,
     verify_job,
 )
+from pageledger.review_html import write_review_html
 
 
 def _copy(root: Path, tmp_path: Path, name: str = "deposit") -> Path:
@@ -84,6 +85,9 @@ def test_a_copied_job_with_ocr_and_image_stages_verifies_where_it_is(setup, tmp_
     assert "# Document report" in capsys.readouterr().out
     assert export_job(copy, tmp_path / "out.jsonl", format="jsonl") == 2
     assert create_review_sheet(copy, tmp_path / "sheet.csv")["rows"] == 2
+    view = write_review_html(copy, tmp_path / "view", images="none")
+    assert view["pages"] == 2
+    assert str(copy) in (tmp_path / "view" / "index.html").read_text(encoding="utf-8")
     assert read_record(copy / "job.json")["root"] == str(original)
 
 

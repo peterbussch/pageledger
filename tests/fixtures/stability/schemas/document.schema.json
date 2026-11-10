@@ -925,6 +925,35 @@
       },
       "type": "array"
     },
+    "relocations": {
+      "description": "Each change review-job or adjudicate made to the job in a directory other than the one it was written in, oldest first. Absent until such a change.",
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "at": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "command": {
+            "enum": [
+              "review-job",
+              "adjudicate"
+            ]
+          },
+          "root": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "root",
+          "command",
+          "at"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
     "report_format": {
       "description": "0.5.1 uses the historical absolute source links; 0.6 uses paths relative to the job directory. Reports without this marker use the 0.5.0 renderer.",
       "enum": [
