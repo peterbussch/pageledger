@@ -102,7 +102,20 @@ def write_review_html(job_dir: Path, out: Path, *, images: str = "all") -> dict:
         if images != "none" and source.suffix.lower() == ".pdf" and not shutil.which("pdftoppm"):
             raise ValueError(_NO_POPPLER)
         out.mkdir(parents=True)
-        written = write_review_sheet(job, out / SHEET)
+        try:
+            written = write_review_sheet(job, out / SHEET)
+        except BaseException:
+            shutil.rmtree(out, ignore_errors=True)
+            raise
+    try:
+        return _write_view(root, out, job, source, written, images)
+    except BaseException:
+        # A half-written folder would only be refused next time.
+        shutil.rmtree(out, ignore_errors=True)
+        raise
+
+
+def _write_view(root: Path, out: Path, job: dict, source: Path, written: dict, images: str) -> dict:
     report = verify_document_report(root)
     sheet = Path(written["out"])
     with sheet.open(encoding="utf-8-sig", newline="") as stream:
@@ -367,7 +380,7 @@ class _View:
         else:
             shown = marked.get(selected["attempt_id"]) if not selected.get("edition") else None
             reading = (
-                f'<h3>Selected text</h3><pre class="text" dir="auto"{self.lang}>'
+                f'<h3>Selected text</h3><pre class="text" dir="auto"{self.lang}>\n'
                 f"{shown or text_html(selected['text'])}</pre>"
             )
         others = self._others(page, marked)
@@ -418,7 +431,7 @@ class _View:
             else '<p class="none">No page image in this view.</p>'
         )
         return (
-            f'<figure class="image">{image}<figcaption>'
+            f'<figure class="image" tabindex="0">{image}<figcaption>'
             + "<br>".join(links)
             + "</figcaption></figure>"
         )
@@ -494,13 +507,13 @@ class _View:
                     "<h4>Compared with the selected text</h4>"
                     '<p class="legend">The selected text with <del>its own words struck</del> '
                     "and <ins>this reading's words</ins> after them.</p>"
-                    f'<pre class="text diff" dir="auto"{self.lang}>'
+                    f'<pre class="text diff" dir="auto"{self.lang}>\n'
                     f"{diff_html(selected['text'], text)}</pre>"
                 )
             elif selected is not None:
                 parts.append("<p>Identical to the selected text.</p>")
             parts.append(
-                f'<h4>This reading</h4><pre class="text" dir="auto"{self.lang}>'
+                f'<h4>This reading</h4><pre class="text" dir="auto"{self.lang}>\n'
                 f"{marked.get(attempt['attempt_id']) or text_html(text)}</pre></details>"
             )
             blocks.append("".join(parts))
@@ -671,7 +684,7 @@ _SCRIPT = (
   function show() {
     var count = Object.keys(decisions).length;
     status.textContent = count + " page decision" + (count === 1 ? "" : "s") + " chosen. " +
-      (kept ? "This browser keeps them until you download and apply the sheet."
+      (kept ? "This browser keeps them for this job until you choose Forget."
             : "This browser is not keeping them: download the sheet before you close the page.");
     document.querySelectorAll("td.chosen").forEach(function (cell) {
       var chosen = decisions[cell.getAttribute("data-row")];

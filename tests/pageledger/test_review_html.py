@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import csv
 import hashlib
 import html
@@ -28,11 +29,16 @@ from pageledger.review_html import (
     write_review_html,
 )
 
+# Leading blank lines, which an HTML parser drops after <pre> unless guarded.
 HOSTILE = (
-    'Before </script><script>alert("x")</script> & \'quoted\' "words" <b>bold</b>\r\n'
-    "  indented\ttabbed  line\n"
-    "سطر عربي mixed with Latin\n"
-) * 3
+    "\n\n"
+    + (
+        'Before </script><script>alert("x")</script> & \'quoted\' "words" <b>bold</b>\r\n'
+        "  indented\ttabbed  line\n"
+        "سطر عربي mixed with Latin\n"
+    )
+    * 3
+)
 
 
 @pytest.fixture
@@ -104,6 +110,18 @@ def test_the_view_shows_each_page_and_changes_nothing_in_the_job(job, tmp_path):
     assert "default-src &#x27;none&#x27;" in document
 
 
+def test_the_content_policy_allows_exactly_the_views_own_style_and_script(job, tmp_path):
+    write_review_html(job, tmp_path / "view", images="none")
+    document = (tmp_path / "view" / "index.html").read_text(encoding="utf-8")
+    policy = html.unescape(re.search(r'Content-Security-Policy" content="([^"]*)"', document)[1])
+    style = re.search(r"<style>(.*?)</style>", document, re.S)[1]
+    script = re.findall(r"<script>(.*?)</script>", document, re.S)
+    assert len(script) == 1
+    for body, directive in ((style, "style-src"), (script[0], "script-src")):
+        digest = base64.b64encode(hashlib.sha256(body.encode()).digest()).decode()
+        assert f"{directive} 'sha256-{digest}'" in policy
+
+
 def test_job_text_is_escaped_and_shown_exactly(job, tmp_path):
     write_review_html(job, tmp_path / "view", images="none")
     document = (tmp_path / "view" / "index.html").read_text(encoding="utf-8")
@@ -114,7 +132,7 @@ def test_job_text_is_escaped_and_shown_exactly(job, tmp_path):
     assert document.count("</script>") == 2
     shown = text_html(HOSTILE)
     assert '<span class="ctl" title="U+000D">␍</span>' in shown
-    assert f'<pre class="text" dir="auto">{shown}</pre>' in document
+    assert f'<pre class="text" dir="auto">\n{shown}</pre>' in document
     assert html.unescape(re.sub(r"<span class=\"ctl\"[^>]*>␍</span>", "\r", shown)) == HOSTILE
 
 
@@ -236,6 +254,16 @@ def test_page_images_follow_the_option(job, tmp_path, monkeypatch):
     rendered.clear()
     write_review_html(job, tmp_path / "all", images="all")
     assert rendered == [1, 2]
+
+
+def test_a_failed_render_leaves_no_folder(job, tmp_path, monkeypatch):
+    def render(source, page_number, target):
+        raise RuntimeError("pdftoppm could not render page 2")
+
+    monkeypatch.setattr(review_html, "render_page_image", render)
+    with pytest.raises(RuntimeError):
+        write_review_html(job, tmp_path / "view", images="held")
+    assert not (tmp_path / "view").exists()
 
 
 def test_a_text_source_has_no_page_images(job, tmp_path):

@@ -665,9 +665,9 @@ engine read. Transcripts are shown exactly, with their line breaks and spacing;
 control characters, which a browser cannot show, appear as symbols such as ␍.
 
 Under each page a reviewer can choose one of the decisions in the table above
-and add a note. The browser keeps the choices for that job until they are
-downloaded; nothing is recorded in the job until the downloaded `review.csv`
-is applied:
+and add a note. The browser keeps the choices for that job, if it allows the
+view to store them, until "Forget decisions in this browser" clears them.
+Nothing is recorded in the job until the downloaded `review.csv` is applied:
 
 ```bash
 pageledger review-job jobs/book --review review/review.csv --reviewer "A. Reader" --dry-run

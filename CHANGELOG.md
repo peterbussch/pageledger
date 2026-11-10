@@ -54,7 +54,8 @@ and, from 1.0, [stability](docs/stability.md).
 - `pageledger review-html JOB --out DIR` writes a static review view of a verified document job: one
   `index.html` to open in a browser, with no server, network or external scripts. It lists the pages, those
   that need a person first, and shows each page's image beside its selected text, the other readings in
-  full and compared word by word, the warnings and holds in plain words, and on a contested page its open
+  full and compared word by word, what holds it in plain words, the warnings on each reading by code with
+  a link to their meaning, and on a contested page its open
   spans marked in the text. A reviewer chooses decisions from `review-job`'s own vocabulary and downloads
   them as the `review.csv` that `review-sheet` writes, bound to the job by the same binding file; nothing
   is recorded until `review-job` applies it. `--images held` renders only the pages that need a person
