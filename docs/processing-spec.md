@@ -280,7 +280,8 @@ processing:
   60% of their words, or read a number differently. Without this trigger the page
   goes to review, as before.
 - `ocr_layer` (no configuration; jobs written by 0.8): a page whose text
-  layer is an earlier OCR of the scan (warning `ocr_text_layer`) climbs from
+  layer is an earlier OCR of the scan (warning `ocr_text_layer`, written by
+  `pdf_text` for an OCR font and by `alto` for a library's ALTO file) climbs from
   local text to local OCR, whatever its text looks like. An inherited OCR layer
   is a reading of unknown quality, and 0.7 accepted it unchecked. Once local
   OCR has read the page, the layer is kept but set aside: it is not selected,

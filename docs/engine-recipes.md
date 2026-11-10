@@ -229,6 +229,71 @@ free for research, personal use and organizations under $20M in funding or
 revenue, and not for use that competes with Datalab's API. PageLedger never
 ships them; read the licence before commercial use.
 
+## ALTO from a library (any platform, no engine)
+
+ALTO is the XML format libraries use to publish the OCR they ran on their own
+scans: each word of a page with its text, its position on the page image and
+usually the engine's confidence. The built-in `alto` adapter reads one such file
+per page, so the library's OCR enters a run or a document job as one more
+reading, with the file and its digest in the page's provenance.
+
+The Library of Congress offers an ALTO file beside each page image of many
+digitized items, and Chronicling America one per newspaper page (`ocr.xml`);
+many national libraries publish ALTO for their newspapers too. Download the
+files for the pages you read into one folder, named so that a page number
+finds its file, and point the adapter at it:
+
+```yaml
+schema_version: "0.1"
+processing:
+  local_text:
+    adapter: alto
+    adapter_options:
+      dir: /data/reel04673/alto
+      name: "{page:04d}.xml"    # page 1 reads 0001.xml
+  local_ocr:
+    adapter: rapidocr
+    adapter_options: {rec_model_dir: models/en-rec, reading_order: columns}
+```
+
+`name` is a template: `{page}` is the PDF's page number counted from 1, written
+with an optional zero-padded width (`{page:04d}`); `{{` and `}}` are literal
+braces. The template must name a file inside `dir`, and a file that resolves
+outside it (through `..` or a symbolic link) is refused. A source made from a
+folder of page images cannot yet be matched by image file name (`{stem}` is
+refused). The source is still the PDF of the page images: the adapter compares
+each ALTO page's shape with the PDF page and needs `pdfinfo` from Poppler for
+that.
+
+The text is built from the words, not from ALTO's text lines, which can run
+across columns: words close enough to be one line of print are joined, the page
+is cut into columns at its gutters as RapidOCR's `reading_order: columns` does,
+and each column is read top to bottom. Words are kept as printed: a word broken
+at a line end keeps its hyphen (`HYP`) and the library's suggested whole word
+(`SUBS_CONTENT`) is not used. Word confidence comes from `WC` (0 unsure, 1
+sure) or else from `CC` (one digit a character, 0 sure, 9 unsure), and feeds
+`low_confidence` like RapidOCR's.
+
+Every reading with text carries `ocr_text_layer`, so in a document job the
+0.8 rules for an inherited OCR layer apply: the page climbs to local OCR, the
+ALTO reading is set aside once that OCR has read the page, and its agreement
+still confirms the OCR while its disagreement does not count against it. A page
+without ALTO (`alto_missing`) or with an unusable file (`alto_invalid`) gets an
+empty reading and climbs the same way; boxes that do not fit the page are
+reported as `alto_geometry_mismatch` (see [warnings](warnings.md)).
+
+The model string names the file, its SHA-256 and the software the file
+declares, for example `alto; file 0001.xml sha256:…; software ABBYY FineReader
+8.0`, so a changed file is a different reading. `verify-run` and `verify-job`
+check the recorded text against that record but do not read the ALTO file
+again: it lies outside the source and the run, so keep the folder with the run
+if the reading must be checked later, and compare its digest by hand.
+
+Not supported: ALTO files that hold several pages, hOCR and PAGE XML, ALTO
+used as the contest witness, and finding ALTO links in a IIIF manifest. The
+word boxes are recorded for later use in tiled reads but are not yet attached
+to the reading.
+
 ## Tesseract with the community orus model (macOS and Linux)
 
 The `orus` model source is [AButon-8/iskra_ocr](https://github.com/AButon-8/iskra_ocr),

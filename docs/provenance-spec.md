@@ -245,6 +245,9 @@ PageLedger does not guess a collection's script or spelling; they have not yet
 been measured on a corpus.
 
 Adapter-native warnings appear in the same `warnings` list. The built-in
+`alto` adapter adds `alto_missing`, `alto_invalid` or `alto_geometry_mismatch`
+(see [warnings](warnings.md)) and names the ALTO file, its SHA-256 and its
+declared software in the `model` string. The built-in
 `pdf_ocr` adapter adds `render_dpi_capped` when it rendered a page below the
 requested DPI to stay within `run.adapter_options.max_render_pixels`; the
 page's `model` string then records both values, for example

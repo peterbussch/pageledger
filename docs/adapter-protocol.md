@@ -244,7 +244,8 @@ when no rate is known.
 
 ## Loading custom adapters
 
-The built-in adapters are named `text`, `pdf_text`, and `pdf_ocr`.
+The built-in adapters are named `text`, `pdf_text`, `pdf_ocr`, `vision`,
+`rapidocr`, `indra` and `alto`.
 Project-specific OCR or VLM wrappers can be loaded with a Python import
 string:
 
@@ -525,7 +526,8 @@ PageLedger never infers the capability from an adapter's name.
 Built-in adapters: `text`, `pdf_text` (through `pageledger[pdf]`), `pdf_ocr`
 (through locally installed Poppler and Tesseract), and
 [`vision`](vision-adapter.md), which sends page images to a local or hosted
-vision model. Anything else is a custom adapter; the adapter contract matters
+vision model; `rapidocr` and `indra` for local OCR; and `alto`, which reads OCR
+a library published as ALTO XML ([recipe](engine-recipes.md#alto-from-a-library-any-platform-no-engine)). Anything else is a custom adapter; the adapter contract matters
 more than adapter breadth.
 
 Runnable examples live in `examples/`:

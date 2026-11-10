@@ -78,6 +78,17 @@ and, from 1.0, [stability](docs/stability.md).
   directory, the command and the time), repeated in `document.json` and as a line in `report.md`, and
   reported by `verify-job` as `job_changed_elsewhere`. Jobs without the field read and render exactly as
   before.
+- A built-in `alto` adapter reads the OCR a library published beside its scans as ALTO XML (word boxes and
+  confidences), one file per page, from a folder named by `adapter_options.dir` and a file-name template
+  (`name: "{page:04d}.xml"`). The text is built from the words in column order, never from ALTO's text
+  lines, which can run across columns; words keep their printed hyphens. Each reading is marked
+  `ocr_text_layer`, so in a document job's `local_text` stage the 0.8 rules for an inherited OCR layer apply
+  unchanged: the page climbs to local OCR, the ALTO reading is set aside once that OCR has read the page,
+  and its agreement counts as confirmation. The provenance names the ALTO file, its SHA-256 and the
+  software it declares. New warnings: `alto_missing` and `alto_invalid` (an empty reading, so the page
+  climbs to OCR) and `alto_geometry_mismatch` (the boxes do not fit the page; the text is kept). Files
+  with a DOCTYPE or entity declaration, or over 32 MiB, are refused. See
+  [the recipe](docs/engine-recipes.md#alto-from-a-library-any-platform-no-engine).
 
 ### Changed
 
@@ -96,6 +107,13 @@ and, from 1.0, [stability](docs/stability.md).
 - `resume` refuses a job that is not in the directory where it was written, and says to move it back
   there. Its stage runs are bound to that directory, and a resumable copy would let two copies pay for
   the same pages.
+
+### Known limits
+
+- `alto` reads one page per file, verification does not re-read the ALTO file (it lies outside the source),
+  and its word boxes are checked against the page's shape and edges but not yet attached to the reading or
+  used to place tiles. hOCR, PAGE XML, ALTO as the contest witness and ALTO found through IIIF manifests
+  are not supported.
 
 ## 0.8.0 - 2026-10-19
 

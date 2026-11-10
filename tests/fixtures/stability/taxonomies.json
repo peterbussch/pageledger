@@ -368,6 +368,9 @@
       "unreadable"
     ],
     "warning_codes": [
+      "alto_geometry_mismatch",
+      "alto_invalid",
+      "alto_missing",
       "blank",
       "blank_candidate",
       "clipped_text",
