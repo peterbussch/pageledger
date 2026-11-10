@@ -443,6 +443,36 @@
         }
       ]
     },
+    "review-html": {
+      "exclusive": [],
+      "options": {
+        "--images": {
+          "choices": [
+            "all",
+            "held",
+            "none"
+          ],
+          "required": false,
+          "takes_value": true
+        },
+        "--json": {
+          "choices": null,
+          "required": false,
+          "takes_value": false
+        },
+        "--out": {
+          "choices": null,
+          "required": true,
+          "takes_value": true
+        }
+      },
+      "positionals": [
+        {
+          "dest": "job_dir",
+          "nargs": null
+        }
+      ]
+    },
     "review-job": {
       "exclusive": [],
       "options": {

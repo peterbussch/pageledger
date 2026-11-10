@@ -1090,7 +1090,10 @@ def _print_job_next_steps(args: argparse.Namespace) -> None:
     print(f"Next: pageledger inspect-job {job} to read the report.")
     export = f"pageledger export {job} --format md --out {shlex.quote(args.source.stem + '.md')}"
     if needed:
-        print(f"Then: pageledger review-sheet {job} --out review.csv to review them, or {export}")
+        print(
+            f"Then: pageledger review-html {job} --out {shlex.quote(args.source.stem + '-review')} "
+            f"to review them beside the page images, or {export}"
+        )
     else:
         print(f"Then: {export}")
 

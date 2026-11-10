@@ -7,6 +7,16 @@ and, from 1.0, [stability](docs/stability.md).
 
 ### Added
 
+- `pageledger review-html JOB --out DIR` writes a static review view of a verified document job: one
+  `index.html` to open in a browser, with no server, network or external scripts. It lists the pages, those
+  that need a person first, and shows each page's image beside its selected text, the other readings in
+  full and compared word by word, what holds it in plain words, the warnings on each reading by code with
+  a link to their meaning, and on a contested page its open
+  spans marked in the text. A reviewer chooses decisions from `review-job`'s own vocabulary and downloads
+  them as the `review.csv` that `review-sheet` writes, bound to the job by the same binding file; nothing
+  is recorded until `review-job` applies it. `--images held` renders only the pages that need a person
+  and `--images none` needs no Poppler. The view is a rendering and writes nothing into the job. See
+  [review beside the page image](docs/processing-spec.md#review-beside-the-page-image).
 - `pageledger process SOURCE --out DIR` runs without `--config`. The job uses exactly the configuration
   `init-config --processing` writes for the same options and records it as it would record that file, so
   it verifies, resumes and rebuilds like any other job. No file is read from the working directory and
@@ -46,21 +56,6 @@ and, from 1.0, [stability](docs/stability.md).
   path, so `verify-job` on a moved or copied job fails with "Document job identity changed". This is
   true of jobs from every release so far. Runs verify after a move, if their empty `normalized/`
   directory moves with them.
-
-## 0.9.0 - unreleased
-
-### Added
-
-- `pageledger review-html JOB --out DIR` writes a static review view of a verified document job: one
-  `index.html` to open in a browser, with no server, network or external scripts. It lists the pages, those
-  that need a person first, and shows each page's image beside its selected text, the other readings in
-  full and compared word by word, what holds it in plain words, the warnings on each reading by code with
-  a link to their meaning, and on a contested page its open
-  spans marked in the text. A reviewer chooses decisions from `review-job`'s own vocabulary and downloads
-  them as the `review.csv` that `review-sheet` writes, bound to the job by the same binding file; nothing
-  is recorded until `review-job` applies it. `--images held` renders only the pages that need a person
-  and `--images none` needs no Poppler. The view is a rendering and writes nothing into the job. See
-  [review beside the page image](docs/processing-spec.md#review-beside-the-page-image).
 
 ## 0.8.0 - 2026-10-19
 

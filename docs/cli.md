@@ -89,7 +89,7 @@ warning.
 | `--json` | Print the job result as JSON. |
 
 A job that completes also prints, after its status, how many pages need a
-person and the next commands (`inspect-job`, then `review-sheet` or `export`).
+person and the next commands (`inspect-job`, then `review-html` or `export`).
 `--json` output is unchanged.
 
 A job can finish with unresolved pages. `completed` means processing finished,
