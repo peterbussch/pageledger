@@ -7,6 +7,14 @@ and, from 1.0, [stability](docs/stability.md).
 
 ### Added
 
+- `pageledger fetch-iiif URL --out DIR` fetches the page images of a IIIF manifest (Presentation API 2 or 3),
+  an `info.json` or an image service (Image API 2 or 3) into a snapshot folder: one JPEG per canvas, the
+  manifest and image information as served, and a fetch record, `iiif-fetch.json`
+  ([schema](schemas/iiif-fetch.schema.json), [spec](docs/iiif-fetch-spec.md)), that binds each image's
+  SHA-256 to the URLs it came from. Images are fetched whole at native size, never above it; when a server
+  only allows a smaller image the record marks it `below_native` and the command warns. One request at a
+  time with a delay, retries that honour `Retry-After`, a byte cap on every response, and `--resume` that
+  checks what was fetched and fetches only what is missing. See [the how-to](docs/iiif.md).
 - `pageledger review-html JOB --out DIR` writes a static review view of a verified document job: one
   `index.html` to open in a browser, with no server, network or external scripts. It lists the pages, those
   that need a person first, and shows each page's image beside its selected text, the other readings in
@@ -73,19 +81,6 @@ and, from 1.0, [stability](docs/stability.md).
   path, so `verify-job` on a moved or copied job fails with "Document job identity changed". This is
   true of jobs from every release so far. Runs verify after a move, if their empty `normalized/`
   directory moves with them.
-
-## 0.9.0 - unreleased
-
-### Added
-
-- `pageledger fetch-iiif URL --out DIR` fetches the page images of a IIIF manifest (Presentation API 2 or 3),
-  an `info.json` or an image service (Image API 2 or 3) into a snapshot folder: one JPEG per canvas, the
-  manifest and image information as served, and a fetch record, `iiif-fetch.json`
-  ([schema](schemas/iiif-fetch.schema.json), [spec](docs/iiif-fetch-spec.md)), that binds each image's
-  SHA-256 to the URLs it came from. Images are fetched whole at native size, never above it; when a server
-  only allows a smaller image the record marks it `below_native` and the command warns. One request at a
-  time with a delay, retries that honour `Retry-After`, a byte cap on every response, and `--resume` that
-  checks what was fetched and fetches only what is missing. See [the how-to](docs/iiif.md).
 
 ## 0.8.0 - 2026-10-19
 

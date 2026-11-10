@@ -1,0 +1,301 @@
+{
+  "$defs": {
+    "image_file": {
+      "pattern": "^[0-9]{4,}\\.jpg$",
+      "type": "string"
+    },
+    "sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "timestamp": {
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$",
+      "type": "string"
+    },
+    "url": {
+      "pattern": "^https?://",
+      "type": "string"
+    }
+  },
+  "$id": "https://github.com/peterbussch/pageledger/schemas/iiif-fetch.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "canvas_count": {
+      "minimum": 1,
+      "type": "integer"
+    },
+    "finished_at": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "$ref": "#/$defs/timestamp"
+        }
+      ]
+    },
+    "images": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "attempts": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "below_native": {
+            "type": "boolean"
+          },
+          "bytes": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "canvas_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "canvas_index": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "fetched_at": {
+            "$ref": "#/$defs/timestamp"
+          },
+          "file": {
+            "$ref": "#/$defs/image_file"
+          },
+          "final_url": {
+            "$ref": "#/$defs/url"
+          },
+          "height": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "image_api": {
+            "enum": [
+              2,
+              3
+            ]
+          },
+          "info": {
+            "additionalProperties": false,
+            "properties": {
+              "artifact": {
+                "pattern": "^iiif/[0-9]{4,}\\.info\\.json$",
+                "type": "string"
+              },
+              "final_url": {
+                "$ref": "#/$defs/url"
+              },
+              "sha256": {
+                "$ref": "#/$defs/sha256"
+              },
+              "url": {
+                "$ref": "#/$defs/url"
+              }
+            },
+            "required": [
+              "url",
+              "final_url",
+              "artifact",
+              "sha256"
+            ],
+            "type": "object"
+          },
+          "label": true,
+          "native_height": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "native_width": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "request_url": {
+            "$ref": "#/$defs/url"
+          },
+          "service_id": {
+            "$ref": "#/$defs/url"
+          },
+          "sha256": {
+            "$ref": "#/$defs/sha256"
+          },
+          "width": {
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "file",
+          "sha256",
+          "bytes",
+          "canvas_index",
+          "canvas_id",
+          "label",
+          "service_id",
+          "image_api",
+          "info",
+          "native_width",
+          "native_height",
+          "request_url",
+          "final_url",
+          "width",
+          "height",
+          "below_native",
+          "fetched_at",
+          "attempts"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "kind": {
+      "const": "iiif_fetch"
+    },
+    "manifest": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "api_version": {
+              "enum": [
+                2,
+                3
+              ]
+            },
+            "artifact": {
+              "const": "iiif/manifest.json"
+            },
+            "final_url": {
+              "$ref": "#/$defs/url"
+            },
+            "sha256": {
+              "$ref": "#/$defs/sha256"
+            },
+            "url": {
+              "$ref": "#/$defs/url"
+            }
+          },
+          "required": [
+            "url",
+            "final_url",
+            "sha256",
+            "artifact",
+            "api_version"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "missing": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "canvas_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "canvas_index": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "error": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "file": {
+            "$ref": "#/$defs/image_file"
+          },
+          "label": true
+        },
+        "required": [
+          "canvas_index",
+          "canvas_id",
+          "label",
+          "file",
+          "error"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "requested_url": {
+      "$ref": "#/$defs/url"
+    },
+    "schema_version": {
+      "const": "0.1"
+    },
+    "selection": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "source_kind": {
+      "enum": [
+        "manifest",
+        "image_service"
+      ]
+    },
+    "started_at": {
+      "$ref": "#/$defs/timestamp"
+    },
+    "status": {
+      "enum": [
+        "complete",
+        "incomplete"
+      ]
+    },
+    "stopped_by": {
+      "type": "string"
+    },
+    "tool": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "const": "pageledger"
+        },
+        "user_agent": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "version": {
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "version",
+        "user_agent"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "schema_version",
+    "kind",
+    "tool",
+    "requested_url",
+    "source_kind",
+    "manifest",
+    "canvas_count",
+    "selection",
+    "status",
+    "started_at",
+    "finished_at",
+    "images",
+    "missing"
+  ],
+  "title": "PageLedger IIIF fetch record",
+  "type": "object"
+}

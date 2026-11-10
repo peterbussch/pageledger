@@ -204,6 +204,47 @@
         }
       ]
     },
+    "fetch-iiif": {
+      "exclusive": [],
+      "options": {
+        "--delay": {
+          "choices": null,
+          "required": false,
+          "takes_value": true
+        },
+        "--json": {
+          "choices": null,
+          "required": false,
+          "takes_value": false
+        },
+        "--max-image-bytes": {
+          "choices": null,
+          "required": false,
+          "takes_value": true
+        },
+        "--out": {
+          "choices": null,
+          "required": true,
+          "takes_value": true
+        },
+        "--pages": {
+          "choices": null,
+          "required": false,
+          "takes_value": true
+        },
+        "--resume": {
+          "choices": null,
+          "required": false,
+          "takes_value": false
+        }
+      },
+      "positionals": [
+        {
+          "dest": "url",
+          "nargs": null
+        }
+      ]
+    },
     "init-config": {
       "exclusive": [],
       "options": {
