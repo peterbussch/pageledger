@@ -94,7 +94,8 @@ pixels than the archive holds.
 - Institutional OCR (ALTO) linked from a manifest is not fetched.
 - PageLedger fetches whatever URLs the manifest names, over http or https,
   including addresses on your own network; only fetch manifests you trust.
-  It follows at most three redirects and never one from https to http.
+  It follows at most three redirects and never one from https to http. It
+  sends no cookies and uses your system's proxy settings, as a browser would.
 - Keep the snapshot. The record vouches for the files only while they are
   there and unchanged, and anything made from the images can be checked
   against them only as long as you keep them.

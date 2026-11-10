@@ -265,7 +265,9 @@ def jpeg_frame(data: bytes) -> tuple[int, int, int]:
         if length < 2 or start + length > len(data):
             raise ValueError("JPEG segment length")
         if marker in {0xC0, 0xC1, 0xC2}:
-            components = data[start + 7] if length >= 8 else 0
+            if length < 8:
+                raise ValueError("JPEG frame header too short")
+            components = data[start + 7]
             if data[start + 2] != 8 or components not in {1, 3} or length != 8 + 3 * components:
                 raise ValueError("JPEG must have one or three 8-bit components")
             if frame is not None:
@@ -648,6 +650,8 @@ def _load_record(out: Path) -> tuple[dict[str, Any], bytes]:
         or record.get("kind") != "iiif_fetch"
         or record.get("schema_version") != "0.1"
         or record.get("status") not in {"complete", "incomplete"}
+        or not isinstance(record.get("requested_url"), str)
+        or _positive_int(record.get("canvas_count")) is None
         or not isinstance(record.get("images"), list)
         or not isinstance(record.get("missing"), list)
     ):
@@ -660,9 +664,20 @@ def _load_record(out: Path) -> tuple[dict[str, Any], bytes]:
             or not _IMAGE_FILE.match(entry["file"])
             or not isinstance(entry.get("sha256"), str)
             or not _SHA256.match(entry["sha256"])
+            or any(
+                _positive_int(entry.get(key)) is None
+                for key in ("canvas_index", "width", "height", "native_width", "native_height")
+            )
         ):
             raise IIIFError(f"{path} has a malformed image entry")
         names.append(entry["file"])
+    for entry in record["missing"]:
+        if (
+            not isinstance(entry, dict)
+            or _positive_int(entry.get("canvas_index")) is None
+            or not isinstance(entry.get("error"), (str, type(None)))
+        ):
+            raise IIIFError(f"{path} has a malformed missing entry")
     if len(set(names)) != len(names):
         raise IIIFError(f"{path} lists an image twice")
     return record, data

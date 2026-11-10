@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import hashlib
+import io
 import json
+import urllib.request
+import urllib.response
 from email.message import Message
 from pathlib import Path
 
@@ -823,3 +826,121 @@ def test_cli_reports_below_native_warning(tmp_path: Path, monkeypatch, capsys) -
     assert main(["fetch-iiif", f"{SERVICE}/info.json", "--out", str(tmp_path / "s")]) == 0
     out = capsys.readouterr()
     assert "warning: iiif_below_native: canvas 1: the server allows only 2000x1200" in out.out
+
+
+@pytest.mark.parametrize(
+    "body", [b"\xff\xd8\xff\xc0\x00\x02", b"\xff\xd8\xff\xc0\x00\x05\x08\x00\x01"]
+)
+def test_jpeg_frame_rejects_a_short_frame_header_as_a_value_error(body: bytes) -> None:
+    with pytest.raises(ValueError):
+        iiif.jpeg_frame(body)
+
+
+def test_a_hostile_short_jpeg_is_a_recorded_canvas_error(tmp_path: Path) -> None:
+    server = two_page_v3()
+    server.routes[f"{SERVICE}1/full/max/0/default.jpg"] = ok(b"\xff\xd8\xff\xc0\x00\x02\xff\xd9")
+    summary = iiif.fetch_iiif(
+        MANIFEST_URL, tmp_path / "snap", opener=server, sleep=lambda _s: None, pages="1"
+    )
+    assert "not a usable JPEG" in summary["missing"][0]["error"]
+
+
+@pytest.mark.parametrize(
+    "damage",
+    [
+        lambda record: record.pop("requested_url"),
+        lambda record: record.update(canvas_count="2"),
+        lambda record: record["images"][0].pop("canvas_index"),
+        lambda record: record["images"][0].update(width=None),
+        lambda record: record["missing"].append({"error": None}),
+    ],
+)
+def test_a_damaged_record_is_a_value_error(tmp_path: Path, damage) -> None:
+    out = _complete(tmp_path)
+    record = load(out)
+    damage(record)
+    (out / iiif.RECORD_NAME).write_text(json.dumps(record), encoding="utf-8")
+    with pytest.raises(ValueError, match="fetch record|malformed"):
+        iiif.read_fetch_record(out)
+    with pytest.raises(ValueError, match="fetch record|malformed"):
+        iiif.fetch_iiif(MANIFEST_URL, out, resume=True, opener=two_page_v3(), sleep=lambda _s: None)
+
+
+def test_services_given_as_single_objects(tmp_path: Path) -> None:
+    v3 = manifest_v3([f"{SERVICE}1"])
+    body = v3["items"][0]["items"][0]["items"][0]["body"]
+    body["service"] = {"@id": f"{SERVICE}1", "@type": "ImageService2", "profile": "level1"}
+    server = two_page_v3()
+    server.routes[MANIFEST_URL] = v3
+    server.routes[f"{SERVICE}1/info.json"] = info_v2(f"{SERVICE}1", 300, 400)
+    server.routes[f"{SERVICE}1/full/full/0/default.jpg"] = jpeg(300, 400)
+    iiif.fetch_iiif(MANIFEST_URL, tmp_path / "v3", opener=server, sleep=lambda _s: None)
+    assert load(tmp_path / "v3")["images"][0]["image_api"] == 2
+
+    service = {
+        "@context": "http://iiif.io/api/image/2/context.json",
+        "@id": f"{SERVICE}1/",
+        "profile": "http://iiif.io/api/image/2/level2.json",
+    }
+    server.routes[MANIFEST_URL] = manifest_v2([service])
+    iiif.fetch_iiif(MANIFEST_URL, tmp_path / "v2", opener=server, sleep=lambda _s: None)
+    record = load(tmp_path / "v2")
+    validate(record)
+    assert record["manifest"]["api_version"] == 2
+    assert record["images"][0]["service_id"] == f"{SERVICE}1"
+
+
+def test_resume_an_image_service_snapshot(tmp_path: Path) -> None:
+    server = FakeServer(
+        {
+            f"{SERVICE}/info.json": info_v3(SERVICE, 200, 100),
+            f"{SERVICE}/full/max/0/default.jpg": FakeResponse(404),
+        }
+    )
+    out = tmp_path / "snap"
+    first = iiif.fetch_iiif(SERVICE, out, opener=server, sleep=lambda _s: None)
+    assert first["status"] == "incomplete"
+    server.routes[f"{SERVICE}/full/max/0/default.jpg"] = jpeg(200, 100)
+    summary = iiif.fetch_iiif(SERVICE, out, resume=True, opener=server, sleep=lambda _s: None)
+    assert summary["status"] == "complete"
+    record = load(out)
+    validate(record)
+    assert record["source_kind"] == "image_service" and record["images"][0]["file"] == "0001.jpg"
+
+
+class _CannedHTTP(urllib.request.HTTPHandler):
+    """Stands in for the socket layer so the real default opener runs without a network."""
+
+    answers: dict[str, tuple[int, dict[str, str], bytes]] = {}
+
+    def http_open(self, req):
+        status, headers, body = self.answers[req.full_url]
+        message = Message()
+        for key, value in headers.items():
+            message[key] = value
+        response = urllib.response.addinfourl(io.BytesIO(body), message, req.full_url, status)
+        response.msg = "canned"
+        return response
+
+
+def test_default_opener_returns_redirects_and_errors_as_responses(monkeypatch) -> None:
+    real = urllib.request.build_opener
+    monkeypatch.setattr(
+        iiif.urllib.request,
+        "build_opener",
+        lambda *handlers: real(urllib.request.ProxyHandler({}), *handlers, _CannedHTTP()),
+    )
+    _CannedHTTP.answers = {
+        "http://a.test/base": (303, {"Location": "/base/info.json"}, b""),
+        "http://a.test/busy": (503, {"Retry-After": "5"}, b"busy"),
+        "http://a.test/base/info.json": (200, {"Content-Type": "application/json"}, b"{}"),
+    }
+    opener = iiif.default_opener()
+    redirect = opener(urllib.request.Request("http://a.test/base"), 5)
+    assert redirect.status == 303 and redirect.headers.get("Location") == "/base/info.json"
+    busy = opener(urllib.request.Request("http://a.test/busy"), 5)
+    assert busy.status == 503 and busy.headers.get("Retry-After") == "5"
+
+    client = iiif.Client(opener, sleep=lambda _s: None)
+    fetched = client.get("http://a.test/base", accept="*/*", limit=100, what="x")
+    assert fetched.final_url == "http://a.test/base/info.json" and fetched.body == b"{}"

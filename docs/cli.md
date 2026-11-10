@@ -443,8 +443,8 @@ unless `--resume` is given. `--pages` selects canvases by their position in
 the manifest. `--delay` sets the seconds between requests (default 1).
 `--max-image-bytes` refuses larger images (default 268435456, 256 MiB).
 `--resume` checks the images already fetched against the record and fetches
-only the missing canvases; it needs the same URL and `--pages` as the first
-fetch. Without `--json`, progress goes to stderr and the result, each
+only the missing canvases; it needs the same URL as the first fetch, and
+`--pages`, if given, must repeat the first fetch's selection. Without `--json`, progress goes to stderr and the result, each
 `iiif_below_native` warning and each missing canvas to stdout; `--json`
 prints a summary with `status`, `fetched`, `fetched_now`, `missing`,
 `warnings` and `stopped_by`. See [Fetch page images from a IIIF
