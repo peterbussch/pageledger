@@ -18,30 +18,35 @@ Plan shape (``plan_version`` "0.1")::
                 "heading": str | None, "edge_cut": bool,
                 "small_text": bool | None, "layout_items": int}, ...]}
 
-Coordinates. ``page_box`` is the page as ``pdftoppm`` renders it: its crop box,
-after ``/Rotate`` (for a page rotated by 90 or 270 degrees, width and height are
-swapped relative to the unrotated box). Tile boxes are in PDF points of that
-rendered page with the origin at its top-left corner, ``x`` to the right and
-``y`` downward, resolved to 0.001 pt. To render tile ``t`` at ``dpi`` pixels per
-inch, pass ``-r dpi -x X -y Y -W W -H H`` with ``X = floor(t.x * dpi / 72)``,
-``Y = floor(t.y * dpi / 72)``, ``W = ceil((t.x + t.width) * dpi / 72) - X`` and
-``H`` likewise, so the rendered crop contains the tile.
+Coordinates. ``page_box`` is the page box that the layout's render covered, in
+PDF points, after ``/Rotate`` (for a page rotated by 90 or 270 degrees, width and
+height are swapped relative to the unrotated box). The engines' renders use
+``pdftoppm`` without ``-cropbox``, which renders the media box, so the page box is
+the media box (``pdfinfo -box``), not the crop box that ``pdfinfo`` reports as
+"Page size"; tiles must be rendered with the same choice. Tile boxes are in PDF
+points of that rendered page with the origin at its top-left corner, ``x`` to the
+right and ``y`` downward, resolved to 0.001 pt. To render tile ``t`` at ``dpi``
+pixels per inch, pass ``-r dpi -x X -y Y -W W -H H`` with
+``X = floor(t.x * dpi / 72)``, ``Y = floor(t.y * dpi / 72)``,
+``W = ceil((t.x + t.width) * dpi / 72) - X`` and ``H`` likewise, so the rendered
+crop contains the tile.
 
 Tiles share edges, never overlap and together cover the whole page
 (``validate_plan`` checks this exactly, in integer thousandths of a point), so
 text the layout missed still lands in some tile. They are listed in reading
-order: full-width bands and the column segments between them from top to
-bottom, a segment's columns from left to right, and a column's pieces from top
-to bottom. That order, like the column detection, assumes left-to-right print;
+order: segments (full-width bands and the column regions between them) from
+top to bottom, a segment's columns from left to right, and a column's pieces
+from top to bottom. That order, like the column detection, assumes left-to-right print;
 for right-to-left pages the geometry is still a valid partition but the tile
 order and the indentation hints below read the columns in the wrong order.
 
 Fields of a tile:
 
-- ``column``: the column's number from the left (1-based) among the page's
-  columns, or None for a full-width ``band`` (a heading or running head that
-  crosses a gutter by more than two line heights on each side). The single
-  full-page tile of a plan without layout items has no column and is no band.
+- ``column``: the column's number from the left (1-based) within its segment, or
+  None for a ``band``: a full-width tile on a page that has columns elsewhere,
+  such as a heading or running head. On a page without columns every tile is
+  column 1. The single full-page tile of a plan without layout items has no
+  column and is no band.
 - ``max_dpi``: the page image's native resolution, above which rendering only
   upsamples; None for a page without one.
 - ``layout_items``: how many layout items have their centre in the tile.
@@ -52,21 +57,25 @@ Fields of a tile:
   below ``min_line_pixels``. None when there is no layout to measure.
 - ``continues_block``: the tile's first row is indented, so it continues a block
   whose heading lies above it. ``heading`` is then the text of the nearest
-  unindented row before it in reading order within the same segment (between the
-  same bands), or None if there is none on this page. A row is indented when it
-  starts more than half a line height right of its column's left margin, the
-  leftmost start shared by at least two rows of the column segment. The heading
-  is a record for review; it is not sent to a model.
+  unindented row before it in reading order within the same segment, so a block
+  that runs from the foot of one column to the head of the next keeps its
+  heading, but never across a band; None if there is none on this page. A row
+  is indented when it starts more than half a line height (the column's median)
+  right of the leftmost start of any line in its column segment. The heading is
+  a record for review; it is not sent to a model.
 
 ``line_height`` is the median height of the layout's lines (for a word layout,
 of the lines rebuilt from its words), in points.
 
-How cuts are placed. Gutters are found as in ``rapidocr_adapter`` (the geometry is
-lifted here in integer arithmetic): whitespace wider than a quarter line height in
-the horizontal projection, ignoring lines wider than 0.6 of the text if needed, or
-else clusters of line starts. Lines that cross a gutter by more than two line
-heights on each side make a full-width band, bounded at the midpoints of the
-whitespace above and below. Each column segment is then cut into pieces no taller
+How cuts are placed. The page is first split at horizontal whitespace taller than
+half a line height, and consecutive blocks with the same gutters are joined again,
+as ``rapidocr_adapter._xy_cut`` does, so two columns above a heading and three
+below it each get their own gutters. Within a block, gutters are found as in
+``rapidocr_adapter._gutters`` (the geometry is lifted here in integer arithmetic):
+whitespace wider than a quarter line height in the horizontal projection, ignoring
+lines wider than 0.6 of the text if needed, or else clusters of line starts. Lines
+that cross a gutter by more than two line heights on each side make a full-width
+band, bounded at the midpoints of the whitespace above and below. Each column segment is then cut into pieces no taller
 than ``Hmax = h * max_image_side / min(min_line_pixels, h * max_dpi / 72)``, where
 ``h`` is the segment's median line height: the tallest tile whose lines still
 render at ``min_line_pixels`` (or, for a low-resolution source, the tallest that
@@ -76,8 +85,12 @@ one above an unindented row (a block start), else the widest; failing that the
 widest whitespace in ``[0.5 Hmax, Hmax]``; failing that exactly at ``Hmax``. If
 the plan has more than ``max_tiles`` tiles, ``Hmax`` grows by a factor of 1.25
 until it fits; once every column segment is a single piece, the narrowest pair of
-adjacent columns is merged instead. Word layouts are first joined into lines:
-words in one row closer than half a line height become one line.
+adjacent columns is merged instead, and once no columns are left, the two
+adjacent blocks with the least combined height. Merged columns show as
+``small_text`` when their text no longer renders at ``min_line_pixels``. Word
+layouts are first joined into lines: words in one row no further apart than a
+quarter line height (the narrowest gutter) become one line, so joining never
+bridges a gutter.
 
 All geometry runs on integers (thousandths of a point) and exact fractions, so
 the plan cannot differ between platforms; floats appear only in the output, as
@@ -219,7 +232,7 @@ def _runs(boxes: list[_Box], level: str, gap: int) -> list[_Box]:
         words = sorted(row, key=lambda b: (b.x0, b.index))
         current = [words[0]]
         for word in words[1:]:
-            if 2 * (word.x0 - max(w.x1 for w in current)) <= gap:
+            if 4 * (word.x0 - max(w.x1 for w in current)) <= gap:
                 current.append(word)
             else:
                 runs.append(_join(current))
@@ -239,12 +252,12 @@ def _join(words: list[_Box]) -> _Box:
     )
 
 
-def _gaps(spans: list[tuple[int, int]], gap: int) -> list[int]:
-    """Cut positions inside whitespace wider than a quarter of ``gap``."""
+def _gaps(spans: list[tuple[int, int]], gap: int, parts: int = 4) -> list[int]:
+    """Cut positions inside whitespace wider than ``gap / parts``."""
     cuts: list[int] = []
     end: int | None = None
     for start, stop in sorted(spans):
-        if end is not None and 4 * (start - end) > gap:
+        if end is not None and parts * (start - end) > gap:
             cuts.append((end + start) // 2)
         end = stop if end is None else max(end, stop)
     return cuts
@@ -280,16 +293,49 @@ def _column_starts(lines: list[_Box], gap: int) -> list[int]:
     return cuts
 
 
+@dataclass
+class _Block:
+    top: int
+    bottom: int
+    cuts: list[int]
+
+
+def _cuts(lines: list[_Box], gap: int, width: int) -> list[int]:
+    return sorted({c for c in _gutters(lines, gap) if 0 < c < width})
+
+
+def _same_gutters(above: list[int], here: list[int], gap: int) -> bool:
+    if not above or not here:
+        return not above and not here
+    return all(any(abs(a - b) <= 2 * gap for b in above) for a in here)
+
+
+def _blocks(runs: list[_Box], gap: int, width: int, height: int) -> list[_Block]:
+    edges = [y for y in _gaps([(r.y0, r.y1) for r in runs], gap, parts=2) if 0 < y < height]
+    blocks: list[_Block] = []
+    for top, bottom in zip([0, *edges], [*edges, height], strict=True):
+        lines = [r for r in runs if _contains((0, top, width, bottom), r, width, height)]
+        cuts = _cuts(lines, gap, width)
+        if blocks and _same_gutters(blocks[-1].cuts, cuts, gap):
+            block = blocks[-1]
+            block.bottom = bottom
+            merged = [r for r in runs if _contains((0, block.top, width, bottom), r, width, height)]
+            block.cuts = _cuts(merged, gap, width)
+        else:
+            blocks.append(_Block(top, bottom, cuts))
+    return blocks
+
+
 def _segments(
-    runs: list[_Box], cuts: list[int], gap: int, height: int
+    runs: list[_Box], cuts: list[int], gap: int, lo: int, hi: int
 ) -> list[tuple[int, int, bool]]:
-    """Horizontal segments of the page, top to bottom, as (top, bottom, is_band)."""
+    """Horizontal segments of a block, top to bottom, as (top, bottom, is_band)."""
     wide = sorted(
         (r for r in runs if any(r.x0 < c - 2 * gap and r.x1 > c + 2 * gap for c in cuts)),
         key=lambda r: (r.y0, r.y1, r.x0, r.index),
     )
     if not wide:
-        return [(0, height, False)]
+        return [(lo, hi, False)]
     wide_ids = {r.index for r in wide}
     narrow = [r for r in runs if r.index not in wide_ids]
     groups = [[wide[0]]]
@@ -300,7 +346,7 @@ def _segments(
         else:
             groups[-1].append(run)
     segments = []
-    cursor = 0
+    cursor = lo
     for group in groups:
         b0, b1 = min(r.y0 for r in group), max(r.y1 for r in group)
         members = [r for r in narrow if 2 * b0 <= r.cy2 <= 2 * b1]
@@ -308,8 +354,8 @@ def _segments(
         e1 = max([b1, *(r.y1 for r in members)])
         above = [r.y1 for r in narrow if r.cy2 < 2 * e0]
         below = [r.y0 for r in narrow if r.cy2 > 2 * e1]
-        top = 0 if not above else (max(above) + e0) // 2 if max(above) <= e0 else e0
-        end = height if not below else (e1 + min(below)) // 2 if min(below) >= e1 else e1
+        top = lo if not above else (max(above) + e0) // 2 if max(above) <= e0 else e0
+        end = hi if not below else (e1 + min(below)) // 2 if min(below) >= e1 else e1
         top = max(top, cursor)
         end = max(end, top)
         if top > cursor:
@@ -317,8 +363,8 @@ def _segments(
         if end > top:
             segments.append((top, end, True))
         cursor = end
-    if cursor < height:
-        segments.append((cursor, height, False))
+    if cursor < hi:
+        segments.append((cursor, hi, False))
     return segments
 
 
@@ -336,14 +382,6 @@ def _whitespace(spans: list[tuple[int, int]], lo: int, hi: int) -> list[tuple[in
     if cursor < hi:
         out.append((cursor, hi))
     return [(a, b) for a, b in out if b > a]
-
-
-def _margin(rows: list[list[_Box]], gap: int) -> int:
-    starts = sorted(min(box.x0 for box in row) for row in rows)
-    for here, there in zip(starts, starts[1:], strict=False):
-        if 2 * (there - here) <= gap:
-            return here
-    return starts[0] if starts else 0
 
 
 def _indented(row: Sequence[_Box], margin: int, gap: int) -> bool:
@@ -398,7 +436,7 @@ def _limit(reference: int, factor: Fraction, settings: Mapping[str, Any], dpi: A
 
 def _build(
     runs: list[_Box],
-    cuts: list[int],
+    blocks: list[_Block],
     gap: int,
     width: int,
     height: int,
@@ -408,30 +446,44 @@ def _build(
 ) -> tuple[list[_Tile], bool]:
     tiles: list[_Tile] = []
     split = False
-    xs = [0, *cuts, width]
-    for number, (top, bottom, band) in enumerate(_segments(runs, cuts, gap, height)):
+    columns_elsewhere = any(block.cuts for block in blocks)
+    segments = []
+    for block in blocks:
+        area = (0, block.top, width, block.bottom)
+        lines = [r for r in runs if _contains(area, r, width, height)]
+        for segment in _segments(lines, block.cuts, gap, block.top, block.bottom):
+            segments.append((segment, block.cuts))
+    for number, ((top, bottom, band), cuts) in enumerate(segments):
         inside = [r for r in runs if _contains((0, top, width, bottom), r, width, height)]
-        if band:
-            reference = _median([r.height for r in inside]) if inside else gap
-            tiles.append(_Tile((0, top, width, bottom), None, number, reference))
-            continue
+        xs = [0, width] if band else [0, *cuts, width]
         for column in range(len(xs) - 1):
             rect = (xs[column], top, xs[column + 1], bottom)
             lines = [r for r in inside if _contains(rect, r, width, height)]
             reference = _median([r.height for r in lines]) if lines else gap
-            margin = _margin(_row_groups(lines, reference), reference) if lines else rect[0]
+            margin = min((r.x0 for r in lines), default=rect[0])
             limit = _limit(reference, factor, settings, dpi)
             pieces = _pieces(lines, top, bottom, limit, reference, margin)
             split = split or len(pieces) > 1
+            label = None if len(xs) == 2 and columns_elsewhere else column + 1
             for a, b in pieces:
-                tiles.append(_Tile((rect[0], a, rect[2], b), column + 1, number, reference, margin))
+                tiles.append(_Tile((rect[0], a, rect[2], b), label, number, reference, margin))
     return tiles, split
 
 
-def _drop_cut(cuts: list[int], width: int) -> list[int]:
-    xs = [0, *cuts, width]
-    narrowest = min(range(len(cuts)), key=lambda i: (xs[i + 2] - xs[i], i))
-    return cuts[:narrowest] + cuts[narrowest + 1 :]
+def _fewer(blocks: list[_Block], width: int) -> list[_Block]:
+    """The blocks with the narrowest pair of adjacent columns merged or, when no
+    block has columns left, the two adjacent blocks of least combined height."""
+    choices: list[tuple[int, int, int]] = []
+    for b, block in enumerate(blocks):
+        xs = [0, *block.cuts, width]
+        choices.extend((xs[i + 2] - xs[i], b, i) for i in range(len(block.cuts)))
+    if choices:
+        _, b, i = min(choices)
+        block = blocks[b]
+        fewer = _Block(block.top, block.bottom, block.cuts[:i] + block.cuts[i + 1 :])
+        return [*blocks[:b], fewer, *blocks[b + 1 :]]
+    i = min(range(len(blocks) - 1), key=lambda i: (blocks[i + 1].bottom - blocks[i].top, i))
+    return [*blocks[:i], _Block(blocks[i].top, blocks[i + 1].bottom, []), *blocks[i + 2 :]]
 
 
 def _crossed(rect: Rect, boxes: Sequence[_Box], width: int, height: int, gap: int) -> bool:
@@ -524,16 +576,16 @@ def plan_tiles(
     runs = _runs(boxes, layout["level"] if layout else "line", _median([b.height for b in boxes]))
     gap = _median([r.height for r in runs])
     plan["line_height"] = gap / 1000
-    cuts = sorted({c for c in _gutters(runs, gap) if 0 < c < width})
+    blocks = _blocks(runs, gap, width, height)
     factor = Fraction(1)
     while True:
-        tiles, split = _build(runs, cuts, gap, width, height, factor, settings, dpi)
+        tiles, split = _build(runs, blocks, gap, width, height, factor, settings, dpi)
         if len(tiles) <= max_tiles:
             break
         if split:
             factor *= Fraction(5, 4)
         else:
-            cuts = _drop_cut(cuts, width)
+            blocks = _fewer(blocks, width)
 
     last_heading: dict[int, str | None] = {}
     for number, tile in enumerate(tiles, 1):

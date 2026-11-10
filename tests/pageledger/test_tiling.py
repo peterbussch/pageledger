@@ -48,6 +48,26 @@ def rect(tile):
     return tile["x"], tile["y"], tile["x"] + tile["width"], tile["y"] + tile["height"]
 
 
+def assert_clean_edges(result, items):
+    """Independent of the planner: no item crosses an inside edge of a tile not
+    marked edge_cut by more than a quarter line height (plus grid rounding)."""
+    width, height = result["page_box"]["width"], result["page_box"]["height"]
+    tolerance = (result["line_height"] or 0) / 4 + 0.01
+    for tile in result["tiles"]:
+        if tile["edge_cut"]:
+            continue
+        x0, y0, x1, y1 = rect(tile)
+        for ix0, iy0, ix1, iy1, text in items:
+            if min(iy1, y1) - max(iy0, y0) > tolerance:
+                for edge in (x0, x1):
+                    if 0 < edge < width:
+                        assert min(edge - ix0, ix1 - edge) <= tolerance, (tile, text)
+            if min(ix1, x1) - max(ix0, x0) > tolerance:
+                for edge in (y0, y1):
+                    if 0 < edge < height:
+                        assert min(edge - iy0, iy1 - edge) <= tolerance, (tile, text)
+
+
 def directory(columns=6, lines=140, width=648.0, height=864.0, seed=7, heading=True):
     """A telephone-directory page: a heading across the page, then dense columns."""
     rng = random.Random(seed)
@@ -96,8 +116,14 @@ def test_six_column_directory_page_cuts_in_gutters():
                 ends = [i[2] for i in items[1:] if i[0] < column * 108]
                 starts = [i[0] for i in items[1:] if i[0] > column * 108]
                 assert max(ends) < edge < min(starts)
+        y0, y1 = tile["y"], tile["y"] + tile["height"]
+        mine = [i for i in items[1:] if tile["x"] <= i[0] < tile["x"] + tile["width"]]
+        for edge in (y0, y1):
+            if 41 < edge < height:
+                assert not [i for i in mine if i[1] < edge < i[3]]
     assert sum(tile["layout_items"] for tile in tiles) == len(items)
     assert check_edges(result, [page(items, width, height)]) == []
+    assert_clean_edges(result, items)
 
 
 def test_six_column_page_from_a_low_resolution_source_is_small_text():
@@ -294,13 +320,13 @@ def random_layout(rng):
         h = rng.uniform(1, 20)
         items.append((x0, y0, min(width, x0 + w), min(height, y0 + h), f"w{len(items)}"))
     level = rng.choice(["line", "word"])
-    return page(items, width, height, level=level), width, height
+    return page(items, width, height, level=level), width, height, items
 
 
 def test_partition_property_over_random_layouts():
     rng = random.Random(20261110)
     for _ in range(250):
-        layout, width, height = random_layout(rng)
+        layout, width, height, items = random_layout(rng)
         options = {
             "min_line_pixels": rng.choice([8, 32, 120]),
             "max_tiles": rng.choice([1, 3, 24, 99]),
@@ -317,6 +343,79 @@ def test_partition_property_over_random_layouts():
         assert len(text.split()) == len(layout["items"])
         flagged = [tile["tile_id"] for tile in tiles if tile["edge_cut"]]
         assert check_edges(result, [layout]) == flagged
+        assert_clean_edges(result, items)
+
+
+def test_columns_are_found_per_block():
+    items = []
+    for column in range(2):
+        for line in range(30):
+            x = column * 300
+            items.append((x + 10, 40 + line * 10, x + 280, 48 + line * 10, f"a{column}"))
+    items.append((10, 350, 590, 362, "SECTION HEADING ACROSS THE PAGE"))
+    for column in range(3):
+        for line in range(30):
+            x = column * 200
+            items.append((x + 10, 380 + line * 10, x + 180, 388 + line * 10, f"b{column}"))
+    result = plan(page(items, 600, 800), 600, 800)
+    validate_plan(result)
+    assert [(tile["column"], tile["band"]) for tile in result["tiles"]] == [
+        (1, False),
+        (2, False),
+        (None, True),
+        (1, False),
+        (2, False),
+        (3, False),
+    ]
+    for tile in result["tiles"]:
+        x0, y0, x1, y1 = rect(tile)
+        texts = {t for a, b, c, d, t in items if x0 <= (a + c) / 2 < x1 and y0 <= (b + d) / 2 < y1}
+        assert len(texts) == 1
+    assert_clean_edges(result, items)
+
+
+def test_word_joining_never_bridges_a_narrow_gutter():
+    words = []
+    for column in range(2):
+        for line in range(60):
+            x = 5 + column * 100.2
+            for n in range(3):
+                left = x + n * 32.5
+                words.append((left, 40 + line * 10, left + 31, 48 + line * 10, f"w{column}"))
+    # Word spaces 1.5 pt, gutter 3.2 pt: 0.4 of the 8-point line height.
+    result = plan(page(words, 210, 700, level="word"), 210, 700)
+    assert {tile["column"] for tile in result["tiles"]} == {1, 2}
+    assert_clean_edges(result, words)
+
+
+def test_headings_carry_across_columns_but_not_across_bands():
+    items = [(40, 20, 560, 32, "RUNNING HEAD ACROSS THE PAGE")]
+
+    def column(x, y, rows):
+        for text in rows:
+            indent = 12 if text.startswith(" ") else 0
+            items.append((x + indent, y, x + 240, y + 8, text.strip()))
+            y += 10
+        return y
+
+    entries = [f" entry {n}" for n in range(20)]
+    column(30, 50, [*entries, "Block A—", *entries])
+    column(320, 50, [*entries, "Block B—", *entries])
+    items.append((40, 470, 560, 482, "SECTION BREAK ACROSS THE PAGE"))
+    column(30, 500, [*entries[:5], "Block Z—", *entries[:10]])
+    column(320, 500, [*entries[:10], "Block Y—", *entries[:4]])
+    result = plan(page(items, 600, 800), 600, 800)
+    validate_plan(result)
+    found = [(t["column"], t["continues_block"], t["heading"]) for t in result["tiles"]]
+    # The page opens mid-block, and "Block B—" above the break heads nothing below it.
+    assert found == [
+        (None, False, None),
+        (1, True, None),
+        (2, True, "Block A—"),
+        (None, False, None),
+        (1, True, None),
+        (2, True, "Block Z—"),
+    ]
 
 
 def test_project_witness_regroups_in_tile_order():
