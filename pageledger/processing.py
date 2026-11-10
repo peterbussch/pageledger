@@ -1005,7 +1005,7 @@ def _retry_local(job: dict, root: Path, stage: dict, adapter_path: Path | None) 
     if (
         stage["stage"] not in {"local_text", "local_ocr", "second_ocr"}
         or job["policy"][stage["stage"]]["adapter"]
-        not in {"text", "pdf_text", "pdf_ocr", "rapidocr", "indra"}
+        not in {"text", "pdf_text", "pdf_ocr", "rapidocr", "indra", "alto"}
         or "-retry-" in stage["stage_id"]
         or job["package_sha256"] != _package_code_sha256()
     ):

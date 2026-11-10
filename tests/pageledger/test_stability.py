@@ -591,7 +591,7 @@ def test_snapshotted_warning_codes_are_still_in_the_package() -> None:
     assert not missing, f"warning codes {missing} no longer appear in pageledger/: {BREAKING}"
 
 
-BUILTIN_ADAPTERS = ("text", "pdf_text", "pdf", "pdf_ocr", "vision", "rapidocr", "indra")
+BUILTIN_ADAPTERS = ("text", "pdf_text", "pdf", "pdf_ocr", "vision", "rapidocr", "indra", "alto")
 
 
 @pytest.mark.parametrize("name", BUILTIN_ADAPTERS)
