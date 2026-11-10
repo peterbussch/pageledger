@@ -53,4 +53,4 @@ processing:
   # and records every place they differ; it needs an image or local_image stage.
   # https://github.com/peterbussch/pageledger/blob/main/docs/processing-spec.md#contest-a-models-reading
   # contest:
-  #   rules: ru-print-0.2
+  #   rules: ru-print-0.2   # Russian print; latin-print-0.1 for Latin-script print
