@@ -1018,6 +1018,41 @@
       ],
       "type": "object"
     },
+    "stage_accounting": {
+      "description": "Configured stage attempt counts. A zero-page stage includes the recorded reason it did not run. Absent in older reports.",
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "pages_read": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "stage": {
+            "enum": [
+              "local_text",
+              "local_ocr",
+              "second_ocr",
+              "local_image",
+              "image",
+              "second_opinion"
+            ]
+          }
+        },
+        "required": [
+          "stage",
+          "pages_read",
+          "reason"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
     "status": {
       "enum": [
         "processing",

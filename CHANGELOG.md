@@ -7,32 +7,6 @@ and, from 1.0, [stability](docs/stability.md).
 
 ### Added
 
-- [`docs/stability.md`](docs/stability.md): what stays stable from 1.0 (commands and options, exit
-  codes, configuration keys, the adapter protocol, artifact schemas, warning codes and holds, hold
-  policies, contest rule sets), what does not (Markdown wording, logs, `--json` output keys, grades
-  across versions, examples), the deprecation rule, and which older runs and jobs verify.
-- `tests/pageledger/test_stability.py` holds the package to snapshots of the 0.8.0 contract in
-  `tests/fixtures/stability/`: removing or narrowing anything fails, and an addition needs a deliberate
-  snapshot update. It also holds a run and a job written by each of 0.5.2, 0.6.0 and 0.7.0 from PyPI:
-  the runs and the jobs' stage runs verify after a move, all of them validate against the current
-  schemas, and a moved job is shown not to verify (below).
-
-### Changed
-
-- `docs/adapter-protocol.md`: a new required adapter attribute or a change to the `extract()` call
-  now waits for a major release, not a minor one.
-
-### Known limits
-
-- A document job verifies only in the directory where it was written: `job.json` records its absolute
-  path, so `verify-job` on a moved or copied job fails with "Document job identity changed". This is
-  true of jobs from every release so far. Runs verify after a move, if their empty `normalized/`
-  directory moves with them.
-
-## 0.9.0 - unreleased
-
-### Added
-
 - `pageledger process SOURCE --out DIR` runs without `--config`. The job uses exactly the configuration
   `init-config --processing` writes for the same options and records it as it would record that file, so
   it verifies, resumes and rebuilds like any other job. No file is read from the working directory and
@@ -49,11 +23,29 @@ and, from 1.0, [stability](docs/stability.md).
 - RapidOCR warns `multi_column_rows` when rows mode joins at least four detected lines in most visual rows; use `reading_order: columns` for columnar pages. The warning is recorded and graded but does not hold document-job pages.
 - RapidOCR accepts recognizer dictionaries from `inference.yml` (`PostProcess.character_dict`) when `keys.txt` is absent, and records hashes for both model weights and the dictionary used.
 - Document reports state why a configured stage read no pages. `process` also prints a start notice when the configured ladder's maximum possible attempts exceed `max_attempt_pages`.
+- [`docs/stability.md`](docs/stability.md): what stays stable from 1.0 (commands and options, exit
+  codes, configuration keys, the adapter protocol, artifact schemas, warning codes and holds, hold
+  policies, contest rule sets), what does not (Markdown wording, logs, `--json` output keys, grades
+  across versions, examples), the deprecation rule, and which older runs and jobs verify.
+- `tests/pageledger/test_stability.py` holds the package to snapshots of the 0.8.0 contract in
+  `tests/fixtures/stability/`: removing or narrowing anything fails, and an addition needs a deliberate
+  snapshot update. It also holds a run and a job written by each of 0.5.2, 0.6.0 and 0.7.0 from PyPI:
+  the runs and the jobs' stage runs verify after a move, all of them validate against the current
+  schemas, and a moved job is shown not to verify (below).
 
 ### Changed
 
 - The README's "Process a document" and the document-job tutorial start with the one-command job and
   introduce the config file second, as the way to change it.
+- `docs/adapter-protocol.md`: a new required adapter attribute or a change to the `extract()` call
+  now waits for a major release, not a minor one.
+
+### Known limits
+
+- A document job verifies only in the directory where it was written: `job.json` records its absolute
+  path, so `verify-job` on a moved or copied job fails with "Document job identity changed". This is
+  true of jobs from every release so far. Runs verify after a move, if their empty `normalized/`
+  directory moves with them.
 
 ## 0.8.0 - 2026-10-19
 

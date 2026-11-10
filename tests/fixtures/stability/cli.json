@@ -211,10 +211,35 @@
           "required": false,
           "takes_value": true
         },
+        "--engine": {
+          "choices": [
+            "indra",
+            "none",
+            "pdf_ocr",
+            "rapidocr"
+          ],
+          "required": false,
+          "takes_value": true
+        },
+        "--lang": {
+          "choices": null,
+          "required": false,
+          "takes_value": true
+        },
+        "--model-dir": {
+          "choices": null,
+          "required": false,
+          "takes_value": true
+        },
         "--out": {
           "choices": null,
           "required": false,
           "takes_value": true
+        },
+        "--processing": {
+          "choices": null,
+          "required": false,
+          "takes_value": false
         }
       },
       "positionals": []
@@ -274,13 +299,33 @@
         },
         "--config": {
           "choices": null,
-          "required": true,
+          "required": false,
+          "takes_value": true
+        },
+        "--engine": {
+          "choices": [
+            "indra",
+            "none",
+            "pdf_ocr",
+            "rapidocr"
+          ],
+          "required": false,
           "takes_value": true
         },
         "--json": {
           "choices": null,
           "required": false,
           "takes_value": false
+        },
+        "--lang": {
+          "choices": null,
+          "required": false,
+          "takes_value": true
+        },
+        "--model-dir": {
+          "choices": null,
+          "required": false,
+          "takes_value": true
         },
         "--out": {
           "choices": null,

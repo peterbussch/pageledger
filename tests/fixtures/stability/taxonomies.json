@@ -326,6 +326,7 @@
       "missing_required_columns",
       "mixed_script_tokens",
       "model_commentary",
+      "multi_column_rows",
       "numeric_column_conflict",
       "numeric_disagreement",
       "ocr_text_layer",
