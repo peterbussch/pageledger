@@ -112,7 +112,12 @@ pageledger review-job jobs/book --review reviewed-pages.json
 ```
 
 `inspect-job` displays `report.md`, or `document.json` with `--json`.
-`verify-job` checks the source, retained attempts, selections, and report.
+`verify-job` checks the source, retained attempts, selections, and report, in
+whatever directory the job is now. It reports warnings: `job_relocated` when the
+job is not in the directory it was written in, `job_changed_elsewhere` for a
+review or adjudication recorded on such a copy, and `source_missing` or
+`source_relocated` as `verify-run` does; other bytes at the source's recorded
+path fail. See [deposit a job](share-and-cite.md#deposit-a-job).
 `review-sheet` writes a CSV of the job's pages to fill in with a spreadsheet.
 `review-job` records human decisions from that sheet, or from a JSON file
 following the [review receipt contract](document-report-spec.md#human-review-receipt),
@@ -240,7 +245,9 @@ document job; see [one budget for the job](processing-spec.md#one-budget-for-the
 If a source file has moved, list its new path in a
 [source index](checkpoint-spec.md#moved-source-files) (`PAGELEDGER_SOURCE_INDEX`
 or `~/.config/pageledger/source-index.tsv`); resume finds it by SHA-256 and
-keeps the recorded path in its records.
+keeps the recorded path in its records. A document job resumes only in the
+directory it was written in; on a moved or copied job, `resume` stops and
+names that directory.
 
 ## classify
 
@@ -373,7 +380,9 @@ pageledger verify-run runs/run-001/ --json
 Checks that the files in a run directory agree with one another: manifest
 declarations, identifiers, hashes, page counts, raw and normalized references,
 quality totals, audit/rerun items, alignment-schema snapshots, and cost totals.
-Missing or changed external source files are warnings, and a source found
+A missing `raw/` or `normalized/` directory is read as an empty one, since
+Git and some archive tools drop empty directories; a file the run records in
+it is still required. Missing or changed external source files are warnings, and a source found
 through the [source index](checkpoint-spec.md#moved-source-files) is reported
 as `source_relocated`; malformed or inconsistent ledger artifacts are errors
 and produce exit code 1. Verification

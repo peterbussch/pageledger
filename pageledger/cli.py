@@ -1084,6 +1084,8 @@ def _cmd_job(args: argparse.Namespace) -> int:
             print(result["next_action"])
         for warning in result.get("config_warnings", []):
             print(f"Config warning: {warning}")
+        for issue in result.get("warnings", []):
+            print(f"Warning: [{issue['code']}] {issue['message']}")
         if result.get("error"):
             print(result["error"], file=sys.stderr)
         if args.command == "process" and result.get("status") == "completed":

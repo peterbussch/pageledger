@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import shutil
 from pathlib import Path
 
 import pytest
@@ -668,8 +669,6 @@ def test_verify_run_does_not_follow_manifest_symlink(tmp_path, monkeypatch):
     [
         "config-snapshot.yml",
         "route-map.yml",
-        "raw",
-        "normalized",
         "audit.json",
         "audit.md",
         "provenance.jsonl",
@@ -683,18 +682,31 @@ def test_verify_run_reports_missing_manifest_declared_artifacts(tmp_path, artifa
     from pageledger.verify import verify_run
 
     out_dir, _ = _run(tmp_path)
-    path = out_dir / artifact
-    if path.is_dir():
-        for child in path.iterdir():
-            child.unlink()
-        path.rmdir()
-    else:
-        path.unlink()
+    (out_dir / artifact).unlink()
 
     report = verify_run(out_dir)
 
     assert report["status"] == "fail"
     assert "artifact_missing" in _codes(report, "errors")
+
+
+def test_verify_run_reads_an_absent_empty_directory_as_empty(tmp_path):
+    """Git and some archive tools drop empty directories; files a run records still count."""
+    from pageledger.verify import verify_run
+
+    out_dir, _ = _run(tmp_path)
+    assert not any((out_dir / "normalized").iterdir())
+    (out_dir / "normalized").rmdir()
+    assert verify_run(out_dir)["status"] == "pass"
+
+    shutil.rmtree(out_dir / "raw")
+    report = verify_run(out_dir)
+    assert report["status"] == "fail"
+    assert "raw_artifact_path_invalid" in _codes(report, "errors")
+
+    # A file where a directory belongs is still an error.
+    (out_dir / "normalized").write_text("not a directory")
+    assert "artifact_missing" in _codes(verify_run(out_dir), "errors")
 
 
 def test_verify_run_checks_config_hash_and_internal_identity(tmp_path):

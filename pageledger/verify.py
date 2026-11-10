@@ -172,6 +172,10 @@ def verify_run(
             continue
         paths[key] = path
         expects_directory = key in {"raw_dir", "normalized_dir"}
+        if expects_directory and not path.exists() and not path.is_symlink():
+            # Read as empty: Git and some archive tools drop empty directories, and
+            # every file the run records inside one is still checked below.
+            continue
         exists = path.is_dir() if expects_directory else path.is_file()
         if not exists:
             _add(
@@ -1747,9 +1751,9 @@ def _check_normalized(
     errors: list[dict[str, Any]],
     counts: dict[str, int],
 ) -> None:
-    if normalized_dir is None or not normalized_dir.is_dir():
+    if normalized_dir is None:
         return
-    for declared_path in sorted(normalized_dir.rglob("*")):
+    for declared_path in sorted(normalized_dir.rglob("*") if normalized_dir.is_dir() else ()):
         if declared_path.is_symlink():
             _add(
                 errors,

@@ -48,8 +48,8 @@ and, from 1.0, [stability](docs/stability.md).
 - `tests/pageledger/test_stability.py` holds the package to snapshots of the 0.8.0 contract in
   `tests/fixtures/stability/`: removing or narrowing anything fails, and an addition needs a deliberate
   snapshot update. It also holds a run and a job written by each of 0.5.2, 0.6.0 and 0.7.0 from PyPI:
-  the runs and the jobs' stage runs verify after a move, all of them validate against the current
-  schemas, and a moved job is shown not to verify (below).
+  the runs and the jobs verify after a move, a tampered copy of each job does not, and all of them
+  validate against the current schemas.
 - A word list as the lexicon: `processing.lexicon: {provider: wordlist, path: FILE}` names a plain UTF-8 file
   with one word per line, so the `rough` trigger and contest's glyph rule work in any language. Words match
   after NFC normalization and case folding. The job records the list's resolved path, SHA-256, size, word
@@ -67,6 +67,17 @@ and, from 1.0, [stability](docs/stability.md).
   the named terms, so review of a large job can start with the entries that matter. Nothing in the job
   changes: the other spans stay open and counted, and the command reports how many it left out. Packets
   written this way carry an optional `terms` field.
+- A document job verifies wherever it is, so a deposited copy can be checked on another machine.
+  `root` in `job.json` is now a record of where the job was written, not part of its identity:
+  `verify-job` on a moved or copied job checks every hash, attempt, selection, receipt and the report as
+  before, and reports warning `job_relocated` with the recorded and the current directory. This holds
+  for jobs written by every earlier release. `inspect-job`, `export`, `review-sheet` and
+  `adjudicate --packets` work on a moved job with no extra step.
+- `review-job` and `adjudicate --decisions` work on a moved or copied job, so a colleague can review a
+  deposited copy. Each such change is recorded in a new optional `relocations` list in `job.json` (the
+  directory, the command and the time), repeated in `document.json` and as a line in `report.md`, and
+  reported by `verify-job` as `job_changed_elsewhere`. Jobs without the field read and render exactly as
+  before.
 
 ### Changed
 
@@ -74,13 +85,17 @@ and, from 1.0, [stability](docs/stability.md).
   introduce the config file second, as the way to change it.
 - `docs/adapter-protocol.md`: a new required adapter attribute or a change to the `extract()` call
   now waits for a major release, not a minor one.
-
-### Known limits
-
-- A document job verifies only in the directory where it was written: `job.json` records its absolute
-  path, so `verify-job` on a moved or copied job fails with "Document job identity changed". This is
-  true of jobs from every release so far. Runs verify after a move, if their empty `normalized/`
-  directory moves with them.
+- `verify-job` no longer needs the source document. A missing source is reported as warning
+  `source_missing`, and one found through the source index as `source_relocated`, as `verify-run`
+  does; other bytes at the recorded path still fail verification. `resume`, `review-job` and
+  `adjudicate --decisions` still need the source, at its path or through the index. `verify-job`'s
+  result has a `warnings` list.
+- `verify-run` and `verify-job` read a missing `raw/` or `partials/` directory as an empty one, and a
+  missing `normalized/` too when the run has no schema, since Git and some archive tools drop empty
+  directories. A file the run or job records inside one is still required.
+- `resume` refuses a job that is not in the directory where it was written, and says to move it back
+  there. Its stage runs are bound to that directory, and a resumable copy would let two copies pay for
+  the same pages.
 
 ## 0.8.0 - 2026-10-19
 

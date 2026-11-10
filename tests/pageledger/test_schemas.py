@@ -14,6 +14,7 @@ Schema does not natively apply to YAML.
 from __future__ import annotations
 
 import json
+import shutil
 import sys
 from copy import deepcopy
 from pathlib import Path
@@ -924,6 +925,14 @@ def test_normalized_pages_validate_and_grades_flow_through(tmp_path: Path) -> No
     # raw artifact keeps the structured extension and its original text
     raw = out_dir / "raw" / f"{good['page_id']}.markdown_table"
     assert raw.read_text(encoding="utf-8") == _GOOD_TABLE
+
+    # An absent normalized/ reads as empty, so losing one that held records still fails.
+    shutil.rmtree(out_dir / "normalized")
+    from pageledger.verify import verify_run
+
+    report = verify_run(out_dir)
+    assert report["status"] == "fail"
+    assert "normalized_record_count_mismatch" in {issue["code"] for issue in report["errors"]}
 
 
 def test_dict_content_raw_artifact_is_valid_json(tmp_path: Path) -> None:

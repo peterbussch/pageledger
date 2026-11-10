@@ -109,11 +109,24 @@ def _safe(root: Path, relative: str) -> Path:
     return full
 
 
+# Commands that may change a job outside the directory it was written in.
+RELOCATED_WRITERS = ("review-job", "adjudicate")
+
+
 def _load(root: Path) -> dict:
+    """Read and check a job wherever it is now; ``root`` in job.json is where it was written."""
     job = read_record(root / "job.json")
-    if job.get("schema_version") != "0.1" or job.get("root") != str(root):
+    if job.get("schema_version") != "0.1" or not isinstance(job.get("root"), str):
         raise ValueError("Document job identity changed")
-    _check_source(job)
+    relocations = job.get("relocations", [])
+    if not isinstance(relocations, list) or any(
+        not isinstance(item, dict)
+        or set(item) != {"root", "command", "at"}
+        or not all(isinstance(value, str) for value in item.values())
+        or item["command"] not in RELOCATED_WRITERS
+        for item in relocations
+    ):
+        raise ValueError("Document job relocations are invalid")
     if job.get("config_sha256") != digest(job.get("config")):
         raise ValueError("Document job configuration changed")
     config = job["config"]
@@ -167,6 +180,88 @@ def _load(root: Path) -> dict:
             raise ValueError("Document job attempt configuration changed")
         _safe(root, stage["run_path"])
     return job
+
+
+def _relocated(job: dict, root: Path) -> bool:
+    return job["root"] != str(root)
+
+
+def _note_relocation(job: dict, root: Path, command: str) -> None:
+    """Record a change made to a job somewhere other than where it was written."""
+    if _relocated(job, root):
+        job.setdefault("relocations", []).append(
+            {"root": str(root), "command": command, "at": runner._utc_now()}
+        )
+
+
+def _refuse_relocated_resume(job: dict, root: Path) -> None:
+    # Each stage run is bound to the directory the job was written in, and a planned image
+    # stage writes its evidence there; a second copy resuming would also pay for its pages.
+    if _relocated(job, root):
+        raise ValueError(
+            f"This job was written in {job['root']} and is now in {root}. It resumes only "
+            f"where it was written: move it back to {job['root']} to resume it. verify-job, "
+            "review-job, adjudicate and export work where it is now."
+        )
+
+
+def _location_warnings(job: dict, root: Path) -> list[dict]:
+    """What verification reports about where the job and its source are now."""
+    warnings = []
+    if _relocated(job, root):
+        warnings.append(
+            {
+                "code": "job_relocated",
+                "message": f"Job was written in {job['root']} and is now in {root}",
+                "recorded_root": job["root"],
+                "root": str(root),
+            }
+        )
+    for item in job.get("relocations", []):
+        warnings.append(
+            {
+                "code": "job_changed_elsewhere",
+                "message": (
+                    f"{item['command']} changed this job in {item['root']} "
+                    f"on {item['at']}, not where it was written"
+                ),
+                **item,
+            }
+        )
+    recorded = job["source"]["path"]
+    try:
+        located = resolve_source(recorded, job["source"]["sha256"])
+    except SourceUnavailable as exc:
+        if Path(recorded).expanduser().exists():
+            raise ValueError("Document job source changed or is missing") from exc
+        warnings.append(
+            {
+                "code": "source_missing",
+                "message": f"Source file is missing: {recorded}",
+                "source": recorded,
+            }
+        )
+    else:
+        if located != Path(recorded).expanduser():
+            warnings.append(
+                {
+                    "code": "source_relocated",
+                    "message": f"Source found through the source index: {recorded} -> {located}",
+                    "source": recorded,
+                    "located": str(located),
+                }
+            )
+    return warnings
+
+
+def _stage_checkpoint(job: dict, root: Path, stage: dict) -> Checkpoint:
+    """A stage run's checkpoint, bound to where the job recorded it, wherever the job is now."""
+    return Checkpoint(
+        _safe(root, stage["run_path"]),
+        existing=True,
+        verify_sources=False,
+        recorded_root=Path(job["root"]) / stage["run_path"],
+    )
 
 
 def _review_decisions(job: dict, review: dict) -> None:
@@ -537,7 +632,8 @@ def _refresh(job: dict, root: Path, *, materialize: bool = True) -> None:
     """Rebuild the job index from validated durable child evidence before scheduling."""
     from .processing_policy import assess_page
 
-    _check_source(job)
+    if materialize:
+        _check_source(job)
     pages = {p["page_id"]: p for p in job["pages"]}
     contested_before = {}
     for page in pages.values():
@@ -564,9 +660,9 @@ def _refresh(job: dict, root: Path, *, materialize: bool = True) -> None:
                     next_action="Inspect the retained incomplete initialization before starting a new job; no calls were scheduled without a durable plan.",
                 )
             continue
-        # The shared source was checked above; bind each child's claims to it
-        # without rereading the whole input for every historical attempt.
-        checkpoint = Checkpoint(child, existing=True, verify_sources=False)
+        # The shared source is checked once (above, or by verify_job when only reading);
+        # bind each child's claims to it without rereading the input for every attempt.
+        checkpoint = _stage_checkpoint(job, root, stage)
         identity = checkpoint.job
         assert identity is not None
         if identity["config_sha256"] != stage["config_sha256"]:
@@ -609,6 +705,7 @@ def _refresh(job: dict, root: Path, *, materialize: bool = True) -> None:
                 if not target.exists():
                     if not materialize:
                         raise ValueError("Retained partial text is missing")
+                    target.parent.mkdir(exist_ok=True)
                     atomic_bytes(target, encoded)
                 elif target.read_bytes() != encoded:
                     raise ValueError("Retained partial text changed")
@@ -916,7 +1013,7 @@ def _retry_local(job: dict, root: Path, stage: dict, adapter_path: Path | None) 
     child = _safe(root, stage["run_path"])
     if not (child / "checkpoint.json").exists():
         return False
-    checkpoint = Checkpoint(child, existing=True, verify_sources=False)
+    checkpoint = _stage_checkpoint(job, root, stage)
     states = {record["state"] for record in checkpoint.records.values()}
     if not states.intersection({"started", "outcome_unknown"}) or "failed" in states:
         return False
@@ -1185,6 +1282,7 @@ def resume_job(
     root = job_dir.expanduser().resolve()
     with writer_lock(root):
         job = _load(root)
+        _refuse_relocated_resume(job, root)
         # Refuse changes in any retained attempt before starting a pending one.
         _refresh(job, root)
         if raise_limits:
@@ -1224,6 +1322,7 @@ def review_job(
                 "decisions": _decision_counts(review),
             }
         _review_decisions(job, review)
+        _note_relocation(job, root, "review-job")
         _refresh(job, root)
         if job["status"] == "processing":
             job.update(
@@ -1289,6 +1388,7 @@ def adjudicate_job(job_dir: Path, decisions: Path, *, reviewer: str, dry_run: bo
             return {"job_id": job["job_id"], "out_dir": str(root), "status": "checked", **counts}
         for page, receipt in recorded:
             page.setdefault("adjudications", []).append(receipt)
+        _note_relocation(job, root, "adjudicate")
         _refresh(job, root)
         if job["status"] == "completed":
             job["next_action"] = _review_next_action(job)
@@ -1304,7 +1404,7 @@ def create_review_sheet(job_dir: Path, sheet: Path) -> dict:
     with writer_lock(root):
         job = _load(root)
         _refresh(job, root, materialize=False)
-        return {"status": "written", **write_review_sheet(job, sheet)}
+        return {"status": "written", **write_review_sheet(job, sheet, root)}
 
 
 def _derived(page: dict) -> tuple:
@@ -1323,6 +1423,7 @@ def verify_job(job_dir: Path) -> dict:
     root = job_dir.expanduser().resolve()
     try:
         job = _load(root)
+        warnings = _location_warnings(job, root)
         before = [_derived(p) for p in job["pages"]]
         _refresh(job, root, materialize=False)
         if before != [_derived(p) for p in job["pages"]]:
@@ -1340,6 +1441,11 @@ def verify_job(job_dir: Path) -> dict:
             include_stage_accounting="stage_accounting" in report,
         ):
             raise ValueError("Document report differs from verified job evidence")
-        return {"status": "pass", "job_id": job["job_id"], "out_dir": str(root)}
+        return {
+            "status": "pass",
+            "job_id": job["job_id"],
+            "out_dir": str(root),
+            "warnings": warnings,
+        }
     except (ValueError, OSError, KeyError, TypeError) as exc:
         return {"status": "fail", "out_dir": str(root), "error": str(exc)}

@@ -82,6 +82,14 @@ If the source has moved, add its new path to a
 [source index](checkpoint-spec.md#moved-source-files) rather than editing
 `job.json`; resume and `verify-job` then find it by SHA-256.
 
+A job resumes only in the directory it was written in, the `root` that
+`job.json` records. Its stage runs are bound to that directory, and an image
+stage writes its evidence there, so `resume` on a moved or copied job stops
+and names the directory to move it back to; nothing is extracted. This also
+keeps two copies of one job from both paying for the same pages.
+`verify-job`, `inspect-job`, `export`, `review-sheet`, `review-job` and
+`adjudicate` work wherever the job is (see [moved jobs](#moved-and-copied-jobs)).
+
 Job recovery checks retained attempts before scheduling pending work. Saved
 responses are reused. An interrupted built-in local stage is retried once in
 a separate retained child run, only for its unfinished pages. Paid or custom
@@ -642,6 +650,27 @@ inventory, original configuration and hash, normalized policy, package hash,
 ordered child plans, attempt records, page selections/reviews, usage and status.
 The checksum detects inconsistent content. It does not establish authorship
 or prevent deliberate rewriting.
+
+### Moved and copied jobs
+
+`root` is the directory the job was written in. It is a recorded fact, not
+part of the job's identity: every command that reads a job reads it where it
+is now, and every stage run's `checkpoint.json` must still name `root` plus
+its `attempts/` path, so a stage run taken from another job or tree is
+refused. `verify-job` on a job that is not at `root` checks the same evidence
+as in place and adds warning `job_relocated` with `recorded_root` and `root`
+(the current directory). `verify-job` does not read the source's bytes for
+anything but this check: a missing source is warning `source_missing`, one
+found through the source index is `source_relocated`, and other bytes at the
+recorded path fail verification.
+
+`review-job` and `adjudicate --decisions` work on a job that is not at
+`root`, and each such change appends `{root, command, at}` to the optional
+`relocations` list, with the directory it was made in. `relocations` is
+copied into `document.json` and shown in `report.md` as a "Changed elsewhere"
+line; `verify-job` reports each entry as `job_changed_elsewhere`. A job
+without the field reads and renders as before. `resume` refuses a job that is
+not at `root` (see [Resume an interrupted job](#resume-an-interrupted-job)).
 
 Child plans are saved before launch; their exact YAML snapshots are under
 `.job/`. Runs under `attempts/` retain the ordinary generation-zero artifacts

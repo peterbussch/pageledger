@@ -214,7 +214,11 @@ def test_document_job_resumes_and_verifies_after_its_source_moves(
 
     with pytest.raises(ValueError, match="Document job source changed or is missing"):
         resume_job(root, raise_limits={"max_attempt_pages": 3})
-    assert verify_job(root)["status"] == "fail"
+    # Verification needs only the job's own evidence; it says the source is gone, as runs do.
+    result = verify_job(root)
+    assert result["status"] == "pass"
+    assert [w["code"] for w in result["warnings"]] == ["source_missing"]
+    assert result["warnings"][0]["source"] == recorded
     assert (root / "job.json").read_bytes() == sealed_job
 
     home = tmp_path / "home"
@@ -224,7 +228,10 @@ def test_document_job_resumes_and_verifies_after_its_source_moves(
     monkeypatch.setenv("HOME", str(home))
     monkeypatch.delenv(ENV_VAR)
 
-    assert verify_job(root)["status"] == "pass"
+    result = verify_job(root)
+    assert result["status"] == "pass"
+    assert [w["code"] for w in result["warnings"]] == ["source_relocated"]
+    assert result["warnings"][0]["located"] == str(moved)
     calls = len(shared["calls"])
     assert resume_job(root, raise_limits={"max_attempt_pages": 3})["status"] == "completed"
     assert len(shared["calls"]) == calls + 1

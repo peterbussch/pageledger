@@ -63,7 +63,7 @@ come from another model family than the reader. See
 
 | Supported | What to rely on | Limit |
 |---|---|---|
-| Job reports, human review receipts, review sheets, `verify-job`, and verified `txt`, `md`, `jsonl`, or `tei` exports. | A receipt binds a human decision to the page and selected output; exports preserve page boundaries and review state. | A person makes the review decision. Verification and export do not certify transcription accuracy. See [review](processing-spec.md#review-in-a-spreadsheet), [report and receipt](document-report-spec.md), and [export](export.md). |
+| Job reports, human review receipts, review sheets, `verify-job`, and verified `txt`, `md`, `jsonl`, or `tei` exports. | A receipt binds a human decision to the page and selected output; exports preserve page boundaries and review state. A job verifies, exports and can be reviewed after its directory is moved or copied, and records changes made away from where it was written. | A person makes the review decision. Verification and export do not certify transcription accuracy. See [review](processing-spec.md#review-in-a-spreadsheet), [report and receipt](document-report-spec.md), and [export](export.md). |
 | A static HTML review view (`review-html`): each page's image beside its selected text, other readings compared word by word, open contested spans marked, and decisions downloaded as a review sheet. | The view embeds the rows and binding `review-sheet` writes, so `review-job` checks its decisions like any sheet's. | A rendering, not evidence: decisions count only once `review-job` applies them. Page images come from PDFs through Poppler's `pdftoppm`. Decisions in progress stay in one browser's storage. See [review beside the page image](processing-spec.md#review-beside-the-page-image). |
 
 ### Align structured output
@@ -246,6 +246,12 @@ the commands.
   cannot pass `verify-run`, so it cannot be bundled or replayed. See
   [verification](artifacts.md#verification).
 - Source custody, licensing, privacy and legal review remain with the project.
+- A document job resumes only in the directory it was written in; move it
+  back there to resume it. Verifying, exporting and reviewing work anywhere.
+  See [share and cite](share-and-cite.md#deposit-a-job).
+- `verify-job` checks the source only when it can reach it: without the source
+  (or a source index entry for it) it passes with warning `source_missing`, as
+  `verify-run` does. The job's own evidence is checked either way.
 
 ## Tested scale and documents
 

@@ -27,6 +27,20 @@
         "additionalProperties": false
       }
     },
+    "relocations": {
+      "type": "array",
+      "description": "Each change review-job or adjudicate made to the job in a directory other than the one it was written in, oldest first. Absent until such a change.",
+      "items": {
+        "type": "object",
+        "required": ["root", "command", "at"],
+        "properties": {
+          "root": {"type": "string", "minLength": 1},
+          "command": {"enum": ["review-job", "adjudicate"]},
+          "at": {"type": "string", "minLength": 1}
+        },
+        "additionalProperties": false
+      }
+    },
     "stage_accounting": {
       "type": "array",
       "description": "Configured stage attempt counts. A zero-page stage includes the recorded reason it did not run. Absent in older reports.",

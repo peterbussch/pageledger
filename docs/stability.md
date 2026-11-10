@@ -21,6 +21,7 @@ any minor release.
 | Adapter protocol | A custom adapter written to [the protocol](adapter-protocol.md) keeps working: no new required attribute, `extract(source, *, page_id, page_number, action, prompt=None)` is called exactly so, and `ExtractionResult` keeps its fields with no new required one. Built-in adapter names (`text`, `pdf_text`, `pdf`, `pdf_ocr`, `vision`, `rapidocr`, `indra`) keep resolving. | a strict adapter run through `classify`, `run`, `run --resumable` and `process`; `adapter-protocol.json` |
 | Artifacts | The run files in [the artifact list](artifacts.md) and a job's `job.json`, `document.json`, `report.md` and `transcript.md` keep their names, and each JSON Schema in `schemas/` only grows: no field removed or renamed, no type narrowed, no allowed value removed, nothing newly required. Artifacts keep `schema_version: "0.1"`, which is the 1.0 artifact contract. | `schemas/` snapshots; run file names in `taxonomies.json`; a new job's `job.json`, `document.json`, `report.md` and `transcript.md`; artifacts from 0.5.2, 0.6.0 and 0.7.0 validate against the current schemas |
 | Warning codes and holds | Each code in [the warnings table](warnings.md) keeps its name and keeps filing the same hold. Hold reasons, dispositions and review dispositions keep their names. Codes may be added, never renamed or given a new meaning. | `taxonomies.json`, which reads the codes from the warnings table; each must still appear in the package's code |
+| Location | A run or a job verifies after its directory is moved or copied, on the evidence it holds; the absolute paths it records are where it was written. | `test_old_jobs_verify_after_moving`, `test_old_runs_verify_after_moving_without_their_source`, `tests/pageledger/test_moved_jobs.py` |
 | Hold policies | A job is rebuilt by the rules it was written under (`hold_policy` absent, `0.6`, `0.6.1`, `0.8`), so new selection rules never change an old job's result. See [document report](document-report-spec.md). | `taxonomies.json`; existing hold-policy tests |
 | Contest rule sets | A rule set's name versions its whole procedure. `ru-print-0.1`, `ru-print-0.2` and `latin-print-0.1` keep exactly their rules; a change is a new name. | `taxonomies.json` holds each rule set's rules |
 | Codes in records | Page states, stages, escalation triggers, export formats, report formats, grades, and adapter failure and diagnostic codes keep their names. | `taxonomies.json` |
@@ -65,16 +66,16 @@ wrote them).
 - **Runs** from all three verify with the current `verify-run` after being
   moved to another directory: with warning `source_missing` when the source is
   gone, or `source_relocated` when a [source index](checkpoint-spec.md) finds it.
-  Move the whole directory, including an empty `normalized/`: Git and some
-  archive tools drop empty directories, and `verify-run` then fails with
-  `artifact_missing`.
-- **Jobs** from all three verified in place with 0.8.0 (checked once, on
-  2026-11-10, where they were written), and their stage runs still verify when
-  moved. A job does not verify after its
-  directory is moved or copied elsewhere, from any version including the
-  current one: `job.json` records the job's absolute directory, and `verify-job`
-  fails with "Document job identity changed". Verify a job where it was written,
-  and keep its hashes with any copy you deposit.
+  They are copied as Git checks them out, without their empty `normalized/`
+  directory; `verify-run` reads a missing empty directory as empty.
+- **Jobs** from all three verify with the current `verify-job` after being
+  copied to another directory, with warnings `job_relocated` (naming the
+  directory `job.json` recorded and the one the job is in now) and
+  `source_missing` or `source_relocated`. A copy with a changed raw page, a
+  changed `report.md` or a removed stage run fails. A copy reviewed with the
+  current `review-job` verifies, records where it was reviewed, and fails
+  once its receipt is changed. See
+  [share and cite](share-and-cite.md#deposit-a-job) for depositing a job.
 - `tests/pageledger/test_processing.py` also rebuilds jobs shaped as 0.5 and
   0.6.0 wrote them (no hold policy, policy `0.6`), and
   `tests/pageledger/test_hold_policy_08.py` checks that the 0.8 rules stay off

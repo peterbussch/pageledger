@@ -40,8 +40,11 @@ def binding_path(sheet: Path) -> Path:
     return sheet.with_name(sheet.name + ".binding.json")
 
 
-def write_review_sheet(job: dict, sheet: Path) -> dict:
-    """Write the CSV and the sidecar that binds each row to its page's evidence."""
+def write_review_sheet(job: dict, sheet: Path, root: Path) -> dict:
+    """Write the CSV and the sidecar that binds each row to its page's evidence.
+
+    ``root`` is where the job is now, which may not be where it was written.
+    """
     sheet = sheet.expanduser().resolve()
     sheet.parent.mkdir(parents=True, exist_ok=True)
     source = relative_path(job["source"]["path"], sheet.parent)
@@ -54,7 +57,7 @@ def write_review_sheet(job: dict, sheet: Path) -> dict:
                 "page_number": str(page["page_number"]),
                 "source_page": f"{source}#page={page['page_number']}",
                 "disposition": page["disposition"],
-                "attempt_summary": _summary(job, page, _selected(page)),
+                "attempt_summary": _summary(root, page, _selected(page)),
                 "review_reasons": "; ".join(page["review_reasons"]),
                 "decision": "",
                 "note": "",
@@ -196,13 +199,13 @@ def _output_sha256(page: dict, attempt: dict) -> str:
     return attempt["raw_sha256"]
 
 
-def _summary(job: dict, page: dict, attempt: dict | None) -> str:
+def _summary(root: Path, page: dict, attempt: dict | None) -> str:
     if attempt is None:
         return "No selected text"
     text, label = attempt["text"], attempt["attempt_id"]
     edition = page.get("edition")
     if edition and edition["base_attempt"] == attempt["attempt_id"]:
-        text = (Path(job["root"]) / edition["artifact"]).read_text(encoding="utf-8")
+        text = (root / edition["artifact"]).read_text(encoding="utf-8")
         label = f"{label}, edition {edition['artifact']}"
     return f"{label}: {' '.join(text.split()[:12])} ({len(text)} characters)"
 

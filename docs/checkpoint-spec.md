@@ -108,7 +108,10 @@ adapter/package changes, altered output, missing records or incompatible
 lineage stop recovery. Sources are hashed again after processing, before final
 publication. Full source page counts remain distinct from selected-page
 counts. Recovery is in place: moving a run directory is outside this
-contract. A source file that has moved can be found by its hash through a
+contract. A document job's stage runs are the exception for reading: the job
+checks that each stage's `root` is the job's recorded `root` plus the stage's
+`attempts/` path, wherever the job is now (see
+[moved and copied jobs](processing-spec.md#moved-and-copied-jobs)). A source file that has moved can be found by its hash through a
 [source index](#moved-source-files).
 
 ## Moved source files
@@ -139,7 +142,7 @@ entry fails the same way a missing source does.
 | Command | With a moved source and a matching index entry |
 | --- | --- |
 | `resume RUN_DIR` | Verifies and reads the indexed file. `checkpoint.json`, provenance and the final manifest keep the recorded path. |
-| `resume JOB_DIR`, `verify-job` | Same for document jobs: `job.json` keeps the recorded path. A stage first started after the move records the path it read; the job binds stages to its source by SHA-256. |
+| `resume JOB_DIR`, `verify-job` | Same for document jobs: `job.json` keeps the recorded path. A stage first started after the move records the path it read; the job binds stages to its source by SHA-256. `verify-job` reports `source_relocated`, or `source_missing` when neither path holds the bytes. |
 | `verify-run` | Reports warning `source_relocated`, with the recorded `source` and the `located` file, instead of `source_missing`. |
 | `rerun`, `bundle` | Use the indexed file when the recorded path is missing. A rerun records the path it read; a bundle copies the bytes as usual. |
 

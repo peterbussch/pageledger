@@ -28,6 +28,7 @@ reviewed as text or blank. For meanings and suggested actions, see the
 | `limits` | The job's recorded execution limits |
 | `stage_accounting` | Optional configured-stage attempt counts; a stage with zero pages includes why it did not run. Absent from older reports, which still verify with their original fields. |
 | `links` | Nullable `article` and `custody` references supplied by the job |
+| `relocations` | Optional. Each `review-job` or `adjudicate --decisions` change made to the job outside the directory it was written in: `root` (where it was made), `command`, and `at`. Rendered as a "Changed elsewhere" line. Absent until such a change. |
 | `source_retention` | Explicit source capture, preservation, removal eligibility, and removal state |
 | `next_action` | One human-readable action for the document |
 | `counts` | `source_pages`, `selected_pages`, `processed_pages`, `selected_outputs`, and `unresolved_pages` |
@@ -244,8 +245,9 @@ previous completed output is selected. A source-only human receipt is shown as
 such and does not acquire a selected output.
 
 Reports marked `"0.6"` name the source by its path relative to the job
-directory, in `source.path` and in every page link, so a shared report does not
-reveal where its owner keeps files. A source on another Windows drive is named
+directory it was written in (`root` in `job.json`), in `source.path` and in
+every page link, so a shared report does not reveal where its owner keeps
+files, and the report reads the same after the job is moved. A source on another Windows drive is named
 by its file name alone. `job.json` keeps the absolute path, which verification
 needs. Reports marked `"0.5.1"` keep the absolute path and still verify.
 

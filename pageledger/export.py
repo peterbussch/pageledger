@@ -40,14 +40,15 @@ def export_job(job_dir: Path, out: Path, *, format: str, reviewed_only: bool = F
     report = verify_document_report(root)
     out = Path(out).expanduser()
     out.parent.mkdir(parents=True, exist_ok=True)
-    source = relative_path(read_record(root / "job.json")["source"]["path"], out.parent.resolve())
-    pages = _pages(root, report, reviewed_only)
+    job = read_record(root / "job.json")
+    source = relative_path(job["source"]["path"], out.parent.resolve())
+    pages = _pages(root, Path(job["root"]), report, reviewed_only)
     render = {"txt": _txt, "md": _md, "jsonl": _jsonl, "tei": _tei}[format]
     atomic_bytes(out, render(report, pages, source).encode("utf-8"))
     return len(pages)
 
 
-def _pages(root: Path, report: dict, reviewed_only: bool) -> list[dict]:
+def _pages(root: Path, recorded_root: Path, report: dict, reviewed_only: bool) -> list[dict]:
     checkpoints: dict[str, Checkpoint] = {}
     pages = []
     for page in report["pages"]:
@@ -60,7 +61,12 @@ def _pages(root: Path, report: dict, reviewed_only: bool) -> list[dict]:
             chosen = next(a for a in page["attempts"] if a["attempt_id"] == selected["attempt_id"])
             run = chosen["run_path"]
             if run not in checkpoints:
-                checkpoints[run] = Checkpoint(root / run, existing=True, verify_sources=False)
+                checkpoints[run] = Checkpoint(
+                    root / run,
+                    existing=True,
+                    verify_sources=False,
+                    recorded_root=recorded_root / run,
+                )
             plan = checkpoints[run].job
             assert plan is not None
             attempt = {

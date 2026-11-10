@@ -40,7 +40,8 @@ the configuration snapshot; and the complete run or job directory. Deposit a
 run directory whole: `verify-run` checks every artifact its manifest declares,
 including `config-snapshot.yml`, `route-map.yml`, `raw/`, `normalized/`,
 `audit.json`, `audit.md`, `provenance.jsonl`, `quality.jsonl`, `cost.json`,
-`run.log` and `rerun-manifest.yml`, and fails when one is missing. Deposit a
+`run.log` and `rerun-manifest.yml`, and fails when one is missing (an empty
+directory may be left out). Deposit a
 job directory whole as well: `job.json`, its attempts, selected outputs and
 review receipts. Include `report.md` or `transcript.md`
 when it helps readers, and include an export when a downstream corpus needs
@@ -51,7 +52,8 @@ deposit. Do not deposit credentials or unrelated private files.
 
 Run manifests record absolute paths in `config.source_paths`, and
 `route-map.yml` records them in `documents[].source`. A job's `job.json`
-records both the job's `root` and the source's `path` as absolute paths. These
+records both the job's `root` and the source's `path` as absolute paths, and
+`relocations` records the directory of any copy that was reviewed. These
 can expose account names and folder structure. Remove or redact
 such identifying path evidence only in a clearly labeled sharing copy; doing
 so changes the artifact and it will no longer verify against its original
@@ -62,10 +64,36 @@ New 0.6 reports and exports use relative source links and do not include
 absolute local paths. Older reports may contain absolute paths. Check all
 retained files before deposit, including logs, custom adapter output, and
 screenshots. Document job directories cannot be bundled as run replay bundles.
-Verify the job where it was written, then deposit a copy of the job tree with
-the verification result and its hashes: a moved or copied job does not verify,
-because `job.json` records the job's absolute directory (see
-[stability](stability.md#older-runs-and-jobs)).
+
+## Deposit a job
+
+A job directory verifies wherever it is. Its `job.json` records the directory
+it was written in as a fact, like the source's path; verification checks the
+files themselves.
+
+1. Verify the job where you wrote it: `pageledger verify-job jobs/book --json > verify-job.json`.
+2. Copy or archive the whole directory, hidden `.job/` and `attempts/*/.checkpoint/`
+   included (for example `tar -czf book-job.tar.gz -C jobs book`). Empty
+   directories may be left out; Git and some archive tools drop them.
+3. Record `shasum -a 256 jobs/book/job.json` and the archive's hash with the deposit,
+   alongside `verify-job.json` and the PageLedger version.
+
+A reader who unpacks the deposit anywhere runs `pageledger verify-job book`.
+It passes with warning `job_relocated`, naming the directory the job was
+written in and the one it is in now, and with `source_missing` when the reader
+does not have the source. A reader who has the source can list it in a
+[source index](checkpoint-spec.md#moved-source-files); verification then
+checks its bytes and reports `source_relocated`. A file at the recorded source
+path with other bytes fails verification. `inspect-job`, `export` and
+`review-sheet` work on the copy as they do on the original.
+
+A colleague can review the copy with `review-job`, or settle contested spans
+with `adjudicate --decisions`, when the source is reachable. The job records
+each change made away from its original directory under `relocations` in
+`job.json`, and the report says so; `verify-job` reports it as
+`job_changed_elsewhere`. Such a review changes `job.json`, so cite the new hash.
+`resume` works only in the directory the job was written in, so that two
+copies cannot both pay for the same pages: move the job back there to resume it.
 
 ## Cite PageLedger as software
 

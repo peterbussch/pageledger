@@ -138,8 +138,21 @@ def adapter_identity(adapter: Any, profile: Any) -> dict[str, Any]:
 
 
 class Checkpoint:
-    def __init__(self, root: Path, *, existing: bool = False, verify_sources: bool = True):
+    def __init__(
+        self,
+        root: Path,
+        *,
+        existing: bool = False,
+        verify_sources: bool = True,
+        recorded_root: Path | None = None,
+    ):
+        """``recorded_root`` is where the run must say it was written, when that is not ``root``.
+
+        A document job passes it for its stage runs, so a moved job still binds each
+        stage to the directory the job recorded.
+        """
         self.root = root
+        self.recorded_root = root if recorded_root is None else recorded_root
         self.job: dict[str, Any] | None = None
         self.records: dict[str, dict[str, Any]] = {}
         self.sources: dict[str, Path] = {}
@@ -226,7 +239,7 @@ class Checkpoint:
                     "log_level",
                 )
             )
-            or job["root"] != str(self.root)
+            or job["root"] != str(self.recorded_root)
             or not isinstance(job["identity"], dict)
             or set(job["identity"])
             != {"name", "version", "code_sha256", "package_sha256", "profile", "metadata"}
@@ -455,9 +468,11 @@ class Checkpoint:
                 unfinished = True
         for directory, allowed in (("raw", raw_expected), ("normalized", normalized_expected)):
             path = self.root / directory
-            if path.is_symlink() or not path.is_dir():
-                raise ValueError("Missing or unsafe recovery output directory")
-            if any(
+            # An absent directory reads as an empty one: Git and some archive tools drop
+            # empty directories, and every expected file was already checked above.
+            if path.is_symlink() or (path.exists() and not path.is_dir()):
+                raise ValueError("Unsafe recovery output directory")
+            if path.is_dir() and any(
                 p.name not in allowed and not p.name.startswith(".pending-") for p in path.iterdir()
             ):
                 raise ValueError("Unexpected recovery output artifact")

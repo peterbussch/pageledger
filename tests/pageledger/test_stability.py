@@ -887,32 +887,34 @@ def test_a_0_8_config_means_what_it_meant() -> None:
 # -- Runs and jobs written by published releases -----------------------------
 
 
-# Git keeps no empty directories, and a run whose manifest declares normalized/
-# fails verification without it, so the copy restores the ones the releases wrote.
-_EMPTY_DIRS = {
-    "run": ("normalized",),
-    "job": ("partials", "attempts/local_text/normalized"),
-}
-
-
 def _copy_release(version: str, kind: str, tmp_path: Path) -> Path:
+    """Copy a golden run or job as Git checked it out: its empty directories are gone."""
     recorded = json.loads((RELEASES / version / "run" / "manifest.json").read_text())
     if Path(recorded["inputs"][0]["path"]).exists():
         pytest.skip("the releases' recorded source path exists on this machine")
     target = tmp_path / f"{kind}-{version}"
     shutil.copytree(RELEASES / version / kind, target)
-    for name in _EMPTY_DIRS[kind]:
-        (target / name).mkdir(exist_ok=True)
-    return target
+    return target.resolve()
 
 
 def _issues(report: dict) -> tuple[list[str], list[str]]:
     return [e["code"] for e in report["errors"]], [w["code"] for w in report["warnings"]]
 
 
+def _index_sample(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    source = tmp_path / "moved.txt"
+    shutil.copyfile(RELEASES / "sample.txt", source)
+    index = tmp_path / "index.tsv"
+    index.write_text(f"{hashlib.sha256(source.read_bytes()).hexdigest()}\t{source}\n")
+    monkeypatch.setenv("PAGELEDGER_SOURCE_INDEX", str(index))
+    return source
+
+
 @pytest.mark.parametrize("version", RELEASE_VERSIONS)
 def test_old_runs_verify_after_moving_without_their_source(version: str, tmp_path: Path) -> None:
-    report = verify_run(_copy_release(version, "run", tmp_path))
+    run = _copy_release(version, "run", tmp_path)
+    assert not (run / "normalized").exists()
+    report = verify_run(run)
     assert report["status"] == "pass", report["errors"]
     assert _issues(report) == ([], ["source_missing"])
 
@@ -921,11 +923,7 @@ def test_old_runs_verify_after_moving_without_their_source(version: str, tmp_pat
 def test_old_runs_find_their_moved_source_by_hash(
     version: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    source = tmp_path / "moved.txt"
-    shutil.copyfile(RELEASES / "sample.txt", source)
-    index = tmp_path / "index.tsv"
-    index.write_text(f"{hashlib.sha256(source.read_bytes()).hexdigest()}\t{source}\n")
-    monkeypatch.setenv("PAGELEDGER_SOURCE_INDEX", str(index))
+    _index_sample(tmp_path, monkeypatch)
     report = verify_run(_copy_release(version, "run", tmp_path))
     assert report["status"] == "pass", report["errors"]
     assert _issues(report) == ([], ["source_relocated"])
@@ -939,22 +937,101 @@ def test_old_job_stage_runs_verify(version: str, tmp_path: Path) -> None:
 
 
 @pytest.mark.parametrize("version", RELEASE_VERSIONS)
-def test_old_jobs_verify_only_where_they_were_written(version: str, tmp_path: Path) -> None:
-    """A job binds its absolute directory (job.json ``root``); a moved copy does not verify.
+def test_old_jobs_verify_after_moving(
+    version: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """``root`` in job.json records where a job was written; a copy verifies anywhere."""
+    job = _copy_release(version, "job", tmp_path)
+    recorded = checkpoint.read_record(job / "job.json")["root"]
+    result = verify_job(job)
+    assert result["status"] == "pass", result
+    assert [w["code"] for w in result["warnings"]] == ["job_relocated", "source_missing"]
+    assert result["warnings"][0]["recorded_root"] == recorded
+    assert result["warnings"][0]["root"] == str(job)
 
-    This holds for jobs from every release, including 0.8. The test pins the
-    limitation that docs/stability.md states; these jobs verified in place when
-    written (tests/fixtures/stability/releases/README.md).
-    """
-    result = verify_job(_copy_release(version, "job", tmp_path))
-    assert result == {
-        "status": "fail",
-        "out_dir": str((tmp_path / f"job-{version}").resolve()),
-        "error": "Document job identity changed",
-    }
+    _index_sample(tmp_path, monkeypatch)
+    result = verify_job(job)
+    assert [w["code"] for w in result["warnings"]] == ["job_relocated", "source_relocated"]
 
 
-def test_a_current_job_is_bound_to_its_directory_too(
+def _change_raw_page(job: Path) -> None:
+    (job / "attempts" / "local_text" / "raw" / "doc_0001_page_0001.txt").write_text("changed")
+
+
+def _change_report(job: Path) -> None:
+    report = job / "report.md"
+    report.write_text(report.read_text(encoding="utf-8").replace("Status:", "Status: ok,", 1))
+
+
+def _remove_attempt(job: Path) -> None:
+    shutil.rmtree(job / "attempts" / "local_text")
+
+
+@pytest.mark.parametrize("version", RELEASE_VERSIONS)
+@pytest.mark.parametrize(
+    "tamper",
+    [_change_raw_page, _change_report, _remove_attempt],
+    ids=["raw page", "report", "attempt"],
+)
+def test_a_tampered_copy_of_an_old_job_fails(
+    version: str, tamper: Callable[[Path], None], tmp_path: Path
+) -> None:
+    job = _copy_release(version, "job", tmp_path)
+    tamper(job)
+    assert verify_job(job)["status"] == "fail"
+
+
+@pytest.mark.parametrize("version", RELEASE_VERSIONS)
+def test_a_copy_of_an_old_job_can_be_reviewed_and_its_receipt_is_bound(
+    version: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from pageledger.processing import review_job
+
+    _index_sample(tmp_path, monkeypatch)
+    job = _copy_release(version, "job", tmp_path)
+    page = checkpoint.read_record(job / "job.json")["pages"][0]
+    attempt = page["attempts"][0]
+    review = tmp_path / "review.json"
+    review.write_text(
+        json.dumps(
+            {
+                "schema_version": "0.1",
+                "source_sha256": page["source_sha256"],
+                "decisions": [
+                    {
+                        "page_id": page["page_id"],
+                        "page_number": page["page_number"],
+                        "disposition": "reviewed_text",
+                        "selected_attempt": attempt["attempt_id"],
+                        "output_sha256": attempt["raw_sha256"],
+                        "reviewer": "person:colleague",
+                        "reason": "Read against the page",
+                        "reviewed_at": "2026-11-10T12:00:00Z",
+                    }
+                ],
+            }
+        )
+    )
+    assert review_job(job, review)["status"] == "completed"
+    record = checkpoint.read_record(job / "job.json")
+    assert record.get("hold_policy") == checkpoint.read_record(
+        RELEASES / version / "job" / "job.json"
+    ).get("hold_policy")
+    assert [item["command"] for item in record["relocations"]] == ["review-job"]
+    result = verify_job(job)
+    assert result["status"] == "pass", result
+    assert [w["code"] for w in result["warnings"]] == [
+        "job_relocated",
+        "job_changed_elsewhere",
+        "source_relocated",
+    ]
+
+    record["pages"][0]["review"]["decisions"][0]["reason"] = "changed"
+    checkpoint.write_record(job / "job.json", record)
+    assert verify_job(job)["status"] == "fail"
+
+
+def test_a_current_job_verifies_after_moving(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     source = tmp_path / "sample.txt"
@@ -966,7 +1043,9 @@ def test_a_current_job_is_bound_to_its_directory_too(
     for name in ("job.json", "document.json", "report.md", "transcript.md"):
         assert (job / name).is_file(), f"{name}: {BREAKING}"
     shutil.copytree(job, tmp_path / "moved")
-    assert verify_job(tmp_path / "moved")["error"] == "Document job identity changed"
+    result = verify_job(tmp_path / "moved")
+    assert result["status"] == "pass", result
+    assert [w["code"] for w in result["warnings"]] == ["job_relocated"]
     capsys.readouterr()
 
 

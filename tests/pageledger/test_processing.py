@@ -1431,8 +1431,12 @@ def test_refresh_checks_shared_source_once_for_all_child_runs(setup, monkeypatch
         return original(path, *args, **kwargs)
 
     monkeypatch.setattr(Path, "open", counted)
-    _refresh(job, setup[2], materialize=False)
+    _refresh(job, setup[2])
     assert len(reads) == 1
+    # Verification checks the source once, outside the rebuild, and only reports on it.
+    reads.clear()
+    _refresh(job, setup[2], materialize=False)
+    assert reads == []
 
 
 @pytest.mark.parametrize("completed", [False, True])

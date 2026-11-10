@@ -388,6 +388,19 @@ def _contest_accounting(report: dict) -> list[str]:
     ]
 
 
+def _relocation_lines(report: dict) -> list[str]:
+    """Changes recorded on a copy of the job, away from the directory it was written in."""
+    return [
+        line
+        for item in report.get("relocations", [])
+        for line in (
+            f"Changed elsewhere: {item['command']} on {item['at']} in "
+            f"{_escape(item['root'])}, not where this job was written.",
+            "",
+        )
+    ]
+
+
 def render_document_report(report: dict) -> str:
     """Render a report, retaining the 0.5.0 format when its marker is absent."""
     current = "report_format" in report
@@ -418,6 +431,7 @@ def render_document_report(report: dict) -> str:
         "",
         f"Attempt pages: {usage['attempt_pages']}; image calls: {usage['image_calls']}; tokens: {tokens}; cost: {cost}.",
         "",
+        *_relocation_lines(report),
         *_escalation_accounting(report),
         *_contest_accounting(report),
         *(["Current page results", ""] if current else []),
@@ -541,7 +555,7 @@ def build_document_report(
         "next_action",
     )
     report = {field: copy.deepcopy(job[field]) for field in fields}
-    for optional in ("hold_policy", "limits_history"):
+    for optional in ("hold_policy", "limits_history", "relocations"):
         if optional in job:
             report[optional] = copy.deepcopy(job[optional])
     if include_stage_accounting is None:
@@ -553,7 +567,8 @@ def build_document_report(
             raise ValueError(f"Unsupported document report format: {report_format}")
         report["report_format"] = report_format
     if report_format == "0.6":
-        report["source"]["path"] = relative_path(job["source"]["path"], root)
+        # Relative to where the job was written, so the report reads the same after a move.
+        report["source"]["path"] = relative_path(job["source"]["path"], Path(job.get("root", root)))
     quoted_source = quote(report["source"]["path"], safe="/")
     pages = []
     for original in job["pages"]:
