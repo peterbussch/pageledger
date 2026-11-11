@@ -149,7 +149,7 @@ def test_a_colleague_reviews_a_copy_and_the_record_says_where(setup, tmp_path): 
     assert job["pages"][0]["disposition"] == "reviewed_text"
     _validate_schemas(copy)
     report = (copy / "report.md").read_text(encoding="utf-8")
-    assert f"Changed elsewhere: review-job on {relocation['at']} in {copy}" in report
+    assert f"Changed elsewhere: review --apply on {relocation['at']} in {copy}" in report
 
     result = verify_job(copy)
     assert result["status"] == "pass", result

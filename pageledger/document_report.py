@@ -423,13 +423,18 @@ def _contest_accounting(report: dict) -> list[str]:
     ]
 
 
+# The job records the command's earlier name; the report names the one people type.
+_WRITER_NAMES = {"review-job": "review --apply"}
+
+
 def _relocation_lines(report: dict) -> list[str]:
     """Changes recorded on a copy of the job, away from the directory it was written in."""
     return [
         line
         for item in report.get("relocations", [])
         for line in (
-            f"Changed elsewhere: {item['command']} on {item['at']} in "
+            f"Changed elsewhere: {_WRITER_NAMES.get(item['command'], item['command'])} "
+            f"on {item['at']} in "
             f"{_escape(item['root'])}, not where this job was written.",
             "",
         )

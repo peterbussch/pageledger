@@ -436,7 +436,7 @@ def test_the_new_format_keeps_every_link_hash_and_fact_of_the_old(tmp_path):
         "tiles: 4 planned, 3 sent and paid for, 2 read, failed: t02, cut through text: t03",
         "Second opinion | 0 (no page met its trigger)",
         "none (0)" if False else "present (2)",
-        "Changed elsewhere: review-job on 2026-11-10T00:00:00Z in /x",
+        "Changed elsewhere: review --apply on 2026-11-10T00:00:00Z in /x",
         "unverified",
         "not_assessed",
         "Review source pages before relying on extracted text.",
