@@ -521,7 +521,6 @@ def _process(
         _sync_directory(directory.parent)
     (root / ".job").mkdir()
     (root / "attempts").mkdir()
-    (root / "partials").mkdir()
     job = {
         "schema_version": "0.1",
         "job_id": f"job_{uuid4().hex}",

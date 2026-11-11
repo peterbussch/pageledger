@@ -286,10 +286,8 @@ def test_verify_reports_a_missing_source_but_refuses_a_changed_one(setup, tmp_pa
     assert result["error"] == "Document job source changed or is missing"
 
 
-def test_a_job_with_an_empty_partials_directory_lost_verifies(setup):  # noqa: F811
+def test_a_job_without_partial_output_has_no_partials_folder_and_verifies(setup):  # noqa: F811
     launch(setup)
-    partials = setup[2] / "partials"
-    assert partials.is_dir() and not any(partials.iterdir())
-    partials.rmdir()
+    assert not (setup[2] / "partials").exists()
     assert verify_job(setup[2])["status"] == "pass"
     assert json.loads((setup[2] / "document.json").read_text())["status"] == "completed"

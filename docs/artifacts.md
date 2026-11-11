@@ -17,7 +17,7 @@ jobs/book/
 ├── report.md         # human rendering of document.json
 ├── transcript.md     # selected text with source-page and attempt links
 ├── attempts/         # ordinary resumable runs for the processing stages
-├── partials/         # retained failed output, excluded from transcript selection
+├── partials/         # when a stage failed with partial output: kept, never selected
 ├── contested/        # with processing.contest: where a model and the literal engine differ
 ├── editions/         # a model's reading with its adjudicated changes applied
 ├── corrections/      # texts a reviewer corrected, each named by its own SHA-256
