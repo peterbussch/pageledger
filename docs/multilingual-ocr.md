@@ -11,9 +11,37 @@ The commands and numbers are from actual runs; substitute your own files.
 
 ## Language packs come first
 
-`pdf_ocr` passes `run.adapter_options.lang` straight to Tesseract, and a
-missing language pack is the most common first failure. Check before you
-run:
+An OCR language pack is the engine's trained data for one script or language.
+`pdf_ocr` passes its `lang` setting (`--lang` for `process`) straight to
+Tesseract; PageLedger does not install or choose packs for you, and a missing
+pack is the most common first failure.
+
+On macOS with Homebrew, install the engine and its language data separately:
+
+```bash
+brew install tesseract
+brew install tesseract-lang
+```
+
+On Debian or Ubuntu, install the engine and the packs you need, for example:
+
+```bash
+sudo apt install tesseract-ocr tesseract-ocr-rus tesseract-ocr-spa
+```
+
+Package names vary by distribution. Choose packs from a sample of your pages:
+
+- Modern Russian: Tesseract `rus`.
+- Pre-reform Russian: test `rus` on a sample, but expect it to modernize or
+  misread the abolished letters (see
+  [the 1850 scan below](#an-1850-scan-in-pre-reform-orthography)).
+- Spanish, French, German, Italian and other Latin-script languages: the
+  language's own code, such as `spa`, `fra`, `deu` or `ita`. Latin script
+  alone does not identify the language.
+- Pages that genuinely mix languages: combine installed codes, such as
+  `spa+eng`.
+
+Check what is installed before you run:
 
 ```bash
 pageledger doctor

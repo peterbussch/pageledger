@@ -190,7 +190,7 @@ single `.jpg`, `.jpeg` or `.png` file is a one-page document. TIFF and JPEG 2000
 are refused with `unsupported_image` and the conversion to make, a damaged
 image with `malformed_image`. The `text` adapter refuses page images; `pdf_text`
 reads no text from them (`no_text_layer`). See
-[a folder of page scans](pdf-ocr-first-run.md#9-a-folder-of-page-scans).
+[a folder of page scans](process-a-collection.md#page-images).
 
 To process a collection as separate document jobs, run once per file. This
 shell loop uses direct child files and skips hidden names:

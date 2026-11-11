@@ -62,7 +62,7 @@ For text files, set `processing.local_ocr` to `null`, as
 pages.
 
 The source can also be an image file or a folder of page images, read as one
-document (see [a folder of page scans](pdf-ocr-first-run.md#9-a-folder-of-page-scans)).
+document (see [a folder of page scans](process-a-collection.md#page-images)).
 The same configuration works: `pdf_text` and `pdf_ocr` are the defaults, as for
 a PDF. Page images have no text layer, so the local text stage records an empty
 reading with the warning `no_text_layer` for each page, without needing the

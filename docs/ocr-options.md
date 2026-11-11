@@ -51,6 +51,12 @@ equivalent model/revision and material runtime settings in `ExtractionResult.mod
 
 ### Page size and rendering
 
+`dpi` is the number of pixels per inch at which a page is rendered for OCR.
+Begin around 300 DPI for ordinary print, then compare a sample at a lower or
+higher resolution when the type is small, faint or unusually detailed, using
+the same pages each time. A higher DPI can make small type more legible, but
+costs time and memory and does not restore detail the scan lacks.
+
 `pdf_ocr` checks each page's size before rendering it, because scanned PDFs
 often declare page sizes that have little to do with the paper.
 
@@ -73,7 +79,7 @@ often declare page sizes that have little to do with the paper.
 Born-digital pages, pages without images, and installations without pypdf keep
 the requested DPI.
 
-A page image (see [a folder of page scans](pdf-ocr-first-run.md#9-a-folder-of-page-scans))
+A page image (see [a folder of page scans](process-a-collection.md#page-images))
 is sized by the density it declares, so `pdf_ocr` renders it at the higher of
 `dpi` and that density, without needing pypdf. To fit `max_render_pixels` it
 may go below 72 DPI, down to half the image's own density, before it stops

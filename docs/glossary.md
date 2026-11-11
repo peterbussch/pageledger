@@ -21,7 +21,7 @@ The links point to the main page describing each term.
 | Evidence | A retained record that supports a stated identity, result, or decision. It does not by itself prove accuracy. | [Artifacts](artifacts.md) |
 | Export | The selected text of a verified job, written as plain text, Markdown, JSONL or TEI. | [Export](export.md) |
 | Fail closed | Refuse an operation when a required safety or integrity check cannot be satisfied. | [Verification](artifacts.md#verification) |
-| Folder of page images | A folder of JPEG or PNG files, one per page, read as one document in natural order of file name. | [A folder of page scans](pdf-ocr-first-run.md#9-a-folder-of-page-scans) |
+| Folder of page images | A folder of JPEG or PNG files, one per page, read as one document in natural order of file name. | [A folder of page scans](process-a-collection.md#page-images) |
 | Generation | A run's place in a rerun sequence: the original is generation zero, followed by explicit reruns. | [Reruns](cli.md#rerun) |
 | Generative | Output a model writes rather than reads off the page, which can contain text that is not there. PageLedger holds such readings for review. | [Vision adapter](vision-adapter.md) |
 | Grade basis | The kind of information behind a grade: text signals or schema checks. These bases are not interchangeable. | [Comparison](cli.md#compare) |

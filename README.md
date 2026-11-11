@@ -75,7 +75,7 @@ A PDF, a UTF-8 text file (pages separated by form feeds), one JPEG or PNG
 page image, or a folder of them read as one document, pages in the order of
 their file names. `pageledger fetch` downloads an item's page images from a
 library's IIIF server into such a folder, with a record of where each image
-came from. See [page images](https://github.com/peterbussch/pageledger/blob/main/docs/pdf-ocr-first-run.md#9-a-folder-of-page-scans)
+came from. See [page images](https://github.com/peterbussch/pageledger/blob/main/docs/process-a-collection.md#page-images)
 and [fetching from IIIF](https://github.com/peterbussch/pageledger/blob/main/docs/iiif.md).
 
 ## Choosing an OCR engine

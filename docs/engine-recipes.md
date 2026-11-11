@@ -264,7 +264,7 @@ link out of `dir` as an `alto_invalid` page. The adapter compares each ALTO
 page's shape with the page as rendered and needs `pdfinfo` from Poppler for
 that.
 
-When the source is a [folder of page images](pdf-ocr-first-run.md#9-a-folder-of-page-scans),
+When the source is a [folder of page images](process-a-collection.md#page-images),
 libraries usually name each ALTO file after its image: `0081.xml` for
 `0081.jpg`. Use `{stem}`, the page image's file name without its extension:
 

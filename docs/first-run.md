@@ -166,5 +166,3 @@ pageledger verify runs/replayed
 An exact replay proves equality under PageLedger's documented deterministic
 replay checks. It does not recreate a hermetic operating system, certify text
 accuracy, or replace source review.
-
-The optional bundle and replay steps are explained below. See [maintainer verification](maintainers/tutorial-verification.md).

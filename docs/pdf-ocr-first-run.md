@@ -1,10 +1,10 @@
-# First PageLedger OCR run
+# First PDF and OCR run
 
-This tutorial takes a PDF through PageLedger: first its text layer, then OCR
-with Tesseract through the built-in `pdf_ocr` adapter.
-
-PageLedger counts pages, calls configured adapters, and records the output
-with provenance and quality signals. Install OCR engines separately.
+This tutorial takes a PDF through the run commands, which apply one extraction
+tool to every page and record what it did: first the PDF's text layer, then
+OCR with Tesseract through the built-in `pdf_ocr` adapter. Runs are the tool
+for building and testing a pipeline; to read one document into text with a
+list of pages to check, use [`process`](process-a-collection.md) instead.
 
 For choosing between local OCR, open-source document conversion, cloud OCR, VLM
 adapters, and hybrid workflows, see [OCR options](ocr-options.md).
@@ -184,54 +184,21 @@ than a rerun.
 
 ## 9. A folder of page scans
 
-Archives often deliver a book or a reel as one image file per page rather than
-as a PDF. You do not need to wrap them in a PDF first: give PageLedger the
-folder, and it reads the images as one document.
+A folder of JPEG or PNG page images is one document, read in natural order of
+file name, and `run` takes it as it takes a PDF:
 
 ```bash
-ls scans/
-# page-1.jpg  page-2.jpg  ...  page-10.jpg
 pageledger run scans/ --config pageledger-ocr.yml --out runs/scans-ocr --json
 ```
 
-The pages follow the file names in natural order, so `page-2.jpg` comes before
-`page-10.jpg`. Number your files so that this order is the page order. The
-folder must hold only JPEG (`.jpg`, `.jpeg`) or PNG (`.png`) files; PageLedger
-skips hidden files such as `.DS_Store` and stops, before reading any page, at
-anything else, so a stray note or a subfolder of thumbnails is never read as a
-page. Convert TIFF or JPEG 2000 masters to PNG first; PNG keeps every pixel,
-and the error message names a command that does it.
-
-What PageLedger records is the images themselves. Each image is hashed, and
-the source's identity is a hash over the list of file names, hashes and pixel
-sizes. `pageledger verify runs/scans-ocr` later tells you if any image
-changed, went missing or was added, and names it. Each page's provenance line
-names its own image.
-
-The OCR engines read PDF pages, so for them PageLedger writes a temporary PDF
-that carries the images' own bytes. It is a working copy, not the record: the
-run keeps its hash and deletes it. Its page size comes from the density the
-image declares (many cameras and scanners write one); an image that declares
-none is taken as 300 pixels per inch. If an engine then renders a page at much
-more than the image's own pixels, the page gets the warning `render_upsampled`:
-a small image read at high resolution does not hold more detail, and a better
-scan is the fix. The same folder works with `pageledger process`; its local
-text stage finds no text layer (`no_text_layer`) and the page goes on to OCR.
-Without `--config`, `process` reads a folder of page images with OCR, as it
-does a PDF.
-
-A page's number is its place in the folder, which need not be the number in
-its file name: if the folder starts at `0081.jpg`, that image is page 1. The
-report, the transcript and the [review view](processing-spec.md#review-beside-the-page-image)
-show both, as `1 (0081.jpg)`, and the review view shows each page's own image.
-A snapshot written by [`fetch`](iiif.md#process-the-snapshot) is such a
-folder; its fetch record, `iiif-fetch.json`, and the `iiif/` folder beside it
-are the only other things it may hold.
+[Page images](process-a-collection.md#page-images) explains what the folder may
+hold, how pages are numbered and what is recorded.
 
 ## Document jobs
 
-For a document that needs both text-layer extraction and OCR, use
-[`process`](processing-spec.md). It manages attempts under one budget and
-produces a source-linked transcript and report. Jobs retain checkpoints
-automatically; individual `run` commands need `--resumable` at creation. Use
-[`pageledger resume DIR`](checkpoint-spec.md#get-started) to recover either.
+To read a whole document with its own text first and OCR only where that text
+is missing or looks wrong, use [`process`](processing-spec.md) instead: it
+keeps every reading under one budget, lists the pages that need a person, and
+keeps recovery records automatically, where `run` needs `--resumable` when it
+starts. [`pageledger resume DIR`](checkpoint-spec.md#get-started) recovers
+either.

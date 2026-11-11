@@ -79,7 +79,7 @@ pageledger fetch https://example.org/iiif/item/manifest.json --pages "1-8,81" --
 pageledger process sources/item --out jobs/item
 ```
 
-A snapshot is a [folder of page images](pdf-ocr-first-run.md#9-a-folder-of-page-scans),
+A snapshot is a [folder of page images](process-a-collection.md#page-images),
 and `process` (or `run`) reads it as one: the images are the source and their
 hashes its identity, while the fetch record is checked against them and kept
 in the job as context, with each page's canvas, so a page can be cited by its
