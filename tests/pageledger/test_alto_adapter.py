@@ -23,12 +23,14 @@ from pageledger.alto_adapter import (
     alto_name,
     alto_path,
     confidence_detail,
+    numbered_apart,
     page_layout,
     page_text,
     parse_alto,
     rendered_page_size,
 )
 from pageledger.checkpoint import read_record
+from pageledger.image_source import carrier, read_image_source
 from pageledger.layout import GRID, layout_sha256
 from pageledger.processing import process, verify_job
 from pageledger.runner import run
@@ -692,3 +694,72 @@ def test_stem_on_a_pdf_is_refused_with_its_reason(reel, tmp_path):
         adapter.preflight([source])
     with pytest.raises(ValueError, match=r"use \{page\} for a PDF"):
         adapter.extract(source, page_id="p0001", page_number=1, action="transcribe_text")
+
+
+@pytest.mark.parametrize(
+    ("names", "example"),
+    [
+        (["0001.png", "0002.png", "0003.png"], None),
+        (["recto.png", "verso.png"], None),
+        (["reel5_0001.png", "reel5_0002.png"], None),
+        (["0001.png", "0003.png"], "'0003.png' is page 2"),
+        (["0000.png", "0001.png"], "'0000.png' is page 1"),
+        (["cover.png", "0001.png"], "'0001.png' is page 2"),
+        (["page-1.png", "page-2.png", "page-10.png"], "'page-10.png' is page 3"),
+        (["letter-1923.png"], "'letter-1923.png' is page 1"),
+    ],
+)
+def test_page_images_whose_own_numbers_are_not_their_positions(names, example):
+    assert numbered_apart(names) == example
+
+
+@pytest.fixture
+def gapped(tmp_path):
+    """A snapshot with canvas 2 missing, and the library's ALTO for every canvas."""
+    folder = tmp_path / "snapshot"
+    folder.mkdir()
+    for name in ("0001.png", "0003.png"):
+        (folder / name).write_bytes(_png(100, 140))
+    library = tmp_path / "library-alto"
+    library.mkdir()
+    for number in (1, 2, 3):
+        (library / f"{number:04d}.xml").write_bytes(directory_page())
+    return folder, library
+
+
+@needs_pdfinfo
+def test_page_is_refused_before_a_run_when_page_images_carry_other_numbers(gapped, tmp_path):
+    folder, library = gapped
+    config = tmp_path / "run.yml"
+    config.write_text(
+        yaml.safe_dump(
+            {
+                "schema_version": "0.1",
+                "taxonomy": {"page_types": {"prose": {"default_action": "transcribe_text"}}},
+                "run": {"adapter": "alto", "adapter_options": {"dir": str(library)}},
+            }
+        )
+    )
+    with pytest.raises(ValueError, match=r"'0003.png' is page 2.*name: '\{stem\}.xml'"):
+        run(inputs=[folder], config_path=config, out_dir=tmp_path / "run", dry_run=False)
+    assert not (tmp_path / "run").exists()
+
+
+@needs_pdfinfo
+def test_page_is_refused_before_a_job_when_page_images_carry_other_numbers(reel, gapped, tmp_path):
+    folder, library = gapped
+    _, config, _, _ = reel
+    data = yaml.safe_load(config.read_text(encoding="utf-8"))
+    data["processing"]["local_text"]["adapter_options"] = {"dir": str(library)}
+    config.write_text(yaml.safe_dump(data), encoding="utf-8")
+    with pytest.raises(ValueError, match=r"processing.local_text: .*'0003.png' is page 2"):
+        process(source=folder, config_path=config, out_dir=tmp_path / "job")
+    assert not (tmp_path / "job").exists()
+
+
+def test_page_never_reads_another_pages_file_through_a_carrier(gapped):
+    folder, library = gapped
+    adapter = AltoAdapter(dir=str(library))
+    with carrier(read_image_source(folder), [1, 2]) as (path, _):
+        with pytest.raises(ValueError, match="'0003.png' is page 2"):
+            adapter.extract(path, page_id="p0002", page_number=2, action="transcribe_text")

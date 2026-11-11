@@ -51,8 +51,24 @@ _NO_STEM = (
     "or a folder of page images; a PDF's pages have no file names of their own, so use "
     "{{page}} for a PDF"
 )
+_NUMBERED = (
+    "alto name {template} finds each page's ALTO file by its position in the document, but "
+    "the page images in {source} carry numbers of their own that are not their positions "
+    "({example}), as in a IIIF snapshot with a canvas missing or a folder with a page left "
+    "out. {{page}} would read another page's file. If the ALTO files are named after the "
+    "images, use name: '{{stem}}.xml'"
+)
 _PAGE_SPEC = re.compile(r"(0?[1-9])?d?\Z")
 _CC = re.compile(r"[0-9](\s*[0-9])*\Z")
+
+
+def numbered_apart(names: list[str]) -> str | None:
+    """The first page image whose own number, the last run of digits in its name, is not its page."""
+    for position, name in enumerate(names, start=1):
+        numbers = re.findall(r"[0-9]+", PurePosixPath(name).stem)
+        if numbers and int(numbers[-1]) != position:
+            return f"'{name}' is page {position}"
+    return None
 
 
 class AltoInvalid(ValueError):
@@ -452,20 +468,32 @@ class AltoAdapter:
         return action == "transcribe_text"
 
     def preflight(self, sources: list[Path]) -> None:
-        if self.uses_stem:
-            from .image_source import is_image_source
+        from .image_source import is_image_source, page_names
 
-            for source in sources:
-                if not is_image_source(source):
-                    raise ValueError(_NO_STEM.format(source=source))
+        for source in sources:
+            if self.uses_stem and not is_image_source(source):
+                raise ValueError(_NO_STEM.format(source=source))
+            if not self.uses_stem and is_image_source(source):
+                self._check_positions(page_names(source), source)
         if shutil.which("pdfinfo") is None:
             raise ValueError("pdfinfo is required to check ALTO geometry; install Poppler")
 
+    def _check_positions(self, names: list[str], source: Path) -> None:
+        example = numbered_apart(names)
+        if example is not None:
+            raise ValueError(
+                _NUMBERED.format(template=self.template, source=source, example=example)
+            )
+
     def _stem(self, source: Path, page_number: int) -> str | None:
         """The page image's file name without its extension, when the template asks for it."""
+        from .image_source import carrier_page, carrier_source
+
         if not self.uses_stem:
+            images = carrier_source(source)
+            if images is not None:
+                self._check_positions([page.name for page in images.pages], images.path)
             return None
-        from .image_source import carrier_page
 
         image = carrier_page(source, page_number)
         if image is None:

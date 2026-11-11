@@ -116,7 +116,9 @@ and, from 1.0, [stability](docs/stability.md).
   [the recipe](docs/engine-recipes.md#alto-from-a-library-any-platform-no-engine).
 - `alto` finds a page's file by the page image's own name with `name: "{stem}.xml"`, so `0081.xml` is read
   for `0081.jpg` whatever the page's place in the folder, in a plain `run` and in a document job. With a PDF
-  source `{stem}` is refused before the run or job starts.
+  source `{stem}` is refused before the run or job starts, and with page images whose names carry numbers
+  that are not their page numbers (a snapshot with a canvas missing, a folder with a page left out) so is
+  `{page}`, which would read another page's file.
 - A IIIF snapshot is a source: `pageledger process sources/item --out jobs/item` reads the folder
   `fetch` wrote as a folder of page images, provided its `iiif-fetch.json` lists exactly the folder's
   images with their hashes (anything else, or a record that disagrees, is refused with what is wrong). The

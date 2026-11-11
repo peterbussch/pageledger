@@ -275,8 +275,14 @@ libraries usually name each ALTO file after its image: `0081.xml` for
 ```
 
 This matters when the images keep their numbers from a larger item, as a
-[IIIF snapshot](iiif.md) fetched with `--pages` does: there the ninth page of the
-job can be `0081.jpg`, and `{page:04d}.xml` would look for `0009.xml`. Keep the
+[IIIF snapshot](iiif.md) fetched with `--pages` does, or when a number is
+missing, as in an incomplete snapshot or a folder with a page left out: there the
+ninth page of the job can be `0081.jpg`, and `{page:04d}.xml` would read
+`0009.xml`, another page's text. So `{page}` is refused for page images whose
+names carry a number (the last run of digits in the name) that is not their page
+number, before the job or run starts, and the message suggests `{stem}`. It
+cannot tell when the images were renumbered after a page was dropped, or when
+their names carry no numbers at all; check the pairing on the first pages. Keep the
 ALTO files in their own folder, not beside the images: a folder of page images
 holds nothing but page images. `{stem}` works in a plain `run` and in a job; a
 PDF's pages have no file names, so with a PDF source `{stem}` is refused before

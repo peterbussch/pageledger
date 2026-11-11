@@ -149,6 +149,18 @@ def is_image_source(path: Path) -> bool:
     return path.suffix.lower() in IMAGE_SUFFIXES
 
 
+def page_names(path: Path) -> list[str]:
+    """The file names of an image source's pages in page order, without reading the images."""
+    if not path.is_dir():
+        return [path.name]
+    names = [
+        child.name
+        for child in path.iterdir()
+        if child.suffix.lower() in IMAGE_SUFFIXES and not child.name.startswith(".")
+    ]
+    return sorted(names, key=_natural_key)
+
+
 def _natural_key(name: str) -> tuple[list[Any], str]:
     parts = re.split(r"(\d+)", name.lower())
     return [int(part) if index % 2 else part for index, part in enumerate(parts)], name
@@ -869,9 +881,14 @@ def carrier(source: ImageSource, pages: Collection[int]) -> Iterator[tuple[Path,
             _CARRIERS.pop(path, None)
 
 
+def carrier_source(path: Path) -> ImageSource | None:
+    """The page images behind a registered carrier, if ``path`` is one."""
+    return _CARRIERS.get(path.absolute()) or _CARRIERS.get(path.resolve())
+
+
 def carrier_page(path: Path, page_number: int) -> ImagePage | None:
     """The page image behind page ``page_number`` of a registered carrier, if ``path`` is one."""
-    source = _CARRIERS.get(path.absolute()) or _CARRIERS.get(path.resolve())
+    source = carrier_source(path)
     if source is None or not 1 <= page_number <= len(source.pages):
         return None
     return source.pages[page_number - 1]

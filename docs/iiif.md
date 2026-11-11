@@ -110,7 +110,12 @@ pixels than the archive holds.
 - Canvases without an image service (a static image file only) and canvases
   that offer a choice of images are refused, naming the canvas. So are IIIF
   collections and Image API 1 services.
-- Institutional OCR (ALTO) linked from a manifest is not fetched.
+- Institutional OCR (ALTO) linked from a manifest is not fetched. If you have
+  the library's ALTO files, read them with the `alto` engine and
+  `name: "{stem}.xml"`, which pairs each file with the image of the same name:
+  the images keep their canvas numbers, so after `--pages` or a missing canvas
+  page 9 of the job can be `0081.jpg`, and `{page}` is refused there (see
+  [engine recipes](engine-recipes.md)).
 - PageLedger fetches whatever URLs the manifest names, over http or https,
   including addresses on your own network; only fetch manifests you trust.
   It follows at most three redirects and never one from https to http. It

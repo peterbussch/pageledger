@@ -444,8 +444,9 @@ def _process(
                 adapter = adapters[name] = runner.load_adapter(
                     policy[name]["adapter"], policy[name]["adapter_options"]
                 )
-                # alto's {stem} names files after page images, which only they have.
-                if images is None and getattr(adapter, "uses_stem", False):
+                # alto's {stem} names files after page images, which only they have,
+                # and its {page} must not pair page images with another page's file.
+                if getattr(adapter, "uses_stem", None) == (images is None):
                     adapter.preflight([source])
             except ValueError as exc:
                 raise ValueError(f"processing.{name}: {exc}") from exc
