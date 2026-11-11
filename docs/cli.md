@@ -69,8 +69,8 @@ text source (any file that reads as UTF-8, such as `.txt` or `.md`). A source
 that is none of these, or does not exist, is refused with a message that says
 what a source can be: as a usage error (exit 2) when `process` would choose the
 engine, and otherwise (exit 1) before the job directory is created. Two lines on
-stderr name the configuration used and the `init --run` command that writes
-it out for editing. Before the job directory is created, the engine is loaded
+stderr name the configuration used and the `init` command that writes it out
+for editing. Before the job directory is created, the engine is loaded
 and its preflight run; a missing package or tool is an error naming what to
 install, and pointing to `pageledger doctor` where the engine's own message
 does not. `--engine`, `--lang` and `--model-dir` together with `--config` are
@@ -100,9 +100,10 @@ warning.
 the first page outside it and the source's page count. If `--out` already
 exists, inspect or resume the job there, or choose another output folder.
 
-A job that completes also prints, after its status, how many pages need a
-person and the next commands (`inspect`, then `review` or `export`).
-`--json` output is unchanged.
+`process` ends by printing the opening of the job's report, for a finished,
+paused or halted job alike: its status, how many pages were read, how many
+need a person and why, the one command to run next, and the `inspect` command
+that shows the full report. `--json` prints the job result instead.
 
 A job can finish with unresolved pages. `completed` means processing finished,
 `paused_budget` means a processing limit was reached (continue with
@@ -160,7 +161,7 @@ pageledger export jobs/book --format jsonl --out book.jsonl --reviewed-only
 ```
 
 Writes a job's selected text page by page as `txt`, `md`, `jsonl` or `tei`,
-with each page's review state and the attempt that produced it. A job that does
+with each page's review state and the reading that produced it. A job that does
 not verify is refused. `--reviewed-only` keeps only pages with a human review
 receipt. See [Export document text](export.md) for the formats and for citing an
 export.

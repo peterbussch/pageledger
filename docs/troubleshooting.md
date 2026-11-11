@@ -29,6 +29,15 @@ If a selected page is past the end, PageLedger names that page and the source's
 page count. Correct the `--pages` range; for example, a 124-page source cannot
 include page 125.
 
+## "is not a PDF, a page image or UTF-8 text"
+
+`process` decides what kind of source it has before the job exists. A source
+is a PDF, a UTF-8 text file (pages separated by form feeds), one JPEG or PNG
+page image, or a folder of them. A Word file, a spreadsheet or a folder with
+no page images in it (`is a folder with no page images in it`) is refused, and
+no job folder is written. Export a Word file as PDF first; convert TIFF or
+JPEG 2000 page images to PNG (see `unsupported_image` below).
+
 ## A review sheet was renamed
 
 Keep the `.binding.json` file beside the CSV. If a spreadsheet saved the CSV
@@ -36,6 +45,20 @@ under a new name, `review --apply` can locate the unique matching binding in
 that folder. If there is no unique match, rename the binding to
 `SHEET.csv.binding.json`. The binding still checks each row against the job's
 selected output and hashes.
+
+## A review is refused
+
+- `Invalid document review identity or envelope`: the review file names a
+  different source (its `source_sha256`), page or output than the job holds,
+  usually because it was written for another job or before the job changed.
+  Write a new sheet or view from the job as it is now.
+- `The correction for page N is empty`: a correction cannot be empty. If the
+  page has no text, record it as `blank`.
+- `The correction for page N is identical to the reading it started from`:
+  nothing was corrected. Record the page as `accept` instead.
+- The warning `blank_with_text`: a page recorded as blank has a selected
+  reading of 50 or more words. Check the page; the decision is still recorded
+  unless you change it.
 
 ## `bundle` refuses a directory
 
@@ -47,14 +70,6 @@ a replay bundle; follow [Deposit a job](share-and-cite.md#deposit-a-job).
 
 PageLedger does not rank grades from different extractors. The text report
 still shows page lengths and warning changes side by side for each shared page.
-
-When reading a damaged PDF, pypdf may report that it repaired structural
-objects. PageLedger summarizes these notices on stderr and keeps other pypdf
-warnings visible.
-
-A generic custom-adapter failure may instead appear redacted in `run.log`.
-PageLedger does not reveal adapter-controlled stderr. Check the local setup
-with `pageledger doctor`, then run the tool directly as described below.
 
 ## `engine_timeout`
 
@@ -91,6 +106,10 @@ repair damaged PDFs. In a job, `source_container_invalid:<code>` is a
 halted source-container failure; check the `job.json` failure details and
 replace the source only if you can establish it is a valid, authorized copy.
 
+When reading a damaged PDF, pypdf may report that it repaired structural
+objects. PageLedger summarizes these notices on stderr and keeps other pypdf
+warnings visible.
+
 ## `unsupported_image` or `malformed_image`
 
 PageLedger reads page images in JPEG and PNG. `unsupported_image` names a file
@@ -108,6 +127,49 @@ the effective DPI in provenance. `render_limit` means fitting the page under
 the configured pixel cap would require less than 72 DPI. Consider splitting the
 page upstream or, if memory allows, increasing `max_render_pixels` in
 `run.adapter_options`. See [page size and rendering](ocr-options.md#page-size-and-rendering).
+
+## "It resumes only where it was written"
+
+A job that has been moved or copied verifies, exports and can be reviewed
+where it is, but `resume` refuses it: its stage runs are bound to the folder it
+was written in, and two resumable copies could pay for the same pages twice.
+Move it back to the folder the message names to resume it.
+
+## A word list is missing or changed
+
+A job that judges words with a word list (`processing.lexicon` with
+`provider: wordlist`) records the list's path and SHA-256. `resume` and
+`verify` refuse the job when the file at that path is missing or different
+(`This job judged words with wordlist:...`): restore the recorded file. A new
+list is read only by a new job. `cannot read the word list`, `has no words`
+and `is not UTF-8 text` mean the file named in the config is not a plain UTF-8
+list of one word per line.
+
+## An `alto` name template is refused
+
+`name: "{stem}.xml"` pairs each page image with the ALTO file of the same name,
+so it is refused for a PDF, whose pages have no file names: use
+`name: "{page:04d}.xml"` there. `{page}` is refused for page images whose names
+carry numbers that are not their positions in the folder, as in a IIIF snapshot
+with a canvas missing: use `{stem}`. See
+[the ALTO recipe](engine-recipes.md#alto-from-a-library-any-platform-no-engine).
+
+## `fetch` refuses a URL or a canvas
+
+- `is a loopback, private or link-local address, and only the host of the URL
+  you named ... may be one`: a manifest, image service or redirect led to a
+  machine on your own network that you did not name. Name a manifest on the
+  same host as its images.
+- `refused a plain http URL under the https URL you named` or `refused a
+  redirect from https to http`: under an `https` URL nothing is fetched over
+  `http`. An `http://` image service id is asked for over `https` first; when
+  that does not answer, the canvas fails.
+- `the URL names a IIIF collection`, `Image API 1 services are not supported`:
+  fetch one of the collection's manifests, or the item from another server.
+
+The fetch stops with an incomplete record when a server keeps refusing; `fetch
+--resume` with the same URL fetches only what is missing. See the
+[IIIF limits](iiif.md#limits).
 
 ## A job is paused or halted
 
@@ -127,13 +189,31 @@ paid request is safe to repeat when its outcome is unknown. See
 
 ## `verify` reports a problem
 
-Verification checks whether retained artifacts agree with their manifests and
-hashes. Do not edit generated files to silence a failure. Keep a copy of the
-original directory, read the verifier's named artifact and message, and
-investigate whether a file was changed, omitted, or copied incompletely.
-Compare a copied directory with its source. For a job, verify again after
-restoring the exact missing or altered artifact; otherwise preserve the
-verification failure as part of the record. See [artifact verification](artifacts.md).
+Verification checks whether the retained files agree with their records and
+hashes; it does not judge the text. A failure names the file and what is wrong.
+Do not edit generated files to silence it. Keep a copy of the folder,
+investigate whether a file was changed, left out or copied incompletely, and
+verify again after restoring the exact file; otherwise keep the failure as part
+of the record. See [artifact verification](artifacts.md).
+
+`Status: fail (unfinished)` with `This job did not finish` means the job was
+interrupted or is still running: run the `pageledger resume` command it names,
+then verify again.
+
+`verify` can pass with these warnings, which describe where the job, run or
+source is now rather than a fault in the record:
+
+| Warning | Meaning |
+|---|---|
+| `job_relocated` | The job is not in the folder it was written in. It still verifies in full. |
+| `job_changed_elsewhere` | A review or adjudication was recorded on a copy of the job, away from where it was written. |
+| `source_missing` | The source is not at its recorded path and no [source index](checkpoint-spec.md#moved-source-files) entry finds it. The job's own evidence was checked. |
+| `source_relocated` | The source was found through the source index. |
+| `source_changed` | For a run only: the source no longer matches what the run read; for page images, each image that changed, went missing or was added is named. A job whose source changed fails instead. |
+| `carrier_not_reproduced` | The PDF PageLedger builds from page images came out differently, which means another PageLedger version wrote it; the images match. |
+| `iiif_snapshot_incomplete`, `iiif_record_changed`, `iiif_snapshot_grown` | The IIIF snapshot was incomplete when read, its fetch record has changed since, or a later `fetch --resume` added images; see [process the snapshot](iiif.md#process-the-snapshot). |
+
+Other bytes at the source's recorded path fail verification.
 
 ## The command exits with code 134 after finishing
 
@@ -165,6 +245,10 @@ mkdir -p /tmp/pageledger-debug
 pdftoppm -f 42 -l 42 -r 300 -png scans/book.pdf /tmp/pageledger-debug/page
 tesseract /tmp/pageledger-debug/page-42.png stdout -l eng
 ```
+
+A failure in a custom adapter may appear redacted in `run.log`: PageLedger
+does not reveal adapter-controlled stderr. Running the tool directly, as above,
+shows its own message.
 
 Adjust the output filename if Poppler names it differently; inspect the files
 it actually produced. This direct test does not create PageLedger provenance

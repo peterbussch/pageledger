@@ -22,8 +22,8 @@ flowchart TD
 ```
 
 The report and human-receipt paths belong to jobs. Explicit reruns and
-portable bundles operate on individual runs. Image-evidence runs cannot be
-bundled in this version.
+portable bundles operate on individual runs. Runs of page images and runs
+with image evidence cannot be bundled yet.
 
 ## The canonical unit: pages
 
@@ -230,9 +230,9 @@ editable-install limits.
 
 `process` owns the ordered stages and their shared budget. Each stage produces
 ordinary resumable child runs. The job records which
-attempt supplies each page's text and preserves previous defects as review
+reading supplies each page's text and preserves previous defects as review
 holds. A source-bound human receipt can mark text or a blank page as reviewed.
-Grades and model confidence do not select the winning attempt.
+Grades and model confidence do not select the winning reading.
 
 For job recovery, limits and retained attempts, see the
 [processing specification](processing-spec.md). Individual-run recovery is
@@ -252,5 +252,5 @@ integrations or future work. Whole-job portable bundles, region-level routing,
 and per-page schemas are also unimplemented.
 
 OCR model training, provider pricing catalogs, domain dictionaries, dashboards,
-and TEI/PAGE/ALTO/GIS exporters remain outside core. Custom adapters and consumers
+and PAGE, ALTO or GIS exporters remain outside core (`export` writes TEI). Custom adapters and consumers
 of the plain-file artifacts can provide them without changing the page ledger.

@@ -10,10 +10,10 @@ used across the reference.
 |---|---|---|
 | Extract pages | `text`, `pdf_text`, `pdf_ocr`, `rapidocr`, `indra`, `vision` and `alto` (a library's ALTO OCR); custom adapters use the adapter protocol. | Select the extractor, configure it, and judge its output. |
 | Route pages | `classify` assigns structural types and writes a route map and text-free sidecar. | Review decisions; domain labels require a classifier hook. |
-| Process a document | `process` manages local text, OCR and optional image stages with shared limits and retained attempts. | Supply stage config (or start from the one `init` writes), adapter code and credentials where needed. |
+| Process a document | `process` manages local text, OCR and optional image stages with shared limits and retained attempts. | Without a config the job uses Tesseract in English (no OCR for a text file); for anything else, write the config (`init` starts one) and supply adapter code and credentials where needed. |
 | Review and export | Job reports, source-bound review receipts, review sheets and verified `txt`, `md`, `jsonl`, or `tei` exports. | A human makes and records review decisions. |
 | Align structured output | Schema alignment supports `markdown_table`, `json`, and `csv` output. | Produce structured output and declare columns/checks. Plain text is not aligned. |
-| Compare or replay | Compare-runs reports page differences; bundles and replay check transport and recorded identities. | Comparison is conditional; replay does not reproduce external services or certify accuracy. |
+| Compare or replay | `compare` reports page differences; bundles and replay check transport and recorded identities. | Comparison is conditional; replay does not reproduce external services or certify accuracy. |
 
 ## Built in and tested
 
@@ -21,7 +21,7 @@ used across the reference.
 
 | Supported | What to rely on | Limit |
 |---|---|---|
-| `run` with `text`, `pdf_text`, `pdf_ocr`, `rapidocr` or `vision`; custom adapters follow the adapter protocol. | Page-level attempts and recorded source, extractor, quality and cost details. `--pages` preserves source page numbers. | `pdf_text` reads a text layer; `pdf_ocr` needs locally installed Poppler and Tesseract. Quality signals do not establish accuracy. See [PDF first run](pdf-ocr-first-run.md) and [quality warnings](provenance-spec.md#warning-taxonomy). |
+| `run` with `text`, `pdf_text`, `pdf_ocr`, `rapidocr`, `indra`, `vision` or `alto`; custom adapters follow the adapter protocol. | Page-level attempts and recorded source, extractor, quality and cost details. `--pages` preserves source page numbers. | `pdf_text` reads a text layer; `pdf_ocr` needs locally installed Poppler and Tesseract. Quality signals do not establish accuracy. See [PDF first run](pdf-ocr-first-run.md) and [quality warnings](provenance-spec.md#warning-taxonomy). |
 | Page images: a JPEG or PNG file is a one-page document, and a folder of them one document in natural order of file name. | Each image is hashed and the source's identity is a hash of the page list, so `verify` names an image that changed, went missing or was added. The engines read a PDF carrier that holds the images' own bytes. | JPEG and PNG only; TIFF and JPEG 2000 must be converted first. See [a folder of page scans](process-a-collection.md#page-images). |
 | Built-in adapter defaults, `adapter_options`, `--adapter-path`, and dry-run planning. | Defaults are recorded; dry runs do not call extractors. | Only explicitly supplied configuration is read. See [CLI](cli.md), [adapter protocol](adapter-protocol.md), and [OCR options](ocr-options.md). |
 | Page budgets, retries and optional continue-on-error. | Page, token and dollar limits; failed or unattempted pages can enter rerun work. | Cost may be unknown or estimated, not provider-billed spend. See [plan time and cost](plan-time-and-cost.md) and [warnings](warnings.md). |
@@ -71,14 +71,15 @@ and a retried page is read again whole, the model gets the stage's prompt
 without the entry heading a tile continues, the OCR still reads the whole page,
 column order assumes left-to-right print, only the `image` stage is read in
 tiles (not `local_image` or `second_opinion`), and `vision` is the only built-in
-adapter that reads tiles. See
+adapter that reads tiles. An engine comparison outside contest compares a tiled
+reading with the OCR in each reading's own order. See
 [Read dense pages in tiles](processing-spec.md#read-dense-pages-in-tiles).
 
 ### Review and export
 
 | Supported | What to rely on | Limit |
 |---|---|---|
-| Job reports, human review receipts, review sheets, corrections of a page's text, `verify`, and verified `txt`, `md`, `jsonl`, or `tei` exports. | A receipt binds a human decision to the page and selected output; a person's corrected text is kept as a new reading bound to the reading it was made from, which stays unchanged; exports preserve page boundaries and review state and mark corrected text. A job verifies, exports and can be reviewed after its directory is moved or copied, and records changes made away from where it was written. | A person makes the review decision. Verification and export do not certify transcription accuracy. See [review](processing-spec.md#review-in-a-spreadsheet), [report and receipt](document-report-spec.md), and [export](export.md). |
+| Job reports, human review receipts, review sheets, corrections of a page's text, `verify`, and verified `txt`, `md`, `jsonl`, or `tei` exports. | A receipt binds a human decision to the page and selected output; a person's corrected text is kept as a new reading bound to the reading it was made from, which stays unchanged; exports preserve page boundaries and review state, mark corrected text, and leave out the machine text of a page a person recorded as blank, an illustration, handwriting, unreadable or a source defect. A job verifies, exports and can be reviewed after its directory is moved or copied, and records changes made away from where it was written. | A person makes the review decision. Verification and export do not certify transcription accuracy. See [review](processing-spec.md#review-in-a-spreadsheet), [report and receipt](document-report-spec.md), and [export](export.md). |
 | A static HTML review view (`review --out`): each page's image beside its selected text, other readings compared word by word, open contested spans marked, a text box to correct each page, and decisions downloaded as `review.json` or, without corrections, as a review sheet. | The view embeds the rows and binding `review --sheet` writes, so `review --apply` checks its decisions like any sheet's. | A rendering, not evidence: decisions and corrections count only once `review --apply` applies them. The word changes it marks are a guide; `review --apply` counts them again. A reading a browser text box cannot hold exactly, or one holding control or text-direction characters, is corrected through a file instead; soft hyphens and zero-width spaces stay editable and are counted on the page. Readings of more than about 5,000 words each are shown in full but not compared word by word. Page images are rendered with Poppler's `pdftoppm`, for PDFs and for page images alike; without it, a view of page images links to each image instead. Decisions in progress stay in one browser's storage. See [review beside the page image](processing-spec.md#review-beside-the-page-image). |
 
 ### Align structured output
@@ -358,6 +359,17 @@ PageLedger has been exercised locally on:
   military-statistical review (178-page image-only scan, pre-reform
   orthography). Walkthrough: [`multilingual-ocr.md`](multilingual-ocr.md).
 - A 72-page born-digital PDF via `pageledger[pdf]`.
+- 74 pages of 20 research PDFs (historical Russian print, directories,
+  gazettes, scholarship), classed by hand against their scans, which set
+  [hold policy 0.9](processing-spec.md#measured-on-the-74-dogfood-pages):
+  pages left wrong and not held fell from 28 under 0.8 to 8, and no right page
+  was held. The 12 right pages are all born-digital, so no right OCR page was
+  in the sample. This is a measurement on those pages, not an accuracy figure.
+- 54 column tiles of a 1934 telephone directory, read by a model and by
+  RapidOCR's English model. The `latin-print-0.1` contest rules were chosen on
+  these same tiles, so this is not an independent test: they settled 81 of
+  1,118 spans, and the 8 settlements checked against a transcription or the
+  image were right. See [contest](processing-spec.md#contest-a-models-reading).
 - The structural classifier was checked against retained OCR from five
   sampled pages of a 1916 Bessarabia address-calendar and seven sampled 1939
   census spreads. That pass tuned the column-line threshold; it supports the
