@@ -1145,7 +1145,11 @@ def _text_and_scan(page: Any) -> dict[str, bool]:
     from pypdf.errors import PyPdfError
     from pypdf.generic import ContentStream
 
-    width, height = float(page.cropbox.width), float(page.cropbox.height)
+    try:
+        width, height = float(page.cropbox.width), float(page.cropbox.height)
+    except (PyPdfError, AttributeError, KeyError, TypeError, ValueError):
+        # A page whose box cannot be read gives no signal; its text is still read.
+        return {"scan": False, "invisible": False, "under_image": False}
     shown = {"all": 0, "invisible": 0, "covered": 0, "scan": False}
 
     def multiply(m: list[float], n: list[float]) -> list[float]:
