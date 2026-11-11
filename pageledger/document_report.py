@@ -18,7 +18,6 @@ from .image_source import page_target
 from .processing_policy import (
     _DISAGREEMENTS,
     _HOLD_ORDER,
-    BLANK_REFUTING_POLICIES,
     ENGINE_AGREEMENT_THRESHOLD,
     HOLD_POLICIES,
     LADDER_POLICIES,
@@ -30,9 +29,17 @@ from .processing_policy import (
     validate_review,
     warning_holds,
 )
-from .wording import ADVICE, BLANK_WITH_TEXT, warning_code
-from .wording import hold as hold_words
-from .wording import reviewed as reviewed_words
+from .wording import (
+    ADVICE,
+    BLANK_SCAN,
+    BLANK_WITH_TEXT,
+    CORRECTION,
+    HOLDS,
+    REVIEWED,
+    reading_name,
+    sentence,
+    warning_code,
+)
 from .wording import warning as warning_words
 
 _CURRENT_REPORT_FORMAT = "0.9"
@@ -180,7 +187,9 @@ def render_transcript(report: dict) -> str:
             _link("Source page" + _image_name(report, page), page["source_link"]) + "\n\n"
         )
         selected = page["selected_output"]
-        if selected is None:
+        if report.get("report_format") == _CURRENT_REPORT_FORMAT:
+            chunks.append(_transcript_page(report, page))
+        elif selected is None:
             chunks.append(f"[No selected text: {page['disposition']}.]\n\n")
         else:
             label = (
@@ -194,6 +203,19 @@ def render_transcript(report: dict) -> str:
             chunks.append(selected["text"])
             chunks.append("\n\n")
     return "".join(chunks)
+
+
+def _transcript_page(report: dict, page: dict) -> str:
+    selected = page["selected_output"]
+    if selected is None:
+        state = page["disposition"]
+        return f"[No selected text: {HOLDS.get(state) or REVIEWED.get(state) or state}.]\n\n"
+    name = reader_name(report, _attempt(page, selected["attempt_id"]))
+    if selected.get("correction"):
+        name = f"{CORRECTION} of {name}"
+    elif selected.get("edition"):
+        name += ", with its settled differences applied"
+    return _link(f"Selected reading: {name}", selected["path"]) + f"\n\n{selected['text']}\n\n"
 
 
 def _stage_label(stage: str) -> str:
@@ -466,11 +488,15 @@ def _image_name(report: dict, page: dict) -> str:
 
 # -- Report format 0.9: written for a reader -----------------------------------
 
-# Stands for the job's folder in commands the report suggests; the terminal shows the path.
+# Stands for the job's folder in a next action the job records (a paused job's).
 JOB_DIR = "JOB_DIR"
+# The report is read inside the job's folder, which it cannot name after a move.
+_HERE = "."
 _COSTLESS = "nothing, since no page was read"
 # Holds the policy places on a reading, rather than the reading's own record.
 _PLACED_BY_POLICY = {"layer_outvoted", "reader_short", "letters_lost"}
+# Warnings that say a reading has no letters or digits.
+_EMPTY = {"empty_text", "no_text_layer"}
 
 
 def is_pending(page: dict, report: dict) -> bool:
@@ -516,56 +542,125 @@ def _grouped(pages: list[dict], keys: Callable[[dict], list[str]]) -> list[tuple
         for key in keys(page):
             groups.setdefault(key, []).append(page)
     order = {code: index for index, code in enumerate(_HOLD_ORDER)}
-    return sorted(groups.items(), key=lambda item: (-len(item[1]), order.get(item[0], 99), item[0]))
+    return sorted(
+        groups.items(),
+        key=lambda item: (-len(item[1]), order.get(item[0].split(":")[0], 99), item[0]),
+    )
 
 
 def _held_for(page: dict) -> list[str]:
     return list(dict.fromkeys(page.get("review_reasons") or [page["disposition"]]))
 
 
+def _decision_of(page: dict) -> dict:
+    return next(item for item in page["review"]["decisions"] if item["page_id"] == page["page_id"])
+
+
+def _layer(attempt: dict) -> bool:
+    return any(warning_code(item) == "ocr_text_layer" for item in attempt.get("warnings") or [])
+
+
+def reader_name(report: dict, attempt: dict) -> str:
+    """A reading named by what made it, from the engines the report records."""
+    return reading_name(
+        attempt["stage"],
+        (report.get("engines") or {}).get(attempt["stage"]),
+        layer=_layer(attempt),
+        images=report["source"].get("kind") == "page_images",
+    )
+
+
+def empty_reading(attempt: dict) -> bool:
+    """A reading with no letters or digits, as its warnings record."""
+    return any(warning_code(item) in _EMPTY for item in attempt.get("warnings") or [])
+
+
+def _has_text(page: dict) -> bool:
+    return bool(((page.get("selected_output") or {}).get("text") or "").split())
+
+
+def _scan(page: dict) -> bool:
+    """The page's own text is empty: a scan without a text layer, or a page image."""
+    return any(item["stage"] == "local_text" and empty_reading(item) for item in page["attempts"])
+
+
+def shown_holds(page: dict) -> list[str]:
+    """The holds to show a person. A page with text that another reason holds is not
+    also called blank; the record keeps every reason the job recorded."""
+    reasons = _held_for(page)
+    if "blank_candidate" in reasons and len(reasons) > 1 and _has_text(page):
+        reasons.remove("blank_candidate")
+    return reasons
+
+
+def hold_in_words(page: dict, reason: str) -> str:
+    """A hold or page state in plain words, without its code."""
+    if reason == "blank_candidate" and _has_text(page):
+        return BLANK_SCAN if _scan(page) else BLANK_WITH_TEXT
+    return HOLDS.get(reason) or REVIEWED.get(reason) or reason
+
+
 def _group_keys(page: dict) -> list[str]:
-    """A page's hold reasons, with a blank candidate that has text grouped on its own."""
+    """A page's holds as shown, with a blank hold on a page with text grouped on its own."""
     return [
-        f"{reason}:text" if reason == "blank_candidate" and _has_text(page) else reason
-        for reason in _held_for(page)
+        f"{reason}:{'scan' if _scan(page) else 'text'}"
+        if reason == "blank_candidate" and _has_text(page)
+        else reason
+        for reason in shown_holds(page)
     ]
 
 
-def _decision_of(page: dict) -> dict:
-    return next(item for item in page["review"]["decisions"] if item["page_id"] == page["page_id"])
+def _waiting_for(report: dict, stage: object) -> str:
+    if stage not in _STAGE_LABELS:
+        return "Not read yet"
+    engine = (report.get("engines") or {}).get(stage)
+    images = report["source"].get("kind") == "page_images"
+    return f"Not finished: waiting for {reading_name(str(stage), engine, images=images)}"
+
+
+def _has_images(report: dict) -> bool:
+    source = report["source"]
+    return source.get("kind") == "page_images" or source["path"].lower().endswith(".pdf")
 
 
 def _status_line(report: dict, job: str) -> str:
     status = report["status"]
     action = _escape(report["next_action"]).replace(JOB_DIR, job)
     if status == "completed":
-        return "Status: finished. Every stage this job is configured to run has run."
+        return "Finished: every stage this job is configured to run has run."
     if status == "processing":
         return (
-            "Status: not finished. The job stopped before all its stages had run, because it "
-            "was interrupted or is still running."
+            "Not finished: the job stopped before all its stages had run, because it was "
+            "interrupted or is still running."
         )
     if status == "paused_budget":
-        return f"Status: paused at a limit. {action}"
-    return f"Status: halted. {action}"
+        return f"Paused at a limit. {action}"
+    return f"Halted. {action}"
 
 
-def summary_lines(report: dict, job: str = JOB_DIR) -> list[str]:
-    """What happened and what to do now: the report's opening, which `process` also prints."""
-    pages, counts = report["pages"], report["counts"]
+def _sorted_pages(report: dict) -> tuple[list[dict], list[dict], list[dict], list[dict]]:
+    """The pages that need a person, are not finished, were reviewed, and the rest."""
+    pages = sorted(report["pages"], key=lambda page: page["page_number"])
     pending = [page for page in pages if is_pending(page, report)]
     held = [page for page in pages if needs_person(page, report)]
     reviewed = [page for page in pages if page.get("review") is not None]
     settled = {id(page) for page in [*pending, *held, *reviewed]}
-    clean = [page for page in pages if id(page) not in settled]
+    return held, pending, reviewed, [page for page in pages if id(page) not in settled]
+
+
+def summary_lines(report: dict) -> list[str]:
+    """The report's opening: what happened, where the pages stand, and what to do now."""
+    counts = report["counts"]
+    held, pending, reviewed, clean = _sorted_pages(report)
     name = Path(report["source"]["path"]).name
     total = counts["source_pages"]
     selected = counts["selected_pages"]
     of = f"{selected} of its {total} pages" if total is not None else f"{selected} pages"
+    source = _link(name, quote(report["source"]["path"], safe="/"))
     lines = [
-        _status_line(report, job),
+        _status_line(report, _HERE),
         "",
-        f"Source: {_escape(name)}; {of} selected, {counts['processed_pages']} read.",
+        f"Source: {source}; {of} selected, {counts['processed_pages']} read.",
         "",
     ]
     if held:
@@ -576,40 +671,42 @@ def summary_lines(report: dict, job: str = JOB_DIR) -> list[str]:
             + (", for these reasons (a page can have more than one):" if several else ":")
         )
         lines += [
-            f"  - {_hold_label(items[0], code.split(':')[0])}: {_pages(items)}."
+            f"  - {hold_in_words(items[0], code.split(':')[0])}: {_pages(items)}."
             for code, items in groups
         ]
     for code, items in _grouped(clean, lambda page: [page["disposition"]]):
-        lines.append(f"- {hold_words(code)}: {_pages(items)}.")
+        lines.append(f"- {hold_in_words(items[0], code)}: {_pages(items)}.")
     for code, items in _grouped(reviewed, lambda page: [_decision_of(page)["disposition"]]):
-        lines.append(f"- {reviewed_words(code)}: {_pages(items)}.")
+        lines.append(f"- {REVIEWED.get(code, code)}: {_pages(items)}.")
     for stage, items in _grouped(pending, lambda page: [str(page.get("next_action"))]):
-        waiting = (
-            "Not read yet"
-            if stage not in _STAGE_LABELS
-            else f"Not finished: waiting for the {_stage_label(stage)} stage"
-        )
-        lines.append(f"- {waiting}: {_pages(items)}.")
-    if not pages:
+        lines.append(f"- {_waiting_for(report, stage)}: {_pages(items)}.")
+    if not report["pages"]:
         lines.append("- No page was read.")
-    step = _next_step(report, job, held)
+    step = _next_step(report, held)
     if step:
         lines += ["", step]
-        if job == JOB_DIR and JOB_DIR in step:
-            lines.append(f"{JOB_DIR} stands for the folder that holds this report.")
     return lines
 
 
-def _next_step(report: dict, job: str, held: list[dict]) -> str | None:
+def _next_step(report: dict, held: list[dict]) -> str | None:
     status = report["status"]
-    stem = Path(report["source"]["path"]).stem
-    review = f"`pageledger review {job} --out {shlex.quote(stem + '-review')}`"
-    those = "the page that needs" if len(held) == 1 else f"the {len(held)} pages that need"
+    here = "in this job's folder, "
     if status == "processing":
-        return f"Next: `pageledger resume {job}` finishes the job."
+        return f"Next: {here}`pageledger resume .` finishes the job."
     if held:
+        if len(held) == 1:
+            those = "the page that needs a person" + (
+                " beside its page image" if _has_images(report) else ""
+            )
+        else:
+            those = f"the {len(held)} pages that need a person" + (
+                ", each beside its page image," if _has_images(report) else ""
+            )
         later = ", for the pages read so far" if status != "completed" else ""
-        return f"Next{later}: {review} shows {those} a person beside the page images."
+        return (
+            f"Next{later}: {here}`pageledger review .` writes the review view, where you check "
+            f"{those} and record what you decide."
+        )
     if status != "completed":
         return None
     if any(
@@ -618,28 +715,168 @@ def _next_step(report: dict, job: str, held: list[dict]) -> str | None:
         if page.get("review")
     ):
         return f"Next: {_escape(report['next_action'])}"
-    export = f"`pageledger export {job} --format md --out {shlex.quote(stem + '.md')}`"
-    return f"Next: {export} writes the selected text out."
+    out = shlex.quote("../" + Path(report["source"]["path"]).stem + ".md")
+    return (
+        f"Next: {here}`pageledger export . --format md --out {out}` writes the selected text "
+        "out, beside the job."
+    )
 
 
-def _layer(attempt: dict) -> bool:
-    return any(warning_code(item) == "ocr_text_layer" for item in attempt.get("warnings") or [])
+# -- What `process` prints when a job ends --------------------------------------
 
 
-def _reading(page: dict, attempt_id: str, *, link: bool = True) -> str:
+def closing_lines(report: dict, job: Path | str) -> list[str]:
+    """What `process` prints when the job ends: where the job is, what was read, what needs
+    a person and why, and the one next command, in words and without codes."""
+    folder = shlex.quote(str(job))
+    held, pending, _reviewed, _clean = _sorted_pages(report)
+    read = report["counts"]["processed_pages"]
+    pages = f"{read} page{'' if read == 1 else 's'} read"
+    need = (
+        "none needs a person"
+        if not held
+        else "1 needs a person"
+        if len(held) == 1
+        else f"{len(held)} need a person"
+    )
+    status = report["status"]
+    action = report["next_action"].replace(JOB_DIR, folder)
+    if status == "completed":
+        lines = [f"Finished: {pages}; {need}."]
+    elif status == "processing":
+        lines = [f"Not finished: {pages} so far; {need}."]
+    elif status == "paused_budget":
+        lines = [f"Paused at a limit: {pages}; {need} so far.", action]
+    else:
+        lines = [f"Halted: {action}", f"{pages.capitalize()}; {need}."]
+    lines.append(f"The job is in {folder}.")
+    if held:
+        groups = _grouped(held, _group_keys)[:3]
+        reasons = [
+            f"{_lower(hold_in_words(items[0], code.split(':')[0]))} ({len(items)})"
+            for code, items in groups
+        ]
+        joined = reasons[0] if len(reasons) == 1 else ", ".join(reasons[:-1]) + " or " + reasons[-1]
+        lines.append(f"Held because {joined}.")
+    if status == "processing":
+        lines.append(f"Next: pageledger resume {folder} finishes the job.")
+    elif held:
+        beside = " beside their page images" if _has_images(report) else ""
+        lines.append(f"Next: pageledger review {folder} shows those pages{beside} for checking.")
+    if report["counts"]["selected_outputs"] and status != "processing":
+        out = shlex.quote(Path(str(job)).name + ".md")
+        lines.append(f"Text out: pageledger export {folder} --format md --out {out}")
+    return lines
+
+
+def _lower(text: str) -> str:
+    return text[:1].lower() + text[1:]
+
+
+# -- The page table and the record -----------------------------------------------
+
+
+def _attempt(page: dict, attempt_id: str) -> dict:
     attempt = next((item for item in page["attempts"] if item["attempt_id"] == attempt_id), None)
     if attempt is None:
-        return f"reading {_escape(attempt_id)}"
-    name = _stage_label(attempt["stage"])
-    if _layer(attempt):
-        name += " (the PDF's own text, an earlier OCR)"
-    path = attempt.get("raw_artifact")
-    shown = _link(attempt_id, path) if path and link else f"`{_escape(attempt_id)}`"
-    return f"the {name} reading {shown}"
+        raise ValueError("selected output attempt is missing from document report")
+    return attempt
 
 
-def _sentence(text: str) -> str:
-    return text[:1].upper() + text[1:]
+def _selected_cell(report: dict, page: dict) -> str:
+    selected = page.get("selected_output")
+    if selected is None:
+        return "none"
+    name = reader_name(report, _attempt(page, selected["attempt_id"]))
+    correction = selected.get("correction")
+    if correction is not None:
+        made = corrections.describe(correction["words"])
+        return f"{_link(sentence(CORRECTION), selected['path'])} of {name}: {made}"
+    if selected.get("edition"):
+        return f"{_link(sentence(name), selected['path'])}, with its settled differences applied"
+    return _link(sentence(name), selected["path"])
+
+
+def _held_cell(report: dict, page: dict) -> str:
+    if is_pending(page, report):
+        cell = _lower(_waiting_for(report, page.get("next_action")))
+        if page.get("review_reasons"):
+            cell += "; held so far: " + _clauses(page)
+        return cell
+    if not page.get("review_reasons") and not needs_person(page, report):
+        return "nothing"
+    return sentence(_clauses(page))
+
+
+def _clauses(page: dict) -> str:
+    """The page's holds as shown, in plain words, joined into one lower-case clause."""
+    return "; ".join(_lower(hold_in_words(page, reason)) for reason in shown_holds(page))
+
+
+def _review_cell(page: dict) -> str:
+    if page.get("review") is None:
+        return "not checked"
+    decision = _decision_of(page)
+    return (
+        f"{REVIEWED.get(decision['disposition'], decision['disposition'])}: "
+        f"{_escape(decision['reviewer'])}, {_escape(decision['reviewed_at'])}, "
+        f"“{_escape(decision['reason'])}”"
+    )
+
+
+def _page_table(report: dict) -> list[str]:
+    held, pending, reviewed, clean = _sorted_pages(report)
+    rest = sorted([*reviewed, *clean], key=lambda page: page["page_number"])
+    view = (
+        "beside its image, with every reading of it"
+        if _has_images(report)
+        else "with every reading of it"
+    )
+    lines = [
+        "## Pages",
+        "",
+        "Pages that need a person come first. The review view (`pageledger review .` in this "
+        f"job's folder) shows each page {view}, and is where decisions and corrections are made.",
+        "",
+        "| Page | Held for | Selected text | Review |",
+        "| --- | --- | --- | --- |",
+    ]
+    for page in [*held, *pending, *rest]:
+        lines.append(
+            f"| {_escape(str(page['page_number']) + _image_name(report, page))} | "
+            f"{_held_cell(report, page)} | {_selected_cell(report, page)} | "
+            f"{_review_cell(page)} |"
+        )
+    lines.append("")
+    if pending:
+        lines += [
+            "For pages not finished, the text and holds are those so far: the stages still to "
+            "run may select another reading, and add or settle holds.",
+            "",
+        ]
+    return lines
+
+
+def _notes(report: dict) -> list[str]:
+    """Warnings that hold nothing, once each, with the pages they are on."""
+    holds = warning_holds(report)
+    found: dict[str, list[dict]] = {}
+    for page in report["pages"]:
+        codes = {
+            code
+            for attempt in page["attempts"]
+            for code in map(warning_code, attempt.get("warnings") or [])
+            if code and code not in holds and code not in _HOLD_ORDER
+        }
+        for code in codes:
+            found.setdefault(code, []).append(page)
+    lines = []
+    for code, pages in sorted(found.items(), key=lambda item: (-len(item[1]), item[0])):
+        line = f"- On {_pages(pages)} (`{_escape(code)}`): {warning_words(code)}"
+        if code in ADVICE:
+            line += f" What to do: {ADVICE[code]}"
+        lines.append(line)
+    return lines
 
 
 def _causes(page: dict, report: dict) -> list[dict]:
@@ -695,94 +932,6 @@ def _counted(page: dict, report: dict) -> list[dict]:
     return counted
 
 
-def _hold_evidence(page: dict, reason: str, report: dict) -> list[str]:
-    evidence = []
-    if reason in _DISAGREEMENTS:
-        for item in _counted(page, report):
-            pair = (
-                f"{_sentence(_reading(page, item['left_attempt']))} and "
-                f"{_reading(page, item['right_attempt'])}"
-            )
-            differences = len(item.get("number_differences") or [])
-            if (
-                reason == "engine_disagreement"
-                and item["agreement_ratio"] < ENGINE_AGREEMENT_THRESHOLD
-            ):
-                evidence.append(
-                    f"{pair} share {item['agreement_ratio']:.0%} of their words; the job "
-                    f"requires {ENGINE_AGREEMENT_THRESHOLD:.0%}."
-                )
-            if reason == "numeric_disagreement" and differences:
-                evidence.append(
-                    f"{pair} read {differences} number{'' if differences == 1 else 's'} differently."
-                )
-    if reason == "contested":
-        contested = page["contested"]
-        evidence.append(
-            f"{contested['open']} of {sum(contested['kinds'].values())} differences are open; "
-            f"they are listed in {_link('the contested spans', contested['artifact'])}."
-        )
-    for item in _causes(page, report):
-        if item["hold"] != reason:
-            continue
-        who = _reading(page, item["attempt_id"])
-        cause = item["cause"]
-        if cause == "letters_lost":
-            evidence.append(
-                f"{_sentence(who)} spells {item['yat_words']} words with ѣ where another reading "
-                f"of the page spells {item['most_yat_words']}: it lost the pre-reform letters."
-            )
-        elif cause == "layer_outvoted":
-            evidence.append(
-                f"Two later readings agree with each other better than with {who}, so the "
-                "text layer is the suspect."
-            )
-        elif cause == "reader_short":
-            evidence.append(
-                f"{_sentence(who)} has under half the words of the OCR reading: it left text out."
-            )
-        elif cause == "alignment":
-            evidence.append(f"The table check of {who} found it.")
-        elif cause in {"empty_reading", "empty_text"} and reason == "blank_candidate":
-            evidence.append(_blank_evidence(page, item["attempt_id"], report))
-        else:
-            evidence.append(f"`{_escape(cause)}` on {who}: {warning_words(cause)}")
-    last = page["attempts"][-1] if page["attempts"] else None
-    if last is not None and reason in {"provider_failure", "outcome_unknown"}:
-        who = _sentence(_reading(page, last["attempt_id"]))
-        failure = (last.get("failure") or {}).get("code")
-        evidence.append(
-            f"{who} failed ({_escape(failure)})." if failure else f"{who} has no saved result."
-        )
-    if reason == "unconfirmed_model_output" and not evidence:
-        evidence.append("No reading by another engine, with no hold of its own, agrees with it.")
-    if not evidence and reason not in {"provider_failure", "outcome_unknown"}:
-        evidence.append("The job recorded this hold; no single reading carries it.")
-    return evidence
-
-
-def _blank_evidence(page: dict, attempt_id: str, report: dict) -> str:
-    attempt = next(item for item in page["attempts"] if item["attempt_id"] == attempt_id)
-    line = f"{_sentence(_reading(page, attempt_id))} came back empty"
-    if attempt["stage"] == "local_text":
-        line += " (a scanned PDF page has no text of its own)"
-    line += "."
-    selected = page.get("selected_output") or {}
-    words = len((selected.get("text") or "").split())
-    if words and selected.get("attempt_id") != attempt_id:
-        if report.get("hold_policy") in BLANK_REFUTING_POLICIES:
-            line += (
-                f" The selected reading has {words} words, but no reading by an engine that "
-                "is not generative, with no hold of its own, confirms that the page has text."
-            )
-        else:
-            line += (
-                f" The selected reading has {words} words; under this job's hold policy an "
-                "empty reading holds the page until a person reviews it."
-            )
-    return line
-
-
 def _comparisons(page: dict, report: dict) -> list[str]:
     """Every comparison the job recorded on the page, with what it made of it."""
     counted = [id(item) for item in _counted(page, report)]
@@ -815,7 +964,7 @@ def _comparisons(page: dict, report: dict) -> list[str]:
         elif report.get("hold_policy") not in HOLD_POLICIES:
             verdict = "not counted: this job was written before comparisons could hold a page"
         elif other in held:
-            verdict = f"not counted, because {_reading(page, other, link=False)} is held itself"
+            verdict = f"not counted, because `{_escape(other)}` is held itself"
         elif other in layers and not witness:
             verdict = (
                 "not counted: this job's hold policy sets an earlier OCR in the PDF aside "
@@ -825,10 +974,7 @@ def _comparisons(page: dict, report: dict) -> list[str]:
             verdict = "not counted: two of the job's own engines agree, which outweighs the layer"
         else:
             verdict = "not counted"
-        lines.append(
-            f"{_sentence(_reading(page, pair[0], link=False))} and "
-            f"{_reading(page, pair[1], link=False)}: {figure}; {verdict}."
-        )
+        lines.append(f"`{_escape(pair[0])}` and `{_escape(pair[1])}`: {figure}; {verdict}")
     return lines
 
 
@@ -841,84 +987,87 @@ def _short_comparison(page: dict, report: dict) -> str:
     return f"{ratio:.0%} of words agree" + (" (below the job's 60%)" if below else "")
 
 
-def _selected_words(page: dict) -> str:
-    selected = page.get("selected_output")
-    if selected is None:
-        return "none"
-    if selected.get("correction") is not None:
-        return _current_output(page)
-    if not any(item["attempt_id"] == selected["attempt_id"] for item in page["attempts"]):
-        raise ValueError("selected output attempt is missing from document report")
-    reading = _reading(page, selected["attempt_id"])
-    if selected.get("edition"):
-        return f"{reading}, with its settled differences applied ({_link('edition', selected['path'])})"
-    return reading
-
-
-def _held_words(page: dict) -> str:
-    return "; ".join(_hold_label(page, reason) for reason in _held_for(page))
-
-
-def _has_text(page: dict) -> bool:
-    return bool(((page.get("selected_output") or {}).get("text") or "").split())
-
-
-def _hold_label(page: dict, reason: str) -> str:
-    """A hold in plain words; a blank candidate whose selected reading has text says so."""
-    if reason == "blank_candidate" and _has_text(page):
-        return f"{BLANK_WITH_TEXT} (`blank_candidate`)"
-    return hold_words(reason)
-
-
-def _review_words(page: dict) -> str:
-    if page.get("review") is None:
-        return "not checked by a person"
-    decision = _decision_of(page)
-    return (
-        f"{reviewed_words(decision['disposition'])}, by {_escape(decision['reviewer'])} at "
-        f"{_escape(decision['reviewed_at'])}: {_escape(decision['reason'])}"
-    )
-
-
-def _held_page(page: dict, report: dict) -> list[str]:
-    lines = [
-        f"### Page {_link(str(page['page_number']) + _image_name(report, page), page['source_link'])}",
-        "",
+def _reading_record(page: dict, attempt: dict) -> str:
+    path = attempt["raw_artifact"]
+    shown = _link(attempt["attempt_id"], path) if path else f"`{_escape(attempt['attempt_id'])}`"
+    detail = [attempt["outcome"]]
+    failure = (attempt.get("failure") or {}).get("code")
+    if failure:
+        detail.append(f"failure `{_escape(failure)}`")
+    detail += [
+        f"`{_escape(code)}`" for code in map(warning_code, attempt.get("warnings") or []) if code
     ]
-    for reason in _held_for(page):
-        lines.append(f"- {_hold_label(page, reason)}.")
-        lines += [f"  - {line}" for line in _hold_evidence(page, reason, report)]
-    lines.append(f"- Selected text: {_selected_words(page)}.")
-    comparisons = _comparisons(page, report)
-    if comparisons:
-        lines.append("- Comparisons the job recorded (they do not clear the holds above):")
-        lines += [f"  - {line}" for line in comparisons]
-    else:
-        lines.append("- Comparisons: none recorded.")
-    lines.append("")
-    return lines
+    tiling = attempt.get("tiling")
+    if tiling:
+        read = tiling["sent"] - len(tiling["failed"])
+        tiles = f"tiles: {tiling['tiles']} planned, {tiling['sent']} sent and paid for, {read} read"
+        for label, key in (("failed", "failed"), ("cut through text", "edge_cut")):
+            if tiling[key]:
+                tiles += f", {label}: {' '.join(tiling[key])}"
+        detail.append(tiles)
+    if attempt["attempt_id"] == page.get("selected_attempt"):
+        detail.append("selected")
+    return f"{shown} {', '.join(detail)}"
 
 
-def _notes(report: dict) -> list[str]:
-    """Warnings that hold nothing, once each, with the pages they are on."""
-    holds = warning_holds(report)
-    found: dict[str, list[dict]] = {}
-    for page in report["pages"]:
-        codes = {
-            code
-            for attempt in page["attempts"]
-            for code in map(warning_code, attempt.get("warnings") or [])
-            if code and code not in holds and code not in _HOLD_ORDER
-        }
-        for code in codes:
-            found.setdefault(code, []).append(page)
-    lines = []
-    for code, pages in sorted(found.items(), key=lambda item: (-len(item[1]), item[0])):
-        line = f"- `{_escape(code)}` on {_pages(pages)}: {warning_words(code)}"
-        if code in ADVICE:
-            line += f" What to do: {ADVICE[code]}"
-        lines.append(line)
-    return lines
+def _cause_record(page: dict, item: dict) -> str | None:
+    attempt: dict = next((a for a in page["attempts"] if a["attempt_id"] == item["attempt_id"]), {})
+    if item["cause"] in {warning_code(w) for w in attempt.get("warnings") or []}:
+        return None  # the reading's warnings already say it
+    line = f"`{item['hold']}` from `{item['cause']}` on `{_escape(item['attempt_id'])}`"
+    if item["cause"] == "letters_lost":
+        line += (
+            f" ({item['yat_words']} words spelled with ѣ, against {item['most_yat_words']} in "
+            "another reading)"
+        )
+    return line
+
+
+def _page_record(report: dict, page: dict) -> str:
+    number = _link(str(page["page_number"]) + _image_name(report, page), page["source_link"])
+    line = f"- Page {number}: `{page['disposition']}`"
+    if page.get("review_reasons"):
+        line += "; held for " + ", ".join(f"`{reason}`" for reason in page["review_reasons"])
+    if page.get("review") is not None:
+        decision = _decision_of(page)
+        line += f"; reviewed as `{decision['disposition']}`"
+        if decision["selected_attempt"] is None:
+            line += " from the source alone"
+    readings = [_reading_record(page, attempt) for attempt in page["attempts"]]
+    line += ". Readings: " + ("; ".join(readings) if readings else "none") + "."
+    selected = page.get("selected_output") or {}
+    correction = selected.get("correction")
+    if correction is not None:
+        line += (
+            f" Selected text: a {_link('correction', selected['path'])} of "
+            f"`{_escape(selected['attempt_id'])}` by {_escape(correction['reviewer'])} at "
+            f"{_escape(correction['reviewed_at'])}"
+        )
+        if correction["from_path"].startswith("corrections/"):
+            earlier = corrections.author(
+                page["review_history"], page["page_id"], correction["from_sha256"]
+            )
+            who = f"the correction by {earlier['reviewer']} at {earlier['reviewed_at']}"
+            line += f", revising {_link(who, correction['from_path'])}"
+        line += "."
+    elif selected.get("edition"):
+        line += (
+            f" Selected text: the {_link('edition', selected['path'])} of "
+            f"`{_escape(selected['attempt_id'])}`, with its settled differences applied."
+        )
+    if page.get("contested"):
+        contested = page["contested"]
+        open_spans = f"{contested['open']} of {sum(contested['kinds'].values())} open"
+        line += f" Contested spans: {_link(open_spans, contested['artifact'])}."
+    compared = _comparisons(page, report)
+    if compared:
+        line += " Compared: " + "; ".join(compared) + "."
+    placed = [text for item in _causes(page, report) if (text := _cause_record(page, item))]
+    if placed:
+        line += " Holds the policy placed: " + "; ".join(placed) + "."
+    if is_pending(page, report) and page.get("next_action") in _STAGE_LABELS:
+        line += f" Waiting for the `{page['next_action']}` stage."
+    return line
 
 
 def _usage_lines(report: dict) -> list[str]:
@@ -949,29 +1098,17 @@ def _usage_lines(report: dict) -> list[str]:
     return lines
 
 
-def _attempt_line(page: dict, attempt: dict) -> str:
-    path = attempt["raw_artifact"]
-    evidence = _link(attempt["attempt_id"], path) if path else _escape(attempt["attempt_id"])
-    detail = ""
-    failure = (attempt.get("failure") or {}).get("code")
-    if failure:
-        detail += f"; failure {_escape(failure)}"
-    codes = [code for code in map(warning_code, attempt.get("warnings") or []) if code]
-    if codes:
-        detail += "; warnings " + ", ".join(f"`{_escape(code)}`" for code in codes)
-    tiling = attempt.get("tiling")
-    if tiling:
-        read = tiling["sent"] - len(tiling["failed"])
-        detail += (
-            f"; tiles: {tiling['tiles']} planned, {tiling['sent']} sent and paid for, {read} read"
-        )
-        for label, key in (("failed", "failed"), ("cut through text", "edge_cut")):
-            if tiling[key]:
-                detail += f", {label}: {', '.join(tiling[key])}"
-    return (
-        f"- Page {page['page_number']}: {evidence}; stage {_stage_label(attempt['stage'])}; "
-        f"outcome {attempt['outcome']}{detail}."
-    )
+def _engines_line(report: dict) -> list[str]:
+    engines = report.get("engines")
+    if not engines:
+        return []
+    images = report["source"].get("kind") == "page_images"
+    read = [
+        f"the `{stage}` stage, {reading_name(stage, engine, images=images)} "
+        f"(`{_escape(engine['adapter'])}`)"
+        for stage, engine in engines.items()
+    ]
+    return [f"- Read by: {'; '.join(read)}."]
 
 
 def _record_lines(report: dict) -> list[str]:
@@ -982,13 +1119,15 @@ def _record_lines(report: dict) -> list[str]:
     lines = [
         "## For the record",
         "",
-        "Everything below is in document.json, of which this report is a rendering.",
+        "Everything below is in document.json, of which this report is a rendering. The codes "
+        "in backticks are explained in PageLedger's docs/warnings.md.",
         "",
         f"- Job: `{_escape(report['job_id'])}`, created {report['created_at']}; hold policy "
         f"{report.get('hold_policy', 'none recorded')}; report format {report['report_format']}.",
         f"- Source: {_link(source['path'], quote(source['path'], safe='/'))}",
         f"- Source SHA-256: `{source['sha256']}`",
         *(f"- {line}" for line in _snapshot_lines(source)),
+        *_engines_line(report),
         f"- Pages: {counts['selected_pages']} selected of {source_count} in the source; "
         f"{counts['processed_pages']} read; {counts['selected_outputs']} with selected text; "
         f"{counts['unresolved_pages']} not yet reviewed as text or blank (`unresolved_pages`).",
@@ -997,10 +1136,36 @@ def _record_lines(report: dict) -> list[str]:
             if "corrected_pages" in counts
             else []
         ),
-        f"- PDF annotations (notes and links attached to pages): {annotations['status']} "
-        f"({annotation_count}). Counting them says nothing about whether the body text or "
-        "its citations were extracted completely.",
+        "",
+        "### Each page",
+        "",
+        "Each page's state and every hold the job recorded; then each reading, by its ID (a "
+        "link to its text), with its outcome, failure and warnings; then the comparisons the "
+        "job recorded and whether it counted them, and any hold its hold policy placed.",
+        "",
     ]
+    pages = sorted(report["pages"], key=lambda page: page["page_number"])
+    lines += [_page_record(report, page) for page in pages] or ["None."]
+    lines += ["", "### How the job ran", ""]
+    stages = _escalation_accounting(report)
+    if stages:
+        fired = Counter(t["trigger"] for page in report["pages"] for t in page.get("triggers", []))
+        climbed = ", ".join(f"`{name}` {count}" for name, count in sorted(fired.items()))
+        # The record names stages by their codes, as the readings' IDs do.
+        names = {f"| {label} |": f"| `{stage}` |" for stage, label in _STAGE_LABELS.items()}
+        rows = [
+            next((row.replace(old, new) for old, new in names.items() if row.startswith(old)), row)
+            for row in stages[2:-3]
+        ]
+        lines += [
+            *rows,
+            "",
+            "Readings sent on to the next stage for a reason other than a hold, by trigger "
+            f"(a page can be sent on more than once): {climbed or 'none'}.",
+            "",
+        ]
+    lines += _contest_accounting(report)
+    lines += _usage_lines(report)
     limits = [f"{name} {value}" for name, value in report["limits"].items() if value is not None]
     lines.append(f"- Limits: {', '.join(limits) if limits else 'none set'}.")
     for item in report.get("limits_history", []):
@@ -1008,29 +1173,12 @@ def _record_lines(report: dict) -> list[str]:
             f"- Limit raised on {item['at']}: {item['limit']} from {item['previous']} "
             f"to {item['value']}."
         )
+    lines.append(
+        f"- PDF annotations (notes and links attached to pages): {annotations['status']} "
+        f"({annotation_count}). Counting them says nothing about whether the body text or "
+        "its citations were extracted completely."
+    )
     lines += [f"- {line}" for line in _relocation_lines(report) if line]
-    lines.append("")
-    stages = _escalation_accounting(report)
-    if stages:
-        fired = Counter(t["trigger"] for page in report["pages"] for t in page.get("triggers", []))
-        climbed = ", ".join(f"`{name}` {count}" for name, count in sorted(fired.items()))
-        lines += [
-            "### Work by stage",
-            "",
-            *stages[2:-3],
-            "",
-            "Readings sent on to the next stage for a reason other than a hold, by trigger "
-            f"(a page can be sent on more than once): {climbed or 'none'}.",
-            "",
-        ]
-    contest = _contest_accounting(report)
-    if contest:
-        lines += ["### Contested readings", "", *contest]
-    lines += ["### Every reading", ""]
-    for page in report["pages"]:
-        lines += [_attempt_line(page, attempt) for attempt in page["attempts"]]
-    if not any(page["attempts"] for page in report["pages"]):
-        lines.append("None.")
     lines += [
         "",
         "### Source custody",
@@ -1059,47 +1207,7 @@ def _record_lines(report: dict) -> list[str]:
 
 def _render_for_reader(report: dict) -> str:
     name = Path(report["source"]["path"]).name
-    pages = sorted(report["pages"], key=lambda page: page["page_number"])
-    held = [page for page in pages if needs_person(page, report)]
-    pending = [page for page in pages if is_pending(page, report)]
-    shown = {id(page) for page in [*held, *pending]}
-    others = [page for page in pages if id(page) not in shown]
     lines = [f"# {_escape(name)}: document job report", "", *summary_lines(report), ""]
-    if held:
-        lines += [
-            "## Pages that need a person",
-            "",
-            "Each page's holds are listed with the evidence for them. Agreement between "
-            "engines is evidence, not proof: engines can share a mistake.",
-            "",
-        ]
-        for page in held:
-            lines += _held_page(page, report)
-    if pending:
-        lines += ["## Pages not finished", ""]
-        for page in pending:
-            stages = ", ".join(_stage_label(a["stage"]) for a in page["attempts"])
-            read = f"read so far by {stages}" if stages else "not read by any stage yet"
-            waiting = (
-                f"waiting for the {_stage_label(page['next_action'])} stage"
-                if page.get("next_action") in _STAGE_LABELS
-                else "not read yet"
-            )
-            line = (
-                f"- Page {_link(str(page['page_number']) + _image_name(report, page), page['source_link'])}: "
-                f"{waiting}; {read}."
-            )
-            if page.get("selected_output") is not None:
-                line += f" Text so far: {_selected_words(page)}."
-            if page.get("review_reasons"):
-                line += f" Held so far for: {_held_words(page)}."
-            lines.append(line)
-        lines += [
-            "",
-            "What is shown for these pages is provisional: the stages still to run may "
-            "select another reading, and add or settle holds.",
-            "",
-        ]
     notes = _notes(report)
     if notes:
         lines += [
@@ -1110,26 +1218,9 @@ def _render_for_reader(report: dict) -> str:
             *notes,
             "",
         ]
-    if others:
-        lines += [
-            "## Other pages",
-            "",
-            "Pages that nothing holds, and pages a person has reviewed, with any holds the "
-            "review settled. Agreement between engines is evidence, not proof: engines can "
-            "share a mistake.",
-            "",
-            "| Page | Selected text | Engine comparison | Held for | Review |",
-            "| --- | --- | --- | --- | --- |",
-        ]
-        for page in others:
-            lines.append(
-                f"| {_link(str(page['page_number']) + _image_name(report, page), page['source_link'])} | "
-                f"{_selected_words(page)} | {_short_comparison(page, report)} | "
-                f"{_held_words(page) if page.get('review_reasons') else 'nothing'} | "
-                f"{_review_words(page)} |"
-            )
-        lines.append("")
-    lines += ["## Usage and cost", "", *_usage_lines(report), "", *_record_lines(report)]
+    if report["pages"]:
+        lines += _page_table(report)
+    lines += _record_lines(report)
     return "\n".join(lines)
 
 
@@ -1315,6 +1406,24 @@ def _apply_correction(root: Path, page: dict) -> None:
     )
 
 
+def _engines(job: dict) -> dict:
+    """Each configured stage's engine: its adapter, and what names the reading (the
+    Tesseract language, the model a vision stage asked for). Nothing else is copied."""
+    engines = {}
+    for stage in _STAGE_LABELS:
+        profile = (job.get("policy") or {}).get(stage)
+        if not profile:
+            continue
+        options = profile.get("adapter_options") or {}
+        engine = {"adapter": profile["adapter"]}
+        if profile["adapter"] == "pdf_ocr":
+            engine["lang"] = options.get("lang", "eng")
+        if profile["adapter"] == "vision" and isinstance(options.get("model"), str):
+            engine["model"] = options["model"]
+        engines[stage] = engine
+    return engines
+
+
 def _decision(page: dict) -> dict:
     return next(item for item in page["review"]["decisions"] if item["page_id"] == page["page_id"])
 
@@ -1355,6 +1464,8 @@ def build_document_report(
         if report_format not in _REPORT_FORMATS:
             raise ValueError(f"Unsupported document report format: {report_format}")
         report["report_format"] = report_format
+    if report_format == _CURRENT_REPORT_FORMAT:
+        report["engines"] = _engines(job)
     if report_format in _RELATIVE_SOURCE_FORMATS:
         # Relative to where the job was written, so the report reads the same after a move.
         report["source"]["path"] = relative_path(job["source"]["path"], Path(job.get("root", root)))

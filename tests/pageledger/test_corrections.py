@@ -153,9 +153,10 @@ def test_a_correction_is_a_new_reading_bound_by_its_receipt(job, tmp_path):
     assert document["counts"]["corrected_pages"] == 1
     report = (job / "report.md").read_text()
     assert "Pages whose text a person corrected: 1." in report
-    assert "Correction by a person of Local text attempt" in report
+    assert "[A person's correction](<corrections/" in report
     assert "1 word changed, 0 added, 0 removed" in report
-    assert "Correction by a person of attempt" in (job / "transcript.md").read_text()
+    assert "Selected text: a [correction](<corrections/" in report
+    assert "Selected reading: a person's correction of " in (job / "transcript.md").read_text()
     assert verify_job(job)["status"] == "pass"
 
 
@@ -331,7 +332,8 @@ def test_correcting_a_correction_is_recorded_as_a_chain(job, tmp_path):
     # The correction is still credited to the person who made it, not to the one who accepted it.
     assert selected["correction"]["reviewer"] == "B. Reader"
     assert selected["correction"]["reviewed_at"] == later["reviewed_at"]
-    assert "made by B. Reader at" in (job / "report.md").read_text()
+    report = (job / "report.md").read_text()
+    assert f"by B. Reader at {later['reviewed_at']}, revising [the correction by" in report
     out = tmp_path / "book.xml"
     export_job(job, out, format="tei")
     change = ET.fromstring(out.read_bytes()).find(f"{TEI}teiHeader/{TEI}revisionDesc/{TEI}change")

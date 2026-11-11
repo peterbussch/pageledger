@@ -1733,13 +1733,11 @@ def _check_process_paths(source: Path, out: Path) -> None:
 
 
 def _print_job_summary(out: Path) -> None:
-    """The opening of the job's report, with the job's own folder in its commands."""
-    from .document_report import summary_lines
+    """Where the job is, what needs a person and why, and the one next command."""
+    from .document_report import closing_lines
 
     document = json.loads((out / "document.json").read_text(encoding="utf-8"))
-    job = shlex.quote(str(out))
-    print("\n".join(summary_lines(document, job)).replace("`", ""))
-    print(f"\nThe full report: pageledger inspect {job}")
+    print("\n".join(closing_lines(document, out)))
 
 
 _DECISION_WORDS = {

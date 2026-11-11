@@ -54,6 +54,40 @@
       "format": "date-time",
       "type": "string"
     },
+    "engines": {
+      "additionalProperties": {
+        "additionalProperties": false,
+        "properties": {
+          "adapter": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "lang": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "model": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "adapter"
+        ],
+        "type": "object"
+      },
+      "description": "Since report format 0.9. The engine each configured stage ran, copied from the job's policy so that report.md can name each reading by what made it: the adapter, the Tesseract language of pdf_ocr, and the model a vision stage asked for (the model the endpoint served is in the attempt's image evidence). Absent in older reports.",
+      "propertyNames": {
+        "enum": [
+          "local_text",
+          "local_ocr",
+          "second_ocr",
+          "local_image",
+          "image",
+          "second_opinion"
+        ]
+      },
+      "type": "object"
+    },
     "hold_policy": {
       "description": "Warning-to-hold mapping the job used; 0.6.1 lets clean text from a later engine clear a blank candidate; 0.8 also holds a text layer two agreeing later readings outvote, and a reader with under half the literal OCR's words; 0.9 keeps an inherited OCR layer as a witness beside the job's own OCR, holds a literal reading that lost the pre-reform letters another kept, ranks readings that are all held by evidence, and raises no hold from an attempt that never finished. Absent on reports written before 0.6, whose jobs filed low_confidence under coverage_defect.",
       "enum": [

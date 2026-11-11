@@ -33,13 +33,15 @@ HOLDS = {
     ),
 }
 
-# A blank candidate whose selected reading has text: an empty reading raised the hold, as
-# a scanned PDF page without a text layer does, and no reading without a hold of its own
-# has confirmed the text.
+# A blank candidate whose selected reading has text, when nothing else holds the page:
+# an empty reading raised the hold, and no reading without a hold of its own has
+# confirmed the text. BLANK_SCAN is the same when the empty reading is a scan's
+# missing text layer. Where another reason holds the page, the blank hold is not shown.
 BLANK_WITH_TEXT = (
-    "An earlier reading was empty, as on a scan with no text layer, and no reading "
-    "without a hold of its own confirms the page's text"
+    "An earlier reading was empty, and no reading without a hold of its own confirms the "
+    "page's text"
 )
+BLANK_SCAN = "The page is a scan with no text of its own, and no other reading confirms the OCR"
 
 # A person's review decision.
 REVIEWED = {
@@ -183,6 +185,109 @@ ADVICE = {
 }
 
 UNKNOWN_WARNING = "A warning from the engine's adapter; see that adapter's documentation."
+
+# A reading named by what made it, for jobs whose report records no engines.
+_STAGE_READERS = {
+    "local_text": "the page's own text",
+    "local_ocr": "the OCR engine",
+    "second_ocr": "the second OCR engine",
+    "local_image": "the local image model",
+    "image": "the image model",
+    "second_opinion": "the second-opinion model",
+}
+CORRECTION = "a person's correction"
+
+
+def reading_name(
+    stage: str, engine: dict | None = None, *, layer: bool = False, images: bool = False
+) -> str:
+    """What made a reading, in words: the engine the job's stage ran, from the report's
+    ``engines``. ``layer`` marks a text layer an earlier OCR wrote; ``images`` a source
+    of page images, which have no text of their own."""
+    adapter = (engine or {}).get("adapter")
+    if adapter in {"pdf_text", "pdf"} or (adapter is None and stage == "local_text"):
+        name = (
+            "the page image's own text"
+            if images
+            else "the PDF's own text"
+            if adapter
+            else _STAGE_READERS["local_text"]
+        )
+        return name + (" (an earlier OCR)" if layer else "")
+    if adapter == "text":
+        return "the text file"
+    if adapter == "pdf_ocr":
+        name = (
+            f"Tesseract OCR ({engine['lang']})"
+            if engine and engine.get("lang")
+            else "Tesseract OCR"
+        )
+    elif adapter == "rapidocr":
+        name = "RapidOCR"
+    elif adapter == "indra":
+        name = "Indra OCR"
+    elif adapter == "alto":
+        name = "the page's ALTO file"
+    elif adapter == "vision":
+        local = "local " if stage == "local_image" else ""
+        model = (engine or {}).get("model")
+        name = f"the {local}vision model {model}" if model else f"the {local}vision model"
+    elif adapter:
+        name = f"the engine {adapter}"
+    else:
+        return _STAGE_READERS.get(stage, f"the {stage} stage")
+    if stage == "second_ocr":
+        return f"the second OCR engine ({name})"
+    if stage == "second_opinion":
+        return f"the second opinion ({name})"
+    return name
+
+
+def sentence(text: str) -> str:
+    return text[:1].upper() + text[1:]
+
+
+# The review view's decisions, grouped as a person decides, with what each records.
+# `use:` stands for a reading the page offers; the recorded values are review --apply's.
+DECISION_GROUPS = (
+    (
+        "The text is right",
+        (("accept", "The selected text is right", "that you checked the text against the page"),),
+    ),
+    (
+        "Use another reading",
+        (("use:", "Use READING instead", "that another reading is right; it becomes the text"),),
+    ),
+    (
+        "I corrected the text",
+        (
+            (
+                "correct",
+                "My corrected text, below",
+                "your text as a new reading; the engines' readings stay as they are",
+            ),
+        ),
+    ),
+    (
+        "This page has no text to transcribe",
+        (
+            ("blank", "Blank page", "that the page has no text"),
+            ("illustration", "Illustration, map or chart", "that the page is a picture, not text"),
+            ("handwriting", "Handwriting", "that the page is handwritten, left for a specialist"),
+        ),
+    ),
+    (
+        "The page cannot be read",
+        (
+            ("unreadable", "Unreadable", "that the page cannot be read in this copy"),
+            (
+                "source_defect",
+                "Damaged or missing source page",
+                "that the source page is damaged or incomplete; another copy is needed",
+            ),
+        ),
+    ),
+)
 
 
 def hold(code: str) -> str:

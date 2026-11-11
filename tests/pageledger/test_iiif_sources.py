@@ -121,7 +121,8 @@ def test_fetch_process_verify_and_move_a_snapshot(stub, tmp_path, monkeypatch): 
 
     report = (root / "report.md").read_text(encoding="utf-8")
     assert f"IIIF snapshot of {MANIFEST_URL}, incomplete" in report
-    assert "| [1 (0002.jpg)](<../snap/0002.jpg>) |" in report
+    assert "| 1 (0002.jpg) |" in report
+    assert "- Page [1 (0002.jpg)](<../snap/0002.jpg>):" in report
     assert "[Source page (0002.jpg)](<../snap/0002.jpg>)" in (root / "transcript.md").read_text()
 
     result = verify_job(root)

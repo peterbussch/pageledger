@@ -107,8 +107,10 @@ code and debug the adapter locally without publishing credentials.
 ## In plain words
 
 The report, the lines `process` prints and the review view describe each code in
-these words, with the code beside them. They come from `pageledger/wording.py`, and a
-test keeps this section equal to it.
+these words. Where a person reads first (the report's opening and page table, the
+terminal, the review view's page list) only the words are shown; the report's record
+section and the review view's page details give the codes, to look up here. The words
+come from `pageledger/wording.py`, and a test keeps this section equal to it.
 
 ### Hold reasons and page states
 
@@ -132,9 +134,12 @@ test keeps this section equal to it.
 | `unreviewed_text` | Text selected and nothing held the page; no person has checked it |
 | `adjudicated_text` | Every difference between the model's and the OCR's readings is settled; no person has read the page |
 
-On a page whose selected reading has text, `blank_candidate` reads instead:
-An earlier reading was empty, as on a scan with no text layer, and no reading without a hold of its own confirms the page's text. A scanned PDF page with no text layer gives such an
-empty first reading.
+On a page whose selected reading has text, `blank_candidate` is shown only when
+nothing else holds the page; the record still lists it. It then reads: An earlier
+reading was empty, and no reading without a hold of its own confirms the page's text.
+When the empty reading is the page's own text on a scanned PDF or a page image, it
+reads: The page is a scan with no text of its own, and no other reading confirms the
+OCR.
 
 ### Review decisions
 

@@ -22,9 +22,9 @@ from pageledger import wording
 from pageledger.cli import main
 from pageledger.document_report import (
     build_document_report,
+    closing_lines,
     needs_person,
     render_document_report,
-    summary_lines,
 )
 from pageledger.export import export_job
 from pageledger.processing import resume_job, verify_job
@@ -35,33 +35,52 @@ ROOT = Path(__file__).resolve().parents[2]
 TEI = "{http://www.tei-c.org/ns/1.0}"
 
 
+# An attempt ID as the job writes it: what a person should not have to read first.
+ATTEMPT_ID = re.compile(r"[a-z_]+(?:-\d{4})?:doc_\d{4}_page_\d{4}")
+
+
 def _report(setup) -> str:  # noqa: F811
     """A job's report.md, checked against its document.json for what must agree."""
     report = (setup[2] / "report.md").read_text(encoding="utf-8")
     document = _document(setup)
+    first, record = report.split("\n## For the record", 1)
+    # The parts a person reads first name readings by what made them, in words.
+    assert not ATTEMPT_ID.search(first)
+    assert "Local text" not in first and "Local OCR" not in first
     reasons = {reason for page in document["pages"] for reason in page["review_reasons"]}
     # A comparison is said to count as a disagreement only on a page held for one.
     if "engine_disagreement" not in reasons:
         assert "counted as disagreement" not in report
-    # Every hold on a job's page names its evidence.
-    assert "no single reading carries it" not in report
+    # The record keeps every reason, reading, outcome, failure and warning.
     for page in document["pages"]:
         entry = _entry(report, page["page_number"])
         for reason in page["review_reasons"]:
-            assert f"(`{reason}`)" in entry, (page["page_number"], reason)
+            assert f"`{reason}`" in entry, (page["page_number"], reason)
+        for attempt in page["attempts"]:
+            assert attempt["attempt_id"] in entry
+            assert attempt["outcome"] in entry
+            for code in attempt["warnings"]:
+                assert f"`{code}`" in entry
+            if attempt["failure"]:
+                assert f"`{attempt['failure']['code']}`" in entry
         if page["selected_output"] is not None:
-            assert page["selected_output"]["attempt_id"] in entry
+            assert f"{page['selected_output']['attempt_id']}" in entry
+            assert "selected" in entry
     return report
 
 
 def _entry(report: str, number: int) -> str:
-    """What the report says about one page: its section, its table row or its line."""
-    body = report.split("\n## For the record", 1)[0]
-    section = re.search(rf"\n### Page \[{number}\b.*?(?=\n### |\n## )", body, re.S)
-    if section:
-        return section.group()
-    line = re.search(rf"\n(?:\| |- Page )\[{number}\b[^\n]*", body)
-    assert line, f"page {number} is not in the report"
+    """The record's line for one page."""
+    record = report.split("\n## For the record", 1)[1]
+    line = re.search(rf"\n- Page \[{number}\b[^\n]*", record)
+    assert line, f"page {number} is not in the record"
+    return line.group()
+
+
+def _row(report: str, number: int) -> str:
+    """The page table's row for one page."""
+    line = re.search(rf"\n\| {number}\b[^\n]*", report.split("\n## For the record", 1)[0])
+    assert line, f"page {number} is not in the page table"
     return line.group()
 
 
@@ -85,20 +104,22 @@ def test_a_clean_job_says_nothing_waits_and_points_to_export(setup):  # noqa: F8
     assert opening[:5] == [
         "# source.txt: document job report",
         "",
-        "Status: finished. Every stage this job is configured to run has run.",
+        "Finished: every stage this job is configured to run has run.",
         "",
-        "Source: source.txt; 2 of its 3 pages selected, 2 read.",
+        "Source: [source.txt](<../source.txt>); 2 of its 3 pages selected, 2 read.",
     ]
     assert "Need a person" not in _report(setup)
     assert (
-        "- Text selected and nothing held the page; no person has checked it "
-        "(`unreviewed_text`): 2 pages (1-2)." in opening
+        "- Text selected and nothing held the page; no person has checked it: 2 pages (1-2)."
+        in opening
     )
-    assert (
-        "Next: `pageledger export JOB_DIR --format md --out source.md` writes the selected "
-        "text out." in opening
+    # A command that is right as printed, from the folder that holds the report.
+    assert opening[-1] == (
+        "Next: in this job's folder, `pageledger export . --format md --out ../source.md` "
+        "writes the selected text out, beside the job."
     )
-    assert opening[-1] == "JOB_DIR stands for the folder that holds this report."
+    assert "JOB_DIR" not in _report(setup)
+    assert "| 1 | nothing | [The engine local_text](<attempts/local_text/" in _report(setup)
     assert verify_job(setup[2])["status"] == "pass"
 
 
@@ -107,13 +128,13 @@ def test_an_all_held_job_groups_its_pages_by_reason(setup):  # noqa: F811
     assert launch(setup, pages="1-2")["status"] == "completed"
     report = _report(setup)
     assert "- Need a person: 2 pages (1-2):" in report
+    assert "  - Text may be missing or damaged in the reading: 2 pages (1-2)." in report
+    # A text source has no page images, and the next step does not promise them.
     assert (
-        "  - Text may be missing or damaged in the reading (`coverage_defect`): 2 pages (1-2)."
-        in report
+        "Next: in this job's folder, `pageledger review .` writes the review view, where you "
+        "check the 2 pages that need a person and record what you decide." in report
     )
-    assert "shows the 2 pages that need a person beside the page images." in report
-    assert report.count("\n### Page ") == 2
-    assert "## Other pages" not in report
+    assert _row(report, 1).startswith("\n| 1 | Text may be missing or damaged in the reading |")
     assert "retained review concern" not in report
     assert verify_job(setup[2])["status"] == "pass"
 
@@ -132,7 +153,7 @@ def test_a_halted_job_leads_with_its_reason_and_spends_nothing(tmp_path):
     rendered = render_document_report(build_document_report(job, tmp_path))
 
     assert rendered.splitlines()[2] == (
-        "Status: halted. book.pdf uses an encryption handler that pypdf cannot read. "
+        "Halted. book.pdf uses an encryption handler that pypdf cannot read. "
         "Use an unencrypted copy. Then start a new job."
     )
     assert "- No page was read." in rendered
@@ -154,15 +175,16 @@ def test_a_paused_job_names_the_limit_and_the_pages_left(setup):  # noqa: F811
     setup[1].write_text(yaml.safe_dump(data))
     assert launch(setup)["status"] == "paused_budget"
     report = _report(setup)
-    assert report.splitlines()[2].startswith(
-        "Status: paused at a limit. Reached max_image_pages (1)."
+    assert report.splitlines()[2] == (
+        "Paused at a limit. Reached max_image_pages (1). Review the retained results, or "
+        "continue with: pageledger resume . --raise-limit max_image_pages=N"
     )
-    assert "- Not finished: waiting for the Image extraction stage: 1 page (3)." in report
-    assert "## Pages not finished" in report
+    assert "- Not finished: waiting for the engine image: 1 page (3)." in report
+    assert "| 3 | not finished: waiting for the engine image;" in report
     # A page still waiting for a stage is not counted as needing a person.
     document = _document(setup)
     assert [needs_person(page, document) for page in document["pages"]] == [False, True, False]
-    assert "Next, for the pages read so far: `pageledger review JOB_DIR" in report
+    assert "Next, for the pages read so far: in this job's folder, `pageledger review .`" in report
     assert verify_job(setup[2])["status"] == "pass"
 
 
@@ -171,10 +193,10 @@ def test_an_interrupted_job_is_unfinished_not_corrupt(setup, capsys):  # noqa: F
     with pytest.raises(KeyboardInterrupt):
         launch(setup)
     report = _report(setup)
-    assert report.splitlines()[2].startswith("Status: not finished.")
-    assert "- Not finished: waiting for the Image extraction stage: 2 pages (2-3)." in report
+    assert report.splitlines()[2].startswith("Not finished: the job stopped")
+    assert "- Not finished: waiting for the engine image: 2 pages (2-3)." in report
     assert "Need a person" not in report
-    assert "Next: `pageledger resume JOB_DIR` finishes the job." in report
+    assert "Next: in this job's folder, `pageledger resume .` finishes the job." in report
 
     result = verify_job(setup[2])
     assert result["status"] == "fail" and result["reason"] == "unfinished"
@@ -187,15 +209,52 @@ def test_an_interrupted_job_is_unfinished_not_corrupt(setup, capsys):  # noqa: F
     # A request that may have been sent is not repeated; the job halts, finished, and verifies.
     assert resume_job(setup[2])["status"] == "halted"
     assert verify_job(setup[2])["status"] == "pass"
-    assert _report(setup).splitlines()[2].startswith("Status: halted.")
+    assert _report(setup).splitlines()[2].startswith("Halted.")
 
 
-def test_summary_lines_name_the_job_folder_in_the_terminal(tmp_path):
+def test_process_ends_with_where_the_job_is_and_one_next_command(setup, capsys):  # noqa: F811
+    source, config, out, shared = setup
+    shared.update(defective={2, 3})
+    assert main(["process", str(source), "--config", str(config), "--out", str(out)]) == 0
+    printed = capsys.readouterr().out.splitlines()
+    closing = [line for line in printed if not line.startswith("Config warning")]
+    assert closing == [
+        "Finished: 3 pages read; 2 need a person.",
+        f"The job is in {out}.",
+        "Held because text may be missing or damaged in the reading (2).",
+        f"Next: pageledger review {out} shows those pages for checking.",
+        f"Text out: pageledger export {out} --format md --out job.md",
+    ]
+    assert not any(
+        "`" in line or "inspect" in line or "coverage_defect" in line for line in closing
+    )
+
+
+def test_closing_lines_follow_the_job_status(tmp_path):
     job = job_fixture(tmp_path)
+    job["pages"] = job["pages"][:1]
+    job["selected_pages"] = [1]
     report = build_document_report(job, tmp_path)
-    lines = summary_lines(report, "jobs/book")
-    assert any("pageledger export jobs/book --format md" in line for line in lines)
-    assert not any("JOB_DIR" in line for line in lines)
+    assert closing_lines(report, Path("jobs/my book")) == [
+        "Finished: 1 page read; none needs a person.",
+        "The job is in 'jobs/my book'.",
+        "Text out: pageledger export 'jobs/my book' --format md --out 'my book.md'",
+    ]
+    job.update(status="processing")
+    report = build_document_report(job, tmp_path)
+    assert closing_lines(report, "jobs/a")[-1] == "Next: pageledger resume jobs/a finishes the job."
+    job.update(
+        status="paused_budget",
+        next_action="Reached max_image_pages (1). Review the retained results, or continue "
+        "with: pageledger resume JOB_DIR --raise-limit max_image_pages=N",
+    )
+    report = build_document_report(job, tmp_path)
+    lines = closing_lines(report, "jobs/a")
+    assert lines[:2] == [
+        "Paused at a limit: 1 page read; none needs a person so far.",
+        "Reached max_image_pages (1). Review the retained results, or continue with: "
+        "pageledger resume jobs/a --raise-limit max_image_pages=N",
+    ]
 
 
 # ---------------------------------------------------------------------------
@@ -211,16 +270,18 @@ def test_the_kiev_page_names_the_lost_letters_and_what_was_compared(setup):  # n
     )
     assert launch(setup, pages="1")["status"] == "completed"
     report = _report(setup)
-    assert "spells 0 words with ѣ where another reading of the page spells 16: it lost the " in (
-        report
+    entry = _entry(report, 1)
+    assert (
+        "Holds the policy placed: `coverage_defect` from `letters_lost` on "
+        "`local_ocr-0001:doc_0001_page_0001` (0 words spelled with ѣ, against 16 in another "
+        "reading)." in entry
     )
     assert (
-        "The Local text (the PDF's own text, an earlier OCR) reading "
-        "`local_text:doc_0001_page_0001` and the Local OCR reading "
-        "`local_ocr-0001:doc_0001_page_0001`: 50% of words agree; not counted, because the "
-        "Local OCR reading `local_ocr-0001:doc_0001_page_0001` is held itself." in report
+        "Compared: `local_text:doc_0001_page_0001` and `local_ocr-0001:doc_0001_page_0001`: "
+        "50% of words agree; not counted, because `local_ocr-0001:doc_0001_page_0001` is held "
+        "itself." in entry
     )
-    assert "- `historical_orthography` on 1 page (1):" in report
+    assert "- On 1 page (1) (`historical_orthography`):" in report
     assert "such as `orus` (see docs/engine-recipes.md)" in report
     assert "retained review concern" not in report and "not compared" not in report
     document = _document(setup)
@@ -244,22 +305,20 @@ def test_agreement_on_a_held_page_is_not_presented_as_reassurance(tmp_path):
     page.update(disposition="low_confidence", review_reasons=["low_confidence"])
     job["hold_policy"] = "0.9"
     rendered = render_document_report(build_document_report(job, tmp_path))
-    held = rendered.split("### Page", 1)[1].split("\n## ", 1)[0]
-    assert "- The OCR engine was unsure of many words (`low_confidence`)." in held
-    assert "- Comparisons the job recorded (they do not clear the holds above):" in held
-    assert "91% of words agree; counted as agreement." in held
+    assert "| 1 | The OCR engine was unsure of many words |" in _row(rendered, 1)
+    assert "`a1` and `clean`: 91% of words agree; counted as agreement." in _entry(rendered, 1)
     assert "agree (" not in rendered
 
 
-def test_a_scan_with_ocr_text_is_not_called_simply_blank(tmp_path):
+def _scan_page(tmp_path, reasons):
+    import hashlib
+
     job = job_fixture(tmp_path, text="")
     page = job["pages"][0]
     page["attempts"][0]["warnings"] = ["empty_text"]
     ocr = tmp_path / "attempts" / "local_ocr" / "raw" / "p1.md"
     ocr.parent.mkdir(parents=True)
     ocr.write_text("Twelve words of OCR text read from the scanned page here today.\n")
-    import hashlib
-
     page["attempts"].append(
         {
             **page["attempts"][0],
@@ -267,21 +326,84 @@ def test_a_scan_with_ocr_text_is_not_called_simply_blank(tmp_path):
             "stage": "local_ocr",
             "raw_artifact": str(ocr.relative_to(tmp_path)),
             "raw_sha256": hashlib.sha256(ocr.read_bytes()).hexdigest(),
-            "warnings": ["low_confidence"],
+            "warnings": ["low_confidence"] if "low_confidence" in reasons else [],
         }
     )
-    page.update(
-        selected_attempt="a2",
-        disposition="blank_candidate",
-        review_reasons=["low_confidence", "blank_candidate"],
-    )
+    page.update(selected_attempt="a2", disposition=reasons[0], review_reasons=reasons)
     job["hold_policy"] = "0.9"
+    job["policy"] = {
+        "local_text": {"adapter": "pdf_text"},
+        "local_ocr": {"adapter": "pdf_ocr", "adapter_options": {"lang": "rus"}},
+    }
+    return job
+
+
+def test_a_scan_with_ocr_text_held_for_another_reason_is_not_called_blank(tmp_path):
+    job = _scan_page(tmp_path, ["low_confidence", "blank_candidate"])
     rendered = render_document_report(build_document_report(job, tmp_path))
-    assert (
-        "came back empty (a scanned PDF page has no text of its own). The selected reading "
-        "has 12 words, but no reading by an engine that is not generative, with no hold of "
-        "its own, confirms that the page has text." in rendered
+    first = rendered.split("\n## For the record", 1)[0]
+    assert "blank" not in first.lower()
+    assert "| 1 | The OCR engine was unsure of many words | [Tesseract OCR (rus)](<" in first
+    # The record still lists every reason the job recorded.
+    assert "held for `low_confidence`, `blank_candidate`" in _entry(rendered, 1)
+
+
+def test_a_scan_held_only_as_blank_says_it_is_a_scan(tmp_path):
+    job = _scan_page(tmp_path, ["blank_candidate"])
+    rendered = render_document_report(build_document_report(job, tmp_path))
+    assert f"  - {wording.BLANK_SCAN}: 1 page (1)." in rendered
+    assert f"| 1 | {wording.BLANK_SCAN} |" in rendered
+
+
+def test_readings_are_named_by_what_made_them():
+    name = wording.reading_name
+    assert name("local_text", {"adapter": "pdf_text"}) == "the PDF's own text"
+    assert name("local_text", {"adapter": "pdf_text"}, layer=True) == (
+        "the PDF's own text (an earlier OCR)"
     )
+    assert name("local_text", {"adapter": "pdf_text"}, images=True) == "the page image's own text"
+    assert name("local_text", {"adapter": "text"}) == "the text file"
+    assert name("local_ocr", {"adapter": "pdf_ocr", "lang": "rus"}) == "Tesseract OCR (rus)"
+    assert name("second_ocr", {"adapter": "rapidocr"}) == "the second OCR engine (RapidOCR)"
+    assert name("local_ocr", {"adapter": "indra"}) == "Indra OCR"
+    assert name("second_ocr", {"adapter": "alto"}) == (
+        "the second OCR engine (the page's ALTO file)"
+    )
+    assert name("image", {"adapter": "vision", "model": "qwen2.5-vl"}) == (
+        "the vision model qwen2.5-vl"
+    )
+    assert name("local_image", {"adapter": "vision", "model": "m"}) == "the local vision model m"
+    assert name("second_opinion", {"adapter": "vision", "model": "m"}) == (
+        "the second opinion (the vision model m)"
+    )
+    assert name("local_ocr", {"adapter": "mine.ocr:Engine"}) == "the engine mine.ocr:Engine"
+    # A report that records no engines still names the stage in words.
+    assert name("local_ocr") == "the OCR engine"
+    assert name("local_text") == "the page's own text"
+
+
+def test_the_report_records_only_what_names_an_engine(tmp_path):
+    job = job_fixture(tmp_path)
+    job["policy"] = {
+        "local_text": {"adapter": "pdf_text", "adapter_options": {}},
+        "local_ocr": {"adapter": "pdf_ocr", "adapter_options": {"dpi": 400}},
+        "image": {
+            "adapter": "vision",
+            "adapter_options": {"model": "m", "base_url": "http://x", "env_key": "KEY"},
+        },
+        "second_opinion": None,
+    }
+    report = build_document_report(job, tmp_path)
+    assert report["engines"] == {
+        "local_text": {"adapter": "pdf_text"},
+        "local_ocr": {"adapter": "pdf_ocr", "lang": "eng"},
+        "image": {"adapter": "vision", "model": "m"},
+    }
+    validate(
+        json.loads(json.dumps(report)),
+        json.loads((ROOT / "schemas/document.schema.json").read_text()),
+    )
+    assert "engines" not in build_document_report(job, tmp_path, report_format="0.6")
 
 
 # ---------------------------------------------------------------------------
@@ -297,8 +419,8 @@ def test_the_report_process_inspect_and_the_view_count_alike(setup, tmp_path, ca
     document = _document(setup)
     needing = [page["page_number"] for page in document["pages"] if needs_person(page, document)]
     assert needing == [2]
+    assert "Finished: 3 pages read; 1 needs a person." in printed.splitlines()
     line = "- Need a person: 1 page (2):"
-    assert line in printed.splitlines()
     assert line in _report(setup).splitlines()
     assert main(["inspect", str(out)]) == 0
     assert line in capsys.readouterr().out.splitlines()
@@ -384,6 +506,7 @@ def test_the_docs_repeat_the_wording_table_exactly():
     decisions, warnings = rest.split("### Warnings", 1)
     assert {k: v[0] for k, v in _table(holds).items()} == wording.HOLDS
     assert " ".join(wording.BLANK_WITH_TEXT.split()) in " ".join(holds.split())
+    assert " ".join(wording.BLANK_SCAN.split()) in " ".join(holds.split())
     assert {k: v[0] for k, v in _table(decisions).items()} == wording.REVIEWED
     table = _table(warnings)
     assert {k: v[0] for k, v in table.items()} == wording.WARNINGS
@@ -427,14 +550,14 @@ def test_the_new_format_keeps_every_link_hash_and_fact_of_the_old(tmp_path):
 
     for target in re.findall(r"\(<([^>]*)>\)", old):
         assert f"(<{target}>)" in new, target
+    transcript = build_document_report(job, tmp_path, report_format="0.6")["transcript"]
     for digest in re.findall(r"`([0-9a-f]{64})`", old):
-        assert digest in new
+        # The transcript names its readings in words from format 0.9, so its hash differs.
+        assert digest in new or digest == transcript["sha256"]
     for fact in (
         "MODEL_OUTPUT_TRUNCATED",
-        "outcome failed",
         "multi_column_rows",
-        "tiles: 4 planned, 3 sent and paid for, 2 read, failed: t02, cut through text: t03",
-        "Second opinion | 0 (no page met its trigger)",
+        "| 0 (no page met its trigger)",
         "none (0)" if False else "present (2)",
         "Changed elsewhere: review --apply on 2026-11-10T00:00:00Z in /x",
         "unverified",
@@ -443,6 +566,12 @@ def test_the_new_format_keeps_every_link_hash_and_fact_of_the_old(tmp_path):
         "42%",
     ):
         assert fact in old and fact in new, fact
+    assert "outcome failed" in old
+    assert (
+        "[a2](<attempts/partial.md>) failed, failure `MODEL_OUTPUT_TRUNCATED`, "
+        "`multi_column_rows`, tiles: 4 planned, 3 sent and paid for, 2 read, failed: t02, "
+        "cut through text: t03" in new
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -463,9 +592,11 @@ def test_a_layer_outvoted_by_two_engines_is_not_shown_as_a_disagreement(setup): 
     assert page["review_reasons"] == []
     assert min(c["agreement_ratio"] for c in page["comparisons"]) < 0.6
     report = _report(setup)
-    row = _entry(report, 1)
-    assert "| 100% of words agree | nothing |" in row
-    assert "below" not in row
+    assert "| 1 | nothing |" in _row(report, 1)
+    entry = _entry(report, 1)
+    assert "100% of words agree; counted as agreement" in entry
+    assert "not counted: two of the job's own engines agree, which outweighs the layer" in entry
+    assert "below" not in entry
 
 
 def test_the_review_view_of_an_older_report_sets_held_readings_aside(tmp_path):
@@ -512,10 +643,16 @@ def test_a_reviewed_page_keeps_the_holds_its_review_settled(setup, tmp_path):  #
     )
     review_job(setup[2], receipt)
     report = _report(setup)
-    row = _entry(report, 2)
-    assert "Text may be missing or damaged in the reading (`coverage_defect`)" in row
-    assert "A person checked the text against the page (`reviewed_text`), by A. Reader" in row
-    assert "- A person checked the text against the page (`reviewed_text`): 1 page (2)." in report
+    row = _row(report, 2)
+    assert "| Text may be missing or damaged in the reading |" in row
+    assert (
+        "| A person checked the text against the page: A. Reader, 2026-11-10T12:00:00Z, "
+        "“checked against the scan” |" in row
+    )
+    assert "`reviewed_text`; held for `coverage_defect`; reviewed as `reviewed_text`" in (
+        _entry(report, 2)
+    )
+    assert "- A person checked the text against the page: 1 page (2)." in report
     assert "Check the pages against the source, those that need a person first" in report
     assert verify_job(setup[2])["status"] == "pass"
 
@@ -525,17 +662,20 @@ def test_pages_left_by_a_paused_job_show_their_text_so_far(setup):  # noqa: F811
     data["processing"]["limits"]["max_image_pages"] = 1
     setup[1].write_text(yaml.safe_dump(data))
     launch(setup)
-    entry = _entry(_report(setup), 3)
-    assert "Text so far: the Local text reading" in entry
-    assert "Held so far for: Text may be missing or damaged" in entry
-    assert "What is shown for these pages is provisional" in _report(setup)
+    row = _row(_report(setup), 3)
+    assert (
+        "| 3 | not finished: waiting for the engine image; held so far: text may be missing or "
+        "damaged in the reading | [The engine local_text](<" in row
+    )
+    assert "Waiting for the `image` stage." in _entry(_report(setup), 3)
+    assert "For pages not finished, the text and holds are those so far" in _report(setup)
 
 
 def test_a_blank_candidate_with_text_is_grouped_and_worded_apart(tmp_path):
     job = job_fixture(tmp_path)
     page = job["pages"][0]
-    page["attempts"][0]["warnings"] = ["empty_text", "low_confidence"]
+    page["attempts"][0].update(stage="local_ocr", warnings=["empty_text", "low_confidence"])
     page.update(disposition="blank_candidate", review_reasons=["blank_candidate"])
     rendered = render_document_report(build_document_report(job, tmp_path))
-    assert f"  - {wording.BLANK_WITH_TEXT} (`blank_candidate`): 1 page (1)." in rendered
+    assert f"  - {wording.BLANK_WITH_TEXT}: 1 page (1)." in rendered
     assert "the page may be blank" not in rendered

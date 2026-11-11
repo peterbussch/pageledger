@@ -330,6 +330,9 @@ def test_verification_rejects_review_without_a_matching_decision(tmp_path, legac
     report = write_document_report(job_fixture(tmp_path), tmp_path)
     if legacy:
         report.pop("report_format")
+        transcript = render_transcript(report)
+        report["transcript"]["sha256"] = hashlib.sha256(transcript.encode()).hexdigest()
+        (tmp_path / "transcript.md").write_text(transcript)
         (tmp_path / "report.md").write_text(render_document_report(report))
     report["pages"][0]["review"] = {"decisions": []}
     (tmp_path / "document.json").write_text(json.dumps(report))
@@ -589,7 +592,7 @@ def test_report_accounts_for_configured_stage_that_read_no_pages(tmp_path):
         "pages_read": 0,
         "reason": "no page met its trigger",
     }
-    assert "Second opinion | 0 (no page met its trigger)" in (tmp_path / "report.md").read_text()
+    assert "`second_opinion` | 0 (no page met its trigger)" in (tmp_path / "report.md").read_text()
 
     old_shape = build_document_report(job, tmp_path, include_stage_accounting=False)
     assert "stage_accounting" not in old_shape

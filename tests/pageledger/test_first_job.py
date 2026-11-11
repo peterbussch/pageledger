@@ -444,16 +444,15 @@ def test_completed_process_prints_the_next_steps_but_not_in_json(
     source = _source(tmp_path)
     assert main(["process", str(source), "--out", str(tmp_path / "a")]) == 0
     out = capsys.readouterr().out
-    report = (tmp_path / "a" / "report.md").read_text(encoding="utf-8")
-    lines = out.splitlines()
-    assert lines[0] == "Status: finished. Every stage this job is configured to run has run."
-    # The terminal shows the report's opening, with the job's folder in place of JOB_DIR.
-    opening = report.split("\n\n## ", 1)[0].split("\n", 2)[2]
-    opening = opening.replace("JOB_DIR", str(tmp_path / "a")).replace("`", "")
-    assert out.startswith(opening.rsplit("\n", 1)[0])
-    assert any(line.startswith("Next: pageledger ") for line in lines)
-    assert any("letters" in line for line in lines if line.startswith("Next:"))
-    assert lines[-1] == f"The full report: pageledger inspect {tmp_path / 'a'}"
+    job = tmp_path / "a"
+    # Where the job is, what needs a person and why, the next command and the way out.
+    assert out.splitlines() == [
+        "Finished: 2 pages read; 2 need a person.",
+        f"The job is in {job}.",
+        "Held because text may be missing or damaged in the reading (2).",
+        f"Next: pageledger review {job} shows those pages for checking.",
+        f"Text out: pageledger export {job} --format md --out a.md",
+    ]
 
     assert main(["process", str(source), "--out", str(tmp_path / "b"), "--json"]) == 0
     out = capsys.readouterr().out
