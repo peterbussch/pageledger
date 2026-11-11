@@ -317,6 +317,10 @@ and, from 1.0, [stability](docs/stability.md).
   handwriting, unreadable or a source defect. The page keeps its boundary, disposition and review, with
   null `attempt` and `text` in JSONL and a `<gap reason="…"/>` in TEI. With `--reviewed-only` such text
   read as checked: a page reviewed as blank was exported with 1,295 words of OCR.
+- A born-digital PDF with a see-through watermark over its text (drawn at an alpha below 1, through a soft
+  mask, or in a blend mode other than Normal) is no longer taken for an earlier OCR layer. `pdf_text` read the
+  stamp as an opaque scan over the text (`text_under_image`), and a document job then selected its own OCR
+  reading over the exact typeset text without holding the page.
 - An image page that failed transiently just as `max_image_pages` was reached keeps its one retry: after
   `resume --raise-limit` the retry is requested before any unread page. It used to be lost, leaving the page
   held as `provider_failure` while later pages got both a read and a retry.
@@ -331,6 +335,10 @@ and, from 1.0, [stability](docs/stability.md).
   already refused there; decide the page in one of them.
 
 ### Known limits
+
+- A born-digital page whose text lies under an opaque page-sized image, or whose PDF was made in an OCR
+  program's editor over a page-sized picture, is still taken for an earlier OCR layer (`text_under_image` or
+  `producer`); when the job's OCR agrees with it, the OCR reading is selected and the page is not held.
 
 - One OCR engine's unconfirmed reading of an image-only scan still passes when it carries no warning of its
   own, as do two-page spreads read across the gutter and books re-typeset from OCR without their scans. On

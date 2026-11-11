@@ -41,8 +41,10 @@ def _pdf(
     producer: str | None = None,
     image: dict | None = None,
     form: bytes | None = None,
+    states: dict | None = None,
 ) -> Path:
-    """A 200 x 300 point page with one font, an optional image and an optional form."""
+    """A 200 x 300 point page with one font, an optional image, an optional form, and
+    graphics states named /GS1, /GS2... with the given keys."""
     from pypdf import PdfWriter
     from pypdf.generic import (
         ArrayObject,
@@ -117,6 +119,20 @@ def _pdf(
             )
             xobjects[NameObject("/Fm1")] = writer._add_object(scan)
         resources[NameObject("/XObject")] = xobjects
+    if states:
+        resources[NameObject("/ExtGState")] = DictionaryObject(
+            {
+                NameObject(name): DictionaryObject(
+                    {
+                        NameObject(key): FloatObject(value)
+                        if isinstance(value, float)
+                        else NameObject(value)
+                        for key, value in keys.items()
+                    }
+                )
+                for name, keys in states.items()
+            }
+        )
     page[NameObject("/Resources")] = resources
     stream = DecodedStreamObject()
     stream.set_data(content)
@@ -194,6 +210,45 @@ def test_a_born_digital_page_is_not_an_ocr_layer(tmp_path, content, image):
     assert _signals(path) is None
     read = PdfTextAdapter().extract(path, page_id="p", page_number=1, action="transcribe_text")
     assert read.warnings == [] and read.confidence_detail is None
+
+
+STAMPS = {
+    "/GS1": {"/ca": 0.15, "/CA": 0.15},
+    "/GS2": {"/BM": "/Multiply"},
+    "/GS3": {"/ca": 1.0, "/CA": 1.0},
+    "/GS4": {"/BM": "/Normal"},
+}
+
+
+@pytest.mark.parametrize(
+    "stamp",
+    [
+        # A watermark stamped over the text at 15% opacity, with no mask on the image.
+        b"q /GS1 gs " + SCAN + b" Q",
+        # One multiplied over it, as a highlight is.
+        b"q /GS2 gs " + SCAN + b" Q",
+        # A later state that sets only the blend mode keeps the alpha before it.
+        b"q /GS1 gs /GS4 gs " + SCAN + b" Q",
+        # Inside a form, the state set before drawing it still applies.
+        b"q /GS1 gs /Fm1 Do Q",
+    ],
+)
+def test_a_see_through_watermark_over_typeset_text_is_not_an_ocr_layer(tmp_path, stamp):
+    pytest.importorskip("pypdf")
+    form = SCAN if b"/Fm1" in stamp else None
+    path = _pdf(tmp_path / "stamped.pdf", TEXT + b" " + stamp, image={}, form=form, states=STAMPS)
+    assert _signals(path) is None
+
+
+def test_a_scan_painted_opaquely_after_a_graphics_state_still_hides_its_text(tmp_path):
+    pytest.importorskip("pypdf")
+    # The alpha set for the text is restored to 1 before the scan, or popped with Q.
+    for drawing in (
+        b"/GS1 gs " + TEXT + b" /GS3 gs " + SCAN,
+        b"q /GS1 gs " + TEXT + b" Q " + SCAN,
+    ):
+        path = _pdf(tmp_path / "abbyy.pdf", drawing, image={}, states=STAMPS)
+        assert _signals(path) == ["text_under_image"]
 
 
 def test_a_drawing_the_detector_cannot_follow_gives_no_signal_and_the_text_is_read(

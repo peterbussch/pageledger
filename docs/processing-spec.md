@@ -417,7 +417,23 @@ gazetteer) and Ghostscript's invisible text (a 1939 directory) were read as
 typeset text: a page went to OCR only when the layer carried a warning of its own.
 A born-digital page with a background picture under visible text raises none of
 the signals unless its Producer names OCR software; nor does an OCR-converted
-book re-typeset in ordinary fonts with no scan behind it.
+book re-typeset in ordinary fonts with no scan behind it. A page-covering image
+drawn with transparency (an alpha below 1, a soft mask or a blend mode other than
+Normal in the graphics state, as a watermark is stamped over a typeset page) hides
+no text, so text under it is not `text_under_image`.
+
+A layer recognised by `text_under_image` or `producer` alone is still treated as
+an earlier OCR, and a born-digital page can raise them: one whose text lies under
+an opaque page-sized image, or one made in an OCR program's PDF editor over a
+page-sized picture. When the job's OCR then agrees with that text, the OCR is
+selected and the page is not held, though the text layer was exact. 0.9 does not
+hold such pages for review. Every page with text that these signals recognised
+without `font` or `invisible_text` was a real earlier OCR: in the dogfood, all
+pages of a yearbook, an 1859 gazetteer and an 1888 provincial gazette; in two
+random samples of a research library's PDFs (208 and 393 pages), a 1992 Federal
+Register scan and three books made with ABBYY FineReader. Holding every page where
+two such witnesses differ at all would hold almost every page of the most common
+inherited layer.
 
 **The layer and the job's own OCR are two witnesses.** Under 0.8 the layer was set
 aside once local OCR had read the page. Under 0.9:

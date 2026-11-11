@@ -1140,7 +1140,9 @@ def _text_and_scan(page: Any) -> dict[str, bool]:
 
     Walks the page's content and its forms without decoding any image. The image is a
     scan when, as placed, it covers the page; it hides text when it is opaque (no soft
-    mask, mask or stencil) and painted after that text.
+    mask, mask or stencil), painted opaquely (the graphics state sets no alpha below 1,
+    soft mask or blend mode other than Normal: a watermark is stamped that way) and
+    painted after that text.
     """
     from pypdf.errors import PyPdfError
     from pypdf.generic import ContentStream
@@ -1169,15 +1171,20 @@ def _text_and_scan(page: Any) -> dict[str, bool]:
             max(ys) - min(ys)
         ) >= _COVERS_PAGE * height
 
-    def walk(stream: Any, resources: Any, ctm: list[float], mode: int, depth: int) -> None:
+    def walk(
+        stream: Any, resources: Any, ctm: list[float], mode: int, see: dict, depth: int
+    ) -> None:
         resources = resources.get_object() if resources is not None else {}
         xobjects = resources.get("/XObject") or {}
-        stack: list[tuple[list[float], int]] = []
+        states = resources.get("/ExtGState") or {}
+        stack: list[tuple[list[float], int, dict]] = []
         for operands, operator in ContentStream(stream, page.pdf).operations:
             if operator == b"q":
-                stack.append((ctm, mode))
+                stack.append((ctm, mode, see))
             elif operator == b"Q" and stack:
-                ctm, mode = stack.pop()
+                ctm, mode, see = stack.pop()
+            elif operator == b"gs" and operands and operands[0] in states:
+                see = _see_through(states[operands[0]].get_object(), see)
             elif operator == b"cm" and len(operands) == 6:
                 ctm = multiply([float(x) for x in operands], ctm)
             elif operator == b"Tr" and operands:
@@ -1189,19 +1196,29 @@ def _text_and_scan(page: Any) -> dict[str, bool]:
                 xobject = xobjects[operands[0]].get_object()
                 if xobject.get("/Subtype") == "/Form" and depth < 3:
                     matrix = [float(x) for x in xobject.get("/Matrix", [1, 0, 0, 1, 0, 0])]
-                    walk(xobject, xobject.get("/Resources"), multiply(matrix, ctm), mode, depth + 1)
+                    walk(
+                        xobject,
+                        xobject.get("/Resources"),
+                        multiply(matrix, ctm),
+                        mode,
+                        see,
+                        depth + 1,
+                    )
                 elif xobject.get("/Subtype") == "/Image" and covers(ctm):
                     shown["scan"] = True
-                    opaque = not any(
-                        key in xobject for key in ("/SMask", "/Mask")
-                    ) and not xobject.get("/ImageMask", False)
+                    opaque = (
+                        not any(see.values())
+                        and not any(key in xobject for key in ("/SMask", "/Mask"))
+                        and not xobject.get("/ImageMask", False)
+                        and not xobject.get("/SMaskInData", 0)
+                    )
                     if opaque:
                         shown["covered"] = shown["all"]
 
     try:
         contents = page.get_contents()
         if contents is not None:
-            walk(contents, page.get("/Resources"), [1, 0, 0, 1, 0, 0], 0, 0)
+            walk(contents, page.get("/Resources"), [1, 0, 0, 1, 0, 0], 0, {}, 0)
     except (
         PyPdfError,
         RecursionError,
@@ -1219,6 +1236,26 @@ def _text_and_scan(page: Any) -> dict[str, bool]:
         "invisible": bool(shown["scan"]) and total > 0 and 2 * shown["invisible"] > total,
         "under_image": total > 0 and 2 * shown["covered"] > total,
     }
+
+
+def _see_through(state: Any, see: dict[str, bool]) -> dict[str, bool]:
+    """Which of the graphics state's transparency settings let what lies under show.
+
+    An ExtGState changes only the keys it sets. Alpha below 1 (fill ``/ca`` or stroke
+    ``/CA``), a soft mask or a blend mode other than Normal lets the text beneath show
+    through, as a watermark stamped over a typeset page does.
+    """
+    see = dict(see)
+    for key in ("/ca", "/CA"):
+        if key in state:
+            see[key] = float(state[key]) < 1
+    if "/SMask" in state:
+        see["/SMask"] = state["/SMask"] != "/None"
+    if "/BM" in state:
+        mode = state["/BM"]
+        mode = mode[0] if isinstance(mode, list) and mode else mode
+        see["/BM"] = mode not in ("/Normal", "/Compatible")
+    return see
 
 
 def _ocr_layer(page: Any) -> bool:
