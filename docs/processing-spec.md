@@ -894,7 +894,10 @@ checked against usage measured after each page.
 A remote reader's page that fails with `MODEL_TIMEOUT`, `MODEL_HTTP_ERROR`,
 `MODEL_NETWORK_ERROR` or `MODEL_UNAVAILABLE` without reading anything is
 requested once more as a retry attempt (`image-0159-retry-1`), whether or not
-the job uses `batch`; the retry counts against `max_image_pages`. "Without
+the job uses `batch`; the retry counts against `max_image_pages`. When the
+limit leaves no room for the retry, the job pauses with the retry still owed,
+and `resume --raise-limit` requests it before any page that has not been read.
+"Without
 reading anything" means the failed request kept no text: no partial output,
 or one that is empty or only whitespace. The built-in `vision` adapter keeps
 the exact image it sent and an empty reading on every failed request; that

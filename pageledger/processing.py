@@ -1558,28 +1558,55 @@ def _execute_stages(
         return False
     retries = [stage for stage, _, action in actions if action == "retry"]
     if retries:
-        # A tiled page is read again whole: every tile of its plan is requested again.
-        requests = sum(stage.get("tiles", {}).get("count", 1) for stage in retries)
-        reason = _budget_reason(job, retries[0]["stage"], len(retries), requests)
-        if reason:
-            _stop_for_budget(job, reason)
-            return False
+        return _retry(job, root, retries, adapter_path, concurrent)
     job.update(status="processing", halt_reason=None)
-    if retries:
-        planned = (
-            _plan_stage(
-                job,
-                root,
-                stage["stage"],
-                stage["pages"],
-                retry=True,
-                tiles=_stage_plan(root, stage) if "tiles" in stage else None,
-            )
-            for stage in retries
-        )
-        return _execute_stages(job, root, planned, adapter_path, concurrent)
     _publish(job, root)
     return True
+
+
+def _retry(
+    job: dict, root: Path, stages: list[dict], adapter_path: Path | None, concurrent: int
+) -> bool:
+    """Request the pages of stages that failed transiently once more, within the budget."""
+    # A tiled page is read again whole: every tile of its plan is requested again.
+    requests = sum(stage.get("tiles", {}).get("count", 1) for stage in stages)
+    reason = _budget_reason(job, stages[0]["stage"], len(stages), requests)
+    if reason:
+        # Nothing is planned: resume finds the retry still owed (_owed_retries).
+        _stop_for_budget(job, reason)
+        return False
+    job.update(status="processing", halt_reason=None)
+    planned = (
+        _plan_stage(
+            job,
+            root,
+            stage["stage"],
+            stage["pages"],
+            retry=True,
+            tiles=_stage_plan(root, stage) if "tiles" in stage else None,
+        )
+        for stage in stages
+    )
+    return _execute_stages(job, root, planned, adapter_path, concurrent)
+
+
+def _owed_retries(job: dict, root: Path) -> list[dict]:
+    """Stages that failed transiently and whose one retry a budget pause stopped before
+    it was planned."""
+    retried = {
+        (stage["stage"], tuple(stage["pages"]))
+        for stage in job["stages"]
+        if "-retry-" in stage["stage_id"]
+    }
+    return [
+        stage
+        for stage in job["stages"]
+        if stage["status"] == "halted"
+        and stage["stage"] in CONCURRENT_STAGES
+        and "-retry-" not in stage["stage_id"]
+        and (stage["stage"], tuple(stage["pages"])) not in retried
+        and _failure_action(job, root, stage) == "retry"
+    ]
 
 
 def _continue(job: dict, root: Path, adapter_path: Path | None) -> dict:
@@ -1590,6 +1617,11 @@ def _continue(job: dict, root: Path, adapter_path: Path | None) -> dict:
             if not _execute(job, root, stage, adapter_path):
                 return _publish(job, root)
     _refresh(job, root)
+    owed = _owed_retries(job, root)
+    if owed:
+        concurrent = _batching(job, owed[0]["stage"])[1]
+        if not _retry(job, root, owed, adapter_path, concurrent):
+            return _publish(job, root)
     for name in ladder(job["policy"]):
         if job["policy"][name] is None:
             continue

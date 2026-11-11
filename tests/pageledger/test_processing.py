@@ -1730,6 +1730,33 @@ def test_an_image_page_that_fails_twice_is_held_and_the_job_goes_on(setup, monke
     assert verify_job(setup[2])["status"] == "pass"
 
 
+def test_a_retry_stopped_by_the_image_budget_is_owed_after_a_raise(setup, monkeypatch):
+    data = yaml.safe_load(setup[1].read_text())
+    data["processing"]["limits"]["max_image_pages"] = 1
+    setup[1].write_text(yaml.safe_dump(data))
+    _failing_image(monkeypatch, {2: 1})
+
+    assert launch(setup)["status"] == "paused_budget"
+    assert read_record(setup[2] / "job.json")["halt_reason"] == "budget:max_image_pages"
+
+    # The raise pays for the retry first; the next page waits for another raise.
+    assert resume_job(setup[2], raise_limits={"max_image_pages": 2})["status"] == "paused_budget"
+    assert resume_job(setup[2], raise_limits={"max_image_pages": 4})["status"] == "completed"
+    job = read_record(setup[2] / "job.json")
+    images = {
+        page["page_number"]: [a["outcome"] for a in page["attempts"] if a["stage"] == "image"]
+        for page in job["pages"]
+    }
+    assert images == {1: [], 2: ["failed", "completed"], 3: ["completed"]}
+    assert job["usage"]["image_calls"] == 3
+    assert job["pages"][1]["disposition"] != "provider_failure"
+    # Resuming a finished job buys nothing more.
+    calls = list(setup[3]["calls"])
+    resume_job(setup[2])
+    assert setup[3]["calls"] == calls
+    assert verify_job(setup[2])["status"] == "pass"
+
+
 def test_an_image_quota_failure_still_halts_the_job(setup, monkeypatch):
     _batched(setup)
     _failing_image(monkeypatch, {2: 1, "code": "MODEL_QUOTA"})

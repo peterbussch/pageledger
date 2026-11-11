@@ -317,6 +317,9 @@ and, from 1.0, [stability](docs/stability.md).
   handwriting, unreadable or a source defect. The page keeps its boundary, disposition and review, with
   null `attempt` and `text` in JSONL and a `<gap reason="…"/>` in TEI. With `--reviewed-only` such text
   read as checked: a page reviewed as blank was exported with 1,295 words of OCR.
+- An image page that failed transiently just as `max_image_pages` was reached keeps its one retry: after
+  `resume --raise-limit` the retry is requested before any unread page. It used to be lost, leaving the page
+  held as `provider_failure` while later pages got both a read and a retry.
 - `review --apply` refuses a plain JSON receipt that decides a page a person corrected, unless the receipt
   carries that correction. An older receipt naming the machine reading used to replace the correction without
   a warning, and `export` then gave the uncorrected text as reviewed. Review sheets and decisions files were
