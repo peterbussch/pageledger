@@ -101,7 +101,7 @@ def test_the_view_shows_each_page_and_changes_nothing_in_the_job(job, tmp_path):
     assert 'id="p0001"' in document and 'id="p0002"' in document
     # The held page comes first in the list.
     assert document.index('href="#p0002"') < document.index('href="#p0001"')
-    assert "Possible missing or incomplete content (coverage_defect)" in document
+    assert "Text may be missing or damaged in the reading (coverage_defect)" in document
     assert "warnings.md#document-job-dispositions" in document
     assert "recorded in the job until the downloaded file is applied." in document
     assert "review.json" in document
@@ -428,7 +428,10 @@ def test_a_corrected_page_shows_the_correction_and_the_reading_beneath(job, tmp_
     data = _embedded(document)
     page = read_record(job / "job.json")["pages"][0]
     assert "a correction by A. Reader at" in document
-    assert "Reviewed text (reviewed_text) with a correction, by A. Reader" in document
+    assert (
+        "A person checked the text against the page (reviewed_text) with a correction, "
+        "by A. Reader" in document
+    )
     assert data["texts"]["p0001"] == {
         "": TEXT.replace("prose", "verse"),
         page["selected_attempt"]: TEXT,

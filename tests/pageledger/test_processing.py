@@ -443,8 +443,8 @@ def test_uncertain_ocr_page_is_reported_as_uncertain_not_incomplete(setup, monke
     assert job["hold_policy"] == HOLD_POLICY
     assert job["pages"][0]["disposition"] == "low_confidence"
     report = (setup[2] / "report.md").read_text(encoding="utf-8")
-    assert "The engine was unsure of some words" in report
-    assert "Possible missing or incomplete content" not in report
+    assert "The OCR engine was unsure of many words (`low_confidence`)" in report
+    assert "Text may be missing or damaged" not in report
     assert verify_job(setup[2])["status"] == "pass", result
 
 
@@ -612,7 +612,9 @@ def test_scanned_page_read_cleanly_by_ocr_does_not_need_a_person(setup):
     assert page["selected_attempt"].startswith("local_ocr")
     assert page["disposition"] == "unreviewed_text"
     assert page["review_reasons"] == []
-    assert "Pages needing a person: 0" in (setup[2] / "report.md").read_text(encoding="utf-8")
+    report = (setup[2] / "report.md").read_text(encoding="utf-8")
+    assert "Need a person" not in report
+    assert "no person has checked it (`unreviewed_text`): 1 page (1)." in report
     assert verify_job(setup[2])["status"] == "pass"
 
 
@@ -669,7 +671,7 @@ def test_a_rough_page_climbs_and_the_job_verifies(setup, monkeypatch):
     assert page["triggers"][0]["trigger"] == "rough"
     report = (setup[2] / "report.md").read_text(encoding="utf-8")
     assert "| Stage | Pages read | Tokens | Seconds |" in report
-    assert "Climbs other than holds: rough 2." in report
+    assert "by trigger (a page can be sent on more than once): `rough` 2." in report
     assert verify_job(setup[2])["status"] == "pass"
 
 
@@ -790,7 +792,10 @@ def test_a_readers_changes_are_contested_and_the_artifact_verifies(setup, monkey
         "Contested spans on 1 pages: glyph 8, word 8. Settled by rule: 8; by adjudication: 0; "
         "open: 8, holding 1 pages. Adjudicated pages: 0." in report
     )
-    assert "8 open of 16 in [spans](<contested/doc_0001_page_0001.json>)" in report
+    assert (
+        "8 of 16 differences are open; they are listed in "
+        "[the contested spans](<contested/doc_0001_page_0001.json>)." in report
+    )
     _validate_schemas(setup[2], contested=contested["artifact"])
     assert verify_job(setup[2])["status"] == "pass"
 
@@ -1081,9 +1086,9 @@ def test_verify_job_rebuilds_legacy_hold_policy_artifacts(setup):
 @pytest.mark.parametrize(
     "reason,label",
     [
-        ("engine_disagreement", "Engines disagree"),
-        ("numeric_disagreement", "Engines read numbers differently"),
-        ("unconfirmed_model_output", "Model output not confirmed by another engine"),
+        ("engine_disagreement", "Two readings share fewer than 60% of their words"),
+        ("numeric_disagreement", "Two readings give different numbers"),
+        ("unconfirmed_model_output", "A generative model wrote the text, and no other engine"),
     ],
 )
 def test_new_review_dispositions_render_in_report(setup, reason, label):

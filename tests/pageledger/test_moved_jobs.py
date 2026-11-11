@@ -82,7 +82,7 @@ def test_a_copied_job_with_ocr_and_image_stages_verifies_where_it_is(setup, tmp_
 
     # Read-only commands need no extra step.
     assert main(["inspect-job", str(copy)]) == 0
-    assert "# Document report" in capsys.readouterr().out
+    assert "source.txt: document job report" in capsys.readouterr().out
     assert export_job(copy, tmp_path / "out.jsonl", format="jsonl") == 2
     assert create_review_sheet(copy, tmp_path / "sheet.csv")["rows"] == 2
     view = write_review_html(copy, tmp_path / "view", images="none")

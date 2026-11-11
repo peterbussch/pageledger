@@ -7,6 +7,7 @@ import functools
 import hashlib
 import json
 import math
+import shlex
 import sys
 from collections import Counter
 from collections.abc import Iterator
@@ -1870,6 +1871,17 @@ def verify_job(job_dir: Path) -> dict:
     root = job_dir.expanduser().resolve()
     try:
         job = _load(root)
+        if job["status"] == "processing":
+            # Its record describes work in progress, which a finished job's checks would
+            # read as evidence that disagrees with itself.
+            return {
+                "status": "fail",
+                "reason": "unfinished",
+                "job_id": job["job_id"],
+                "out_dir": str(root),
+                "error": "This job did not finish: it was interrupted, or it is still running. "
+                f"Run `pageledger resume {shlex.quote(str(root))}` to finish it, then verify again.",
+            }
         warnings = _location_warnings(job, root)
         before = [_derived(p) for p in job["pages"]]
         _refresh(job, root, materialize=False)

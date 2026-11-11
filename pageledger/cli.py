@@ -1434,8 +1434,13 @@ def _cmd_job(args: argparse.Namespace) -> int:
         result = json.loads((args.job_dir / "document.json").read_text(encoding="utf-8"))
     if args.json_output:
         print(json.dumps(result, ensure_ascii=False, sort_keys=True))
+    elif args.command == "process" and result.get("report"):
+        _print_job_summary(args.out)
+        for warning in result.get("config_warnings", []):
+            print(f"Config warning: {warning}")
     else:
-        print(f"Status: {result['status']}")
+        reason = f" ({result['reason']})" if result.get("reason") else ""
+        print(f"Status: {result['status']}{reason}")
         if "decisions" in result:
             counts = sorted(result["decisions"].items())
             print("Decisions: " + (", ".join(f"{name} {n}" for name, n in counts) or "none"))
@@ -1470,8 +1475,6 @@ def _cmd_job(args: argparse.Namespace) -> int:
             print(f"Warning: [{issue['code']}] {issue['message']}")
         if result.get("error"):
             print(result["error"], file=sys.stderr)
-        if args.command == "process" and result.get("status") == "completed":
-            _print_job_next_steps(args)
     return 1 if result.get("status") in {"halted", "failed", "fail"} else 0
 
 
@@ -1546,24 +1549,14 @@ def _check_process_paths(source: Path, out: Path) -> None:
         )
 
 
-def _print_job_next_steps(args: argparse.Namespace) -> None:
-    """Two lines for a person: how much needs them, and what to run next."""
-    from .document_report import _needs_person
+def _print_job_summary(out: Path) -> None:
+    """The opening of the job's report, with the job's own folder in its commands."""
+    from .document_report import summary_lines
 
-    document = json.loads((args.out / "document.json").read_text(encoding="utf-8"))
-    pages = document["pages"]
-    job = shlex.quote(str(args.out))
-    needed = sum(_needs_person(page) for page in pages)
-    print(f"Pages needing a person: {needed} of {len(pages)}, listed first in the report.")
-    print(f"Next: pageledger inspect {job} to read the report.")
-    export = f"pageledger export {job} --format md --out {shlex.quote(args.source.stem + '.md')}"
-    if needed:
-        print(
-            f"Then: pageledger review {job} --out {shlex.quote(args.source.stem + '-review')} "
-            f"to review them beside the page images, or {export}"
-        )
-    else:
-        print(f"Then: {export}")
+    document = json.loads((out / "document.json").read_text(encoding="utf-8"))
+    job = shlex.quote(str(out))
+    print("\n".join(summary_lines(document, job)).replace("`", ""))
+    print(f"\nThe full report: pageledger inspect {job}")
 
 
 def _cmd_review(args: argparse.Namespace) -> int:

@@ -29,19 +29,19 @@ from .adjudication import settle
 from .checkpoint import atomic_bytes, file_digest, writer_lock
 from .corrections import describe
 from .document_report import (
-    _DISPOSITION_LABELS,
     _STAGE_LABELS,
-    _agreement,
     _artifact_bytes,
     _image_name,
-    _needs_person,
+    _short_comparison,
+    needs_person,
     relative_path,
     verify_document_report,
 )
 from .image_source import KIND, ImageSource, _read_page, carrier, page_target, snapshot_growth
 from .processing import _check_source, _load, _refresh, verify_job
-from .processing_policy import warning_holds
 from .review_sheet import DECISIONS, FIELDS, _row_id, binding_path, write_review_sheet
+from .wording import hold, reviewed
+from .wording import warning as warning_words
 
 IMAGE_CHOICES = ("all", "held", "none")
 SHEET = "review.csv"
@@ -153,7 +153,7 @@ def _write_view(root: Path, out: Path, job: dict, source: Path, written: dict, i
     pictures: dict[str, str] = {}
     recorded = job["source"]["images"] if job["source"].get("kind") == KIND else None
     for page in report["pages"]:
-        if images == "none" or (images == "held" and not _needs_person(page)):
+        if images == "none" or (images == "held" and not needs_person(page, report)):
             continue
         name = f"images/{_row_id(page)}.jpg"
         (out / "images").mkdir(exist_ok=True)
@@ -296,13 +296,12 @@ class _View:
     ) -> None:
         self.root, self.out, self.report = root, out, report
         self.source, self.pictures = source, pictures
-        self.holds = warning_holds(report)
 
     def render(self, rows: list[dict], binding: str, *, language: str | None) -> str:
         self.lang = f' lang="{_e(language)}"' if language else ""
         report = self.report
         ordered = sorted(
-            report["pages"], key=lambda page: (not _needs_person(page), page["page_number"])
+            report["pages"], key=lambda page: (not needs_person(page, report), page["page_number"])
         )
         key = f"pageledger-review:{report['job_id']}:{hashlib.sha256(binding.encode()).hexdigest()[:16]}"
         data = {
@@ -320,7 +319,7 @@ class _View:
         )
         title = Path(report["source"]["path"]).name
         counts = report["counts"]
-        needing = sum(_needs_person(page) for page in report["pages"])
+        needing = sum(needs_person(page, report) for page in report["pages"])
         command = (
             f"pageledger review {shlex.quote(str(self.root))} "
             f'--apply {shlex.quote(str(self.out / DECISIONS_FILE))} --reviewer "YOUR NAME"'
@@ -385,8 +384,8 @@ class _View:
         return (
             f'<tr><th scope="row"><a href="#{row_id}">{page["page_number"]}'
             f"{_e(_image_name(self.report, page))}</a></th>"
-            f"<td>{_e(_label(page['disposition']))}</td><td>{_e(reasons)}</td>"
-            f"<td>{_e(_agreement(page, self.holds))}</td><td>{_e(_review(page))}</td>"
+            f"<td>{_e(_state(page))}</td><td>{_e(reasons)}</td>"
+            f"<td>{_e(_short_comparison(page, self.report))}</td><td>{_e(_review(page))}</td>"
             f'<td class="chosen" data-row="{row_id}"></td></tr>'
         )
 
@@ -396,14 +395,16 @@ class _View:
         path, fragment = page_target(self.report["source"], number)
         source_link = relative_path(str(self.source), self.out) + path + fragment
         facts = [
-            ("State", _e(_label(page["disposition"]))),
+            ("State", _e(_state(page))),
             ("Held for", self._holds(page)),
-            ("Engine agreement", _e(_agreement(page, self.holds))),
+            ("Engine agreement", _e(_short_comparison(page, self.report))),
             ("Review", _e(_review(page))),
         ]
         warnings = [
             f"{_e(attempt['attempt_id'])}: "
-            + ", ".join(f"<code>{_e(code)}</code>" for code in _codes(attempt))
+            + "; ".join(
+                f"<code>{_e(code)}</code> ({_e(warning_words(code))})" for code in _codes(attempt)
+            )
             for attempt in page["attempts"]
             if _codes(attempt)
         ]
@@ -430,9 +431,7 @@ class _View:
         open_spans, marked = self._open_spans(page)
         figure = self._figure(page, source_link)
         if selected is None:
-            reading = (
-                f"<p>No text is selected for this page ({_e(_label(page['disposition']))}).</p>"
-            )
+            reading = f"<p>No text is selected for this page ({_e(_state(page))}).</p>"
         else:
             own = not (selected.get("edition") or selected.get("correction"))
             shown = marked.get(selected["attempt_id"]) if own else None
@@ -657,7 +656,13 @@ class _View:
 
 
 def _label(code: str) -> str:
-    return f"{_DISPOSITION_LABELS.get(code, code)} ({code})"
+    return hold(code).replace("`", "")
+
+
+def _state(page: dict) -> str:
+    if page.get("review") is not None:
+        return reviewed(page["disposition"]).replace("`", "")
+    return _label(page["disposition"])
 
 
 def _review(page: dict) -> str:
@@ -667,7 +672,7 @@ def _review(page: dict) -> str:
     decision = next(item for item in review["decisions"] if item["page_id"] == page["page_id"])
     corrected = " with a correction" if "correction" in decision else ""
     return (
-        f"{_label(decision['disposition'])}{corrected}, by {decision['reviewer']} at "
+        f"{reviewed(decision['disposition']).replace('`', '')}{corrected}, by {decision['reviewer']} at "
         f"{decision['reviewed_at']}: {decision['reason']}"
     )
 

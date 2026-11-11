@@ -753,6 +753,81 @@ def assess_page(
     return result
 
 
+def hold_causes(
+    page: dict, holds_for: dict[str, str], *, ladder_rules: bool, witnesses: bool
+) -> list[dict]:
+    """Every hold on each reading of the page, and what caused it.
+
+    The cause is the warning or classification code that files the hold, or
+    ``empty_reading`` or ``alignment``; or, for a hold the policy itself places,
+    ``layer_outvoted``, ``reader_short`` or ``letters_lost``. Read-only: it repeats the
+    steps of ``assess_page`` that move holds between readings, in the same order, so
+    that a report can say why a page is held.
+    """
+    attempts = [
+        item
+        for item in page.get("attempts", [])
+        if item.get("stage") != "local_image" or item.get("outcome") == "completed"
+    ]
+    completed = [item for item in attempts if item.get("outcome") == "completed"]
+    holds_by_id = {
+        item["attempt_id"]: (
+            []
+            if witnesses and item.get("outcome") != "completed"
+            else _attempt_holds(item, holds_for)
+        )
+        for item in attempts
+    }
+    placed: dict[tuple[str, str], str] = {}
+
+    def note(cause: str, step: Callable[[], None]) -> None:
+        before = {key: list(value) for key, value in holds_by_id.items()}
+        step()
+        for key, holds in holds_by_id.items():
+            placed.update({(key, hold): cause for hold in holds if hold not in before[key]})
+
+    if witnesses:
+        _compare_with_layer(attempts, holds_by_id, holds_for)
+    if ladder_rules:
+        note(
+            "layer_outvoted",
+            lambda: _outvote_layer(attempts, holds_by_id, page.get("comparisons", []), holds_for),
+        )
+        if all("text" in item for item in _usable(attempts)):
+            note("reader_short", lambda: _hold_short_readers(attempts, holds_by_id))
+    if witnesses:
+        note("letters_lost", lambda: _hold_lost_letters(completed, holds_by_id))
+    yat = {
+        item["attempt_id"]: yat_words(item.get("text") or "")
+        for item in _usable(completed)
+        if not _generative(item)
+    }
+    causes = []
+    for item in attempts:
+        for hold in holds_by_id[item["attempt_id"]]:
+            cause = placed.get((item["attempt_id"], hold)) or _own_cause(item, hold, holds_for)
+            entry = {"attempt_id": item["attempt_id"], "hold": hold, "cause": cause}
+            if cause == "letters_lost":
+                entry.update(yat_words=yat[item["attempt_id"]], most_yat_words=max(yat.values()))
+            causes.append(entry)
+    return causes
+
+
+def _own_cause(attempt: dict, hold: str, holds_for: dict[str, str]) -> str:
+    """The code on the reading that files this hold; the length warning only when no other does."""
+    codes = [_warning_code(item) for item in attempt.get("warnings") or []]
+    for code in [*(c for c in codes if c != _DELTA), *(c for c in codes if c == _DELTA)]:
+        if isinstance(code, str) and holds_for.get(code) == hold:
+            return code
+    classification = attempt.get("classification") or {}
+    if (
+        holds_for.get(str(classification.get("type"))) == hold
+        and classification.get("reason") != "empty_pdf_text_ambiguous"
+    ):
+        return str(classification["type"])
+    return "empty_reading" if hold == "blank_candidate" else "alignment"
+
+
 def _generative(attempt: dict) -> bool:
     return "generative" in attempt.get("adapter_capabilities", ())
 

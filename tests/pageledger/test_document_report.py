@@ -17,6 +17,11 @@ from pageledger.document_report import (
 )
 
 
+def render06(job, root):
+    """The 0.6 rendering, which jobs written by 0.6 to 0.8 keep."""
+    return render_document_report(build_document_report(job, root, report_format="0.6"))
+
+
 def job_fixture(root, text="Cafe\u0301\r\n原文\n"):
     raw = root / "attempts" / "local_text" / "raw" / "p1.md"
     raw.parent.mkdir(parents=True)
@@ -250,8 +255,7 @@ def test_failed_preflight_report_does_not_invent_source_page_count(tmp_path):
 
 
 def test_report_distinguishes_annotation_inventory_and_retention_state(tmp_path):
-    report = write_document_report(job_fixture(tmp_path), tmp_path)
-    rendered = render_document_report(report)
+    rendered = render06(job_fixture(tmp_path), tmp_path)
     assert "Annotations: present (2)" in rendered
     assert "body extraction or citation completeness" in rendered
     assert "Preservation: unverified" in rendered
@@ -354,7 +358,7 @@ def test_schema_accepts_child_run_identity_and_image_evidence(tmp_path):
 def test_partial_token_accounting_is_not_presented_as_a_known_total(tmp_path):
     job = job_fixture(tmp_path)
     job["usage"].update(tokens=12, tokens_known=False)
-    rendered = render_document_report(build_document_report(job, tmp_path))
+    rendered = render06(job, tmp_path)
     assert "tokens: unknown (known subtotal: 12)" in rendered
 
 
@@ -426,7 +430,7 @@ def test_human_confirmed_source_problem_stays_unresolved(tmp_path, disposition):
         next_action="none",
     )
     job["next_action"] = "Obtain an alternate source or resolve the remaining source problems."
-    report = build_document_report(job, tmp_path)
+    report = build_document_report(job, tmp_path, report_format="0.6")
     assert report["counts"]["unresolved_pages"] == 2
     rendered = render_document_report(report)
     assert "unresolved pages: 2" in rendered
@@ -462,7 +466,7 @@ def test_current_report_separates_selected_ocr_from_historical_blank_hold(tmp_pa
         selected_attempt="a2", disposition="blank_candidate", review_reasons=["blank_candidate"]
     )
 
-    report = build_document_report(job, tmp_path)
+    report = build_document_report(job, tmp_path, report_format="0.6")
     rendered = render_document_report(report)
 
     assert report["report_format"] == "0.6"
@@ -486,7 +490,7 @@ def _compared(page, ratio):
 def test_06_report_lists_pages_that_need_a_person_first(tmp_path):
     job = job_fixture(tmp_path)
     _compared(job["pages"][0], 0.91)
-    rendered = render_document_report(build_document_report(job, tmp_path))
+    rendered = render06(job, tmp_path)
 
     table = rendered.split("| Page | Selected text |", 1)[1].split("\n\n", 1)[0]
     assert "Pages needing a person: 1" in rendered
@@ -503,7 +507,7 @@ def test_06_report_shows_engine_disagreement_with_its_ratio(tmp_path):
     page = job["pages"][0]
     _compared(page, 0.42)
     page["review_reasons"] = ["engine_disagreement"]
-    rendered = render_document_report(build_document_report(job, tmp_path))
+    rendered = render06(job, tmp_path)
 
     assert "disagree (42%)" in rendered
     assert "Pages needing a person: 2" in rendered
@@ -527,6 +531,20 @@ def test_older_report_formats_keep_exact_legacy_rendering(tmp_path, report_forma
         )
 
 
+def test_the_06_rendering_is_unchanged(tmp_path):
+    """Jobs written by 0.6 to 0.8 rebuild their report.md with this renderer, byte for byte."""
+    job = job_fixture(tmp_path)
+    job["root"] = "/documents/job"
+    _compared(job["pages"][0], 0.42)
+    job["pages"][0]["review_reasons"] = ["engine_disagreement"]
+    job["pages"][0]["attempts"][0]["warnings"] = ["multi_column_rows"]
+    job["policy"] = {"local_text": {"adapter": "text"}, "second_opinion": {"adapter": "vision"}}
+    rendered = render06(job, tmp_path)
+    assert hashlib.sha256(rendered.encode()).hexdigest() == (
+        "e1bd0364c2da187a47e1768dab86c2a504113d812325717dec4ae20cafa3b0c5"
+    )
+
+
 def test_current_report_keeps_latest_failure_visible_with_previous_selected_text(tmp_path):
     job = job_fixture(tmp_path)
     page = job["pages"][0]
@@ -540,7 +558,7 @@ def test_current_report_keeps_latest_failure_visible_with_previous_selected_text
     page["attempts"].append(failed)
     page.update(disposition="provider_failure", review_reasons=["provider_failure"])
 
-    rendered = render_document_report(build_document_report(job, tmp_path))
+    rendered = render06(job, tmp_path)
 
     assert "Local text" in rendered
     assert "Extraction failed" in rendered
@@ -553,7 +571,7 @@ def test_current_report_labels_numeric_hold_without_hiding_selected_output(tmp_p
     page = job["pages"][0]
     page.update(disposition="numeric_column_conflict", review_reasons=["numeric_column_conflict"])
 
-    rendered = render_document_report(build_document_report(job, tmp_path))
+    rendered = render06(job, tmp_path)
 
     assert "Numbers need checking" in rendered
     assert "Local text" in rendered
@@ -580,7 +598,7 @@ def test_report_accounts_for_configured_stage_that_read_no_pages(tmp_path):
 def test_report_shows_multi_column_warning_without_reclassifying_page(tmp_path):
     job = job_fixture(tmp_path)
     job["pages"][0]["attempts"][0]["warnings"] = ["multi_column_rows"]
-    rendered = render_document_report(build_document_report(job, tmp_path))
+    rendered = render06(job, tmp_path)
     assert "quality warning multi_column_rows" in rendered
 
 
@@ -599,7 +617,7 @@ def test_current_report_attributes_explicit_selected_attempt_warning_only_to_tha
     page["attempts"].append(later)
     page.update(selected_attempt="a2")
 
-    rendered = render_document_report(build_document_report(job, tmp_path))
+    rendered = render06(job, tmp_path)
 
     assert (
         "Possible missing or incomplete content (coverage_defect); recorded on Local text attempt"
@@ -623,7 +641,7 @@ def test_current_report_attributes_new_selected_attempt_warning_to_selected_atte
         selected_attempt="a2", disposition="coverage_defect", review_reasons=["coverage_defect"]
     )
 
-    rendered = render_document_report(build_document_report(job, tmp_path))
+    rendered = render06(job, tmp_path)
 
     assert "recorded on Local OCR attempt" in rendered
     assert "recorded on Local text attempt" not in rendered
@@ -646,7 +664,7 @@ def test_current_report_keeps_untraceable_numeric_hold_generic_across_attempts(t
         review_reasons=["numeric_column_conflict"],
     )
 
-    rendered = render_document_report(build_document_report(job, tmp_path))
+    rendered = render06(job, tmp_path)
 
     assert "Numbers need checking (numeric_column_conflict); retained review concern" in rendered
     assert "from Local text attempt" not in rendered
@@ -668,7 +686,7 @@ def test_current_report_keeps_unknown_outcome_generic_across_attempts(tmp_path):
         selected_attempt="a1", disposition="outcome_unknown", review_reasons=["outcome_unknown"]
     )
 
-    rendered = render_document_report(build_document_report(job, tmp_path))
+    rendered = render06(job, tmp_path)
 
     assert "Extraction outcome unknown (outcome_unknown); retained review concern" in rendered
     assert "recorded on Local" not in rendered
@@ -701,7 +719,7 @@ def test_current_report_explains_source_only_human_review(tmp_path):
         next_action="none",
     )
 
-    rendered = render_document_report(build_document_report(job, tmp_path))
+    rendered = render06(job, tmp_path)
 
     assert "Source problem confirmed" in rendered
     assert "| none |" in rendered
