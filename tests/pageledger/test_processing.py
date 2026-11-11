@@ -1757,6 +1757,44 @@ def test_a_retry_stopped_by_the_image_budget_is_owed_after_a_raise(setup, monkey
     assert verify_job(setup[2])["status"] == "pass"
 
 
+def test_a_page_reviewed_during_the_pause_is_not_retried(setup, monkeypatch, tmp_path):
+    data = yaml.safe_load(setup[1].read_text())
+    data["processing"]["limits"]["max_image_pages"] = 1
+    setup[1].write_text(yaml.safe_dump(data))
+    _failing_image(monkeypatch, {2: 1})
+    assert launch(setup)["status"] == "paused_budget"
+    page = read_record(setup[2] / "job.json")["pages"][1]
+    ocr = next(a for a in page["attempts"] if a["stage"] == "local_ocr")
+    receipt = tmp_path / "review.json"
+    decision = {
+        "page_id": page["page_id"],
+        "page_number": 2,
+        "disposition": "reviewed_text",
+        "selected_attempt": ocr["attempt_id"],
+        "output_sha256": ocr["raw_sha256"],
+        "reviewer": "person:reader",
+        "reason": "Read against the page",
+        "reviewed_at": "2026-11-10T12:00:00Z",
+    }
+    receipt.write_text(
+        json.dumps(
+            {
+                "schema_version": "0.1",
+                "source_sha256": page["source_sha256"],
+                "decisions": [decision],
+            }
+        )
+    )
+    review_job(setup[2], receipt)
+
+    assert resume_job(setup[2], raise_limits={"max_image_pages": 4})["status"] == "completed"
+    # The failed request raised before it was counted here; only page 3 is read.
+    images = [c for c in setup[3]["calls"] if c[0] == "image"]
+    assert [number for _, number in images] == [3]
+    assert read_record(setup[2] / "job.json")["usage"]["image_calls"] == 2
+    assert verify_job(setup[2])["status"] == "pass"
+
+
 def test_an_image_quota_failure_still_halts_the_job(setup, monkeypatch):
     _batched(setup)
     _failing_image(monkeypatch, {2: 1, "code": "MODEL_QUOTA"})

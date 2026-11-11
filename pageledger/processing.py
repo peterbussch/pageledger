@@ -1592,12 +1592,13 @@ def _retry(
 
 def _owed_retries(job: dict, root: Path) -> list[dict]:
     """Stages that failed transiently and whose one retry a budget pause stopped before
-    it was planned."""
+    it was planned. A page a person has reviewed since is settled, not owed a reading."""
     retried = {
         (stage["stage"], tuple(stage["pages"]))
         for stage in job["stages"]
         if "-retry-" in stage["stage_id"]
     }
+    reviewed = {page["page_number"] for page in job["pages"] if page.get("review")}
     return [
         stage
         for stage in job["stages"]
@@ -1605,6 +1606,7 @@ def _owed_retries(job: dict, root: Path) -> list[dict]:
         and stage["stage"] in CONCURRENT_STAGES
         and "-retry-" not in stage["stage_id"]
         and (stage["stage"], tuple(stage["pages"])) not in retried
+        and not reviewed.intersection(stage["pages"])
         and _failure_action(job, root, stage) == "retry"
     ]
 
