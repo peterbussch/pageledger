@@ -273,8 +273,9 @@ and, from 1.0, [stability](docs/stability.md).
   now waits for a major release, not a minor one.
 - `verify` no longer needs the source document. A missing source is reported as warning
   `source_missing`, and one found through the source index as `source_relocated`, as `verify`
-  does; other bytes at the recorded path still fail verification. `resume`, `review --apply` and
-  `adjudicate --decisions` still need the source, at its path or through the index. `verify`'s
+  does; other bytes at the recorded path still fail verification. `review --apply` and
+  `adjudicate --decisions` work without the source too, with the same warning, so a colleague can
+  review a deposited job; `resume` still needs the source, at its path or through the index. `verify`'s
   result has a `warnings` list.
 - `verify` read a missing `raw/` or `partials/` directory as an empty one, and a
   missing `normalized/` too when the run has no schema, since Git and some archive tools drop empty
@@ -331,8 +332,8 @@ and, from 1.0, [stability](docs/stability.md).
   and its word boxes are checked against the page's shape and edges but not yet attached to the reading or
   used to place tiles. hOCR, PAGE XML, ALTO as the contest witness and ALTO found through IIIF manifests
   are not supported.
-- A job on a IIIF snapshot that a later `--resume` grew verifies and exports, but `resume`, `review --apply` and
-  `adjudicate` refuse the grown folder as a changed source.
+- A job on a IIIF snapshot that a later `--resume` grew verifies, exports and takes reviews, but `resume`
+  refuses the grown folder as a changed source.
 - `render_upsampled` on a PDF page checks the page's largest image by its proportions, not by how large it
   is drawn, so a born-digital page whose only image is small and happens to have the page's shape is warned
   about as if it were a low-resolution scan.

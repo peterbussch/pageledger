@@ -335,6 +335,8 @@ the commands.
 - `verify` checks a job's source only when it can reach it: without the source
   (or a source index entry for it) it passes with warning `source_missing`, as
   it does for a run. The job's own evidence is checked either way.
+  `review --apply` and `adjudicate --decisions` work without the source too,
+  with the same warning; `resume` needs it.
 
 ## Tested scale and documents
 

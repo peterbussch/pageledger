@@ -202,6 +202,45 @@ def test_adjudicating_a_copy_is_recorded(setup, monkeypatch, tmp_path):  # noqa:
     assert _codes(result) == ["job_relocated", "job_changed_elsewhere"]
 
 
+def test_a_deposited_copy_is_reviewed_without_its_source(setup, tmp_path, capsys):  # noqa: F811
+    launch(setup)
+    copy = _copy(setup[2], tmp_path)
+    source = setup[0].resolve()
+    source.rename(tmp_path / "gone.txt")
+    missing = {
+        "code": "source_missing",
+        "message": f"Source file is missing: {source}",
+        "source": str(source),
+    }
+
+    result = _accept_first_page(copy, tmp_path)
+
+    assert result["status"] == "completed" and result["warnings"] == [missing]
+    assert read_record(copy / "job.json")["pages"][0]["disposition"] == "reviewed_text"
+    assert _codes(verify_job(copy)) == ["job_relocated", "job_changed_elsewhere", "source_missing"]
+    # Other bytes at the recorded path are another document, and are refused.
+    source.write_text("another document")
+    with pytest.raises(ValueError, match="Document job source changed or is missing"):
+        _accept_first_page(copy, tmp_path)
+
+
+def test_a_deposited_copy_is_adjudicated_without_its_source(setup, monkeypatch, tmp_path, capsys):  # noqa: F811
+    _contesting(setup, monkeypatch)
+    assert launch(setup, pages="1")["status"] == "completed"
+    copy = _copy(setup[2], tmp_path)
+    setup[0].unlink()
+    _answer(copy, tmp_path / "packets", "полные")
+
+    code = main(
+        ["adjudicate", str(copy), "--decisions", str(tmp_path / "packets"), "--reviewer", "a:b"]
+    )
+
+    assert code == 0
+    assert "Warning: [source_missing] Source file is missing" in capsys.readouterr().out
+    assert read_record(copy / "job.json")["pages"][0]["disposition"] == "adjudicated_text"
+    assert verify_job(copy)["status"] == "pass"
+
+
 def test_a_paused_job_resumes_only_where_it_was_written(setup, tmp_path):  # noqa: F811
     assert _limit_attempts(setup, 2)["status"] == "paused_budget"
     original = setup[2].resolve()

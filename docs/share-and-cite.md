@@ -87,7 +87,8 @@ path with other bytes fails verification. `inspect`, `export` and
 `review --sheet` work on the copy as they do on the original.
 
 A colleague can review the copy with `review --apply`, or settle contested spans
-with `adjudicate --decisions`, when the source is reachable. The job records
+with `adjudicate --decisions`, with or without the source; without it, each
+command gives the same `source_missing` warning as `verify`. The job records
 each change made away from its original directory under `relocations` in
 `job.json`, and the report says so; `verify` reports it as
 `job_changed_elsewhere`. Such a review changes `job.json`, so cite the new hash.

@@ -71,10 +71,11 @@ def _save(job: dict, root: Path) -> None:
     write_record(root / "job.json", value)
 
 
-def _publish(job: dict, root: Path) -> dict:
+def _publish(job: dict, root: Path, *, check_source: bool = True) -> dict:
     from .document_report import write_document_report
 
-    _check_source(job)
+    if check_source:
+        _check_source(job)
     _save(job, root)
     write_document_report(job, root)
     return {
@@ -302,6 +303,16 @@ def _location_warnings(job: dict, root: Path) -> list[dict]:
                 }
             )
     return warnings + snapshot_warnings(job["source"], located)
+
+
+def _source_warnings(job: dict, root: Path) -> list[dict]:
+    """For a command that records decisions, which reads none of the source's bytes: a
+    missing source is a warning, as in verify, and only other bytes at its path an error."""
+    return [
+        item
+        for item in _location_warnings(job, root)
+        if item["code"] not in {"job_relocated", "job_changed_elsewhere"}
+    ]
 
 
 def _stage_checkpoint(job: dict, root: Path, stage: dict) -> Checkpoint:
@@ -744,11 +755,11 @@ def _retain_contested(
         }
 
 
-def _refresh(job: dict, root: Path, *, materialize: bool = True) -> None:
+def _refresh(job: dict, root: Path, *, materialize: bool = True, check_source: bool = True) -> None:
     """Rebuild the job index from validated durable child evidence before scheduling."""
     from .processing_policy import assess_page
 
-    if materialize:
+    if materialize and check_source:
         _check_source(job)
     pages = {p["page_id"]: p for p in job["pages"]}
     contested_before = {}
@@ -1701,7 +1712,8 @@ def review_job(
     root = job_dir.expanduser().resolve()
     with writer_lock(root):
         job = _load(root)
-        _refresh(job, root)
+        located = _source_warnings(job, root)
+        _refresh(job, root, check_source=False)
         corrected: list[dict] = []
         if review_path.suffix.lower() == ".csv":
             review, corrected = read_review_sheet(job, review_path, reviewer, root)
@@ -1736,7 +1748,7 @@ def review_job(
                 "out_dir": str(root),
                 "status": "checked",
                 **counts,
-                "warnings": _blank_over_text(job, review),
+                "warnings": located + _blank_over_text(job, review),
             }
         for item in corrected:
             target = _safe(root, corrections.artifact_path(item["page_id"], item["sha256"]))
@@ -1747,9 +1759,9 @@ def review_job(
             elif target.read_bytes() != encoded:
                 raise ValueError(f"A different corrected text is already kept at {target}")
         record(job)
-        warnings = _blank_over_text(job, review)
+        warnings = located + _blank_over_text(job, review)
         _note_relocation(job, root, "review-job")
-        _refresh(job, root)
+        _refresh(job, root, check_source=False)
         if job["status"] == "processing":
             job.update(
                 status="halted",
@@ -1758,7 +1770,7 @@ def review_job(
             )
         elif job["status"] == "completed":
             job["next_action"] = _review_next_action(job)
-        return {**_publish(job, root), **counts, "warnings": warnings}
+        return {**_publish(job, root, check_source=False), **counts, "warnings": warnings}
 
 
 def _keep_corrections(job: dict, review: Any) -> None:
@@ -1828,7 +1840,8 @@ def adjudicate_job(job_dir: Path, decisions: Path, *, reviewer: str, dry_run: bo
     root = job_dir.expanduser().resolve()
     with writer_lock(root):
         job = _load(root)
-        _refresh(job, root)
+        located = _source_warnings(job, root)
+        _refresh(job, root, check_source=False)
         now = runner._utc_now()
         recorded = []
         for page in job["pages"]:
@@ -1856,16 +1869,16 @@ def adjudicate_job(job_dir: Path, decisions: Path, *, reviewer: str, dry_run: bo
         settled = sum(
             d["confidence"] == "high" for _, receipt in recorded for d in receipt["decisions"]
         )
-        counts = {"pages": len(recorded), "decisions_high": settled}
+        counts = {"pages": len(recorded), "decisions_high": settled, "warnings": located}
         if dry_run:
             return {"job_id": job["job_id"], "out_dir": str(root), "status": "checked", **counts}
         for page, receipt in recorded:
             page.setdefault("adjudications", []).append(receipt)
         _note_relocation(job, root, "adjudicate")
-        _refresh(job, root)
+        _refresh(job, root, check_source=False)
         if job["status"] == "completed":
             job["next_action"] = _review_next_action(job)
-        return {**_publish(job, root), **counts}
+        return {**_publish(job, root, check_source=False), **counts}
 
 
 def _decision_counts(review: dict) -> dict[str, int]:

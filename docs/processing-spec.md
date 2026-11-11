@@ -950,8 +950,11 @@ found through the source index is `source_relocated`, and other bytes at the
 recorded path fail verification.
 
 `review --apply` and `adjudicate --decisions` work on a job that is not at
-`root`, and each such change appends `{root, command, at}` to the optional
-`relocations` list, with the directory it was made in. `relocations` is
+`root`, and without its source: they read none of the source's bytes, so a
+missing source is warning `source_missing` as in `verify`, and only other bytes
+at the recorded path are refused. Each such change made away from `root`
+appends `{root, command, at}` to the optional `relocations` list, with the
+directory it was made in. `relocations` is
 copied into `document.json` and shown in `report.md` as a "Changed elsewhere"
 line; `verify` reports each entry as `job_changed_elsewhere`. A job
 without the field reads and renders as before. `resume` refuses a job that is
@@ -1007,10 +1010,10 @@ status. `verify` adds warnings, and still passes, for
 `iiif_record_changed` (the record's bytes differ now, while every image the job
 read is unchanged) and `iiif_snapshot_grown` (a later `fetch --resume` added
 the images listed in `added`, and every recorded image is still there unchanged).
-A grown folder numbers its pages differently, so `verify`, `export`,
-`review --sheet` and `review --out` work on the job, but `resume`, `review --apply` and
-`adjudicate`, which change it, refuse the grown folder as a changed source; start
-a new job for the added pages. A changed or missing image the job read still fails verification. PDF page-tree counts
+A grown folder numbers its pages differently, so `verify`, `export`, `review`
+and `adjudicate` work on the job, with the same warning, but `resume`, which would
+read pages from it, refuses the grown folder as a changed source; start a new job
+for the added pages. A changed or missing image the job read still fails verification. PDF page-tree counts
 must match the actual inventory. Container failure
 produces a halted report with an unknown page count and no invented pages.
 Its `halt_reason` names the cause, such as
