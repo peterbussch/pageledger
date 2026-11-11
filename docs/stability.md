@@ -22,7 +22,7 @@ any minor release.
 | Artifacts | The run files in [the artifact list](artifacts.md) and a job's `job.json`, `document.json`, `report.md` and `transcript.md` keep their names, and each JSON Schema in `schemas/` only grows: no field removed or renamed, no type narrowed, no allowed value removed, nothing newly required. Artifacts keep `schema_version: "0.1"`, which is the 1.0 artifact contract. | `schemas/` snapshots; run file names in `taxonomies.json`; a new job's `job.json`, `document.json`, `report.md` and `transcript.md`; artifacts from 0.5.2, 0.6.0 and 0.7.0 validate against the current schemas |
 | Warning codes and holds | Each code in [the warnings table](warnings.md) keeps its name and keeps filing the same hold. Hold reasons, dispositions and review dispositions keep their names. Codes may be added, never renamed or given a new meaning. | `taxonomies.json`, which reads the codes from the warnings table; each must still appear in the package's code |
 | Location | A run or a job verifies after its directory is moved or copied, on the evidence it holds; the absolute paths it records are where it was written. | `test_old_jobs_verify_after_moving`, `test_old_runs_verify_after_moving_without_their_source`, `tests/pageledger/test_moved_jobs.py` |
-| Hold policies | A job is rebuilt by the rules it was written under (`hold_policy` absent, `0.6`, `0.6.1`, `0.8`), so new selection rules never change an old job's result. See [document report](document-report-spec.md). | `taxonomies.json`; existing hold-policy tests |
+| Hold policies | A job is rebuilt by the rules it was written under (`hold_policy` absent, `0.6`, `0.6.1`, `0.8`, `0.9`), so new selection rules never change an old job's result. See [document report](document-report-spec.md). | `taxonomies.json`; existing hold-policy tests |
 | Contest rule sets | A rule set's name versions its whole procedure. `ru-print-0.1`, `ru-print-0.2` and `latin-print-0.1` keep exactly their rules; a change is a new name. | `taxonomies.json` holds each rule set's rules |
 | Codes in records | Page states, stages, escalation triggers, export formats, report formats, grades, and adapter failure and diagnostic codes keep their names. | `taxonomies.json` |
 
@@ -79,4 +79,6 @@ wrote them).
 - `tests/pageledger/test_processing.py` also rebuilds jobs shaped as 0.5 and
   0.6.0 wrote them (no hold policy, policy `0.6`), and
   `tests/pageledger/test_hold_policy_08.py` checks that the 0.8 rules stay off
-  for jobs written under earlier policies.
+  for jobs written under earlier policies, and
+  `tests/pageledger/test_hold_policy_09.py` that a job written under 0.8 is
+  rebuilt without the 0.9 rules.

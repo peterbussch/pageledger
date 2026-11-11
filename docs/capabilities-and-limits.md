@@ -267,6 +267,23 @@ the commands.
 - A text layer in the wrong script throughout, such as Latin-letter OCR of a
   Cyrillic book, raises no warning: its words are consistent, just wrong.
   Compare a few pages with the images when a collection's language is known.
+- An earlier OCR in a PDF's text layer is recognised by its font
+  (`GlyphLessFont`), by text drawn invisibly or painted under an opaque image
+  that covers the page, or by OCR software named as the PDF's producer on such
+  a page. A book re-typeset from OCR in ordinary fonts, with no scan behind
+  the text, is not recognised, and its slips pass as typeset text.
+- One OCR engine's reading of an image-only scan is held only for a warning of
+  its own. Misread words that the engine was fairly sure of pass: in the
+  2026-11 dogfood, garbled italic surnames in a 1917 directory (24.8% of words
+  under confidence 60, against a threshold of 25%), and two-page spreads
+  photographed with a phone, read at confidence 0.85 to 0.94 with line ends
+  cut and, on one page, the two pages' lines interleaved. A `second_ocr` stage
+  has such a reading checked by a second engine. Spreads are not detected.
+- The pre-reform letter rule of [hold policy 0.9](processing-spec.md#hold-policy-09)
+  needs a reading that kept ѣ to compare with; a scan read once by a model
+  that cannot write ѣ is caught only when it writes a capital Ъ or Ь inside
+  words (`capital_sign_in_word`). `split_words` and `capital_sign_in_word`
+  judge Cyrillic text only.
 - Born-digital text layers carry their own defects. Mid-word space
   artifacts («С анкционная» for «Санкционная») pass every shape heuristic;
   they come from the source PDF, not from extraction.

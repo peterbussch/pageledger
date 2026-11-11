@@ -135,7 +135,7 @@ Jobs record the mapping they used as `hold_policy`. Under `"0.6.1"`, a blank
 candidate raised only because an engine returned no text is settled when another,
 non-generative engine reads clean text from the page: a scan with no text layer
 that OCR reads without concern is not held as a possible blank. An engine's own
-judgement that a page is blank is never settled this way. Jobs marked `"0.6"` kept that hold. Jobs and reports written before 0.6
+judgement that a page is blank is never settled this way. Jobs marked `"0.6"` kept that hold. Jobs marked `"0.8"` add the ladder rules in [processing](processing-spec.md#climb-on-roughness-and-disagreement); jobs marked `"0.9"` keep an inherited OCR layer as a witness and add the rules in [hold policy 0.9](processing-spec.md#hold-policy-09). Jobs and reports written before 0.6
 have no `hold_policy`; they filed `low_confidence` under `coverage_defect`.
 Verification rebuilds every job with the mapping it recorded, so older jobs
 still verify unchanged.

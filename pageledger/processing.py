@@ -1688,7 +1688,6 @@ def review_job(
             raise ValueError("--reviewer is for review sheets; a JSON receipt names its reviewers")
         else:
             review = json.loads(review_path.read_text(encoding="utf-8"))
-        warnings = _blank_over_text(job, review)
         if dry_run:
             _review_decisions(copy.deepcopy(job), review)
             return {
@@ -1696,9 +1695,10 @@ def review_job(
                 "out_dir": str(root),
                 "status": "checked",
                 "decisions": _decision_counts(review),
-                "warnings": warnings,
+                "warnings": _blank_over_text(job, review),
             }
         _review_decisions(job, review)
+        warnings = _blank_over_text(job, review)
         _note_relocation(job, root, "review-job")
         _refresh(job, root)
         if job["status"] == "processing":

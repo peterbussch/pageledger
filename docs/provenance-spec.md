@@ -157,7 +157,7 @@ not a calibrated accuracy score. Fields:
 | `character_count` | integer | ✅ | no | Total characters in extractor output. |
 | `word_count` | integer | ✅ | no | Count of Unicode letter tokens; combining marks remain attached to their base-letter token. |
 | `confidence` | number or null | ❌ | yes | Adapter-reported page confidence, 0–1. Emitted by current runs; optional so original 0.1 lines remain valid. |
-| `confidence_detail` | object or null | ❌ | yes | Engine-native confidence evidence. Emitted by current runs; optional for original 0.1 compatibility. |
+| `confidence_detail` | object or null | ❌ | yes | Engine-native confidence evidence. Emitted by current runs; optional for original 0.1 compatibility. `pdf_ocr` records Tesseract's word statistics; from 0.9, `pdf_text` records why it judged a layer an earlier OCR (`ocr_text_layer`, below). |
 | `warnings` | array of strings | ✅ | no | Adapter-native warnings plus PageLedger-derived quality warnings (see taxonomy below). Adapter warnings are also retained in the provenance result. |
 | `text_quality` | object | ✅ | no | Sub-metrics (see below). |
 | `embedded_text_comparison` | object | ❌ | yes | Comparison with PDF embedded text layer. Null for non-PDF sources. |
@@ -247,6 +247,10 @@ Meanings and suggested next steps for warnings are in the
 | `render_upsampled` | Added by an engine that renders pages (`pdf_ocr`, `rapidocr`, `vision`, `indra`) when the rendered page's long side has more than 1.5 times the pixels of the long side of the page's source image (`native_pixels`). Not raised when the native pixels are unknown. |
 | `no_text_layer` | Added by `pdf_text` to every page of a page-image source, which has no text layer. |
 | `historical_letters_lost` | Only when the config declares `language.orthography: prereform`: at least 300 Cyrillic letters, none of ѣ, ѳ or ѵ, and a word-final ъ on at most 1% of words (or on one word). і is not counted, because modern Ukrainian and Belarusian use it. |
+| `split_words` | At least 50 tokens made only of Cyrillic letters (with any combining accents), and at least 10% of them a single letter that is not one of а б в ж и к о с у я (either case) and is not followed by a full stop. Not raised for `markdown_table`, `json` or `csv` output. The 2026-11 dogfood's split-word layer had 14–19%; its 12 correct pages at most 0.7%. |
+| `capital_sign_in_word` | At least 50 Cyrillic tokens, and a lower-case Cyrillic letter followed by a capital Ъ or Ь at least 5 times and at least once per 100 tokens. Not raised for structured output. |
+| `labels_without_values` | At least 10 lines whose last dot leader (four or more dots, or three dots separated by single spaces) has no digit after it, and fewer lines made of digits without letters than half that number. An ellipsis (`...`) is not a leader. Not raised for structured output. |
+| `ocr_text_layer` | Added by `pdf_text` (and `alto`) as the [warnings reference](warnings.md) describes. `pdf_text` records the evidence in `confidence_detail` as `{"ocr_text_layer": {"signals": [...], "producer": "..."}}`; `producer` is present only when that signal fired. An image covers the page when, as placed by the content stream, it spans at least 90% of the page's width and height; it hides text when it has no `/SMask`, `/Mask` or `/ImageMask`. Content in forms is followed three levels deep. No image data is decoded. |
 
 `digits_only_text`, `mixed_script_tokens`, `private_use_characters` and
 `repeated_page_text` were measured before their thresholds were set: on

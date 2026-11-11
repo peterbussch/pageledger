@@ -14,7 +14,10 @@ pageledger export jobs/book --format tei --out reviewed.xml --reviewed-only
 
 Every format keeps the source's page order and page boundaries, and lists
 pages that have no text. `--reviewed-only` keeps only pages with a human review
-receipt. Links to the source are relative to the exported file, so an export
+receipt. A page a person reviewed as blank, an illustration, handwriting,
+unreadable or a source defect is exported with its disposition and review but
+without text, in every format: the reviewer did not accept the machine text as
+the page. Links to the source are relative to the exported file, so an export
 never contains an absolute path such as your home folder.
 
 ## Text and Markdown
@@ -61,7 +64,8 @@ page, shown here across several lines:
 
 `review` is the page's decision from its
 [review receipt](document-report-spec.md#human-review-receipt), or null. A page
-without text has null `attempt` and `text`.
+without text, including one reviewed as anything but text, has null `attempt`
+and `text`.
 
 ## TEI
 
@@ -75,8 +79,9 @@ All schema of TEI P5 4.12.0:
   followed by `<div type="page" subtype="reviewed">` or
   `subtype="unreviewed"`.
 - The text is in `<ab>`, with `<lb/>` between lines. A page without text
-  holds `<gap reason="…"/>` naming its disposition, such as `pending` or
-  `provider_failure`.
+  holds `<gap reason="…"/>` naming its disposition, such as `pending`,
+  `provider_failure` or, for a page a person reviewed as not text,
+  `unreadable` or `reviewed_blank`.
 - Control characters, which XML cannot carry, are left out of TEI; the other
   formats keep the text unchanged.
 

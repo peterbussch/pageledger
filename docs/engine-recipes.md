@@ -296,11 +296,14 @@ sure) or else from `CC` (one digit a character, 0 sure, 9 unsure), and feeds
 `low_confidence` like RapidOCR's.
 
 Every reading with text carries `ocr_text_layer`, so in a document job the
-0.8 rules for an inherited OCR layer apply: the page climbs to local OCR, the
-ALTO reading is set aside once that OCR has read the page, and its agreement
-still confirms the OCR while its disagreement does not count against it. An
-ALTO reading held for a reason of its own, such as `low_confidence` when a
-quarter of its words are under 60%, confirms nothing. A page
+rules for an inherited OCR layer apply and the page climbs to local OCR. In a
+job written by 0.8 the ALTO reading is then set aside: its agreement still
+confirms the OCR while its disagreement does not count against it. In a job
+written by 0.9 it stays a witness ([hold policy 0.9](processing-spec.md#hold-policy-09)):
+its disagreement holds the page for a person, it is selected when the OCR
+reading is held and it is not, and an OCR reading that lost the ѣ it kept is
+held. An ALTO reading held for a reason of its own, such as `low_confidence`
+when a quarter of its words are under 60%, confirms nothing. A page
 without ALTO (`alto_missing`) or with an unusable file (`alto_invalid`) gets an
 empty reading and climbs the same way; boxes that do not fit the page are
 reported as `alto_geometry_mismatch` (see [warnings](warnings.md)).

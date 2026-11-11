@@ -301,13 +301,14 @@ processing:
   layer is an earlier OCR of the scan (warning `ocr_text_layer`, written by
   `pdf_text` for an OCR font and by `alto` for a library's ALTO file) climbs from
   local text to local OCR, whatever its text looks like. An inherited OCR layer
-  is a reading of unknown quality, and 0.7 accepted it unchecked. Once local
-  OCR has read the page, the layer is kept but set aside: it is not selected,
-  its own holds are not the page's, and its disagreement with later readings
-  does not count. On 9 of the 10 Internet Archive pages checked in the 0.8
-  dogfood the layer read worse than a fresh OCR (on the tenth, slightly
-  better), and its misreadings made each better reading look like a
-  disagreement.
+  is a reading of unknown quality, and 0.7 accepted it unchecked. In jobs
+  written by 0.8, once local OCR has read the page, the layer is kept but set
+  aside: it is not selected, its own holds are not the page's, and its
+  disagreement with later readings does not count. On 9 of the 10 Internet
+  Archive pages checked in the 0.8 dogfood the layer read worse than a fresh
+  OCR (on the tenth, slightly better), and its misreadings made each better
+  reading look like a disagreement. Jobs written by 0.9 keep the layer as a
+  witness instead; see [hold policy 0.9](#hold-policy-09).
 - `uncorroborated` (no configuration; jobs written by 0.8 whose ladder has a
   `second_ocr` stage): a page whose selected reading is one local OCR engine's,
   with no clean reading to compare it with and none agreeing with it on at least
@@ -386,6 +387,127 @@ and 56% in RapidOCR's: exchange names (`NA tional`), abbreviations (`Natl`, `bg`
 and surnames are unknown words. There `rough` cannot tell a good reading from a
 bad one, and the directory needs `always` instead. Measure your own pages before
 choosing `rough_below`.
+
+## Hold policy 0.9
+
+A job records the rules it was written under as `hold_policy`, and verification
+rebuilds it by those rules (see the [document report spec](document-report-spec.md)).
+Jobs written by 0.9 record `"0.9"`. Its rules came from a dogfood on 74 pages of 20
+research PDFs (historical Russian print, directories, gazettes, scholarship) in
+which no held page was right, but 28 of the 62 pages with any OCR history left the
+job wrong and not held. Each rule below names the page that motivated it.
+
+**An OCR layer in any font is recognised.** `pdf_text` marks a layer
+`ocr_text_layer` not only when it is drawn in `GlyphLessFont` but also when most of
+its text is drawn invisibly on a page an image covers, when most of it is painted
+before an opaque page-covering image that hides it, or when the PDF's Producer or
+Creator names OCR software on a page an image covers. The signals that fired are
+recorded with the reading (see the [warnings reference](warnings.md)). The page
+then climbs to local OCR, as the `ocr_layer` trigger describes. This is not a hold
+policy rule: any job, plain runs included, gets the warning from 0.9 on. Layers
+from ABBYY FineReader 11 and ABBYY Recognition Server (an 1859 gazetteer, a 1788
+geographic dictionary), LuraDocument (an 1847 address calendar, an 1880
+gazetteer) and Ghostscript's invisible text (a 1939 directory) were read as
+typeset text and never sent to OCR. A born-digital page with a background
+picture under visible text raises none of the signals; nor does an OCR-converted
+book re-typeset in ordinary fonts with no scan behind it.
+
+**The layer and the job's own OCR are two witnesses.** Under 0.8 the layer was set
+aside once local OCR had read the page. Under 0.9:
+
+- The job's own reading is still preferred when both are clean, but the layer is
+  compared with it: a clean layer that agrees on under 60% of words, or reads a
+  number differently, holds the page (`engine_disagreement`,
+  `numeric_disagreement`), unless another of our engines' clean readings agrees
+  with the selected one: two engines that agree outvote the layer. Its objection
+  holds the page for a person but is not a `disagreement` trigger, so it never
+  buys a paid reading.
+- When our readings are held and the layer is not, the layer is selected.
+- The layer's own warnings hold the page until another clean reading agrees with
+  the selected one. A layer that failed on the page says the page is hard to read,
+  and one more reading that nothing confirms does not settle it. The 1939
+  directory's layer split each word ("Сырны й комбина т"); the one OCR reading of
+  the same page misread names too. With a `second_ocr` stage the page goes there
+  (`uncorroborated`), and an agreeing second reading settles it.
+- `suspicious_embedded_text_delta` measures a reading against the PDF's text
+  layer. When that layer is an earlier OCR, the warning holds neither reading;
+  their comparison does. With one OCR engine and a junk layer (teledir finding 10,
+  where the layer won because the two good readings carried the warning), the
+  OCR is selected and the page held for their disagreement.
+
+**A literal reading that lost the pre-reform letters another kept is held.**
+When one literal reading of a page (a text layer or an OCR engine, not a model)
+spells ten or more words with ѣ, any literal reading with under a quarter as many
+is held (`coverage_defect`). Stock Tesseract `rus` cannot write ѣ. On the 1913
+Kiev directory the Internet Archive layer had 26, 16 and 14 such words on three
+pages and the `rus` reading none; 0.8 selected the `rus` reading and held
+nothing, though the job had recorded 69–72% agreement. Only ѣ counts: garbled
+layers in the dogfood wrote ѳ for е and stray ѵ, but put ѣ inside a well-formed
+word at most twice a page. The rule compares readings of the same page, so it
+needs a reading that kept the letters: an image-only scan read once by `rus` is
+not judged by it (`capital_sign_in_word` often is).
+
+**When every reading is held, the best supported one is shown.** Readings are
+ranked by evidence rather than by order: first those that did not lose the
+pre-reform letters, then those held only for the engine's low confidence, then
+fewer stray symbols (rounded to a hundredth); ties keep our own readings first.
+On an 1880 gazette with a second OCR stage running the community `orus` model,
+`rus` kept no pre-reform letters and `orus` 95, both at low confidence; 0.8 showed
+`rus` because it came first. On a typewritten archival inventory the garbled
+LuraDocument layer was shown over an OCR reading held only for low confidence.
+
+**An attempt that never finished is not a reading.** An attempt whose outcome is
+unknown (the process was killed mid-page) raises no hold. After `resume`, 0.8 held
+such a page as a possible blank because the dead attempt had no text.
+
+**No climb is recorded toward a stage the job does not run.** A page read by a
+second OCR engine and still unconfirmed was recorded as climbing toward an image
+stage the job did not have, so the report counted it twice.
+
+### Measured on the 74 dogfood pages
+
+This is a measurement on these 74 pages only, not an accuracy figure. The 12 right
+pages are all born-digital text layers, so they test the layer detector and the
+reading warnings, not the OCR rules: no page with OCR history in the sample was
+right. Each page was classed against its scan by the selected reading and whether
+it was held.
+
+| Class | 0.8 | 0.9 |
+|---|---|---|
+| Right, not held | 12 | 12 |
+| Wrong, held | 34 | 54 |
+| Right, held (a false alarm) | 0 | 0 |
+| Wrong, not held | 28 | 8 |
+
+Where 0.9 extracts the same readings, the 0.8 jobs were rebuilt under 0.9; the
+eight documents whose layer is now recognised were run again with the same pages
+and `--lang rus` (Tesseract 5.5.2; the five OCR readings it repeated were
+byte-identical to the dogfood's). The 20 pages now held:
+
+| Pages | Held by |
+|---|---|
+| 1913 Kiev directory, 3 | The `rus` reading lost the layer's ѣ; the layer is selected. |
+| 1788 geographic dictionary (ABBYY Recognition Server), 4 | Layer recognised (invisible text; producer); both it and the OCR write a capital Ъ inside words (`capital_sign_in_word`). |
+| 1859 gazetteer (ABBYY FineReader 11), 4 | Layer recognised (text under the page image; producer); the OCR lost the layer's ѣ, and on 3 pages the layer splits its words. |
+| 1888 gazette (ABBYY FineReader 11), 2 | As the 1859 gazetteer. |
+| 1847 address calendar (LuraDocument), 4 | Layer recognised (invisible text; producer); the OCR reading has low confidence. |
+| 1939 directory (Ghostscript), 2 | Layer recognised (invisible text); its words are split and the one OCR reading is unconfirmed (on one page also low confidence). |
+| 1880 gazetteer table (LuraDocument), 1 | Layer recognised; it kept the table's 34 row labels and almost none of its values (`labels_without_values`), and the one OCR reading is unconfirmed. |
+
+The 34 pages held under 0.8 stay held. The eight still wrong and not held are one
+OCR engine's unconfirmed reading of an image-only scan (a 1917 directory whose
+italic surnames are garbled while 24.8% of its words fall under confidence 60, and
+four pages of an English article photographed as two-page spreads, read at
+confidence 0.85 to 0.94 with line ends cut and, on one page, the two pages'
+lines interleaved), and three pages of a book re-typeset from OCR in ordinary
+fonts, with a few slips per page. A `second_ocr` stage sends a page of the first
+kind to another engine; nothing in 0.9 recognises the second kind.
+
+The reading warnings and the detector were also run on three random pages each of
+80 PDFs from the same research library: after two fixes (a stressed textbook word
+"е́хать" split by its accent, and dialogue ending lines in "..." read as table
+leaders), the reading warnings fired on none. The detector flagged pages in 15 of
+the files; the four of those looked at against their images were all scans.
 
 ## Contest a model's reading
 
@@ -940,7 +1062,10 @@ anything: every row must belong to the job, appear once, hold no spreadsheet
 formula, and still match the saved job records it was written from, which
 `review.csv.binding.json` records beside the sheet. A sheet written before the
 job's records changed is refused; write a new one. `--dry-run` checks and
-counts the decisions without recording them. Scripts can keep writing JSON
+counts the decisions without recording them. Both warn (`blank_with_text`) when
+a page recorded as blank has a selected reading of 50 or more words: in the
+2026-11 dogfood a page reviewed as blank carried 1,295 words of OCR. Check the
+page; the decision is still recorded as made. Scripts can keep writing JSON
 receipts.
 
 ### Review beside the page image

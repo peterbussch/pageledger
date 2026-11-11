@@ -553,6 +553,17 @@ def assess_page(
             if (item["left_attempt"] == selected["attempt_id"] and item["right_attempt"] in ids)
             or (item["right_attempt"] == selected["attempt_id"] and item["left_attempt"] in ids)
         ]
+        if any(
+            item["agreement_ratio"] >= ENGINE_AGREEMENT_THRESHOLD
+            for item in selected_comparisons
+            if not {item["left_attempt"], item["right_attempt"]} & set_aside
+        ):
+            # Two of our engines agree: the layer that disagrees with them is outvoted.
+            selected_comparisons = [
+                item
+                for item in selected_comparisons
+                if not {item["left_attempt"], item["right_attempt"]} & set_aside
+            ]
     else:
         selected_comparisons = selected_clean_comparisons(page, selected["attempt_id"], holds_for)
     # A layer's objection holds the page for a person but buys no further reading.

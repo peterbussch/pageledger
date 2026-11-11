@@ -105,9 +105,10 @@ and, from 1.0, [stability](docs/stability.md).
   confidences), one file per page, from a folder named by `adapter_options.dir` and a file-name template
   (`name: "{page:04d}.xml"`). The text is built from the words in column order, never from ALTO's text
   lines, which can run across columns; words keep their printed hyphens. Each reading is marked
-  `ocr_text_layer`, so in a document job's `local_text` stage the 0.8 rules for an inherited OCR layer apply
-  unchanged: the page climbs to local OCR, the ALTO reading is set aside once that OCR has read the page,
-  and its agreement counts as confirmation. The provenance names the ALTO file, its SHA-256 and the
+  `ocr_text_layer`, so in a document job's `local_text` stage the rules for an inherited OCR layer apply:
+  the page climbs to local OCR, and under hold policy 0.9 the ALTO reading stays a witness beside it (a job
+  written under 0.8 sets it aside once that OCR has read the page, and counts its agreement as
+  confirmation). The provenance names the ALTO file, its SHA-256 and the
   software it declares. New warnings: `alto_missing` and `alto_invalid` (an empty reading, so the page
   climbs to OCR) and `alto_geometry_mismatch` (the boxes do not fit the page; the text is kept). Files
   with a DOCTYPE or entity declaration, or over 32 MiB, are refused. See
@@ -149,6 +150,30 @@ and, from 1.0, [stability](docs/stability.md).
   `tile_layout_missing` and `alto_layout_rejected` (recorded only). Every new hold needs this opt-in
   configuration, so the hold policy is unchanged and older jobs rebuild as before. See
   [Read dense pages in tiles](docs/processing-spec.md#read-dense-pages-in-tiles).
+- Hold policy `0.9`, recorded by new jobs (jobs written under `0.6`, `0.6.1` and `0.8` rebuild and verify
+  as before). An inherited OCR layer and the job's own OCR are two witnesses: the layer is compared with
+  our reading instead of set aside, its disagreement holds the page for a person without buying a paid
+  reading, it is selected when our readings are held and it is not, and its own warnings hold the page
+  until another clean reading confirms the selected one. `suspicious_embedded_text_delta` measured against
+  an inherited OCR layer holds neither reading. A literal reading with under a quarter of the ѣ-words
+  another literal reading of the page kept (ten or more) is held: stock Tesseract `rus` cannot write ѣ.
+  When every reading is held, the one that kept the pre-reform letters, then one held only for low
+  confidence, then the one with fewer stray symbols is shown. An attempt that never finished raises no
+  hold, and no climb is recorded toward a stage the job does not have. On the 74 pages of the 2026-11
+  dogfood, wrong pages that passed unheld fell from 28 to 8, with no right page held. See
+  [hold policy 0.9](docs/processing-spec.md#hold-policy-09).
+- `pdf_text` recognises an earlier OCR in a text layer drawn in any font: most of its text drawn invisibly
+  on a page an image covers, painted before an opaque page-covering image (ABBYY FineReader), or a PDF
+  Producer or Creator naming OCR software (ABBYY, FineReader, LuraDocument, Tesseract, OCRmyPDF, OmniPage,
+  Readiris, Paper Capture) on such a page. The signals that fired are recorded in the reading's
+  `confidence_detail.ocr_text_layer`. Image data is never decoded.
+- Quality warnings that hold a page: `split_words` (more than one Cyrillic word in ten is a stray letter,
+  as when a layer splits off each word's last letter), `capital_sign_in_word` (a lower-case letter followed
+  by a capital Ъ or Ь, which no Russian word has: OCR trained on modern text reading ѣ and a final ъ), and
+  `labels_without_values` (ten or more lines ending in a dot leader with no number, and few lines of
+  numbers: a table whose values the reading lost).
+- `review --apply`, with or without `--dry-run`, warns (`blank_with_text`) when a page recorded as blank
+  has a selected reading of 50 or more words.
 
 ### Changed
 
@@ -221,9 +246,17 @@ and, from 1.0, [stability](docs/stability.md).
   must cover the full source and `run --routes` cannot be combined with `run --pages`.
 - A resumable run (and so every document job) of a folder holding hidden files such as `.DS_Store` no longer
   fails its own checkpoint validation; the skipped names are kept, as the schema already allowed.
+- `export` no longer writes the machine text of a page a person reviewed as blank, an illustration,
+  handwriting, unreadable or a source defect. The page keeps its boundary, disposition and review, with
+  null `attempt` and `text` in JSONL and a `<gap reason="…"/>` in TEI. With `--reviewed-only` such text
+  read as checked: a page reviewed as blank was exported with 1,295 words of OCR.
 
 ### Known limits
 
+- One OCR engine's unconfirmed reading of an image-only scan still passes when it carries no warning of its
+  own, as do two-page spreads read across the gutter and books re-typeset from OCR without their scans. On
+  the 2026-11 dogfood these were the 8 wrong pages left unheld. Clustered low confidence is not judged:
+  PageLedger records an engine's confidence for the page, not for each word.
 - `alto` reads one page per file, verification does not re-read the ALTO file (it lies outside the source),
   and its word boxes are checked against the page's shape and edges but not yet attached to the reading or
   used to place tiles. hOCR, PAGE XML, ALTO as the contest witness and ALTO found through IIIF manifests

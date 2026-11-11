@@ -290,6 +290,18 @@ def test_a_layer_that_disagrees_holds_the_page_but_buys_no_reader():
     assert before["disposition"] == "unreviewed_text"
 
 
+def test_two_of_our_engines_that_agree_outvote_the_layer():
+    page = _kiev(LOST, 0.3)
+    page["attempts"][0]["text"] = "Б. служил"
+    page["attempts"].append(_attempt("a3", "second_ocr", LOST))
+    page["comparisons"] += [
+        _compared("a1", "a3", 0.3, numbers=[{"number": "255", "side": "left"}]),
+        _compared("a2", "a3", 0.97),
+    ]
+    result = assess_page(page, ocr_layer_climbs=True, witnesses=True, stages=LADDER)
+    assert (result["selected_attempt"], result["disposition"]) == ("a2", "unreviewed_text")
+
+
 def test_a_disagreeing_layer_still_sends_the_reading_to_the_second_ocr():
     page = _kiev(LOST.replace("служилъ", "служил"), 0.3)
     page["attempts"][0]["text"] = "Б. служил"
