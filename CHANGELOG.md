@@ -139,7 +139,7 @@ and, from 1.0, [stability](docs/stability.md).
   `max_tiles`), a document job cuts each page its `image` stage reads into tiles along the whitespace of the
   `layout` stage's boxes (the job's RapidOCR, or ALTO checked against it), and `vision` reads every tile as
   its own image and request; the reading is the tiles' texts in order. The plan is kept in the stage's hashed
-  configuration and planned again from the retained layout by `verify-job`; the evidence is a new
+  configuration and planned again from the retained layout by `verify`; the evidence is a new
   `page_tiles` record of every tile image sent, the box actually rendered and where each tile's text lies in
   the reading ([image evidence](docs/image-evidence-spec.md#page-tiles)). A new limit,
   `max_image_requests`, required with tiling, counts requests rather than pages and pauses the job before a

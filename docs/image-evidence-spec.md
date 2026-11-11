@@ -59,7 +59,7 @@ A failed tile's text is not in the reading. The completed tiles' texts, in
 order and joined by `separator`, are the reading exactly;
 `pageledger.image_evidence.validate_tile_text(evidence, text)` checks this
 when a run saves the result, when a recovery record is read, and in
-`verify-run` against the raw artifact. `validate_input_evidence` checks every
+`verify` against the raw artifact. `validate_input_evidence` checks every
 tile image's bytes, hash and dimensions.
 
 JPEGs must contain three 8-bit color components, have a supported baseline or

@@ -65,7 +65,7 @@ With `processing.tiling`, a dense page is read by `vision` in tiles cut along
 the whitespace of the job's OCR layout (`rapidocr`) or of an ALTO file: one
 image and one request per tile, bounded by `limits.max_image_requests`. The
 plan, every tile image and where each tile's text lies are kept and checked by
-`verify-job`, and contest compares the reading with the OCR regrouped in tile
+`verify`, and contest compares the reading with the OCR regrouped in tile
 order. Tiles follow a layout only (no blind grid), every tile of a page is read
 and a retried page is read again whole, the model gets the stage's prompt
 without the entry heading a tile continues, the OCR still reads the whole page,

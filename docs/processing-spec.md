@@ -646,7 +646,7 @@ under `evidence/<page_id>-tNN.jpg`, with its hash, the box actually rendered,
 the renderer's arguments, the model that answered, and where its text lies in
 the reading. The attempt in `job.json` records `tiling`: the plan's hash, the
 layout's reading, how many tiles were planned and sent, and which tiles failed
-or cut through text. `verify-job` plans every page again from the retained
+or cut through text. `verify` plans every page again from the retained
 layout and refuses a different plan, checks each tile image against its hash
 and each rendered box against its planned one, and checks that the reading is
 exactly its tiles' texts in order.
