@@ -449,7 +449,8 @@ def test_completed_process_prints_the_next_steps_but_not_in_json(
     assert out.splitlines() == [
         "Finished: 2 pages read; 2 need a person.",
         f"The job is in {job}.",
-        "Held because text may be missing or damaged in the reading (2).",
+        "Why they need a person:",
+        "  2 pages: the text file has very little text.",
         f"Next: pageledger review {job} shows those pages for checking.",
         f"Text out: pageledger export {job} --format md --out a.md",
     ]

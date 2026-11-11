@@ -128,13 +128,18 @@ def test_an_all_held_job_groups_its_pages_by_reason(setup):  # noqa: F811
     assert launch(setup, pages="1-2")["status"] == "completed"
     report = _report(setup)
     assert "- Need a person: 2 pages (1-2):" in report
-    assert "  - Text may be missing or damaged in the reading: 2 pages (1-2)." in report
+    assert (
+        "  - The engine local_text may be missing text; so do the engine local_ocr and the engine image: 2 pages (1-2)."
+        in report
+    )
     # A text source has no page images, and the next step does not promise them.
     assert (
         "Next: in this job's folder, `pageledger review .` writes the review view, where you "
         "check the 2 pages that need a person and record what you decide." in report
     )
-    assert _row(report, 1).startswith("\n| 1 | Text may be missing or damaged in the reading |")
+    assert _row(report, 1).startswith(
+        "\n| 1 | The engine local_text may be missing text; so do the engine local_ocr and the engine image. |"
+    )
     assert "retained review concern" not in report
     assert verify_job(setup[2])["status"] == "pass"
 
@@ -180,7 +185,7 @@ def test_a_paused_job_names_the_limit_and_the_pages_left(setup):  # noqa: F811
         "continue with: pageledger resume . --raise-limit max_image_pages=N"
     )
     assert "- Not finished: waiting for the engine image: 1 page (3)." in report
-    assert "| 3 | not finished: waiting for the engine image;" in report
+    assert "| 3 | Not finished: waiting for the engine image. Held so far:" in report
     # A page still waiting for a stage is not counted as needing a person.
     document = _document(setup)
     assert [needs_person(page, document) for page in document["pages"]] == [False, True, False]
@@ -221,7 +226,9 @@ def test_process_ends_with_where_the_job_is_and_one_next_command(setup, capsys):
     assert closing == [
         "Finished: 3 pages read; 2 need a person.",
         f"The job is in {out}.",
-        "Held because text may be missing or damaged in the reading (2).",
+        "Why they need a person:",
+        "  2 pages: the engine local_text may be missing text; so do the engine "
+        "local_ocr and the engine image.",
         f"Next: pageledger review {out} shows those pages for checking.",
         f"Text out: pageledger export {out} --format md --out job.md",
     ]
@@ -305,7 +312,7 @@ def test_agreement_on_a_held_page_is_not_presented_as_reassurance(tmp_path):
     page.update(disposition="low_confidence", review_reasons=["low_confidence"])
     job["hold_policy"] = "0.9"
     rendered = render_document_report(build_document_report(job, tmp_path))
-    assert "| 1 | The OCR engine was unsure of many words |" in _row(rendered, 1)
+    assert "| 1 | The page's own text was unsure of many words. |" in _row(rendered, 1)
     assert "`a1` and `clean`: 91% of words agree; counted as agreement." in _entry(rendered, 1)
     assert "agree (" not in rendered
 
@@ -343,7 +350,7 @@ def test_a_scan_with_ocr_text_held_for_another_reason_is_not_called_blank(tmp_pa
     rendered = render_document_report(build_document_report(job, tmp_path))
     first = rendered.split("\n## For the record", 1)[0]
     assert "blank" not in first.lower()
-    assert "| 1 | The OCR engine was unsure of many words | [Tesseract OCR (rus)](<" in first
+    assert "| 1 | Tesseract OCR (rus) was unsure of many words. | [Tesseract OCR (rus)](<" in first
     # The record still lists every reason the job recorded.
     assert "held for `low_confidence`, `blank_candidate`" in _entry(rendered, 1)
 
@@ -352,7 +359,7 @@ def test_a_scan_held_only_as_blank_says_it_is_a_scan(tmp_path):
     job = _scan_page(tmp_path, ["blank_candidate"])
     rendered = render_document_report(build_document_report(job, tmp_path))
     assert f"  - {wording.BLANK_SCAN}: 1 page (1)." in rendered
-    assert f"| 1 | {wording.BLANK_SCAN} |" in rendered
+    assert f"| 1 | {wording.BLANK_SCAN}. |" in rendered
 
 
 def test_readings_are_named_by_what_made_them():
@@ -504,6 +511,7 @@ def test_the_docs_repeat_the_wording_table_exactly():
     section = text.split("\n## In plain words\n", 1)[1]
     holds, rest = section.split("### Review decisions", 1)
     decisions, warnings = rest.split("### Warnings", 1)
+    warnings, causes = warnings.split("### What is wrong with a reading", 1)
     assert {k: v[0] for k, v in _table(holds).items()} == wording.HOLDS
     assert " ".join(wording.BLANK_WITH_TEXT.split()) in " ".join(holds.split())
     assert " ".join(wording.BLANK_SCAN.split()) in " ".join(holds.split())
@@ -512,6 +520,23 @@ def test_the_docs_repeat_the_wording_table_exactly():
     assert {k: v[0] for k, v in table.items()} == wording.WARNINGS
     assert {k: v[1] for k, v in table.items() if v[1]} == wording.ADVICE
     assert wording.UNKNOWN_WARNING in warnings
+    assert {k: v[0] for k, v in _table(causes).items()} == wording.CAUSES
+
+
+# A finite verb, so that a clause reads as a sentence after a reading's name.
+_VERBS = {"added", "could", "disagrees", "found", "had", "has", "holds", "is", "judged"}
+_VERBS |= {"lacks", "lost", "may", "repeats", "says", "uses", "was", "wrote", "does"}
+
+
+def test_every_cause_of_a_hold_reads_after_a_reading_s_name():
+    causes = {*_WARNING_HOLDS, "empty_reading", "alignment"}
+    causes |= {"letters_lost", "layer_outvoted", "reader_short"}
+    assert causes <= set(wording.CAUSES)
+    name = wording.reading_name("local_ocr", {"adapter": "pdf_ocr", "lang": "rus"})
+    for code, clause in wording.CAUSES.items():
+        assert clause[:1].islower() and not clause.endswith("."), code
+        assert clause.split()[0] in _VERBS, code
+        assert f"{name} {clause}".startswith("Tesseract OCR (rus) ")
 
 
 # ---------------------------------------------------------------------------
@@ -644,7 +669,10 @@ def test_a_reviewed_page_keeps_the_holds_its_review_settled(setup, tmp_path):  #
     review_job(setup[2], receipt)
     report = _report(setup)
     row = _row(report, 2)
-    assert "| Text may be missing or damaged in the reading |" in row
+    assert (
+        "| The engine local_text may be missing text; so do the engine local_ocr and the engine image. |"
+        in row
+    )
     assert (
         "| A person checked the text against the page: A. Reader, 2026-11-10T12:00:00Z, "
         "“checked against the scan” |" in row
@@ -664,8 +692,8 @@ def test_pages_left_by_a_paused_job_show_their_text_so_far(setup):  # noqa: F811
     launch(setup)
     row = _row(_report(setup), 3)
     assert (
-        "| 3 | not finished: waiting for the engine image; held so far: text may be missing or "
-        "damaged in the reading | [The engine local_text](<" in row
+        "| 3 | Not finished: waiting for the engine image. Held so far: The engine local_text "
+        "may be missing text; so does the engine local_ocr. | [The engine local_text](<" in row
     )
     assert "Waiting for the `image` stage." in _entry(_report(setup), 3)
     assert "For pages not finished, the text and holds are those so far" in _report(setup)
@@ -681,24 +709,77 @@ def test_a_blank_candidate_with_text_is_grouped_and_worded_apart(tmp_path):
     assert "the page may be blank" not in rendered
 
 
-def test_a_hold_one_rule_placed_is_named_by_that_rule():
-    from pageledger.document_report import _group_keys, hold_in_words
-
+def _causes_page() -> tuple[dict, dict]:
+    report = {
+        "engines": {
+            "local_text": {"adapter": "pdf_text"},
+            "local_ocr": {"adapter": "pdf_ocr", "lang": "eng"},
+        },
+        "source": {},
+        "hold_policy": "0.9",
+    }
+    attempt = {"outcome": "completed", "raw_artifact": "r", "raw_sha256": "s"}
     page = {
         "review_reasons": ["coverage_defect"],
         "disposition": "coverage_defect",
-        "attempts": [],
+        "selected_attempt": "ocr",
+        "attempts": [
+            {**attempt, "attempt_id": "layer", "stage": "local_text"},
+            {**attempt, "attempt_id": "ocr", "stage": "local_ocr"},
+        ],
         "selected_output": {"text": "Бѣлоконскій"},
-        "hold_causes": [{"attempt_id": "a2", "hold": "coverage_defect", "cause": "letters_lost"}],
+        "hold_causes": [{"attempt_id": "ocr", "hold": "coverage_defect", "cause": "letters_lost"}],
     }
-    assert hold_in_words(page, "coverage_defect") == wording.PLACED["letters_lost"]
-    assert _group_keys(page) == ["coverage_defect:letters_lost"]
-    # Two causes, or a cause that is a warning code, keep the hold's own words.
-    page["hold_causes"].append(
-        {"attempt_id": "a1", "hold": "coverage_defect", "cause": "fragmented_text"}
+    return report, page
+
+
+def test_a_hold_is_said_by_its_cause_and_the_reading_it_is_on():
+    from pageledger.document_report import _group_keys, held_for, held_in_words
+
+    report, page = _causes_page()
+    assert held_for(report, page) == [
+        ("coverage_defect", f"Tesseract OCR (eng) {wording.CAUSES['letters_lost']}")
+    ]
+    # Several causes: the selected reading's first; one on another reading says which
+    # text was selected. Where a person reads first, two at most.
+    page["hold_causes"].insert(
+        0, {"attempt_id": "layer", "hold": "coverage_defect", "cause": "fragmented_text"}
     )
-    assert hold_in_words(page, "coverage_defect") == wording.HOLDS["coverage_defect"]
-    assert _group_keys(page) == ["coverage_defect"]
-    docs = " ".join((ROOT / "docs" / "warnings.md").read_text(encoding="utf-8").split())
-    for words in wording.PLACED.values():
-        assert " ".join(words.split()) in docs
+    page["review_reasons"].append("low_confidence")
+    page["hold_causes"].append({"attempt_id": "ocr", "hold": "low_confidence", "cause": "x"})
+    page["hold_causes"].append(
+        {"attempt_id": "ocr", "hold": "low_confidence", "cause": "low_confidence"}
+    )
+    assert [text for _hold, text in held_for(report, page)] == [
+        f"Tesseract OCR (eng) {wording.CAUSES['letters_lost']}",
+        "the selected text is Tesseract OCR (eng); the PDF's own text, another reading of the "
+        f"page, {wording.CAUSES['fragmented_text']}",
+        "Tesseract OCR (eng) was unsure of many words",
+    ]
+    assert len(_group_keys(report, page)) == 2
+    assert held_in_words(report, page, more="below").endswith(" 1 more cause below.")
+    assert "unsure" in held_in_words(report, page, every=True)
+    # Without recorded causes, the hold's own words, as before.
+    del page["hold_causes"]
+    assert [text for _hold, text in held_for(report, page)] == [
+        "text may be missing or damaged in the reading",
+        "the OCR engine was unsure of many words",
+    ]
+
+
+def test_an_earlier_ocr_s_flaw_says_nothing_confirms_the_selected_text():
+    from pageledger.document_report import held_for
+
+    report, page = _causes_page()
+    page["attempts"][0]["warnings"] = ["ocr_text_layer", "joined_text"]
+    page["hold_causes"] = [
+        {"attempt_id": "layer", "hold": "coverage_defect", "cause": "joined_text"}
+    ]
+    assert held_for(report, page) == [
+        (
+            "coverage_defect",
+            "the selected text is Tesseract OCR (eng); the PDF's own text (an earlier OCR), "
+            "the only other reading, has words run together, so the job did not compare the "
+            "two and nothing confirms the selected text",
+        )
+    ]

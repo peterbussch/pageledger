@@ -34,12 +34,11 @@ from .document_report import (
     _image_name,
     _short_comparison,
     empty_reading,
-    hold_in_words,
+    held_in_words,
     is_pending,
     needs_person,
     reader_name,
     relative_path,
-    shown_holds,
     verify_document_report,
 )
 from .image_source import KIND, ImageSource, _read_page, carrier, page_target, snapshot_growth
@@ -438,11 +437,13 @@ class _View:
         path, fragment = page_target(self.report["source"], number)
         source_link = (relative_path(str(self.source), self.out) + path, fragment)
         facts = [
-            ("Held for", _e(_why(page, self.report))),
+            ("Held for", _e(_why(page, self.report, every=True))),
             ("Selected text", _e(self._selected(page))),
             ("Engines agree", _e(_short_comparison(page, self.report))),
             ("Review", _e(_review(page))),
         ]
+        # A page with no comparison the job weighed has nothing to say here.
+        facts = [fact for fact in facts if fact[1] not in {"none counted", "none recorded"}]
         warnings = [
             f"{_e(sentence(self._name(attempt)))}: "
             + " ".join(_e(warning_words(code)) for code in _codes(attempt))
@@ -761,17 +762,15 @@ def _usable(attempt: dict) -> bool:
     )
 
 
-def _why(page: dict, report: dict) -> str:
-    """What holds the page, in plain words, as the report's page table says it."""
+def _why(page: dict, report: dict, *, every: bool = False) -> str:
+    """What holds the page, in plain words, as the report's page table says it; ``every``
+    gives all its causes, as the page's own section does."""
     pending = is_pending(page, report)
     if not page["review_reasons"] and not needs_person(page, report):
         return "not finished yet" if pending else "nothing"
-    held = "; ".join(
-        text if index == 0 else text[:1].lower() + text[1:]
-        for index, text in enumerate(hold_in_words(page, code) for code in shown_holds(page))
-    )
+    held = held_in_words(report, page, every=every, more="on the page")
     if pending:
-        return "not finished yet; held so far: " + held[:1].lower() + held[1:]
+        return "Not finished yet. Held so far: " + held
     return held
 
 

@@ -111,8 +111,12 @@ def test_the_view_shows_each_page_and_changes_nothing_in_the_job(job, tmp_path):
     # The held page comes first in the list.
     assert document.index('href="#p0002"') < document.index('href="#p0001"')
     row = re.search(r'<tr><th scope="row"><a href="#p0002">.*?</tr>', document)[0]
-    assert "<td>Text may be missing or damaged in the reading</td>" in row
+    assert (
+        "<td>The engine local_text may be missing text; so does the engine local_ocr.</td>" in row
+    )
     assert "held for <code>coverage_defect</code>" in document
+    # A line that would say nothing is left out.
+    assert "<dt>Engines agree</dt><dd>none" not in document
     assert "warnings.md#document-job-dispositions" in document
     assert "review-and-correct.md" in document
     # What a person reads before opening a disclosure: words, not IDs or the binding file.

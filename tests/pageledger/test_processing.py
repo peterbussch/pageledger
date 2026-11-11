@@ -444,7 +444,7 @@ def test_uncertain_ocr_page_is_reported_as_uncertain_not_incomplete(setup, monke
     assert job["hold_policy"] == HOLD_POLICY
     assert job["pages"][0]["disposition"] == "low_confidence"
     report = (setup[2] / "report.md").read_text(encoding="utf-8")
-    assert "| The OCR engine was unsure of many words |" in report
+    assert "| The engine local_text was unsure of many words; so " in report
     assert "held for `low_confidence`" in report
     assert "Text may be missing or damaged" not in report
     assert verify_job(setup[2])["status"] == "pass", result

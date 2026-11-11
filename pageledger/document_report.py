@@ -31,12 +31,17 @@ from .processing_policy import (
 )
 from .wording import (
     ADVICE,
+    ANOTHER_READING,
     BLANK_SCAN,
     BLANK_WITH_TEXT,
+    CAUSES,
     CORRECTION,
+    COULD_CONFIRM,
     HOLDS,
-    PLACED,
+    NOT_CONFIRMED,
+    ONLY_OTHER,
     REVIEWED,
+    UNCONFIRMED_ADVICE,
     reading_name,
     sentence,
     warning_code,
@@ -545,7 +550,7 @@ def _grouped(pages: list[dict], keys: Callable[[dict], list[str]]) -> list[tuple
     order = {code: index for index, code in enumerate(_HOLD_ORDER)}
     return sorted(
         groups.items(),
-        key=lambda item: (-len(item[1]), order.get(item[0].split(":")[0], 99), item[0]),
+        key=lambda item: (-len(item[1]), order.get(item[0].split("\x1f")[0], 99), item[0]),
     )
 
 
@@ -594,34 +599,103 @@ def shown_holds(page: dict) -> list[str]:
     return reasons
 
 
-def _placed_cause(page: dict, reason: str) -> str | None:
-    """The one rule of the job's that placed this hold on the page, when only one did."""
-    causes = {item["cause"] for item in page.get("hold_causes") or [] if item["hold"] == reason}
-    return next(iter(causes)) if len(causes) == 1 and causes <= set(PLACED) else None
-
-
 def hold_in_words(page: dict, reason: str) -> str:
     """A hold or page state in plain words, without its code."""
     if reason == "blank_candidate" and _has_text(page):
         return BLANK_SCAN if _scan(page) else BLANK_WITH_TEXT
-    cause = _placed_cause(page, reason)
-    if cause:
-        return PLACED[cause]
     return HOLDS.get(reason) or REVIEWED.get(reason) or reason
 
 
-def _group_keys(page: dict) -> list[str]:
-    """A page's holds as shown; a blank hold on a page with text, and a hold one rule
-    placed, are grouped on their own."""
-    keys = []
-    for reason in shown_holds(page):
-        if reason == "blank_candidate" and _has_text(page):
-            keys.append(f"{reason}:{'scan' if _scan(page) else 'text'}")
-        elif _placed_cause(page, reason):
-            keys.append(f"{reason}:{_placed_cause(page, reason)}")
-        else:
-            keys.append(reason)
-    return keys
+def _flaw(report: dict, page: dict, item: dict) -> str | None:
+    """One recorded cause of a hold as a clause: the reading, and what is wrong with it."""
+    clause = CAUSES.get(item["cause"])
+    attempt = next((a for a in page["attempts"] if a["attempt_id"] == item["attempt_id"]), None)
+    if clause is None or attempt is None:
+        return None
+    name = reader_name(report, attempt)
+    selected = page.get("selected_attempt")
+    if selected is None or selected == item["attempt_id"]:
+        return f"{name} {clause}"
+    words = {"selected": reader_name(report, _attempt(page, selected)), "name": name}
+    if _unconfirmed(page, item):
+        completed = [a for a in page["attempts"] if a.get("outcome") == "completed"]
+        other = ONLY_OTHER if len(completed) == 2 else COULD_CONFIRM
+        return NOT_CONFIRMED.format(flaw=clause, other=other, **words)
+    return ANOTHER_READING.format(flaw=clause, **words)
+
+
+def _unconfirmed(page: dict, item: dict) -> bool:
+    """A hold an inherited OCR layer's own warning placed: it holds the page only while
+    nothing confirms the selected reading."""
+    completed = [a for a in page["attempts"] if a.get("outcome") == "completed"]
+    return (
+        item["attempt_id"] != page.get("selected_attempt")
+        and item["attempt_id"] in inherited_layers(completed)
+        and item["cause"] not in _PLACED_BY_POLICY
+        and item["hold"] != "blank_candidate"
+    )
+
+
+def held_for(report: dict, page: dict) -> list[tuple[str, str]]:
+    """Each hold shown on the page with what caused it, most telling first, as (hold, clause).
+
+    A hold is said by its recorded causes: which reading, and what is wrong with it.
+    A hold with no recorded cause (older formats, comparisons, contest), and a blank
+    hold, which no single reading explains, keep the hold's own words.
+    """
+    causes = _causes(page, report)
+    selected = page.get("selected_attempt")
+    order = {code: index for index, code in enumerate(_HOLD_ORDER)}
+    shown: list[tuple[str, str]] = []
+    for reason in sorted(shown_holds(page), key=lambda code: order.get(code, len(order))):
+        items = [] if reason == "blank_candidate" else [c for c in causes if c["hold"] == reason]
+        items.sort(key=lambda item: item["attempt_id"] != selected)
+        flaws: list[str] = []
+        said: set[int] = set()
+        for item in items:
+            text = _flaw(report, page, item)
+            if text is None or id(item) in said:
+                continue
+            if item["attempt_id"] == selected:
+                # The same flaw on other readings is said with the selected one's.
+                same = [o for o in items if o is not item and o["cause"] == item["cause"]]
+                said.update(id(o) for o in same)
+                names = [reader_name(report, _attempt(page, o["attempt_id"])) for o in same]
+                names = list(dict.fromkeys(names))
+                if names:
+                    text += f"; so {'does' if len(names) == 1 else 'do'} {_joined(names)}"
+            flaws.append(text)
+        words = list(dict.fromkeys(flaws)) or [_lower(hold_in_words(page, reason))]
+        shown += [(reason, text) for text in words if (reason, text) not in shown]
+    return shown
+
+
+def _joined(names: list[str]) -> str:
+    return names[0] if len(names) == 1 else ", ".join(names[:-1]) + " and " + names[-1]
+
+
+# What a person reads first gives at most this many causes of a page's holds.
+_FIRST_CAUSES = 2
+
+
+def held_in_words(report: dict, page: dict, *, every: bool = False, more: str = "") -> str:
+    """What holds the page, in sentences; at most two causes unless ``every``. ``more``
+    says where the rest are, after a count of them."""
+    shown = [text for _hold, text in held_for(report, page)]
+    left = 0 if every else max(0, len(shown) - _FIRST_CAUSES)
+    text = " ".join(sentence(item) + "." for item in shown[: len(shown) - left])
+    if left:
+        text += f" {left} more {'cause' if left == 1 else 'causes'} {more}."
+    return text
+
+
+def _group_keys(report: dict, page: dict) -> list[str]:
+    """The causes a page is listed under where a person reads first: its first two."""
+    return [f"{hold}\x1f{text}" for hold, text in held_for(report, page)[:_FIRST_CAUSES]]
+
+
+def _group_words(key: str) -> str:
+    return key.split("\x1f", 1)[-1]
 
 
 def _waiting_for(report: dict, stage: object) -> str:
@@ -678,15 +752,14 @@ def summary_lines(report: dict) -> list[str]:
         "",
     ]
     if held:
-        groups = _grouped(held, _group_keys)
+        groups = _grouped(held, lambda page: _group_keys(report, page))
         several = sum(len(items) for _, items in groups) > len(held)
         lines.append(
             f"- Need a person: {_pages(held)}"
             + (", for these reasons (a page can have more than one):" if several else ":")
         )
         lines += [
-            f"  - {hold_in_words(items[0], code.split(':')[0])}: {_pages(items)}."
-            for code, items in groups
+            f"  - {_escape(sentence(_group_words(key)))}: {_pages(items)}." for key, items in groups
         ]
     for code, items in _grouped(clean, lambda page: [page["disposition"]]):
         lines.append(f"- {hold_in_words(items[0], code)}: {_pages(items)}.")
@@ -765,13 +838,13 @@ def closing_lines(report: dict, job: Path | str) -> list[str]:
         lines = [f"Halted: {action}", f"{pages.capitalize()}; {need}."]
     lines.append(f"The job is in {folder}.")
     if held:
-        groups = _grouped(held, _group_keys)[:3]
-        reasons = [
-            f"{_lower(hold_in_words(items[0], code.split(':')[0]))} ({len(items)})"
-            for code, items in groups
-        ]
-        joined = reasons[0] if len(reasons) == 1 else ", ".join(reasons[:-1]) + " or " + reasons[-1]
-        lines.append(f"Held because {joined}.")
+        groups = _grouped(held, lambda page: _group_keys(report, page))
+        lines.append("Why it needs a person:" if len(held) == 1 else "Why they need a person:")
+        for key, items in groups[:3]:
+            count = f"{len(items)} page{'' if len(items) == 1 else 's'}"
+            lines.append(f"  {count}: {_group_words(key)}.")
+        if len(groups) > 3:
+            lines.append("  Other causes are in the job's report.md.")
     if status == "processing":
         lines.append(f"Next: pageledger resume {folder} finishes the job.")
     elif held:
@@ -816,19 +889,15 @@ def _selected_cell(report: dict, page: dict) -> str:
 
 
 def _held_cell(report: dict, page: dict) -> str:
+    more = "in the record below"
     if is_pending(page, report):
-        cell = _lower(_waiting_for(report, page.get("next_action")))
+        cell = sentence(_waiting_for(report, page.get("next_action"))) + "."
         if page.get("review_reasons"):
-            cell += "; held so far: " + _clauses(page)
-        return cell
+            cell += " Held so far: " + held_in_words(report, page, more=more)
+        return _escape(cell)
     if not page.get("review_reasons") and not needs_person(page, report):
         return "nothing"
-    return sentence(_clauses(page))
-
-
-def _clauses(page: dict) -> str:
-    """The page's holds as shown, in plain words, joined into one lower-case clause."""
-    return "; ".join(_lower(hold_in_words(page, reason)) for reason in shown_holds(page))
+    return _escape(held_in_words(report, page, more=more))
 
 
 def _review_cell(page: dict) -> str:
@@ -1227,15 +1296,30 @@ def _render_for_reader(report: dict) -> str:
     name = Path(report["source"]["path"]).name
     lines = [f"# {_escape(name)}: document job report", "", *summary_lines(report), ""]
     notes = _notes(report)
-    if notes:
-        lines += [
-            "## Worth knowing",
-            "",
-            "These warnings hold no page, but they bear on how far to trust the text.",
-            "",
-            *notes,
-            "",
-        ]
+    unconfirmed = [
+        page
+        for page in _sorted_pages(report)[0]
+        if any(
+            _unconfirmed(page, item) and item["hold"] in shown_holds(page)
+            for item in _causes(page, report)
+        )
+    ]
+    if notes or unconfirmed:
+        lines += ["## Worth knowing", ""]
+        if unconfirmed:
+            lines += [
+                f"- On {_pages(unconfirmed)}, nothing confirms the selected text: the PDF's "
+                "earlier OCR, which could have, has a flaw of its own.",
+                *(f"  - {advice}" for advice in UNCONFIRMED_ADVICE),
+                "",
+            ]
+        if notes:
+            lines += [
+                "These warnings hold no page, but they bear on how far to trust the text.",
+                "",
+                *notes,
+                "",
+            ]
     if report["pages"]:
         lines += _page_table(report)
     lines += _record_lines(report)

@@ -43,17 +43,90 @@ BLANK_WITH_TEXT = (
 )
 BLANK_SCAN = "The page is a scan with no text of its own, and no other reading confirms the OCR"
 
-# A hold the job's own rules placed on a reading, named by its cause, which says more
-# than the hold does. Used when it is the only cause of that hold on the page.
-PLACED = {
-    "letters_lost": (
-        "A reading lost the old-spelling letters (such as ѣ) that another reading of the page kept"
+# What is wrong with a reading, by the cause of its hold (a warning or classification
+# code, or a rule of the job's own). Each is a clause, without a full stop, that reads
+# after the reading's name: "Tesseract OCR (rus) wrote a capital Ъ inside words, …".
+CAUSES = {
+    "alignment": "does not fit the table structure the job expected",
+    "blank": "judged the page blank",
+    "blank_candidate": "found that the page may be blank",
+    "capital_sign_in_word": (
+        "wrote a capital Ъ or Ь inside words, as OCR for modern Russian does with pre-1918 letters"
     ),
-    "layer_outvoted": (
-        "Two of the job's readings agree with each other and not with the PDF's earlier OCR"
+    "clipped_text": "had some of its text clipped, its engine reports",
+    "column_conflict": "has values that conflict with their table columns",
+    "control_characters": "holds control characters that stand for no visible text",
+    "coverage_defect": "may be missing text",
+    "digits_only_text": "is nearly all digits, as when a table's words are lost",
+    "empty_reading": "is empty",
+    "empty_text": "is empty, with no letters or digits",
+    "foreign_script_characters": (
+        "has a few letters from an unrelated script, usually symbols read through the wrong font map"
     ),
-    "reader_short": "A model's reading has far fewer words than the OCR reading",
+    "fragmented": "has its text broken into fragments",
+    "fragmented_text": "has many words broken into pieces",
+    "handwriting": "judged the page to be handwriting",
+    "historical_letters_lost": "lacks the pre-reform letters (ѣ, і, final ъ) the job expects",
+    "illustration": "judged the page to be an illustration",
+    "instruction_echo": (
+        "holds a chat-template marker: the model may have returned its own instructions"
+    ),
+    "joined": "has words run together",
+    "joined_text": "has words run together",
+    "labels_without_values": (
+        "has table labels that end in dot leaders with no number after them: the values seem lost"
+    ),
+    "layer_outvoted": "disagrees with two of the job's readings that agree with each other",
+    "letters_lost": "lost the old-spelling letters (such as ѣ) that another reading of the page kept",
+    "low_confidence": "was unsure of many words",
+    "missing_content": "is missing content, its engine reports",
+    "missing_required_columns": "lacks a table column the job requires",
+    "mixed_script_tokens": "has words that mix look-alike Latin, Cyrillic or Greek letters",
+    "model_commentary": "added a note of its own that is not on the page",
+    "numeric_column_conflict": "has numbers that conflict with their table columns",
+    "output_truncated": "was cut off",
+    "partial_transcription": "says it left some text out",
+    "private_use_characters": (
+        "uses a font's private codes for several characters, which may stand for lost digits "
+        "or letters"
+    ),
+    "reader_short": "has far fewer words than the OCR reading",
+    "repeated_page_text": "is the same short text as several other pages, often a stamp or watermark",
+    "repetition_loop": "repeats itself in a loop",
+    "replacement_characters": "has replacement characters where bytes could not be decoded",
+    "script_mismatch": "has fewer than half its letters in the configured script",
+    "source_defect": "found the source page damaged or incomplete",
+    "sparse": "has very little text",
+    "split_words": "has many words broken by stray spaces",
+    "suspicious_embedded_text_delta": "is far longer or shorter than another reading of the page",
+    "suspicious_symbol_density": "has many unusual symbols, often from a damaged text layer",
+    "tile_edge_cut": "has a line of text cut by a tile's edge, which may be read twice or not at all",
+    "tile_failed": "lacks the text of one or more tiles the model would not read",
+    "truncated_text": "is truncated",
+    "unknown": "could not be classified",
+    "unreadable": "judged the page unreadable",
 }
+# Where the flawed reading is not the selected text. An inherited OCR layer holds the
+# page only while no other reading confirms the selected one; any other reading always.
+# The hold is not a formality: the layer has been right where a clean-looking OCR was not.
+NOT_CONFIRMED = (
+    "the selected text is {selected}; {name}, {other}, {flaw}, so the job did not compare "
+    "the two and nothing confirms the selected text"
+)
+ONLY_OTHER = "the only other reading"
+COULD_CONFIRM = "the reading that could have confirmed it"
+# What to do about pages held that way, said once in the report.
+UNCONFIRMED_ADVICE = (
+    "Check each page against its image in the review view, where both readings are shown: an "
+    "OCR reading with no warning of its own can still be wrong, and an earlier OCR that runs "
+    "words together can have the words right.",
+    "For a whole book of such pages, add a second OCR engine (`second_ocr` in the config; "
+    "`pageledger init` writes it as a commented block), so that a second reading can confirm "
+    "the first.",
+    'Why these pages are held: docs/processing-spec.md, under Hold policy 0.9, "What holding '
+    "for the layer's warnings costs\".",
+)
+ANOTHER_READING = "the selected text is {selected}; {name}, another reading of the page, {flaw}"
 
 # A person's review decision.
 REVIEWED = {
