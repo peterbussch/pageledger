@@ -30,18 +30,21 @@ from .adjudication import settle
 from .checkpoint import atomic_bytes, file_digest, writer_lock
 from .corrections import describe
 from .document_report import (
-    _STAGE_LABELS,
     _artifact_bytes,
     _image_name,
     _short_comparison,
+    empty_reading,
+    hold_in_words,
     needs_person,
+    reader_name,
     relative_path,
+    shown_holds,
     verify_document_report,
 )
 from .image_source import KIND, ImageSource, _read_page, carrier, page_target, snapshot_growth
 from .processing import _check_source, _load, _refresh, verify_job
-from .review_sheet import DECISIONS, FIELDS, _row_id, binding_path, write_review_sheet
-from .wording import hold, reviewed
+from .review_sheet import FIELDS, _row_id, binding_path, write_review_sheet
+from .wording import CORRECTION, DECISION_GROUPS, HOLDS, REVIEWED, sentence
 from .wording import warning as warning_words
 
 IMAGE_CHOICES = ("all", "held", "none")
@@ -67,14 +70,7 @@ _NO_POPPLER = (
     "Page images need pdftoppm on PATH; install Poppler, "
     "or write the view without images with --images none"
 )
-_DECISION_LABELS = {
-    "accept": "accept: the selected text is right",
-    "blank": "blank: the page has no text",
-    "illustration": "illustration",
-    "handwriting": "handwriting",
-    "unreadable": "unreadable: the source cannot be read",
-    "source_defect": "source_defect: the source page is damaged or incomplete",
-}
+HOW_TO = "review-and-correct.md"
 
 
 def render_page_image(source: Path, page_number: int, target: Path) -> bool:
@@ -368,64 +364,69 @@ class _View:
             '<a class="skip" href="#pages">Skip to the page list</a>',
             "<header>",
             f"<h1>{text_html(title)}</h1>",
-            f"<p>Job <code>{_e(report['job_id'])}</code>, status {_e(report['status'])}. "
-            f"Source SHA-256 <code>{_e(report['source']['sha256'])}</code>.</p>",
-            f"<p>{counts['selected_pages']} pages in this job; {counts['selected_outputs']} have "
-            f"selected text; {needing} need a person; {counts['unresolved_pages']} are "
-            "not yet reviewed as text or blank.</p>",
+            f"<p>{counts['selected_pages']} pages in this job; {needing} need a person; "
+            f"{counts['unresolved_pages']} not yet reviewed as text or blank. "
+            f"{_STATUS.get(report['status'], '')}</p>",
             "</header>",
             '<section class="decisions" aria-labelledby="decisions-title">',
             '<h2 id="decisions-title">Recording decisions</h2>',
             "<p><strong>Nothing you choose or type here is recorded in the job until the "
-            "downloaded file is applied.</strong> This page is a reading copy of the job, "
-            "written by <code>pageledger review</code>. Choose a decision under any page, or "
-            "correct its text, then download your decisions as "
-            f"<code>{DECISIONS_FILE}</code>, save it in this folder and apply it:</p>",
+            "downloaded file is applied.</strong> Choose a decision under each page, or correct "
+            "its text. This browser keeps your choices until you download them as "
+            f"<code>{DECISIONS_FILE}</code>; save that file in this folder and run:</p>",
             f'<pre class="command">{_e(command)}</pre>',
-            "<p>Add <code>--dry-run</code> first to check every decision, and see how many "
-            "words each correction changes, without recording any. <code>review --apply</code> "
-            "refuses the file if the job has changed since this view was written. "
-            "A corrected text is recorded as a new reading beside the machine readings, "
-            "which stay as they are.</p>",
-            "<p>Without corrections, the review sheet works too: download it, save it in "
-            f"place of the blank <code>{SHEET}</code> (its binding, "
-            f"<code>{SHEET}.binding.json</code>, is already here) and apply it the same way. "
-            "A sheet cannot carry corrected text.</p>",
-            "<noscript><p>Choosing decisions here needs JavaScript. Without it, fill in "
-            f"<code>{SHEET}</code> in a spreadsheet instead.</p></noscript>",
+            "<p>Add <code>--dry-run</code> to check the file first without recording anything. "
+            f"{_doc(HOW_TO, 'review-and-correct', 'How to review and correct')} explains "
+            "each step.</p>",
             '<p class="controls">'
             '<button type="button" id="download-decisions" disabled>'
-            f"Download {DECISIONS_FILE}</button> "
-            '<button type="button" id="download-sheet" disabled>Download review.csv</button> '
-            '<button type="button" id="download-binding" disabled>'
-            "Download its binding</button> "
+            f"Download my decisions ({DECISIONS_FILE})</button> "
             '<button type="button" id="forget" disabled>Forget decisions in this browser</button>'
             "</p>",
             '<p id="download-problem" class="problem" role="alert"></p>',
             '<p id="storage" role="status"></p>',
+            _choices_legend(),
+            "<details><summary>Working in a spreadsheet instead</summary>",
+            f"<p><code>{SHEET}</code> in this folder has one row per page; type a decision in "
+            "its <code>decision</code> column (the words in brackets above, or "
+            f"<code>use:</code> with a reading's ID, which each page lists under "
+            "<em>From the record</em>), and apply the sheet with the same command, "
+            f"naming <code>{SHEET}</code>. <code>review-decisions.txt</code> beside it lists "
+            "the decisions. A sheet cannot carry corrected text in a cell: save the text in a "
+            "file beside the sheet and write <code>correct:</code> and its name. Keep "
+            f"<code>{SHEET}.binding.json</code> beside the sheet: it ties each row to the "
+            "page's text as it was when the view was written.</p>",
+            "<p>The decisions chosen in this page can also be downloaded as a filled-in sheet, "
+            "except corrections:</p>",
+            '<p class="controls">'
+            '<button type="button" id="download-sheet" disabled>Download review.csv</button> '
+            '<button type="button" id="download-binding" disabled>'
+            f"Download {SHEET}.binding.json</button></p>",
+            "</details>",
+            "<noscript><p>Choosing decisions here needs JavaScript. Without it, fill in "
+            f"<code>{SHEET}</code> in a spreadsheet instead.</p></noscript>",
             "</section>",
             '<section id="pages" aria-labelledby="pages-title">',
             '<h2 id="pages-title">Pages</h2>',
-            "<p>Pages that need a person come first. Engine agreement is evidence, not proof: "
-            "engines can share a mistake.</p>",
+            "<p>Pages that need a person come first.</p>",
             '<div class="table"><table>',
-            '<thead><tr><th scope="col">Page</th><th scope="col">State</th>'
-            '<th scope="col">Held for</th><th scope="col">Engine agreement</th>'
+            '<thead><tr><th scope="col">Page</th><th scope="col">Needs a person because</th>'
             '<th scope="col">Review</th><th scope="col">Your decision</th></tr></thead><tbody>',
             *(self._row(page) for page in ordered),
             "</tbody></table></div></section>",
             *(self._page(page) for page in report["pages"]),
+            '<p class="record">For the record: job '
+            f"<code>{_e(report['job_id'])}</code>, status <code>{_e(report['status'])}</code>; "
+            f"source SHA-256 <code>{_e(report['source']['sha256'])}</code>.</p>",
         ]
         return _document(title, "\n".join(body), embedded)
 
     def _row(self, page: dict) -> str:
         row_id = _row_id(page)
-        reasons = ", ".join(_label(r) for r in page["review_reasons"]) or "nothing"
         return (
             f'<tr><th scope="row"><a href="#{row_id}">{page["page_number"]}'
             f"{text_html(_image_name(self.report, page))}</a></th>"
-            f"<td>{_e(_state(page))}</td><td>{_e(reasons)}</td>"
-            f"<td>{_e(_short_comparison(page, self.report))}</td><td>{_e(_review(page))}</td>"
+            f"<td>{_e(_why(page, self.report))}</td><td>{_e(_review(page))}</td>"
             f'<td class="chosen" data-row="{row_id}"></td></tr>'
         )
 
@@ -435,39 +436,19 @@ class _View:
         path, fragment = page_target(self.report["source"], number)
         source_link = (relative_path(str(self.source), self.out) + path, fragment)
         facts = [
-            ("State", _e(_state(page))),
-            ("Held for", self._holds(page)),
-            ("Engine agreement", _e(_short_comparison(page, self.report))),
+            ("Needs a person because", _e(_why(page, self.report))),
+            ("Selected text", _e(self._selected(page))),
+            ("Engines agree", _e(_short_comparison(page, self.report))),
             ("Review", _e(_review(page))),
         ]
         warnings = [
-            f"{_e(attempt['attempt_id'])}: "
-            + "; ".join(
-                f"<code>{_e(code)}</code> ({_e(warning_words(code))})" for code in _codes(attempt)
-            )
+            f"{_e(sentence(self._name(attempt)))}: "
+            + " ".join(_e(warning_words(code)) for code in _codes(attempt))
             for attempt in page["attempts"]
             if _codes(attempt)
         ]
         if warnings:
-            facts.append(
-                (
-                    "Warnings",
-                    "; ".join(warnings)
-                    + f" ({_doc('warnings.md', 'quality-warnings', 'what they mean')})",
-                )
-            )
-        if selected is not None:
-            correction = selected.get("correction")
-            what = (
-                f"edition of attempt {selected['attempt_id']}, with settled spans applied"
-                if selected.get("edition")
-                else f"a correction by {correction['reviewer']} at {correction['reviewed_at']} "
-                f"of {correction['from_path']}, attempt {selected['attempt_id']} "
-                f"({describe(correction['words'])})"
-                if correction
-                else f"attempt {selected['attempt_id']}"
-            )
-            facts.append(("Selected text", f"{_e(what)} (<code>{_e(selected['path'])}</code>)"))
+            facts.append(("Warnings", "<br>".join(warnings)))
         open_spans, marked = self._open_spans(page)
         figure = self._figure(page, source_link)
         if selected is None:
@@ -487,6 +468,7 @@ class _View:
             "<dl>",
             *(f"<dt>{label}</dt><dd>{value}</dd>" for label, value in facts),
             "</dl>",
+            self._record(page),
             '<div class="sheet">',
             figure,
             '<div class="readings">',
@@ -498,12 +480,51 @@ class _View:
         ]
         return "\n".join(parts)
 
-    def _holds(self, page: dict) -> str:
-        if not page["review_reasons"]:
-            return "nothing"
-        items = [_e(_label(reason)) for reason in page["review_reasons"]]
-        link = _doc("warnings.md", "document-job-dispositions", "what they mean")
-        return "; ".join(items) + f" ({link})"
+    def _name(self, attempt: dict) -> str:
+        return reader_name(self.report, attempt)
+
+    def _selected(self, page: dict) -> str:
+        selected = page["selected_output"]
+        if selected is None:
+            return "none"
+        attempt = next(a for a in page["attempts"] if a["attempt_id"] == selected["attempt_id"])
+        name = sentence(self._name(attempt))
+        correction = selected.get("correction")
+        if correction:
+            return (
+                f"{sentence(CORRECTION)} of {self._name(attempt)}, by {correction['reviewer']} at "
+                f"{correction['reviewed_at']} ({describe(correction['words'])})"
+            )
+        if selected.get("edition"):
+            return f"{name}, with its settled differences applied"
+        return name
+
+    def _record(self, page: dict) -> str:
+        """The page's codes and reading IDs, for looking up and for a sheet's use: decisions."""
+        holds = ", ".join(f"<code>{_e(code)}</code>" for code in page["review_reasons"])
+        readings = []
+        for attempt in page["attempts"]:
+            codes = " ".join(f"<code>{_e(code)}</code>" for code in _codes(attempt))
+            failure = (attempt.get("failure") or {}).get("code")
+            readings.append(
+                f"<li>{_e(sentence(self._name(attempt)))}: <code>{_e(attempt['attempt_id'])}</code>"
+                f", {_e(attempt['outcome'])}"
+                + (f", failure <code>{_e(failure)}</code>" if failure else "")
+                + (f"; {codes}" if codes else "")
+                + "</li>"
+            )
+        selected = page["selected_output"]
+        path = f"<p>Selected text: <code>{_e(selected['path'])}</code></p>" if selected else ""
+        link = _doc("warnings.md", "document-job-dispositions", "what the codes mean")
+        return (
+            '<details class="record"><summary>From the record</summary>'
+            f"<p>State <code>{_e(page['disposition'])}</code>"
+            + (f"; held for {holds}" if holds else "")
+            + f" ({link}).</p>"
+            + (f"<ul>{''.join(readings)}</ul>" if readings else "")
+            + path
+            + "</details>"
+        )
 
     def _figure(self, page: dict, source_link: tuple[str, str]) -> str:
         label = f"Page {page['page_number']}{_image_name(self.report, page)} in the source"
@@ -520,8 +541,7 @@ class _View:
                 target = relative_path(str(path), self.out)
                 what = f"Tile {image['tile_id']} sent" if tiled else "The image sent"
                 links.append(
-                    f'<a href="{_e(_href(target))}">{what} to the model in '
-                    f"{_e(attempt['attempt_id'])}</a>"
+                    f'<a href="{_e(_href(target))}">{what} to {_e(self._name(attempt))}</a>'
                 )
         picture = self.pictures.get(page["page_id"])
         image = (
@@ -573,8 +593,9 @@ class _View:
         )
         listing = (
             f"<h3>Open contested spans ({len(still_open)})</h3>"
-            f"<p>Places where the model's reading ({_e(base)}) and the literal engine's "
-            f"({_e(record['witness']['attempt'])}) differ and nothing has settled; {where}. "
+            f"<p>Places where {_e(self._name(attempt))} and "
+            f"{_e(self._name(self._attempt(page, record['witness']['attempt'])))} differ and "
+            f"nothing has settled; {where}. "
             f"{_doc('processing-spec.md', 'contest-a-models-reading', 'How contest works')}.</p>"
             '<div class="table"><table><thead><tr><th scope="col">Kind</th>'
             '<th scope="col">Model read</th><th scope="col">Literal engine read</th></tr></thead>'
@@ -586,12 +607,12 @@ class _View:
         """The readings a correction can start from, the selected text first under "".
 
         Then each completed attempt's own text by its ID, unless it is the selected
-        text; a reading that is not UTF-8 is left out.
+        text; a reading that is not UTF-8, or that is empty, is left out.
         """
         selected = page["selected_output"]
         starts = {} if selected is None else {"": selected["text"]}
         for attempt in page["attempts"]:
-            if attempt["outcome"] != "completed" or attempt["raw_artifact"] is None:
+            if not _usable(attempt):
                 continue
             if (
                 selected is not None
@@ -605,6 +626,9 @@ class _View:
             except UnicodeError:
                 continue
         return starts
+
+    def _attempt(self, page: dict, attempt_id: str) -> dict:
+        return next(a for a in page["attempts"] if a["attempt_id"] == attempt_id)
 
     def _reading(self, attempt: dict) -> str | None:
         if attempt["raw_artifact"] is None:
@@ -620,10 +644,14 @@ class _View:
                 if not (selected.get("edition") or selected.get("correction")):
                     continue
             text = self._reading(attempt)
-            stage = _STAGE_LABELS.get(attempt["stage"], attempt["stage"])
-            summary = f"{attempt['attempt_id']}: {stage}, {attempt['outcome']}"
+            summary = sentence(self._name(attempt))
+            if attempt["outcome"] != "completed":
+                summary += f" ({_OUTCOMES.get(attempt['outcome'], attempt['outcome'])})"
             if text is None:
-                blocks.append(f"<p>{_e(summary)}; no text was kept.</p>")
+                blocks.append(f"<p>{_e(summary)}: no text was kept.</p>")
+                continue
+            if empty_reading(attempt):
+                blocks.append(f"<p>{_e(summary)}: empty, with no letters or digits.</p>")
                 continue
             parts = [f"<details><summary>{_e(summary)}</summary>"]
             differs = selected is not None and text != selected["text"]
@@ -654,28 +682,39 @@ class _View:
 
     def _form(self, page: dict) -> str:
         row_id = _row_id(page)
-        choices = [("", "no decision: the page stays unreviewed")]
-        if page["selected_output"] is not None:
-            choices.append(("accept", _DECISION_LABELS["accept"]))
-        for attempt in page["attempts"]:
-            if (
-                attempt["outcome"] == "completed"
-                and attempt["raw_artifact"]
-                and attempt["attempt_id"] != page["selected_attempt"]
-            ):
-                token = f"use:{attempt['attempt_id']}"
-                choices.append((token, f"{token}: use this reading instead"))
         starts = self._starts(page)
-        if starts:
-            choices.append(("correct", "correct: the text as I corrected it below"))
-        choices += [(token, _DECISION_LABELS[token]) for token in DECISIONS if token != "accept"]
-        options = "".join(f'<option value="{_e(v)}">{_e(label)}</option>' for v, label in choices)
+        offered = {
+            "accept": page["selected_output"] is not None,
+            "correct": bool(starts),
+        }
+        others = [
+            attempt
+            for attempt in page["attempts"]
+            if _usable(attempt) and attempt["attempt_id"] != page["selected_attempt"]
+        ]
+        groups = []
+        for title, choices in DECISION_GROUPS:
+            options = []
+            for token, label, _records in choices:
+                if token == "use:":
+                    options += [
+                        (f"use:{a['attempt_id']}", label.replace("READING", self._name(a)))
+                        for a in others
+                    ]
+                elif offered.get(token, True):
+                    options.append((token, label))
+            if options:
+                inner = "".join(
+                    f'<option value="{_e(v)}">{_e(text)}</option>' for v, text in options
+                )
+                groups.append(f'<optgroup label="{_e(title)}">{inner}</optgroup>')
+        options_html = '<option value="">No decision yet</option>' + "".join(groups)
         return (
             f'<form class="decision" data-row="{row_id}" aria-labelledby="{row_id}-decide">'
             f'<h3 id="{row_id}-decide">Your decision</h3>'
             f'<label for="{row_id}-decision">Decision</label>'
-            f'<select id="{row_id}-decision" name="decision" disabled>{options}</select>'
-            f'<label for="{row_id}-note">Note (becomes the reason in the receipt)</label>'
+            f'<select id="{row_id}-decision" name="decision" disabled>{options_html}</select>'
+            f'<label for="{row_id}-note">Note (recorded as the reason for the decision)</label>'
             f'<textarea id="{row_id}-note" name="note" rows="2" disabled></textarea>'
             f"{self._correct(page, starts) if starts else ''}"
             f'<p class="problem" role="alert"></p></form>'
@@ -684,7 +723,7 @@ class _View:
     def _correct(self, page: dict, starts: dict[str, str]) -> str:
         row_id = _row_id(page)
         names = [("", "the selected text")] if "" in starts else []
-        names += [(key, f"attempt {key}") for key in starts if key]
+        names += [(key, sentence(self._name(self._attempt(page, key)))) for key in starts if key]
         options = "".join(f'<option value="{_e(v)}">{_e(label)}</option>' for v, label in names)
         return (
             f'<h4 id="{row_id}-correct">Correct the text</h4>'
@@ -702,14 +741,37 @@ class _View:
         )
 
 
-def _label(code: str) -> str:
-    return hold(code).replace("`", "")
+_STATUS = {
+    "completed": "The job has finished.",
+    "processing": "The job has not finished: some pages may still change.",
+    "paused_budget": "The job is paused at a limit: some pages may still change.",
+    "halted": "The job halted.",
+}
+_OUTCOMES = {"failed": "failed", "unknown": "no result was saved"}
+
+
+def _usable(attempt: dict) -> bool:
+    """A reading a person can choose or start a correction from: finished, kept, not empty."""
+    return (
+        attempt["outcome"] == "completed"
+        and attempt["raw_artifact"] is not None
+        and not empty_reading(attempt)
+    )
+
+
+def _why(page: dict, report: dict) -> str:
+    """Why the page needs a person, in plain words: the holds shown, or nothing."""
+    if not page["review_reasons"] and not needs_person(page, report):
+        return "nothing"
+    return "; ".join(
+        text if index == 0 else text[:1].lower() + text[1:]
+        for index, text in enumerate(hold_in_words(page, code) for code in shown_holds(page))
+    )
 
 
 def _state(page: dict) -> str:
-    if page.get("review") is not None:
-        return reviewed(page["disposition"]).replace("`", "")
-    return _label(page["disposition"])
+    state = page["disposition"]
+    return HOLDS.get(state) or REVIEWED.get(state) or state
 
 
 def _review(page: dict) -> str:
@@ -718,9 +780,27 @@ def _review(page: dict) -> str:
         return "not reviewed"
     decision = next(item for item in review["decisions"] if item["page_id"] == page["page_id"])
     corrected = " with a correction" if "correction" in decision else ""
+    words = REVIEWED.get(decision["disposition"], decision["disposition"])
     return (
-        f"{reviewed(decision['disposition']).replace('`', '')}{corrected}, by {decision['reviewer']} at "
+        f"{words}{corrected}, by {decision['reviewer']} at "
         f"{decision['reviewed_at']}: {decision['reason']}"
+    )
+
+
+def _choices_legend() -> str:
+    """What each decision records, grouped as the page's decision list groups them."""
+    items = []
+    for title, choices in DECISION_GROUPS:
+        lines = "".join(
+            f"<li>{_e(label.replace('READING', 'a reading'))} "
+            f"(<code>{_e(token + 'ID' if token == 'use:' else token)}</code>): "
+            f"records {_e(records)}.</li>"
+            for token, label, records in choices
+        )
+        items.append(f"<li>{_e(title)}<ul>{lines}</ul></li>")
+    return (
+        "<details><summary>What each decision records</summary>"
+        f'<ul class="legend">{"".join(items)}</ul></details>'
     )
 
 
@@ -939,8 +1019,15 @@ _SCRIPT = (
       (kept ? "This browser keeps them for this job until you choose Forget."
             : "This browser is not keeping them: download them before you close the page.");
     document.querySelectorAll("td.chosen").forEach(function (cell) {
-      var chosen = decisions[cell.getAttribute("data-row")];
-      cell.textContent = chosen ? chosen.decision : "";
+      var row = cell.getAttribute("data-row");
+      var chosen = decisions[row];
+      var shown = chosen ? chosen.decision : "";
+      if (chosen && selects[row]) {
+        Array.prototype.forEach.call(selects[row].options, function (option) {
+          if (option.value === chosen.decision && option.text) { shown = option.text; }
+        });
+      }
+      cell.textContent = shown;
     });
   }
   function save(name, text, type) {
@@ -954,10 +1041,12 @@ _SCRIPT = (
     setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
   }
   var resets = [];
+  var selects = {};
   var own = function (object, key) { return Object.prototype.hasOwnProperty.call(object, key); };
   document.querySelectorAll("form.decision").forEach(function (form) {
     var row = form.getAttribute("data-row");
     var select = form.elements.decision;
+    selects[row] = select;
     var note = form.elements.note;
     var area = form.elements.text || null;
     var from = form.elements.from || null;

@@ -17,7 +17,7 @@ import yaml
 from jsonschema import validate
 from test_processing import TEXT, StageAdapter, _contesting, launch, setup  # noqa: F401
 
-from pageledger import review_html, runner
+from pageledger import review_html, runner, wording
 from pageledger.checkpoint import read_record
 from pageledger.cli import main
 from pageledger.corrections import word_changes
@@ -78,6 +78,14 @@ def _embedded(document: str) -> dict:
     return json.loads(found.group(1))
 
 
+def _visible(document: str) -> str:
+    """The page's text outside disclosures, scripts and attributes, as a person first sees it."""
+    body = re.sub(r"<script.*?</script>|<style.*?</style>", "", document, flags=re.S)
+    body = re.sub(r"<details.*?</details>", "", body, flags=re.S)
+    body = re.sub(r"<option[^>]*>", "", body)
+    return html.unescape(re.sub(r"<[^>]+>", " ", body))
+
+
 def _files(root: Path) -> dict[str, str]:
     return {
         path.relative_to(root).as_posix(): hashlib.sha256(path.read_bytes()).hexdigest()
@@ -95,14 +103,22 @@ def test_the_view_shows_each_page_and_changes_nothing_in_the_job(job, tmp_path):
     document = (tmp_path / "view" / "index.html").read_text(encoding="utf-8")
     assert sorted(path.name for path in (tmp_path / "view").iterdir()) == [
         "index.html",
+        "review-decisions.txt",
         "review.csv",
         "review.csv.binding.json",
     ]
     assert 'id="p0001"' in document and 'id="p0002"' in document
     # The held page comes first in the list.
     assert document.index('href="#p0002"') < document.index('href="#p0001"')
-    assert "Text may be missing or damaged in the reading (coverage_defect)" in document
+    row = re.search(r'<tr><th scope="row"><a href="#p0002">.*?</tr>', document)[0]
+    assert "<td>Text may be missing or damaged in the reading</td>" in row
+    assert "held for <code>coverage_defect</code>" in document
     assert "warnings.md#document-job-dispositions" in document
+    assert "review-and-correct.md" in document
+    # What a person reads before opening a disclosure: words, not IDs or the binding file.
+    shown = _visible(document)
+    assert not re.search(r"[a-z_]+(?:-\d{4})?:doc_\d{4}_page_\d{4}", shown)
+    assert "binding" not in shown and "Local OCR" not in shown and "attempt" not in shown
     assert "recorded in the job until the downloaded file is applied." in document
     assert "review.json" in document
     assert "pageledger review " in document and "--apply" in document
@@ -477,11 +493,8 @@ def test_a_corrected_page_shows_the_correction_and_the_reading_beneath(job, tmp_
     document = (tmp_path / "view" / "index.html").read_text(encoding="utf-8")
     data = _embedded(document)
     page = read_record(job / "job.json")["pages"][0]
-    assert "a correction by A. Reader at" in document
-    assert (
-        "A person checked the text against the page (reviewed_text) with a correction, "
-        "by A. Reader" in document
-    )
+    assert "A person&#x27;s correction of the engine local_text, by A. Reader at" in document
+    assert "A person checked the text against the page with a correction, by A. Reader" in document
     assert data["texts"]["p0001"] == {
         "": TEXT.replace("prose", "verse"),
         page["selected_attempt"]: TEXT,
@@ -689,3 +702,83 @@ process.stdout.write(JSON.stringify(report));
     page = read_record(job / "job.json")["pages"][0]
     stored = job / page["review"]["decisions"][0]["correction"]["artifact"]
     assert stored.read_bytes() == expected.encode("utf-8")
+
+
+def _scan_job(tmp_path, monkeypatch):
+    """A page whose own text is empty, read by OCR and held for it."""
+    source = tmp_path / "source.txt"
+    source.write_text(TEXT)
+    config = tmp_path / "config.yml"
+    stages = {stage: {"adapter": stage} for stage in ("local_text", "local_ocr")}
+    config.write_text(yaml.safe_dump({"schema_version": "0.1", "processing": stages}))
+
+    def adapter(name, *args, **kwargs):
+        stage = StageAdapter()
+        object.__setattr__(stage, "stage", name)
+        object.__setattr__(stage, "defective", {1})
+        object.__setattr__(stage, "texts", {"local_text": ""})
+        return stage
+
+    monkeypatch.setattr(runner, "load_adapter", adapter)
+    from pageledger.processing import process
+
+    process(source=source, config_path=config, out_dir=tmp_path / "job")
+    return tmp_path / "job"
+
+
+def test_an_empty_reading_is_not_offered_to_use_or_correct_from(tmp_path, monkeypatch):
+    job = _scan_job(tmp_path, monkeypatch)
+    page = read_record(job / "job.json")["pages"][0]
+    empty = next(a for a in page["attempts"] if a["stage"] == "local_text")
+    assert "empty_text" in empty["warnings"] and page["selected_attempt"] != empty["attempt_id"]
+    write_review_html(job, tmp_path / "view", images="none")
+    document = (tmp_path / "view" / "index.html").read_text(encoding="utf-8")
+    [form] = _forms(document)
+    assert f"use:{empty['attempt_id']}" not in form["decision"]
+    assert form["from"] == [""]
+    assert empty["attempt_id"] not in _embedded(document)["texts"]["p0001"]
+    assert "The engine local_text: empty, with no letters or digits." in document
+    guide = (tmp_path / "view" / "review-decisions.txt").read_text(encoding="utf-8")
+    assert "Page 1: use:" not in guide
+
+
+def test_the_decision_list_is_grouped_in_plain_words(job, tmp_path):
+    write_review_html(job, tmp_path / "view", images="none")
+    document = (tmp_path / "view" / "index.html").read_text(encoding="utf-8")
+    page = document[document.index('id="p0002"') :]
+    select = page[: page.index("</select>")]
+    groups = re.findall(r'<optgroup label="([^"]*)">', select)
+    assert groups == [
+        "The text is right",
+        "Use another reading",
+        "I corrected the text",
+        "This page has no text to transcribe",
+        "The page cannot be read",
+    ]
+    assert '<option value="accept">The selected text is right</option>' in select
+    record = read_record(job / "job.json")["pages"][1]
+    other = next(a for a in record["attempts"] if a["attempt_id"] != record["selected_attempt"])
+    assert (
+        f'<option value="use:{other["attempt_id"]}">Use the engine {other["stage"]} instead'
+        in select
+    )
+    assert '<option value="source_defect">Damaged or missing source page</option>' in select
+    # Each choice says what it records, once, above the pages.
+    for _title, choices in wording.DECISION_GROUPS:
+        for _token, _label, records in choices:
+            assert html.escape(records, quote=True) in document
+
+
+def test_the_sheet_carries_a_guide_to_its_decisions(job, tmp_path):
+    result = create_review_sheet(job, tmp_path / "sheets" / "pages.csv")
+    guide = (tmp_path / "sheets" / "review-decisions.txt").read_text(encoding="utf-8")
+    assert guide.startswith("How to fill in pages.csv\n")
+    assert "--apply pages.csv" in guide and "pages.csv.binding.json" in guide
+    for token in ("accept", "use:ID", "correct:FILE", "blank", "illustration", "handwriting"):
+        assert f"\n  {token} " in guide
+    page = read_record(job / "job.json")["pages"][1]
+    other = next(a for a in page["attempts"] if a["attempt_id"] != page["selected_attempt"])
+    assert f"  Page 2: use:{other['attempt_id']} (the engine {other['stage']})" in guide
+    # The sheet itself is as released versions wrote it.
+    with open(result["out"], encoding="utf-8-sig", newline="") as stream:
+        assert next(csv.reader(stream)) == list(review_html.FIELDS)

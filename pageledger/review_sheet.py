@@ -6,13 +6,18 @@ import csv
 import io
 import json
 import os
+import shlex
 from pathlib import Path
 
 from . import corrections
 from .checkpoint import atomic_bytes
-from .document_report import _artifact_bytes, relative_path
+from .document_report import _artifact_bytes, _engines, empty_reading, relative_path
 from .image_source import page_target
 from .runner import _utc_now
+from .wording import DECISION_GROUPS, reading_name
+
+# Beside every sheet: the decisions it takes, and the readings each page can use.
+GUIDE = "review-decisions.txt"
 
 FIELDS = (
     "row_id",
@@ -85,7 +90,56 @@ def write_review_sheet(job: dict, sheet: Path, root: Path) -> dict:
     atomic_bytes(sheet, buffer.getvalue().encode("utf-8-sig"))
     binding = json.dumps({"schema_version": "0.1", "bindings": bindings}, indent=2) + "\n"
     atomic_bytes(binding_path(sheet), binding.encode("utf-8"))
+    atomic_bytes(sheet.parent / GUIDE, _guide(job, sheet, root).encode("utf-8"))
     return {"out": str(sheet), "binding": str(binding_path(sheet)), "rows": len(rows)}
+
+
+def _guide(job: dict, sheet: Path, root: Path) -> str:
+    """What may go in the sheet's decision column, written beside it for a spreadsheet user."""
+    command = (
+        f"pageledger review {shlex.quote(str(root))} --apply {shlex.quote(sheet.name)} "
+        '--reviewer "YOUR NAME"'
+    )
+    lines = [
+        f"How to fill in {sheet.name}",
+        "",
+        "Type one decision in each row's decision column, and a note if you like: the note",
+        "is recorded as the reason. A row left empty leaves its page unreviewed. Then, in",
+        "this folder, apply the sheet:",
+        "",
+        f"  {command}",
+        "",
+        "Add --dry-run to check it first without recording anything. Keep",
+        f"{binding_path(sheet).name} beside the sheet: it ties each row to the page's text",
+        "as it was when the sheet was written, and the sheet is refused if the job has",
+        "changed since.",
+        "",
+        "The decisions, and what each records:",
+    ]
+    for title, choices in DECISION_GROUPS:
+        lines += ["", title]
+        for token, _label, records in choices:
+            shown = {"use:": "use:ID", "correct": "correct:FILE"}.get(token, token)
+            lines.append(f"  {shown:<15} records {records}.")
+            if token == "use:":
+                lines.append(f"  {'':<15} The IDs each page can use are listed below.")
+            if token == "correct":
+                lines.append(
+                    f"  {'':<15} Save your corrected text in FILE, a text file beside the sheet."
+                )
+    engines = _engines(job)
+    images = job["source"].get("kind") == "page_images"
+    offered = []
+    for page in job["pages"]:
+        for attempt in page["attempts"]:
+            usable = _completed(page, attempt["attempt_id"]) and not empty_reading(attempt)
+            if not usable or attempt["attempt_id"] == page["selected_attempt"]:
+                continue
+            name = reading_name(attempt["stage"], engines.get(attempt["stage"]), images=images)
+            offered.append(f"  Page {page['page_number']}: use:{attempt['attempt_id']} ({name})")
+    lines += ["", "Other readings each page can use instead of its selected text:"]
+    lines += offered or ["  none"]
+    return "\n".join(lines) + "\n"
 
 
 def read_review_sheet(
