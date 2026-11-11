@@ -206,7 +206,15 @@ HTTP 429 is retried at most twice, using `Retry-After` seconds or an HTTP date,
 with 1 s then 2 s backoff when the header is absent or malformed. A delay of
 60 s or more, or one beyond the remaining request timeout, returns `MODEL_QUOTA`
 without retrying early. HTTP 402, timeouts, network errors and other HTTP errors
-are not retried. No key or provider response body enters failure records.
+are not retried by the adapter. No key or provider response body enters failure records.
+
+Every failed request keeps the image it sent, with an empty reading, as the
+failure's partial result. In a document job that counts as reading nothing: a
+page that times out or meets a network, HTTP or availability error is requested
+once more by the job, and held if that fails too (see
+[Failed remote reads](processing-spec.md#failed-remote-reads)). A page read in
+tiles stops at the tile that failed so; the tiles already read are kept and
+the page is held.
 
 A missing `pdftoppm` stops the run before any page is read, with the
 diagnostic `missing_binary`.

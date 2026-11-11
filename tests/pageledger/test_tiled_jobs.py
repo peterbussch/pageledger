@@ -152,10 +152,13 @@ def tiled_job(tmp_path, monkeypatch):
 
     def answer(self, body):
         args = json.loads(log.read_text().splitlines()[-1])
-        dpi = float(args[args.index("-r") + 1])
-        x, y, w, h = (
-            int(args[args.index(flag) + 1]) * 72 / dpi for flag in ("-x", "-y", "-W", "-H")
-        )
+        if "-r" in args:
+            dpi = float(args[args.index("-r") + 1])
+            x, y, w, h = (
+                int(args[args.index(flag) + 1]) * 72 / dpi for flag in ("-x", "-y", "-W", "-H")
+            )
+        else:  # the whole page
+            x, y, w, h = 0, 0, WIDTH, HEIGHT
         page = int(args[args.index("-f") + 1])
         inside = [
             text.replace(*MISREAD) if text.startswith(MISREAD[0]) else text
@@ -387,28 +390,29 @@ def test_a_failed_tile_holds_the_page_and_names_the_tile(tiled_job, monkeypatch)
     assert "t03" in report
 
 
-def test_a_tile_request_that_times_out_halts_with_the_tiles_already_paid_for(
-    tiled_job, monkeypatch
-):
+def _timing_out(monkeypatch, *calls_that_fail):
     from pageledger.adapters import AdapterFailure
 
     original = vision.VisionAdapter._post
     calls = []
 
-    def time_out_third(self, body):
+    def post(self, body):
         calls.append(1)
-        if len(calls) == 3:
+        if len(calls) in calls_that_fail:
             raise AdapterFailure("MODEL_TIMEOUT")
         return original(self, body)
 
-    monkeypatch.setattr(vision.VisionAdapter, "_post", time_out_third)
-    source, config, root, log = tiled_job
-    result = process(source=source, config_path=config, out_dir=root)
-    assert result["status"] == "halted"
-    job = read_record(root / "job.json")
-    assert job["halt_reason"].startswith("attempt_stopped:image-0001:")
-    assert job["usage"]["image_requests"] == 3
-    reading = next(a for a in job["pages"][0]["attempts"] if a["stage"] == "image")
+    monkeypatch.setattr(vision.VisionAdapter, "_post", post)
+
+
+def test_a_tile_that_times_out_holds_its_page_with_the_paid_tiles_and_the_job_goes_on(
+    tiled_job, monkeypatch
+):
+    _timing_out(monkeypatch, 3)
+    root, job = _completed(tiled_job)
+    assert job["usage"]["image_requests"] == 3 + 9
+    first, second = job["pages"]
+    reading = next(a for a in first["attempts"] if a["stage"] == "image")
     assert reading["outcome"] == "failed"
     assert [t["outcome"] for t in reading["input_evidence"]["tiles"]] == [
         "completed",
@@ -416,12 +420,33 @@ def test_a_tile_request_that_times_out_halts_with_the_tiles_already_paid_for(
         "failed",
     ]
     assert reading["tiling"]["sent"] == 3 and reading["tiling"]["failed"] == ["t03"]
+    # The paid tiles stay as evidence; the partial reading is never selected.
     assert (root / reading["raw_artifact"]).read_text().count("entry p1") > 0
+    assert first["disposition"] == "provider_failure"
+    assert first["next_action"] == "review"
+    assert first["selected_attempt"] != reading["attempt_id"]
+    assert [s["stage_id"] for s in job["stages"] if s["stage"] == "image"] == [
+        "image-0001",
+        "image-0002",
+    ]
+    assert second["disposition"] != "provider_failure"
+    report = (root / "report.md").read_text()
+    assert "tiles: 9 planned, 3 sent and paid for, 2 read, failed: t03" in report
     assert verify_job(root)["status"] == "pass"
     # Nothing is bought again without the user: resuming sends no tile.
-    rendered = len(log.read_text().splitlines())
-    assert resume_job(root)["status"] == "halted"
-    assert len(log.read_text().splitlines()) == rendered
+    rendered = len(tiled_job[3].read_text().splitlines())
+    resume_job(root)
+    assert len(tiled_job[3].read_text().splitlines()) == rendered
+
+
+def test_a_tiled_page_whose_first_tile_times_out_is_read_once_more(tiled_job, monkeypatch):
+    _timing_out(monkeypatch, 1)
+    root, job = _completed(tiled_job)
+    stages = [s["stage_id"] for s in job["stages"] if s["stage"] == "image"]
+    assert stages == ["image-0001", "image-0001-retry-1", "image-0002"]
+    assert job["usage"]["image_requests"] == 1 + 9 + 9
+    assert job["pages"][0]["selected_attempt"].startswith("image-0001-retry-1")
+    assert verify_job(root)["status"] == "pass"
 
 
 def test_a_retried_tiled_page_reads_its_plan_again_and_pays_for_every_tile(tiled_job, monkeypatch):

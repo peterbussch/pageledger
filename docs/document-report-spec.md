@@ -83,7 +83,7 @@ An attempt whose engine returned a layout adds `layout_sha256`, and a reading in
 tiles adds `tiling`: the plan's `plan_sha256`, the `layout_attempt` it was cut
 along, how many `tiles` were planned and `sent`, and the ids of the tiles that
 `failed` or whose edge cut through text (`edge_cut`). The report's attempt line
-then says how many tiles were read and names those tiles, and its usage line
+then says how many tiles were planned, sent (and so paid for) and read, and names those tiles, and its usage line
 adds the image requests (`usage.image_requests`). A contested page read in tiles
 adds `contested.witness_projection`. Each is present only when it applies, so
 older jobs render as before.

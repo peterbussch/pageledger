@@ -1401,21 +1401,41 @@ def _failure_action(job: dict, root: Path, stage: dict) -> str:
     ]
     if failures and all(attempt["outcome"] == "failed" for attempt in failures):
         transient = all(
-            (attempt.get("failure") or {}).get("code") in TRANSIENT_FAILURES
-            and not attempt.get("raw_artifact")
-            for attempt in failures
+            (attempt.get("failure") or {}).get("code") in TRANSIENT_FAILURES for attempt in failures
         )
-        if stage["stage"] in CONCURRENT_STAGES and transient and "-retry-" not in stage["stage_id"]:
+        unread = all(map(_nothing_read, failures))
+        if (
+            stage["stage"] in CONCURRENT_STAGES
+            and transient
+            and unread
+            and "-retry-" not in stage["stage_id"]
+        ):
             return "retry"
         # A rejected optional witness remains a provider_failure hold on its page,
         # and a local reader that failed costs nothing: its page climbs past it,
         # even when it kept a partial reading (a loop cut off at max_tokens).
-        # An image page that fails transiently twice is held the same way.
+        # An image page that fails transiently twice is held the same way, and so
+        # is a page read in tiles that stopped after some tiles were paid for:
+        # reading it again would buy those tiles again.
         if stage["stage"] in {"second_opinion", "local_image"} or (
-            stage["stage"] == "image" and transient
+            stage["stage"] == "image" and transient and (unread or "tiles" in stage)
         ):
             return "continue"
     return "retry_local"
+
+
+def _nothing_read(attempt: dict) -> bool:
+    """A failed request kept no reading: no partial output, or only the image it sent.
+
+    The built-in vision adapter keeps an empty partial reading with its evidence on
+    every failed request; a page read in tiles has read nothing until a tile completes.
+    """
+    if not attempt.get("raw_artifact"):
+        return True
+    evidence = attempt.get("input_evidence") or {}
+    if evidence.get("kind") == "page_tiles":
+        return not any(tile["outcome"] == "completed" for tile in evidence["tiles"])
+    return not attempt["text"].strip()
 
 
 def _run_concurrently(

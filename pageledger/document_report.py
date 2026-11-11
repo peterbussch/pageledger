@@ -530,7 +530,11 @@ def render_document_report(report: dict) -> str:
                 detail += f"; quality warning {', '.join(noted)}"
             tiling = attempt.get("tiling")
             if tiling:
-                detail += f"; read in {tiling['sent']} of {tiling['tiles']} tiles"
+                read = tiling["sent"] - len(tiling["failed"])
+                detail += (
+                    f"; tiles: {tiling['tiles']} planned, {tiling['sent']} sent and paid for, "
+                    f"{read} read"
+                )
                 for label, key in (("failed", "failed"), ("cut through text", "edge_cut")):
                     if tiling[key]:
                         detail += f", {label}: {', '.join(tiling[key])}"

@@ -197,6 +197,15 @@ and, from 1.0, [stability](docs/stability.md).
 
 ### Fixed
 
+- One timeout of the built-in `vision` adapter no longer halts a document job. 0.8's changelog promised
+  that a remote reader's page that times out or meets a network, HTTP or availability error is requested
+  once more and, if that fails too, held as `provider_failure` while the job goes on. With `vision` that
+  never happened: the adapter keeps the image it sent and an empty reading on every failed request, the job
+  took that for a partial output, and halted on the first timeout. A failed request whose kept reading is
+  empty or only whitespace now counts as reading nothing, so the promised retry and hold apply. A partial
+  output that kept text still halts the job, as before. A job 0.8 halted this way rebuilds and verifies as
+  recorded and stays halted. A page read in tiles that stops this way after some tiles were read is held
+  with those tiles kept, and never read again automatically.
 - `process` names a missing source or an existing output folder before the default-config notice; an
   existing job message offers `inspect`, `resume` or another `--out`. `run` names a missing source,
   and page ranges past the source name the first out-of-range page and total page count.

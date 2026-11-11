@@ -28,7 +28,10 @@ if args == ["-v"]:
 with open(os.environ["STUB_PDFTOPPM_LOG"], "a") as log:
     log.write(json.dumps(args) + "\\n")
 calls = len(open(os.environ["STUB_PDFTOPPM_LOG"]).read().splitlines())
-width, height = int(args[args.index("-W") + 1]), int(args[args.index("-H") + 1])
+if "-W" in args:
+    width, height = int(args[args.index("-W") + 1]), int(args[args.index("-H") + 1])
+else:  # a whole page, -scale-to N
+    width = height = int(args[args.index("-scale-to") + 1])
 if calls > int(os.environ.get("STUB_PDFTOPPM_GOOD", "999")):
     width -= int(os.environ.get("STUB_PDFTOPPM_SHORT", "0"))
 jpeg = (

@@ -672,8 +672,10 @@ its `tile_id`, the tile images are copied beside the packet as
 Budget. Each tile is one request, and `max_image_requests` bounds them; a page
 whose planned tiles would pass it pauses the job (`paused_budget`) before any
 of its tiles is sent, and `resume --raise-limit max_image_requests=N` goes on.
-`max_image_pages` still counts pages. What failed tiles mean for retries is in
-[Failed remote reads](#failed-remote-reads).
+`max_image_pages` still counts pages. A page whose read stops after some tiles
+were paid for (a timeout, say) is held as `provider_failure` with those tiles
+kept, never read again automatically; see
+[Failed remote reads](#failed-remote-reads) for what happens and what to do.
 
 Limits. Tiles are cut only along a layout; there is no blind grid. A tiled stage
 reads every tile of a page; it cannot read only some. A page that is retried is
@@ -750,24 +752,40 @@ checked against usage measured after each page.
 ## Failed remote reads
 
 A remote reader's page that fails with `MODEL_TIMEOUT`, `MODEL_HTTP_ERROR`,
-`MODEL_NETWORK_ERROR` or `MODEL_UNAVAILABLE`, keeping no output, is requested
-once more as a retry attempt (`image-0159-retry-1`), whether or not the job
-uses `batch`; the retry counts against `max_image_pages`. A page whose retry
-fails the same way is held as `provider_failure` for review, and the job goes
-on to its other pages. Any failure of the optional `second_opinion` witness
-holds only its page. A quota failure (`MODEL_QUOTA`, HTTP 429) of the `image`
-stage, a partial output, a refusal, and an outcome the job cannot know still
-halt the job.
+`MODEL_NETWORK_ERROR` or `MODEL_UNAVAILABLE` without reading anything is
+requested once more as a retry attempt (`image-0159-retry-1`), whether or not
+the job uses `batch`; the retry counts against `max_image_pages`. "Without
+reading anything" means the failed request kept no text: no partial output,
+or one that is empty or only whitespace. The built-in `vision` adapter keeps
+the exact image it sent and an empty reading on every failed request; that
+image is evidence, not a reading. A page whose retry fails the same way is held
+as `provider_failure` for review, and the job goes on to its other pages. Any
+failure of the optional `second_opinion` witness holds only its page. A quota
+failure (`MODEL_QUOTA`, HTTP 429) of the `image` stage, a partial output that
+kept text (a reading cut off at `max_tokens`, say), a refusal, and an outcome
+the job cannot know still halt the job.
 
-A page read in tiles follows the same rules, with one addition. A tile the
+A page read in tiles follows the same rules, with two additions. A tile the
 model will not read (cut off, filtered, invalid, or empty where the layout
 found text) does not stop the page: the page completes with the other tiles
 and is held for `tile_failed`. A request that fails in a way a second request
-could repeat (quota, timeout, network, unavailable, an HTTP error) stops the
-page at that tile. Its tiles read so far are kept as a partial output, so the
-job halts; nothing is bought again without you. A retry of a tiled page, when
-one happens, requests every tile of its plan again, and each counts against
-`max_image_requests`: tiles already read are not reused.
+could repeat (timeout, network, unavailable, an HTTP error) stops the page at
+that tile. If no tile had been read yet, the page is requested once more like
+any other. Otherwise the tiles read so far are kept as the page's partial
+output, every tile sent is counted in `max_image_requests`, and the page is
+held as `provider_failure` while the job goes on to its other pages. The
+partial reading is evidence, never selected as the page's text; the report's
+line for the attempt says how many tiles were planned, sent and paid for, and
+read. A retry of a tiled page requests every tile of its plan again, and each
+counts against `max_image_requests`: tiles already read are not reused.
+
+Nothing is bought again without you. `resume` does not read a held page again:
+the page waits for `review`, where you can record a decision on it from the
+kept tiles and the source. To have the model read it again, start a new job for
+that page (`process SOURCE --pages N --config FILE --out NEW_DIR`); in 0.9 that
+reads and pays for every tile of the page again. A job that 0.8 halted after a
+single timeout is rebuilt and verified as it was recorded and stays halted; to
+read its remaining pages, start a new job for them.
 
 ## Durable job and attempts
 
