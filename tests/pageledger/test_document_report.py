@@ -137,8 +137,12 @@ def test_source_links_preserve_filename_characters(tmp_path, filename):
     assert parsed.query == ""
     assert parsed.fragment == "page=1"
     markdown = render_document_report(report)
-    assert f"(<{quote(f'../documents/{filename}', safe='/')}>)" in markdown
-    assert f"(<{source_link}>)" in markdown
+    # The report links the source once, by a reference whose target is written out once;
+    # the transcript links each page.
+    target = quote(f"../documents/{filename}", safe="/")
+    assert markdown.count(target) == 1
+    assert f"\n[source]: <{target}>\n" in markdown
+    assert source_link.startswith(target)
     assert f"(<{source_link}>)" in render_transcript(report)
     assert f"(<{article}>)" in markdown
 

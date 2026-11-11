@@ -70,11 +70,13 @@ def _report(setup) -> str:  # noqa: F811
 
 
 def _entry(report: str, number: int) -> str:
-    """The record's line for one page."""
+    """The record's entry for one page: its line and the short lines under it."""
     record = report.split("\n## For the record", 1)[1]
-    line = re.search(rf"\n- Page \[{number}\b[^\n]*", record)
-    assert line, f"page {number} is not in the record"
-    return line.group()
+    entry = re.search(rf"\n- Page {number}\b[^\n]*(?:\n  - [^\n]*)*", record)
+    assert entry, f"page {number} is not in the record"
+    # No line a person reads in the record runs on.
+    assert all(len(line) < 300 for line in entry.group().splitlines()), entry.group()
+    return entry.group()
 
 
 def _row(report: str, number: int) -> str:
@@ -104,9 +106,9 @@ def test_a_clean_job_says_nothing_waits_and_points_to_export(setup):  # noqa: F8
     assert opening[:5] == [
         "# source.txt: document job report",
         "",
-        "Finished: every stage this job is configured to run has run.",
+        "Finished: 2 pages read; none needs a person.",
         "",
-        "Source: [source.txt](<../source.txt>); 2 of its 3 pages selected, 2 read.",
+        "Source: [source.txt][source]; 2 of its 3 pages selected, 2 read.",
     ]
     assert "Need a person" not in _report(setup)
     assert (
@@ -115,9 +117,10 @@ def test_a_clean_job_says_nothing_waits_and_points_to_export(setup):  # noqa: F8
     )
     # A command that is right as printed, from the folder that holds the report.
     assert opening[-1] == (
-        "Next: in this job's folder, `pageledger export . --format md --out ../source.md` "
-        "writes the selected text out, beside the job."
+        "Next: in this job's folder, `pageledger export . --out ../NAME.md`, with NAME the "
+        "folder's name, writes the selected text out beside the job."
     )
+    assert _report(setup).endswith("\n[source]: <../source.txt>\n")
     assert "JOB_DIR" not in _report(setup)
     assert "| 1 | nothing | [The engine local_text](<attempts/local_text/" in _report(setup)
     assert verify_job(setup[2])["status"] == "pass"
@@ -198,7 +201,10 @@ def test_an_interrupted_job_is_unfinished_not_corrupt(setup, capsys):  # noqa: F
     with pytest.raises(KeyboardInterrupt):
         launch(setup)
     report = _report(setup)
-    assert report.splitlines()[2].startswith("Not finished: the job stopped")
+    assert report.splitlines()[2] == (
+        "Not finished: 3 pages read so far; none needs a person. The job was interrupted, or "
+        "is still running."
+    )
     assert "- Not finished: waiting for the engine image: 2 pages (2-3)." in report
     assert "Need a person" not in report
     assert "Next: in this job's folder, `pageledger resume .` finishes the job." in report
@@ -230,7 +236,7 @@ def test_process_ends_with_where_the_job_is_and_one_next_command(setup, capsys):
         "  2 pages: the engine local_text may be missing text; so do the engine "
         "local_ocr and the engine image.",
         f"Next: pageledger review {out} shows those pages for checking.",
-        f"Text out: pageledger export {out} --format md --out job.md",
+        f"Text out: pageledger export {out} --out job.md",
     ]
     assert not any(
         "`" in line or "inspect" in line or "coverage_defect" in line for line in closing
@@ -245,7 +251,7 @@ def test_closing_lines_follow_the_job_status(tmp_path):
     assert closing_lines(report, Path("jobs/my book")) == [
         "Finished: 1 page read; none needs a person.",
         "The job is in 'jobs/my book'.",
-        "Text out: pageledger export 'jobs/my book' --format md --out 'my book.md'",
+        "Text out: pageledger export 'jobs/my book' --out 'my book.md'",
     ]
     job.update(status="processing")
     report = build_document_report(job, tmp_path)
@@ -279,12 +285,12 @@ def test_the_kiev_page_names_the_lost_letters_and_what_was_compared(setup):  # n
     report = _report(setup)
     entry = _entry(report, 1)
     assert (
-        "Holds the policy placed: `coverage_defect` from `letters_lost` on "
-        "`local_ocr-0001:doc_0001_page_0001` (0 words spelled with ѣ, against 16 in another "
-        "reading)." in entry
+        "  - Hold: `coverage_defect` from `letters_lost` on `local_ocr-0001:doc_0001_page_0001`: "
+        "the engine local_ocr lost the old-spelling letters (such as ѣ) that another reading of "
+        "the page kept (0 words spelled with ѣ, against 16 in another reading)." in entry
     )
     assert (
-        "Compared: `local_text:doc_0001_page_0001` and `local_ocr-0001:doc_0001_page_0001`: "
+        "  - Compared `local_text:doc_0001_page_0001` and `local_ocr-0001:doc_0001_page_0001`: "
         "50% of words agree; not counted, because `local_ocr-0001:doc_0001_page_0001` is held "
         "itself." in entry
     )
@@ -573,8 +579,13 @@ def test_the_new_format_keeps_every_link_hash_and_fact_of_the_old(tmp_path):
     old = render_document_report(build_document_report(job, tmp_path, report_format="0.6"))
     new = render_document_report(build_document_report(job, tmp_path))
 
+    source = build_document_report(job, tmp_path)["pages"][0]["source_link"].split("#")[0]
     for target in re.findall(r"\(<([^>]*)>\)", old):
-        assert f"(<{target}>)" in new, target
+        if target.startswith(source):
+            # The source is linked once, by reference; each page's number is its page in it.
+            assert f"\n[source]: <{source}>\n" in new and "\n- Page 1: " in new
+        else:
+            assert f"(<{target}>)" in new, target
     transcript = build_document_report(job, tmp_path, report_format="0.6")["transcript"]
     for digest in re.findall(r"`([0-9a-f]{64})`", old):
         # The transcript names its readings in words from format 0.9, so its hash differs.

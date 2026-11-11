@@ -452,7 +452,7 @@ def test_completed_process_prints_the_next_steps_but_not_in_json(
         "Why they need a person:",
         "  2 pages: the text file has very little text.",
         f"Next: pageledger review {job} shows those pages for checking.",
-        f"Text out: pageledger export {job} --format md --out a.md",
+        f"Text out: pageledger export {job} --out a.md",
     ]
 
     assert main(["process", str(source), "--out", str(tmp_path / "b"), "--json"]) == 0

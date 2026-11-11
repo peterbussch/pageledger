@@ -711,15 +711,25 @@ def _has_images(report: dict) -> bool:
     return source.get("kind") == "page_images" or source["path"].lower().endswith(".pdf")
 
 
+def _read_and_held(report: dict) -> tuple[str, str]:
+    """How many pages were read and how many need a person, as the terminal says it."""
+    held = _sorted_pages(report)[0]
+    read = report["counts"]["processed_pages"]
+    pages = f"{read} page{'' if read == 1 else 's'} read"
+    if not held:
+        return pages, "none needs a person"
+    return pages, "1 needs a person" if len(held) == 1 else f"{len(held)} need a person"
+
+
 def _status_line(report: dict, job: str) -> str:
     status = report["status"]
     action = _escape(report["next_action"]).replace(JOB_DIR, job)
+    pages, need = _read_and_held(report)
     if status == "completed":
-        return "Finished: every stage this job is configured to run has run."
+        return f"Finished: {pages}; {need}."
     if status == "processing":
         return (
-            "Not finished: the job stopped before all its stages had run, because it was "
-            "interrupted or is still running."
+            f"Not finished: {pages} so far; {need}. The job was interrupted, or is still running."
         )
     if status == "paused_budget":
         return f"Paused at a limit. {action}"
@@ -744,7 +754,7 @@ def summary_lines(report: dict) -> list[str]:
     total = counts["source_pages"]
     selected = counts["selected_pages"]
     of = f"{selected} of its {total} pages" if total is not None else f"{selected} pages"
-    source = _link(name, quote(report["source"]["path"], safe="/"))
+    source = f"[{_escape(name)}][source]"
     lines = [
         _status_line(report, _HERE),
         "",
@@ -802,11 +812,17 @@ def _next_step(report: dict, held: list[dict]) -> str | None:
         if page.get("review")
     ):
         return f"Next: {_escape(report['next_action'])}"
-    out = shlex.quote("../" + Path(report["source"]["path"]).stem + ".md")
     return (
-        f"Next: {here}`pageledger export . --format md --out {out}` writes the selected text "
-        "out, beside the job."
+        f"Next: {here}`pageledger export . --out ../NAME.md`, with NAME the folder's name, "
+        "writes the selected text out beside the job."
     )
+
+
+def export_command(job: Path | str) -> str:
+    """The one export a job's next step suggests: its text as Markdown, named after its folder."""
+    folder = Path(job).expanduser()
+    name = folder.name if folder.name not in {"", ".", ".."} else folder.resolve().name
+    return f"pageledger export {shlex.quote(str(job))} --out {shlex.quote(name + '.md')}"
 
 
 # -- What `process` prints when a job ends --------------------------------------
@@ -816,16 +832,8 @@ def closing_lines(report: dict, job: Path | str) -> list[str]:
     """What `process` prints when the job ends: where the job is, what was read, what needs
     a person and why, and the one next command, in words and without codes."""
     folder = shlex.quote(str(job))
-    held, pending, _reviewed, _clean = _sorted_pages(report)
-    read = report["counts"]["processed_pages"]
-    pages = f"{read} page{'' if read == 1 else 's'} read"
-    need = (
-        "none needs a person"
-        if not held
-        else "1 needs a person"
-        if len(held) == 1
-        else f"{len(held)} need a person"
-    )
+    held = _sorted_pages(report)[0]
+    pages, need = _read_and_held(report)
     status = report["status"]
     action = report["next_action"].replace(JOB_DIR, folder)
     if status == "completed":
@@ -855,8 +863,7 @@ def closing_lines(report: dict, job: Path | str) -> list[str]:
         )
         lines.append(f"Next: pageledger review {folder} shows {those}{beside} for checking.")
     if report["counts"]["selected_outputs"] and status != "processing":
-        out = shlex.quote(Path(str(job)).name + ".md")
-        lines.append(f"Text out: pageledger export {folder} --format md --out {out}")
+        lines.append(f"Text out: {export_command(job)}")
     return lines
 
 
@@ -1097,11 +1104,11 @@ def _reading_record(page: dict, attempt: dict) -> str:
     return f"{shown} {', '.join(detail)}"
 
 
-def _cause_record(page: dict, item: dict) -> str | None:
-    attempt: dict = next((a for a in page["attempts"] if a["attempt_id"] == item["attempt_id"]), {})
-    if item["cause"] in {warning_code(w) for w in attempt.get("warnings") or []}:
-        return None  # the reading's warnings already say it
+def _cause_record(report: dict, page: dict, item: dict) -> str:
     line = f"`{item['hold']}` from `{item['cause']}` on `{_escape(item['attempt_id'])}`"
+    attempt = next((a for a in page["attempts"] if a["attempt_id"] == item["attempt_id"]), None)
+    if attempt is not None and item["cause"] in CAUSES:
+        line += f": {_escape(reader_name(report, attempt))} {CAUSES[item['cause']]}"
     if item["cause"] == "letters_lost":
         line += (
             f" ({item['yat_words']} words spelled with ѣ, against {item['most_yat_words']} in "
@@ -1110,9 +1117,11 @@ def _cause_record(page: dict, item: dict) -> str | None:
     return line
 
 
-def _page_record(report: dict, page: dict) -> str:
-    number = _link(str(page["page_number"]) + _image_name(report, page), page["source_link"])
-    line = f"- Page {number}: `{page['disposition']}`"
+def _page_record(report: dict, page: dict) -> list[str]:
+    """One page's record: its state, then one line for each hold's cause, reading,
+    selected text and comparison, so that no line runs on."""
+    line = f"- Page {_escape(str(page['page_number']) + _image_name(report, page))}: "
+    line += f"`{page['disposition']}`"
     if page.get("review_reasons"):
         line += "; held for " + ", ".join(f"`{reason}`" for reason in page["review_reasons"])
     if page.get("review") is not None:
@@ -1120,13 +1129,17 @@ def _page_record(report: dict, page: dict) -> str:
         line += f"; reviewed as `{decision['disposition']}`"
         if decision["selected_attempt"] is None:
             line += " from the source alone"
-    readings = [_reading_record(page, attempt) for attempt in page["attempts"]]
-    line += ". Readings: " + ("; ".join(readings) if readings else "none") + "."
+    items = [f"Hold: {_cause_record(report, page, item)}." for item in _causes(page, report)]
+    for attempt in page["attempts"]:
+        name = _escape(sentence(reader_name(report, attempt)))
+        items.append(f"{name}: {_reading_record(page, attempt)}.")
+    if not page["attempts"]:
+        items.append("Readings: none.")
     selected = page.get("selected_output") or {}
     correction = selected.get("correction")
     if correction is not None:
-        line += (
-            f" Selected text: a {_link('correction', selected['path'])} of "
+        text = (
+            f"Selected text: a {_link('correction', selected['path'])} of "
             f"`{_escape(selected['attempt_id'])}` by {_escape(correction['reviewer'])} at "
             f"{_escape(correction['reviewed_at'])}"
         )
@@ -1135,26 +1148,21 @@ def _page_record(report: dict, page: dict) -> str:
                 page["review_history"], page["page_id"], correction["from_sha256"]
             )
             who = f"the correction by {earlier['reviewer']} at {earlier['reviewed_at']}"
-            line += f", revising {_link(who, correction['from_path'])}"
-        line += "."
+            text += f", revising {_link(who, correction['from_path'])}"
+        items.append(text + ".")
     elif selected.get("edition"):
-        line += (
-            f" Selected text: the {_link('edition', selected['path'])} of "
+        items.append(
+            f"Selected text: the {_link('edition', selected['path'])} of "
             f"`{_escape(selected['attempt_id'])}`, with its settled differences applied."
         )
     if page.get("contested"):
         contested = page["contested"]
         open_spans = f"{contested['open']} of {sum(contested['kinds'].values())} open"
-        line += f" Contested spans: {_link(open_spans, contested['artifact'])}."
-    compared = _comparisons(page, report)
-    if compared:
-        line += " Compared: " + "; ".join(compared) + "."
-    placed = [text for item in _causes(page, report) if (text := _cause_record(page, item))]
-    if placed:
-        line += " Holds the policy placed: " + "; ".join(placed) + "."
+        items.append(f"Contested spans: {_link(open_spans, contested['artifact'])}.")
+    items += [f"Compared {text}." for text in _comparisons(page, report)]
     if is_pending(page, report) and page.get("next_action") in _STAGE_LABELS:
-        line += f" Waiting for the `{page['next_action']}` stage."
-    return line
+        items.append(f"Waiting for the `{page['next_action']}` stage.")
+    return [line + ".", *(f"  - {item}" for item in items)]
 
 
 def _usage_lines(report: dict) -> list[str]:
@@ -1211,7 +1219,7 @@ def _record_lines(report: dict) -> list[str]:
         "",
         f"- Job: `{_escape(report['job_id'])}`, created {report['created_at']}; hold policy "
         f"{report.get('hold_policy', 'none recorded')}; report format {report['report_format']}.",
-        f"- Source: {_link(source['path'], quote(source['path'], safe='/'))}",
+        f"- Source: [{_escape(source['path'])}][source]",
         f"- Source SHA-256: `{source['sha256']}`",
         *(f"- {line}" for line in _snapshot_lines(source)),
         *_engines_line(report),
@@ -1226,13 +1234,14 @@ def _record_lines(report: dict) -> list[str]:
         "",
         "### Each page",
         "",
-        "Each page's state and every hold the job recorded; then each reading, by its ID (a "
-        "link to its text), with its outcome, failure and warnings; then the comparisons the "
-        "job recorded and whether it counted them, and any hold its hold policy placed.",
+        "Each page's number in the source, its state and every hold the job recorded; then "
+        "what caused each hold, on which reading; each reading, by its ID (a link to its "
+        "text), with its outcome, failure and warnings; and the comparisons the job recorded "
+        "and whether it counted them.",
         "",
     ]
     pages = sorted(report["pages"], key=lambda page: page["page_number"])
-    lines += [_page_record(report, page) for page in pages] or ["None."]
+    lines += [line for page in pages for line in _page_record(report, page)] or ["None."]
     lines += ["", "### How the job ran", ""]
     stages = _escalation_accounting(report)
     if stages:
@@ -1287,6 +1296,9 @@ def _record_lines(report: dict) -> list[str]:
         f"- Transcript: {_link('transcript.md', report['transcript']['path'])}, SHA-256 "
         f"`{report['transcript']['sha256']}`",
         f"- Next action recorded by the job: {_escape(report['next_action'])}",
+        "",
+        # Where [source] links go: the source's path, written out once.
+        f"[source]: <{quote(quote(source['path'], safe='/'), safe='/:#?=&%')}>",
         "",
     ]
     return lines
