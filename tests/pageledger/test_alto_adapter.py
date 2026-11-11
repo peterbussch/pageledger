@@ -20,6 +20,8 @@ from pageledger.alto_adapter import (
     AltoInvalid,
     AltoPage,
     AltoWord,
+    _item,
+    _runs,
     alto_name,
     alto_path,
     confidence_detail,
@@ -694,6 +696,39 @@ def test_stem_on_a_pdf_is_refused_with_its_reason(reel, tmp_path):
         adapter.preflight([source])
     with pytest.raises(ValueError, match=r"use \{page\} for a PDF"):
         adapter.extract(source, page_id="p0001", page_number=1, action="transcribe_text")
+
+
+def test_a_page_with_more_words_than_any_printed_page_is_refused(monkeypatch):
+    from pageledger import alto_adapter
+
+    monkeypatch.setattr(alto_adapter, "MAX_WORDS", 3)
+    line = [_string(f"w{i}", i * 40, 10, 30, 20) for i in range(4)]
+    assert len(parse_alto(alto([line[:3]])).words) == 3
+    with pytest.raises(AltoInvalid, match="more than 3 words"):
+        parse_alto(alto([line]))
+
+
+@pytest.mark.parametrize(
+    ("hpos", "vpos", "width", "height"),
+    [(10, "-1e308", 30, "-1e308"), ("1e308", 300, "1e308", 20), (50, 300, -30, 20)],
+    ids=["overflows-up", "overflows-right", "negative-width"],
+)
+def test_a_word_without_a_usable_box_keeps_the_page_in_file_order(hpos, vpos, width, height):
+    lines = [
+        [_string("a", 10, 10, 30, 20), _string("b", 60, 10, 30, 20)],
+        [_string("odd", hpos, vpos, width, height)],
+        [_string("c", 10, 400, 30, 20)],
+    ]
+    page = parse_alto(alto(lines))
+    assert page.words[2].box is None
+    assert page_text(page) == "a b\nodd\nc"
+
+
+def test_a_run_reaches_as_far_as_its_widest_word():
+    # The long word ends past the short ones after it, so "next" is close to the run.
+    words = [_item("long-word", 0, 0, 300, 20), _item("a", 40, 0, 60, 20)]
+    words += [_item("next", 310, 0, 340, 20), _item("far", 400, 0, 430, 20)]
+    assert [run["text"] for run in _runs(words)] == ["long-word a next", "far"]
 
 
 @pytest.mark.parametrize(

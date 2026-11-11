@@ -40,6 +40,9 @@ from .layout import GRID, UNITS, grid_box, validate_layout
 from .rapidocr_adapter import _row_groups, _xy_cut
 
 MAX_BYTES = 32 * 1024 * 1024
+# Several times the words of a dense newspaper page. Column order costs more
+# than linear time in the words, so a file is not allowed to ask for millions.
+MAX_WORDS = 20_000
 MEASUREMENT_UNITS = ("pixel", "mm10", "inch1200")
 # The ALTO page and the PDF page may differ in shape by this share before the
 # boxes are taken to describe some other image.
@@ -252,12 +255,14 @@ def parse_alto(data: bytes) -> AltoPage:
                     continue
                 x, y = _number(child.get("HPOS")), _number(child.get("VPOS"))
                 w, h = _number(child.get("WIDTH")), _number(child.get("HEIGHT"))
-                box = (
-                    (x, y, x + w, y + h)
-                    if x is not None and y is not None and w is not None and h is not None
-                    else None
-                )
+                box = None
+                # A box that is negative or overflows is no box: the page keeps file order.
+                if x is not None and y is not None and w is not None and h is not None:
+                    if w >= 0 and h >= 0 and math.isfinite(x + w) and math.isfinite(y + h):
+                        box = (x, y, x + w, y + h)
                 words.append(AltoWord(text, box, _confidence(child), number))
+                if len(words) > MAX_WORDS:
+                    raise AltoInvalid(f"holds more than {MAX_WORDS:,} words")
     return AltoPage(
         tuple(words),
         width if width and width > 0 else None,
@@ -326,13 +331,14 @@ def _runs(words: list[dict[str, Any]]) -> list[dict[str, Any]]:
     runs = []
     for row in _row_groups(words):
         ordered = sorted(row, key=lambda word: word["x0"])
-        current = [ordered[0]]
+        current, right = [ordered[0]], ordered[0]["x1"]
         for word in ordered[1:]:
-            if word["x0"] - max(w["x1"] for w in current) < gap:
+            if word["x0"] - right < gap:
                 current.append(word)
+                right = max(right, word["x1"])
             else:
                 runs.append(current)
-                current = [word]
+                current, right = [word], word["x1"]
         runs.append(current)
     return [
         _item(

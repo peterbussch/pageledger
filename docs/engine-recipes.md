@@ -295,7 +295,7 @@ RapidOCR's `reading_order: columns` does, and each column is read top to
 bottom. So a gutter narrower than a word's height is read as a word space (the
 columns interleave row by row), and text set at a tab stop inside a column, such
 as names with their numbers aligned far to the right, is read as two columns:
-all the names, then all the numbers. Words without boxes keep the file's order. Words are kept as printed: a word broken
+all the names, then all the numbers. If any word has no box, or one that is negative or too large to measure, the page keeps the file's order. Words are kept as printed: a word broken
 at a line end keeps its hyphen (`HYP`) and the library's suggested whole word
 (`SUBS_CONTENT`) is not used. Word confidence comes from `WC` (0 unsure, 1
 sure) or else from `CC` (one digit a character, 0 sure, 9 unsure), and feeds

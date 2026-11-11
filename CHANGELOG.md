@@ -112,7 +112,8 @@ and, from 1.0, [stability](docs/stability.md).
   confirmation). The provenance names the ALTO file, its SHA-256 and the
   software it declares. New warnings: `alto_missing` and `alto_invalid` (an empty reading, so the page
   climbs to OCR) and `alto_geometry_mismatch` (the boxes do not fit the page; the text is kept). Files
-  with a DOCTYPE or entity declaration, or over 32 MiB, are refused. See
+  with a DOCTYPE or entity declaration, over 32 MiB or with more than 20,000 words, are refused. A word whose
+  box is negative or too large to measure keeps the page's words in file order. See
   [the recipe](docs/engine-recipes.md#alto-from-a-library-any-platform-no-engine).
 - `alto` finds a page's file by the page image's own name with `name: "{stem}.xml"`, so `0081.xml` is read
   for `0081.jpg` whatever the page's place in the folder, in a plain `run` and in a document job. With a PDF
