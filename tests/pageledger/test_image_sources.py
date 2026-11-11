@@ -24,6 +24,7 @@ from pageledger.adapters import (
     native_page_pixels,
     render_warnings,
 )
+from pageledger.iiif import jpeg_frame
 from pageledger.image_source import (
     KIND,
     _png_chunks,
@@ -485,6 +486,61 @@ def test_an_image_larger_than_any_render_is_refused_from_its_header(tmp_path, mo
     assert error.value.code == "unsupported_image"
     monkeypatch.setattr(image_source, "MAX_IMAGE_PIXELS", 512)
     assert read_image_source(tmp_path / "page.png").pages[0].width == 32
+    # fetch reads JPEG headers with the same reader, so it keeps no image a folder refuses.
+    monkeypatch.setattr(image_source, "MAX_IMAGE_PIXELS", 511)
+    with pytest.raises(ValueError, match="32 x 16 pixels"):
+        jpeg_frame(jpeg("page-rgb.jpg"))
+
+
+def test_a_page_image_file_is_read_only_up_to_the_byte_limit(tmp_path, monkeypatch):
+    (tmp_path / "page.png").write_bytes(png())
+    monkeypatch.setattr(image_source, "MAX_IMAGE_BYTES", len(png()) - 1)
+    with pytest.raises(PageLedgerDiagnostic, match="larger than") as error:
+        read_image_source(tmp_path / "page.png")
+    assert error.value.code == "unsupported_image"
+
+
+def test_an_alpha_png_too_large_to_split_in_memory_is_refused_from_its_header(
+    tmp_path, monkeypatch
+):
+    # 32 x 16 RGBA is 16 rows of 1 + 128 bytes.
+    (tmp_path / "page.png").write_bytes(png(color=6, left=b"\0\0\0\xff", right=b"\0" * 4))
+    monkeypatch.setattr(image_source, "MAX_ALPHA_BYTES", 16 * 129 - 1)
+    with pytest.raises(PageLedgerDiagnostic, match="-alpha remove") as error:
+        read_image_source(tmp_path / "page.png")
+    assert error.value.code == "unsupported_image"
+    monkeypatch.setattr(image_source, "MAX_ALPHA_BYTES", 16 * 129)
+    assert carrier_sha256(read_image_source(tmp_path / "page.png"))
+
+
+def test_a_page_image_that_grew_is_not_read_past_its_recorded_size(tmp_path):
+    (tmp_path / "page.png").write_bytes(png())
+    source = read_image_source(tmp_path / "page.png")
+    with (tmp_path / "page.png").open("ab") as handle:
+        handle.write(b"\0" * 1000)
+    with pytest.raises(ValueError, match="changed since it was hashed"):
+        carrier_sha256(source)
+
+
+@pytest.mark.parametrize(("color", "depth"), [(4, 8), (4, 16), (6, 16)])
+def test_every_alpha_png_shape_splits_into_its_colour_and_its_mask(tmp_path, color, depth):
+    width, height = 6, 5
+    channels, sample = {4: 2, 6: 4}[color], depth // 8
+    step = channels * sample
+    pixels = bytes((i * 37 + i // step * 11) & 0xFF for i in range(width * height * step))
+    rows = _filtered(pixels, width * step, step, [1, 2, 3, 4, 0])
+    (tmp_path / "page.png").write_bytes(_png_rows(width, height, color, depth, rows))
+    out = tmp_path / "carrier.pdf"
+    with out.open("wb") as handle:
+        write_carrier(read_image_source(tmp_path / "page.png"), handle)
+    image = _pdf(out).pages[0]["/Resources"]["/XObject"]["/Im0"].get_object()
+    colour_step = step - sample
+    colour = _unfilter(zlib.decompress(image._data), height, width * colour_step, colour_step)
+    mask = _unfilter(
+        zlib.decompress(image["/SMask"].get_object()._data), height, width * sample, sample
+    )
+    assert colour == bytes(b for i, b in enumerate(pixels) if i % step < colour_step)
+    assert mask == bytes(b for i, b in enumerate(pixels) if i % step >= colour_step)
 
 
 @pytest.mark.skipif(shutil.which("pdftoppm") is None, reason="needs Poppler's pdftoppm")

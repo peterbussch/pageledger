@@ -35,6 +35,9 @@ DEFAULT_PPI = 300
 _PPI_RANGE = (20.0, 4800.0)
 # The largest render run.adapter_options.max_render_pixels allows.
 MAX_IMAGE_PIXELS = 400_000_000
+MAX_IMAGE_BYTES = 1024 * 1024 * 1024
+# A PNG with an alpha channel is decompressed in memory to split off its mask.
+MAX_ALPHA_BYTES = 512 * 1024 * 1024
 
 _MEDIA_TYPES = {".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png"}
 _CONVERT = {
@@ -231,15 +234,15 @@ def _read_page(path: Path) -> ImagePage:
             + (f", for example: {how}." if how else ".")
             + " The converted files are then the source PageLedger records.",
         )
-    data = path.read_bytes()
-    width, height, ppi, basis, rotation = (_jpeg if suffix != ".png" else _png)(data, path.name)
-    if width * height > MAX_IMAGE_PIXELS:
+    with path.open("rb") as handle:
+        data = handle.read(MAX_IMAGE_BYTES + 1)
+    if len(data) > MAX_IMAGE_BYTES:
         raise _diagnostic(
             "unsupported_image",
-            f"'{path.name}' is {width} x {height} pixels, more than the {MAX_IMAGE_PIXELS:,} "
-            "PageLedger renders a page at. Split it into pages or scale it down first, for "
-            "example: magick page.png -resize 50% page-half.png",
+            f"'{path.name}' is larger than {MAX_IMAGE_BYTES // 1024**3} GiB, more than any page "
+            "image PageLedger carries. Split it into pages or scale it down first.",
         )
+    width, height, ppi, basis, rotation = (_jpeg if suffix != ".png" else _png)(data, path.name)
     return ImagePage(
         name=path.name,
         path=path,
@@ -362,6 +365,16 @@ def _incomplete(source: dict[str, Any], recorded: dict[str, Any]) -> dict[str, A
         ),
         "source": source["path"],
     }
+
+
+def _check_pixels(width: int, height: int, name: str) -> None:
+    if width * height > MAX_IMAGE_PIXELS:
+        raise _diagnostic(
+            "unsupported_image",
+            f"'{name}' is {width} x {height} pixels, more than the {MAX_IMAGE_PIXELS:,} "
+            "PageLedger renders a page at. Split it into pages or scale it down first, for "
+            "example: magick page.png -resize 50% page-half.png",
+        )
 
 
 def _malformed(name: str, what: str) -> Exception:
@@ -489,6 +502,7 @@ def jpeg_header(data: bytes, name: str) -> dict[str, Any]:
         )
     if not frame["width"] or not frame["height"]:
         raise _malformed(name, "no image size in the frame header")
+    _check_pixels(frame["width"], frame["height"], name)
     density, basis, orientation = jfif, "jfif", 1
     if exif is not None:
         if density is None:
@@ -565,8 +579,19 @@ def _png_chunks(data: bytes, name: str) -> dict[str, Any]:
         or (color == 3 and not palette)
     ):
         raise _malformed(name, "invalid image header")
-    if color == 3 and (len(palette) % 3 or len(palette) > 3 << depth):
+    if color == 3 and palette and (len(palette) % 3 or len(palette) > 3 << depth):
         raise _malformed(name, "invalid palette")
+    _check_pixels(width, height, name)
+    if (
+        color in (4, 6)
+        and height * (width * _PNG_CHANNELS[color] * depth // 8 + 1) > MAX_ALPHA_BYTES
+    ):
+        raise _diagnostic(
+            "unsupported_image",
+            f"'{name}' is a PNG with an alpha channel too large to split into an image and a "
+            "mask in memory. Save it without the alpha channel first, for example: "
+            "magick page.png -background white -alpha remove -alpha off page-flat.png",
+        )
     if interlace:
         raise _diagnostic(
             "unsupported_image",
@@ -624,15 +649,17 @@ def _png_mask(chunks: dict[str, Any], name: str) -> list[int] | None:
     )
 
 
-def _stored(data: bytes) -> bytes:
+def _stored(data: bytearray) -> bytearray:
     """``data`` as a zlib stream of uncompressed blocks: the same bytes from any zlib build."""
     out = bytearray(b"\x78\x01")
     starts = range(0, len(data), 0xFFFF)
+    view = memoryview(data)
     for start in starts:
-        block = data[start : start + 0xFFFF]
+        block = view[start : start + 0xFFFF]
         out += bytes([start == starts[-1]]) + struct.pack("<HH", len(block), len(block) ^ 0xFFFF)
         out += block
-    return bytes(out + struct.pack(">I", zlib.adler32(data)))
+    out += struct.pack(">I", zlib.adler32(data))
+    return out
 
 
 def _number(value: float) -> bytes:
@@ -640,9 +667,10 @@ def _number(value: float) -> bytes:
     return (text if text not in ("", "-0") else "0").encode()
 
 
-def _image_objects(page: ImagePage) -> list[tuple[dict[bytes, bytes], bytes]]:
+def _image_objects(page: ImagePage) -> list[tuple[dict[bytes, bytes], bytes | bytearray]]:
     """The page image as PDF image dictionaries and streams; a soft mask comes second."""
-    data = page.path.read_bytes()
+    with page.path.open("rb") as handle:
+        data = handle.read(page.bytes + 1)
     if hashlib.sha256(data).hexdigest() != page.sha256:
         raise ValueError(f"Page image changed since it was hashed: {page.path}")
     size = {b"/Width": str(page.width).encode(), b"/Height": str(page.height).encode()}
@@ -723,7 +751,8 @@ def _image_objects(page: ImagePage) -> list[tuple[dict[bytes, bytes], bytes]]:
         b"/Filter": b"/FlateDecode",
         b"/DecodeParms": parameters % (1, depth, page.width),
     }
-    return [(entries, _stored(bytes(colour))), (soft, _stored(bytes(alpha)))]
+    del raw
+    return [(entries, _stored(colour)), (soft, _stored(alpha))]
 
 
 def _dictionary(entries: dict[bytes, bytes]) -> bytes:
@@ -731,7 +760,7 @@ def _dictionary(entries: dict[bytes, bytes]) -> bytes:
 
 
 class _Sink(Protocol):
-    def write(self, data: bytes, /) -> Any: ...
+    def write(self, data: bytes | bytearray, /) -> Any: ...
 
 
 class _Writer:
@@ -740,15 +769,17 @@ class _Writer:
         self.position = 0
         self.offsets: dict[int, int] = {}
 
-    def write(self, data: bytes) -> None:
+    def write(self, data: bytes | bytearray) -> None:
         self.sink.write(data)
         self.position += len(data)
 
-    def object(self, number: int, body: bytes, stream: bytes | None = None) -> None:
+    def object(self, number: int, body: bytes, stream: bytes | bytearray | None = None) -> None:
         self.offsets[number] = self.position
         self.write(b"%d 0 obj\n" % number + body)
         if stream is not None:
-            self.write(b"\nstream\n" + stream + b"\nendstream")
+            self.write(b"\nstream\n")
+            self.write(stream)
+            self.write(b"\nendstream")
         self.write(b"\nendobj\n")
 
 
@@ -807,7 +838,7 @@ class _Tee:
         self.sink = sink
         self.digest = hashlib.sha256()
 
-    def write(self, data: bytes) -> None:
+    def write(self, data: bytes | bytearray) -> None:
         self.digest.update(data)
         if self.sink is not None:
             self.sink.write(data)

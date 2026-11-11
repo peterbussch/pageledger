@@ -247,8 +247,9 @@ def jpeg_frame(data: bytes) -> tuple[int, int, int]:
 
     The header is read by the same reader as a folder of page images, so a
     fetched image is one ``process`` can read. Unlike
-    ``image_evidence.jpeg_dimensions`` this has no pixel cap and accepts
-    grayscale; it reads only the header and leaves decoding to the renderer.
+    ``image_evidence.jpeg_dimensions`` this accepts grayscale and any size up to
+    the page-image pixel limit; it reads only the header and leaves decoding to
+    the renderer.
     """
     from .adapters import PageLedgerDiagnostic
     from .image_source import jpeg_header

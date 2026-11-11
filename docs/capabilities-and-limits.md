@@ -217,9 +217,12 @@ the commands.
   with an alpha channel is decompressed in memory to split off its
   transparency, so it costs memory in proportion to its pixels.
 - An image larger than 400,000,000 pixels, the largest render
-  `max_render_pixels` allows, is refused with `unsupported_image`: split it into
-  pages or scale it down first. A PNG with an alpha channel whose data is longer
-  or shorter than its declared size is refused with `malformed_image`.
+  `max_render_pixels` allows, or a file larger than 1 GiB, is refused with
+  `unsupported_image`: split it into pages or scale it down first. `fetch`
+  refuses such an image too. A PNG with an alpha channel whose decompressed rows
+  would exceed 512 MiB (about 130 million pixels at 8 bits a channel) is refused
+  with the command that removes the alpha channel; one whose data is longer or
+  shorter than its declared size is refused with `malformed_image`.
 - `classify` refuses page images, which have no text layer to probe; run an
   OCR engine and classify that run with `--from-run`. `bundle`, and so
   `replay`, refuse runs of page images.
