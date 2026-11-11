@@ -606,9 +606,9 @@ def hold_in_words(page: dict, reason: str) -> str:
     return HOLDS.get(reason) or REVIEWED.get(reason) or reason
 
 
-def _flaw(report: dict, page: dict, item: dict) -> str | None:
+def _flaw(report: dict, page: dict, item: dict, clause: str | None = None) -> str | None:
     """One recorded cause of a hold as a clause: the reading, and what is wrong with it."""
-    clause = CAUSES.get(item["cause"])
+    clause = clause or CAUSES.get(item["cause"])
     attempt = next((a for a in page["attempts"] if a["attempt_id"] == item["attempt_id"]), None)
     if clause is None or attempt is None:
         return None
@@ -622,6 +622,10 @@ def _flaw(report: dict, page: dict, item: dict) -> str | None:
         other = ONLY_OTHER if len(completed) == 2 else COULD_CONFIRM
         return NOT_CONFIRMED.format(flaw=clause, other=other, **words)
     return ANOTHER_READING.format(flaw=clause, **words)
+
+
+# Stands for the flaw while the sentence around it is built.
+_FLAW = "\x00"
 
 
 def _unconfirmed(page: dict, item: dict) -> bool:
@@ -646,16 +650,18 @@ def held_for(report: dict, page: dict) -> list[tuple[str, str]]:
     causes = _causes(page, report)
     selected = page.get("selected_attempt")
     order = {code: index for index, code in enumerate(_HOLD_ORDER)}
-    shown: list[tuple[str, str]] = []
+    framed: list[tuple[str, str, str, str]] = []
     for reason in sorted(shown_holds(page), key=lambda code: order.get(code, len(order))):
         items = [] if reason == "blank_candidate" else [c for c in causes if c["hold"] == reason]
         items.sort(key=lambda item: item["attempt_id"] != selected)
-        flaws: list[str] = []
+        flaws: list[tuple[str, str, str]] = []
         said: set[int] = set()
         for item in items:
-            text = _flaw(report, page, item)
-            if text is None or id(item) in said:
+            # The sentence around the flaw, so that several flaws of one reading share it.
+            frame = _flaw(report, page, item, _FLAW) if item["cause"] in CAUSES else None
+            if frame is None or id(item) in said:
                 continue
+            before, after = frame.split(_FLAW)
             if item["attempt_id"] == selected:
                 # The same flaw on other readings is said with the selected one's.
                 same = [o for o in items if o is not item and o["cause"] == item["cause"]]
@@ -663,11 +669,24 @@ def held_for(report: dict, page: dict) -> list[tuple[str, str]]:
                 names = [reader_name(report, _attempt(page, o["attempt_id"])) for o in same]
                 names = list(dict.fromkeys(names))
                 if names:
-                    text += f"; so {'does' if len(names) == 1 else 'do'} {_joined(names)}"
-            flaws.append(text)
-        words = list(dict.fromkeys(flaws)) or [_lower(hold_in_words(page, reason))]
-        shown += [(reason, text) for text in words if (reason, text) not in shown]
-    return shown
+                    after += f"; so {'does' if len(names) == 1 else 'do'} {_joined(names)}"
+            flaws.append((before, CAUSES[item["cause"]], after))
+        if flaws:
+            framed += [(reason, *flaw) for flaw in flaws]
+        else:
+            framed.append((reason, "", _lower(hold_in_words(page, reason)), ""))
+    # One sentence for each reading and hold order kept: its flaws are joined, whatever
+    # holds they raised.
+    merged: dict[tuple[str, str], tuple[str, list[str]]] = {}
+    for reason, before, clause, after in framed:
+        key = (before, after) if before else (reason, clause)
+        clauses = merged.setdefault(key, (reason, []))[1]
+        if clause not in clauses:
+            clauses.append(clause)
+    return [
+        (reason, (key[0] + _joined(clauses) + key[1]) if key[0] != reason else clauses[0])
+        for key, (reason, clauses) in merged.items()
+    ]
 
 
 def _joined(names: list[str]) -> str:

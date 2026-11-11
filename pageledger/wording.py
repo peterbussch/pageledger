@@ -77,7 +77,7 @@ CAUSES = {
         "has table labels that end in dot leaders with no number after them: the values seem lost"
     ),
     "layer_outvoted": "disagrees with two of the job's readings that agree with each other",
-    "letters_lost": "lost the old-spelling letters (such as ѣ) that another reading of the page kept",
+    "letters_lost": "lost the old-spelling letters (such as ѣ) that a different reading kept",
     "low_confidence": "was unsure of many words",
     "missing_content": "is missing content, its engine reports",
     "missing_required_columns": "lacks a table column the job requires",

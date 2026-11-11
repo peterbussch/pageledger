@@ -287,8 +287,8 @@ def test_the_kiev_page_names_the_lost_letters_and_what_was_compared(setup):  # n
     entry = _entry(report, 1)
     assert (
         "  - Hold: `coverage_defect` from `letters_lost` on `local_ocr-0001:doc_0001_page_0001`: "
-        "the engine local_ocr lost the old-spelling letters (such as ѣ) that another reading of "
-        "the page kept (0 words spelled with ѣ, against 16 in another reading)." in entry
+        "the engine local_ocr lost the old-spelling letters (such as ѣ) that a different reading "
+        "kept (0 words spelled with ѣ, against 16 in another reading)." in entry
     )
     assert (
         "  - Compared `local_text:doc_0001_page_0001` and `local_ocr-0001:doc_0001_page_0001`: "
@@ -762,16 +762,19 @@ def test_a_hold_is_said_by_its_cause_and_the_reading_it_is_on():
     page["hold_causes"].append(
         {"attempt_id": "ocr", "hold": "low_confidence", "cause": "low_confidence"}
     )
+    # Two flaws of one reading make one sentence, whatever holds they raised.
     assert [text for _hold, text in held_for(report, page)] == [
-        f"Tesseract OCR (eng) {wording.CAUSES['letters_lost']}",
+        f"Tesseract OCR (eng) {wording.CAUSES['letters_lost']} and was unsure of many words",
         "the selected text is Tesseract OCR (eng); the PDF's own text, another reading of the "
         f"page, {wording.CAUSES['fragmented_text']}",
-        "Tesseract OCR (eng) was unsure of many words",
     ]
+    page["review_reasons"].append("engine_disagreement")
+    assert len(held_for(report, page)) == 3
     assert len(_group_keys(report, page)) == 2
     assert held_in_words(report, page, more="below").endswith(" 1 more cause below.")
     assert "unsure" in held_in_words(report, page, every=True)
     # Without recorded causes, the hold's own words, as before.
+    page["review_reasons"].remove("engine_disagreement")
     del page["hold_causes"]
     assert [text for _hold, text in held_for(report, page)] == [
         "text may be missing or damaged in the reading",
