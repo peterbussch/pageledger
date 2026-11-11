@@ -118,6 +118,7 @@ pageledger review jobs/book --out review/ --images held
 pageledger review jobs/book --sheet review.csv
 pageledger review jobs/book --apply review.csv --reviewer "Name" --dry-run
 pageledger review jobs/book --apply review.csv --reviewer "Name"
+pageledger review jobs/book --apply review/review.json --reviewer "Name"
 pageledger review jobs/book --apply reviewed-pages.json
 ```
 
@@ -126,8 +127,9 @@ and `--apply`; giving none or more than one is a usage error (exit 2).
 
 `--out DIR` verifies the job, then writes a new folder `DIR` holding
 `index.html`, a reading view of every page with its image beside its text, and
-the blank `review.csv` and binding that `--sheet` writes. Decisions chosen in
-the view are downloaded as that `review.csv` and recorded only by `--apply`.
+the blank `review.csv` and binding that `--sheet` writes. Decisions chosen and
+texts corrected in the view are downloaded as `review.json`, a decisions file
+(or, without corrections, as that `review.csv`), and recorded only by `--apply`.
 `--images` renders a page image for every page (`all`, the default), only the
 pages that need a person (`held`), or none (`none`, which needs no Poppler).
 See [Review beside the page image](processing-spec.md#review-beside-the-page-image).
@@ -135,12 +137,18 @@ See [Review beside the page image](processing-spec.md#review-beside-the-page-ima
 `--sheet FILE` writes only the CSV of the job's pages, to fill in with a
 spreadsheet, and its binding beside it.
 
-`--apply FILE` records human decisions from that sheet, or from a JSON file
+`--apply FILE` records human decisions from that sheet, from a decisions file
+(JSON with the sheet's bindings, which the view downloads), or from a JSON file
 following the [review receipt contract](document-report-spec.md#human-review-receipt),
-without extracting anything and keeping earlier receipts. Decisions from a sheet
+without extracting anything and keeping earlier receipts. A sheet or decisions
+file may correct a page's text with `correct:FILE` (or, in a decisions file,
+`correct` and the text itself); the correction is kept as a new reading and
+the machine readings are not changed. Decisions from a sheet or decisions file
 need `--reviewer NAME` or the `PAGELEDGER_REVIEWER` variable; `--dry-run` checks
-and counts them without recording any. See
-[Review in a spreadsheet](processing-spec.md#review-in-a-spreadsheet).
+and counts them, and prints how many words each correction changes, without
+recording any. See
+[Review in a spreadsheet](processing-spec.md#review-in-a-spreadsheet) and
+[Correct the text](processing-spec.md#correct-the-text).
 `--images` goes only with `--out`, and `--reviewer` and `--dry-run` only with
 `--apply` (usage error 2 otherwise). All three modes accept `--json`.
 

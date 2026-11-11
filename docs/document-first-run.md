@@ -163,9 +163,62 @@ pageledger verify jobs/complete
 echo DOCUMENT_JOURNEY_REVIEW_OK
 ```
 
-The final report contains one reviewed page and two pages that still need
+The report now contains one reviewed page and two pages that still need
 review. A completed processing status, a source review decision, and cost
 evidence are separate facts.
+
+## Correct a word
+
+When the text is wrong, a reviewer records the right text rather than editing
+the engine's. The job keeps both, with a receipt saying who changed what, from
+which reading, so a later reader can check the correction against the page as
+well as the engine.
+
+Here page 2 is corrected in a text file named in the review sheet. The word
+"review" becomes "correction"; the synthetic reviewer name again documents the
+fixture.
+
+```bash pageledger-tutorial
+pageledger review jobs/complete --sheet correct/review.csv
+"$PYTHON" - <<'PY'
+import csv
+from pathlib import Path
+
+Path("correct/p0002.txt").write_text(
+    "Synthetic page two: a second paragraph for the correction example.",
+    encoding="utf-8",
+)
+sheet = Path("correct/review.csv")
+with sheet.open(encoding="utf-8-sig", newline="") as stream:
+    rows = list(csv.DictReader(stream))
+rows[1]["decision"] = "correct:p0002.txt"
+rows[1]["note"] = "Synthetic fixture correction of one word."
+with sheet.open("w", encoding="utf-8-sig", newline="") as stream:
+    writer = csv.DictWriter(stream, fieldnames=list(rows[0]))
+    writer.writeheader()
+    writer.writerows(rows)
+PY
+pageledger review jobs/complete --apply correct/review.csv \
+  --reviewer "synthetic tutorial reviewer" --dry-run
+pageledger review jobs/complete --apply correct/review.csv \
+  --reviewer "synthetic tutorial reviewer"
+"$PYTHON" - <<'PY'
+import json
+from pathlib import Path
+
+job = json.loads(Path("jobs/complete/job.json").read_text())["payload"]
+print(json.dumps(job["pages"][1]["review"]["decisions"][0]["correction"], indent=2))
+PY
+pageledger verify jobs/complete
+echo DOCUMENT_JOURNEY_CORRECTION_OK
+```
+
+The dry run prints `Correction of page 2, from …: 1 word changed, 0 added, 0
+removed` and records nothing. The receipt's `correction` names the corrected
+text's file under `corrections/`, its SHA-256, the SHA-256 of the engine's
+reading it started from, and the word counts. The engine's reading is still in
+the job, unchanged; the report and transcript now show page 2 as a correction
+by a person. See [correct the text](processing-spec.md#correct-the-text).
 
 ## Review beside the page image
 
@@ -180,7 +233,8 @@ pageledger review jobs/complete --out review --images none
 
 This synthetic source is a text file, so it has no page images; a PDF's pages
 are rendered with Poppler unless you pass `--images none`. Choose a decision
-under a page, download `review.csv` into the `review` folder in place of the
-blank one, and apply it with `pageledger review jobs/complete --apply
-review/review.csv --reviewer "Your Name"`. Nothing is recorded until you do.
+under a page, or correct its text in the box below it, download `review.json`
+into the `review` folder, and apply it with `pageledger review jobs/complete
+--apply review/review.json --reviewer "Your Name"`. Nothing is recorded until
+you do.
 See [review beside the page image](processing-spec.md#review-beside-the-page-image).

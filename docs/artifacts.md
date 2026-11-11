@@ -20,6 +20,7 @@ jobs/book/
 ├── partials/         # retained failed output, excluded from transcript selection
 ├── contested/        # with processing.contest: where a model and the literal engine differ
 ├── editions/         # a model's reading with its adjudicated changes applied
+├── corrections/      # texts a reviewer corrected, each named by its own SHA-256
 └── .job/             # exact child configuration snapshots
 ```
 

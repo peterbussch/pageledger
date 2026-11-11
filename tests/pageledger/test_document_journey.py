@@ -62,6 +62,12 @@ def test_document_first_run_journey_records_recovery_and_bounded_review(
     assert "DOCUMENT_JOURNEY_RECOVERY_OK" in result.stdout
     assert "DOCUMENT_JOURNEY_STALE_RECEIPT_REJECTED" in result.stdout
     assert "DOCUMENT_JOURNEY_REVIEW_OK" in result.stdout
+    assert "Correction of page 2, from " in result.stdout
+    assert ": 1 word changed, 0 added, 0 removed" in result.stdout
+    assert "DOCUMENT_JOURNEY_CORRECTION_OK" in result.stdout
+    corrected = complete["pages"][1]["selected_output"]
+    assert corrected["text"].endswith("for the correction example.")
+    assert corrected["correction"]["words"] == {"changed": 1, "added": 0, "removed": 0}
 
 
 def test_stale_review_record_is_rejected_without_extraction_or_artifact_changes(

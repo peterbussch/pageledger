@@ -31,7 +31,7 @@ reviewed as text or blank. For meanings and suggested actions, see the
 | `relocations` | Optional. Each `review --apply` or `adjudicate --decisions` change made to the job outside the directory it was written in: `root` (where it was made), `command` (`review-job`, the earlier name of `review --apply`, or `adjudicate`), and `at`. Rendered as a "Changed elsewhere" line. Absent until such a change. |
 | `source_retention` | Explicit source capture, preservation, removal eligibility, and removal state |
 | `next_action` | One human-readable action for the document |
-| `counts` | `source_pages`, `selected_pages`, `processed_pages`, `selected_outputs`, and `unresolved_pages` |
+| `counts` | `source_pages`, `selected_pages`, `processed_pages`, `selected_outputs`, and `unresolved_pages`; `adjudicated_pages` in contested jobs; `corrected_pages`, the pages whose selected text is a person's [correction](#corrected-text), only when there is one |
 | `transcript` | `path: "transcript.md"` and the SHA-256 of its complete serialized UTF-8 bytes |
 
 `source.page_count` and `counts.source_pages` are null when source inspection
@@ -174,6 +174,7 @@ Each decision contains:
 | `output_sha256` | Exact selected raw artifact digest, or null when no attempt is selected |
 | `reason`, `reviewer` | Nonempty human review explanation and reviewer identity |
 | `reviewed_at` | ISO-8601 timestamp with timezone |
+| `correction` | Optional, only on `reviewed_text`: the person's [corrected text](#corrected-text) |
 
 After inspecting a page against its source, create `reviewed-pages.json`:
 
@@ -221,6 +222,55 @@ replaces a decision. The active `page.review` equals the latest receipt; earlier
 receipts remain source/page/output-bound evidence. Applying the same latest
 receipt again does not append a duplicate. Reports preserve the full history in
 `document.json` while the human summary displays the active decision.
+
+### Corrected text
+
+When a reviewer finds the text wrong, the job does not edit the machine
+reading: it keeps the reviewer's corrected text as a new reading beside it,
+bound by a receipt to the reading it was made from. Anyone can then see what
+the engine read, what the person changed, and who changed it when, and a
+later reader can check both against the page.
+
+The decision is `reviewed_text`. Its `selected_attempt` and `output_sha256`
+keep their meaning: the attempt and the output (its own text, or its edition)
+the page's text descends from. The optional `correction` object adds:
+
+| Field | Binding |
+| --- | --- |
+| `artifact` | `corrections/<page_id>-<sha256>.txt`, the corrected text as UTF-8 |
+| `sha256` | SHA-256 of that file, which is also its name |
+| `from_sha256` | SHA-256 of the text the correction started from: `output_sha256`, or the `sha256` of a correction recorded earlier for the same page |
+| `words` | `changed`, `added` and `removed`: whitespace-separated words compared exactly, counted when the correction was recorded |
+
+```json
+"correction": {
+  "artifact": "corrections/doc_0001_page_0003-9c1f…e2.txt",
+  "sha256": "9c1f…e2",
+  "from_sha256": "34fc…a9",
+  "words": {"changed": 1, "added": 0, "removed": 0}
+}
+```
+
+A correction of a correction is a chain: the later receipt's `from_sha256` is
+the earlier correction's `sha256`, and both receipts stay in
+`review_history`. A file name is its content's hash, so no correction
+overwrites another. Accepting a corrected page records a receipt with the same
+`correction`, so acceptance never quietly returns the page to the machine
+reading; `use:ATTEMPT` does that, explicitly. Verification checks every
+correction any receipt in a page's history names: the file must exist with its
+recorded hash, and each must start from the receipt's output or an earlier
+correction. A changed, missing or unanchored correction fails `verify`.
+
+In `document.json`, a corrected page's `selected_output` has the corrected
+text: `path` and `sha256` name the correction file, `attempt_id` is still the
+attempt beneath it, and an optional `correction` object gives `from_path` (the
+attempt's output, its edition, or the earlier correction), `from_sha256` and
+`words`. `edition` is then absent. `report.md` shows the page's selected text
+as "Correction by a person of" the attempt, with the word counts and, for a
+chain, a link to the correction it revised, and adds a line "Pages whose text
+a person corrected: N." `transcript.md` labels the page "Correction by a person
+of attempt …". None of these fields or lines appear in a job without a
+correction, so earlier jobs rebuild byte for byte.
 
 ## Human summary rendering
 

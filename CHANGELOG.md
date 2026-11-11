@@ -174,6 +174,22 @@ and, from 1.0, [stability](docs/stability.md).
   numbers: a table whose values the reading lost).
 - `review --apply`, with or without `--dry-run`, warns (`blank_with_text`) when a page recorded as blank
   has a selected reading of 50 or more words.
+- A reviewer can correct a page's text. The engine's reading is never edited: the corrected text is kept as a
+  new reading, `corrections/<page_id>-<sha256>.txt`, and the `reviewed_text` receipt gains an optional
+  `correction` naming that file, its SHA-256, the SHA-256 of the text it started from (the selected output,
+  its edition, or an earlier correction) and the words it changed, added and removed. In a review sheet the
+  decision is `correct:FILE`, a UTF-8 file beside the sheet. The review view gives each page a text box that
+  starts from the selected text or another reading, marks the changes, keeps edits in the browser, and
+  downloads `review.json`, a decisions file (the sheet's bindings with the decided rows, corrected texts
+  included; [schema](schemas/review-decisions.schema.json)) that `review --apply` reads. The CSV download is
+  unchanged and refuses while a page is corrected. Text is recorded exactly, after CRLF and CR become LF. An
+  empty correction, or one identical to its reading, is refused with the decision to use instead (`blank`,
+  `accept`); `--dry-run` prints each correction's size and warns when it changes more than half the words. A
+  page can be corrected again, as a chain; accepting a corrected page keeps its correction. `verify` checks
+  every correction's file and where it started; `report.md`, `transcript.md`, `document.json`
+  (`selected_output.correction`, `counts.corrected_pages`) and all four export formats mark the text as a
+  person's correction, TEI with a `<change>` in `<revisionDesc>`. See
+  [correct the text](docs/processing-spec.md#correct-the-text).
 
 ### Changed
 

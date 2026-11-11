@@ -25,8 +25,11 @@ never contains an absolute path such as your home folder.
 A heading names the source file, its SHA-256 and the job. Each page then
 states its disposition, its review (reviewer, time and reason, or "none"), the
 attempt and engine that produced the text, and the text's SHA-256, followed by
-the text exactly as the engine returned it. Markdown also links each page to
-the source page.
+the text exactly as the engine returned it. A page whose text a person
+corrected says so in a `Correction` line, naming the corrected text's file, the
+reading it was corrected from and how many words changed, with the corrected
+text's SHA-256; the text that follows is the person's. Markdown also links each
+page to the source page.
 
 ## JSONL
 
@@ -67,6 +70,14 @@ page, shown here across several lines:
 without text, including one reviewed as anything but text, has null `attempt`
 and `text`.
 
+When a person corrected the page's text, `text` is the correction and an
+extra `correction` object says so: `path` and `sha256` of the corrected text,
+`from_path` and `from_sha256` of the reading it was made from (the attempt's
+output, its edition, or an earlier correction), and `words` with the counts
+`changed`, `added` and `removed`. `attempt` still names the attempt beneath the
+correction, and `review` carries the receipt's own `correction`; see
+[corrected text](document-report-spec.md#corrected-text).
+
 ## TEI
 
 A minimal TEI P5 document, which PageLedger's tests validate against the TEI
@@ -82,6 +93,11 @@ All schema of TEI P5 4.12.0:
   holds `<gap reason="…"/>` naming its disposition, such as `pending`,
   `provider_failure` or, for a page a person reviewed as not text,
   `unreadable` or `reviewed_blank`.
+- A page whose text a person corrected keeps `subtype="reviewed"` and points
+  with `change="#correction-12"` to a `<change>` in the header's
+  `<revisionDesc>`. The change has `when` (the review time) and says who
+  corrected the page, from which reading, how many words changed, and the
+  reviewer's reason.
 - Control characters, which XML cannot carry, are left out of TEI; the other
   formats keep the text unchanged.
 
@@ -92,6 +108,7 @@ exports are not available.
 ## Citing an export
 
 Cite the source by its file name and SHA-256, and the text by job ID, page
-number, attempt ID and output SHA-256. A job that verifies shows that the text
-is exactly what the recorded engine returned and what a reviewer approved; it
-does not show that the transcription is accurate.
+number, attempt ID and output SHA-256; for a corrected page, add the
+correction's SHA-256. A job that verifies shows that the text is exactly what
+the recorded engine returned, or what the named reviewer typed, and what a
+reviewer approved; it does not show that the transcription is accurate.

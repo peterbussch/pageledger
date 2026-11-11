@@ -1067,6 +1067,7 @@ decision is one of:
 | `blank` | The page as blank, `reviewed_blank` |
 | `illustration`, `handwriting`, `unreadable`, `source_defect` | That disposition |
 | `use:ATTEMPT` | Another completed attempt's text, named by its attempt ID from the report |
+| `correct:FILE` | The text in FILE, as `reviewed_text` with a [correction](#correct-the-text) |
 
 A blank decision, or a deleted row, leaves the page unreviewed; the note becomes
 the receipt's reason. `review --apply` checks the whole sheet before recording
@@ -1079,6 +1080,64 @@ a page recorded as blank has a selected reading of 50 or more words: in the
 2026-11 dogfood a page reviewed as blank carried 1,295 words of OCR. Check the
 page; the decision is still recorded as made. Scripts can keep writing JSON
 receipts.
+
+### Correct the text
+
+When the selected text is wrong, `accept` would approve a known error and
+`unreadable` would discard a page that can be read. A correction records the
+right text instead. It is kept as a new reading beside the engines' readings,
+which are never edited, and a receipt binds it to the reading it was made
+from, so the job shows what the engine read, what a person changed, and who
+changed it when.
+
+There are two ways to supply it. In a review sheet, save the page's corrected
+text in a UTF-8 file and write `correct:FILE` as the decision. FILE is a path
+relative to the sheet's folder and must stay inside it. The correction starts
+from the page's selected text.
+
+```bash
+pageledger review jobs/book --sheet review/review.csv
+# copy page 3's text into review/p0003.txt, fix it, and write correct:p0003.txt in its row
+pageledger review jobs/book --apply review/review.csv --reviewer "A. Reader" --dry-run
+pageledger review jobs/book --apply review/review.csv --reviewer "A. Reader"
+```
+
+The [review view](#review-beside-the-page-image) instead downloads a decisions
+file, `review.json` ([schema](../schemas/review-decisions.schema.json)): the
+sheet's bindings and the rows with a decision, each with `row_id`,
+`page_number`, `decision` and `note`. A row whose decision is `correct` carries
+the corrected text in `text`, and may name in `from` the attempt whose own
+reading it starts from; without `from` it starts from the selected text. Rows
+in a decisions file may also use `correct:FILE`, relative to the file's
+folder. `review --apply` checks it as it checks a sheet, takes `--reviewer`
+the same way, and refuses it if the job has changed since it was written.
+
+What is recorded is exactly what the reviewer wrote, after one normalization:
+Windows (CRLF) and old Mac (CR) line endings become LF. Nothing is trimmed or
+Unicode-normalized; ѣ, combining accents, tabs and trailing spaces are kept. A
+byte-order mark at the start of a correction file marks the file as UTF-8 and
+is dropped. A file that is not UTF-8 is refused, and so is a correction that is
+empty (decide `blank` instead) or identical to the reading it started from
+apart from line endings (decide `accept`). A change of spacing alone is a
+correction.
+
+`review --apply` writes the text once to
+`corrections/<page_id>-<sha256>.txt` and records the page as `reviewed_text`
+with a `correction` in its receipt: the file, its hash, the hash of the text it
+started from, and how many words it changed, added and removed (see the
+[receipt](document-report-spec.md#corrected-text)). The text becomes the
+page's selected text in the report, transcript and exports. Both `--dry-run`
+and the recording print each correction's size, and warn, without refusing,
+when a correction changes more than half the words of the reading it started
+from, which usually means another page's text was pasted.
+
+A page can be corrected again. The new correction starts from the earlier one
+and the report links the correction it revised; both stay in
+`review_history`. Accepting a corrected page keeps its correction; to go back
+to a machine reading, decide `use:ATTEMPT`. A job that was moved or copied
+accepts corrections where it is now, like other reviews, and records the
+change in `relocations`. `verify` checks every correction's file against its
+hash and refuses a correction that does not start from a recorded text.
 
 ### Review beside the page image
 
@@ -1108,19 +1167,29 @@ engine read. Transcripts are shown exactly, with their line breaks and spacing;
 control characters, which a browser cannot show, appear as symbols such as ␍.
 
 Under each page a reviewer can choose one of the decisions in the table above
-and add a note. The browser keeps the choices for that job, if it allows the
+and add a note, or correct the text. The text box starts from the selected
+text, or from another reading chosen under "Start from" (choosing
+`use:ATTEMPT` first starts it from that reading); editing it chooses
+`correct`, and the changes are marked below it, struck words the reading's and
+underlined words the reviewer's. A reading that a browser text box cannot hold
+exactly is not offered for editing; correct it with `correct:FILE`. The
+browser keeps the choices and the edited texts for that job, if it allows the
 view to store them, until "Forget decisions in this browser" clears them.
-Nothing is recorded in the job until the downloaded `review.csv` is applied:
+Nothing is recorded in the job until the downloaded file is applied:
 
 ```bash
-pageledger review jobs/book --apply review/review.csv --reviewer "A. Reader" --dry-run
-pageledger review jobs/book --apply review/review.csv --reviewer "A. Reader"
+pageledger review jobs/book --apply review/review.json --reviewer "A. Reader" --dry-run
+pageledger review jobs/book --apply review/review.json --reviewer "A. Reader"
 ```
 
-Save the download in the folder in place of the blank `review.csv`, so that the
-binding is beside it, or download the binding too and keep the two together.
-`review --apply` checks the sheet as it checks any review sheet, and refuses it if
-the job has changed since the view was written. Like `report.md`, the view is a
+`review.json` is the [decisions file](#correct-the-text): it carries its own
+bindings, so it can be saved anywhere. Without corrections, "Download
+review.csv" still writes the review sheet; save it in the folder in place of
+the blank `review.csv`, so that the binding is beside it, or download the
+binding too and keep the two together. The sheet download refuses while any
+page is corrected, because a sheet cannot carry the text. `review --apply`
+checks either file as it checks any review sheet, and refuses it if the job has
+changed since the view was written. Like `report.md`, the view is a
 rendering: it is not evidence, and writing it changes nothing in the job. Page
 images need Poppler's `pdftoppm`; `--images none` writes the view without
 them. For a PDF source, a missing `pdftoppm` stops the command. For a source of
