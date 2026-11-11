@@ -416,32 +416,44 @@ def build_parser() -> argparse.ArgumentParser:
     )
 
     process_parser = _command(subparsers, "process")
-    process_parser.add_argument("source", type=Path)
+    process_parser.add_argument(
+        "source", type=Path, metavar="SOURCE", help="The document: a PDF or a text file"
+    )
     process_parser.add_argument(
         "--config",
         type=Path,
         default=None,
+        metavar="FILE",
         help="A config file from `pageledger init`; without it, the job uses the config "
         "init writes for --engine, --lang and --model-dir",
     )
-    process_parser.add_argument("--out", type=Path, required=True, help="New folder for the job")
+    process_parser.add_argument(
+        "--out", type=Path, required=True, metavar="DIR", help="New folder for the job"
+    )
     _add_engine_options(process_parser, "without --config")
     process_parser.add_argument(
-        "--pages", default=None, help="Only these pages, e.g. '1-10,25'; pages keep their numbers"
+        "--pages",
+        default=None,
+        metavar="RANGE",
+        help="Only these pages, e.g. '1-10,25'; pages keep their numbers",
     )
     process_parser.add_argument(
         "--adapter-path",
         type=Path,
         default=None,
+        metavar="DIR",
         help="Folder to import custom adapters from (trusted code)",
     )
     process_parser.add_argument(
         "--review",
         type=Path,
         default=None,
+        metavar="FILE",
         help="Review decisions to apply before reading, such as pages known to be blank",
     )
-    process_parser.add_argument("--json", action="store_true", dest="json_output")
+    process_parser.add_argument(
+        "--json", action="store_true", dest="json_output", help="Print the result as JSON"
+    )
     for command in ("inspect-job", "verify-job", "review-job", "review-sheet", "adjudicate"):
         if command == "adjudicate":
             job_parser = _command(subparsers, command)
@@ -531,9 +543,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
 
     export_parser = _command(subparsers, "export")
-    export_parser.add_argument("job_dir", type=Path)
+    export_parser.add_argument("job_dir", type=Path, metavar="JOB", help="A job folder")
     export_parser.add_argument("--format", choices=FORMATS, required=True)
-    export_parser.add_argument("--out", type=Path, required=True, help="File to write")
+    export_parser.add_argument(
+        "--out", type=Path, required=True, metavar="FILE", help="File to write"
+    )
     export_parser.add_argument(
         "--reviewed-only", action="store_true", help="Only pages with a human review receipt"
     )
@@ -555,7 +569,9 @@ def build_parser() -> argparse.ArgumentParser:
         choices=BUILTIN_ADAPTERS,
         help="Run a built-in adapter with a generated default config (no YAML needed)",
     )
-    run_parser.add_argument("--out", required=True, type=Path, help="New empty run directory")
+    run_parser.add_argument(
+        "--out", required=True, type=Path, metavar="DIR", help="New empty run directory"
+    )
     run_parser.add_argument(
         "--pages",
         default=None,
@@ -573,7 +589,9 @@ def build_parser() -> argparse.ArgumentParser:
         help="Keep each page as it is read, so an interrupted run can continue with resume",
     )
     run_parser.add_argument("--dry-run", action="store_true")
-    run_parser.add_argument("--json", action="store_true", dest="json_output")
+    run_parser.add_argument(
+        "--json", action="store_true", dest="json_output", help="Print the result as JSON"
+    )
     run_parser.add_argument(
         "--log-level",
         default="INFO",
@@ -593,8 +611,16 @@ def build_parser() -> argparse.ArgumentParser:
         "PAGELEDGER_SOURCE_INDEX (TSV files of sha256<TAB>path), or "
         "~/.config/pageledger/source-index.tsv when unset. Records keep the recorded path.",
     )
-    resume_parser.add_argument("run_dir", type=Path)
-    resume_parser.add_argument("--adapter-path", type=Path, default=None)
+    resume_parser.add_argument(
+        "run_dir", type=Path, metavar="DIR", help="A job folder, or a run started with --resumable"
+    )
+    resume_parser.add_argument(
+        "--adapter-path",
+        type=Path,
+        default=None,
+        metavar="DIR",
+        help="Folder to import custom adapters from (trusted code)",
+    )
     resume_parser.add_argument(
         "--raise-limit",
         action="append",
@@ -602,7 +628,9 @@ def build_parser() -> argparse.ArgumentParser:
         metavar="LIMIT=VALUE",
         help="Raise a processing limit of a document job paused by it, e.g. max_attempt_pages=50",
     )
-    resume_parser.add_argument("--json", action="store_true", dest="json_output")
+    resume_parser.add_argument(
+        "--json", action="store_true", dest="json_output", help="Print the result as JSON"
+    )
 
     rerun_parser = _command(subparsers, "rerun")
     rerun_parser.add_argument(
@@ -616,9 +644,13 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         help="PageLedger YAML config for the rerun (plain adapter or adapter chain)",
     )
-    rerun_parser.add_argument("--out", required=True, type=Path, help="New empty run directory")
+    rerun_parser.add_argument(
+        "--out", required=True, type=Path, metavar="DIR", help="New empty run directory"
+    )
     rerun_parser.add_argument("--dry-run", action="store_true")
-    rerun_parser.add_argument("--json", action="store_true", dest="json_output")
+    rerun_parser.add_argument(
+        "--json", action="store_true", dest="json_output", help="Print the result as JSON"
+    )
     rerun_parser.add_argument(
         "--log-level",
         default="INFO",
@@ -659,7 +691,9 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Directory added to sys.path for custom probe adapters or classifier hooks",
     )
-    classify_parser.add_argument("--json", action="store_true", dest="json_output")
+    classify_parser.add_argument(
+        "--json", action="store_true", dest="json_output", help="Print the result as JSON"
+    )
 
     doctor_parser = _command(subparsers, "doctor")
     doctor_parser.add_argument(
@@ -667,7 +701,9 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         help="Also report the environment variables this config's adapters name by env_key",
     )
-    doctor_parser.add_argument("--json", action="store_true", dest="json_output")
+    doctor_parser.add_argument(
+        "--json", action="store_true", dest="json_output", help="Print the result as JSON"
+    )
 
     init_parser = subparsers.add_parser("init-config")
     init_parser.add_argument(
@@ -716,7 +752,9 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Schema YAML (bare schema mapping or a config with a schema: section); defaults to the run's config-snapshot.yml",
     )
-    align_parser.add_argument("--json", action="store_true", dest="json_output")
+    align_parser.add_argument(
+        "--json", action="store_true", dest="json_output", help="Print the result as JSON"
+    )
     align_parser.add_argument(
         "--dry-run",
         action="store_true",
@@ -733,19 +771,37 @@ def build_parser() -> argparse.ArgumentParser:
     verify_parser.add_argument("--json", action="store_true", dest="json_output")
 
     bundle_parser = _command(subparsers, "bundle", allow_abbrev=False)
-    bundle_parser.add_argument("run_dir", type=Path)
-    bundle_parser.add_argument("--out", required=True, type=Path)
-    bundle_parser.add_argument("--json", action="store_true", dest="json_output")
+    bundle_parser.add_argument("run_dir", type=Path, metavar="RUN", help="A verified run folder")
+    bundle_parser.add_argument(
+        "--out", required=True, type=Path, metavar="DIR", help="New folder for the bundle"
+    )
+    bundle_parser.add_argument(
+        "--json", action="store_true", dest="json_output", help="Print the result as JSON"
+    )
 
     replay_parser = _command(subparsers, "replay", allow_abbrev=False)
-    replay_parser.add_argument("bundle_dir", type=Path)
-    replay_parser.add_argument("--out", required=True, type=Path)
-    replay_parser.add_argument("--adapter-path", type=Path, default=None)
-    replay_parser.add_argument("--json", action="store_true", dest="json_output")
+    replay_parser.add_argument("bundle_dir", type=Path, metavar="BUNDLE", help="A bundle folder")
+    replay_parser.add_argument(
+        "--out", required=True, type=Path, metavar="DIR", help="New folder for the replayed run"
+    )
+    replay_parser.add_argument(
+        "--adapter-path",
+        type=Path,
+        default=None,
+        metavar="DIR",
+        help="Folder to import the bundle's adapter from (trusted code)",
+    )
+    replay_parser.add_argument(
+        "--json", action="store_true", dest="json_output", help="Print the result as JSON"
+    )
 
     iiif_parser = _command(subparsers, "fetch", allow_abbrev=False)
-    iiif_parser.add_argument("url", help="A IIIF manifest, an info.json, or an image service URL")
-    iiif_parser.add_argument("--out", required=True, type=Path)
+    iiif_parser.add_argument(
+        "url", metavar="URL", help="A IIIF manifest, an info.json, or an image service URL"
+    )
+    iiif_parser.add_argument(
+        "--out", required=True, type=Path, metavar="DIR", help="New folder for the page images"
+    )
     iiif_parser.add_argument(
         "--pages", default=None, help="Canvases by position in the manifest, e.g. '1-8,81'"
     )
@@ -761,7 +817,9 @@ def build_parser() -> argparse.ArgumentParser:
     iiif_parser.add_argument(
         "--resume", action="store_true", help="Fetch only what an earlier fetch into --out missed"
     )
-    iiif_parser.add_argument("--json", action="store_true", dest="json_output")
+    iiif_parser.add_argument(
+        "--json", action="store_true", dest="json_output", help="Print the result as JSON"
+    )
 
     verify_parser = _command(subparsers, "verify")
     verify_parser.add_argument("dir", type=Path, metavar="DIR", help="A job folder or a run folder")

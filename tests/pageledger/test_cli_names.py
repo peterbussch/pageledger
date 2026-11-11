@@ -8,6 +8,7 @@ import re
 from pathlib import Path
 
 import pytest
+from test_stability import _copy_release
 
 from pageledger import cli
 from pageledger.cli import main
@@ -88,6 +89,17 @@ def test_a_folder_is_recognized_and_reads_as_the_earlier_command(
     after = _cli(capsys, new, str(folder), *flags)
     assert before[0] == 0 and before[1]
     assert after == before
+
+
+@pytest.mark.parametrize("version", ["0.5.2", "0.6.0", "0.7.0"])
+@pytest.mark.parametrize(("kind", "old"), [("job", "verify-job"), ("run", "verify-run")])
+def test_released_jobs_and_runs_verify_as_before(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], version: str, kind: str, old: str
+) -> None:
+    folder = _copy_release(version, kind, tmp_path)
+    before = _cli(capsys, old, str(folder), "--json")
+    assert before[0] == 0
+    assert _cli(capsys, "verify", str(folder), "--json") == before
 
 
 def test_inspect_csv_of_a_run_matches_inspect_run(
@@ -172,11 +184,15 @@ def test_review_writes_the_page_view_by_default(
 def test_review_sheet_is_review_sheet(
     job: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    before = _cli(capsys, "review-sheet", str(job), "--out", str(tmp_path / "a.csv"), "--json")
-    after = _cli(capsys, "review", str(job), "--sheet", str(tmp_path / "b.csv"), "--json")
-    assert before[0] == after[0] == 0
-    assert set(json.loads(before[1])) == set(json.loads(after[1]))
-    assert (tmp_path / "a.csv").read_bytes() == (tmp_path / "b.csv").read_bytes()
+    sheet = tmp_path / "review.csv"
+    binding = tmp_path / "review.csv.binding.json"
+    before = _cli(capsys, "review-sheet", str(job), "--out", str(sheet), "--json")
+    written = sheet.read_bytes(), binding.read_bytes()
+    sheet.unlink()
+    binding.unlink()
+    assert before[0] == 0
+    assert _cli(capsys, "review", str(job), "--sheet", str(sheet), "--json") == before
+    assert (sheet.read_bytes(), binding.read_bytes()) == written
 
 
 @pytest.mark.parametrize("flags", [["--dry-run"], ["--dry-run", "--json"]])
