@@ -202,6 +202,9 @@ def test_review_with_no_option_writes_the_view_beside_the_job(
         f"The review view in {view} is up to date with the job.",
         f"Open {view / 'index.html'} in a web browser to see the pages.",
     ]
+    # A view asked for with other images is a new one.
+    code, stdout, err = _cli(capsys, "review", str(job), "--images", "held")
+    assert code == 1 and f"{view} already exists" in err
 
     # Accepting a page changes no binding, but the view no longer shows the job.
     sheet = view / "review.csv"

@@ -184,7 +184,12 @@ def _corrected_facts(report: dict, page: dict) -> list[tuple[str, str]]:
     corrected, with that reading's identity, after it."""
     review, attempt, correction = page["review"], page["attempt"], page["correction"]
     note = review["reason"]
-    decided = "corrected the text" + (
+    # A later review that accepted the corrected text carries the correction forward.
+    made = (review["reviewer"], review["reviewed_at"]) == (
+        correction["reviewer"],
+        correction["reviewed_at"],
+    )
+    decided = ("corrected the text" if made else "accepted the text as corrected") + (
         "" if note.startswith(_SHEET_REASON) else f"; their note: {note}"
     )
     shown = next(p for p in report["pages"] if p["page_id"] == page["page_id"])

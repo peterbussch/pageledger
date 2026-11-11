@@ -110,16 +110,16 @@ CAUSES = {
 # page only while no other reading confirms the selected one; any other reading always.
 # The hold is not a formality: the layer has been right where a clean-looking OCR was not.
 NOT_CONFIRMED = (
-    "the selected text is {selected}; {name}, {other}, {flaw}, so the job did not compare "
-    "the two and nothing confirms the selected text"
+    "the selected text is {selected}; {name}, {other}, {flaw}, so their comparison does not "
+    "count and nothing confirms the selected text"
 )
 ONLY_OTHER = "the only other reading"
 COULD_CONFIRM = "the reading that could have confirmed it"
 # What to do about pages held that way, said once in the report.
 UNCONFIRMED_ADVICE = (
     "Check each page against its image in the review view, where both readings are shown: an "
-    "OCR reading with no warning of its own can still be wrong, and an earlier OCR that runs "
-    "words together can have the words right.",
+    "OCR reading with no warning of its own can still be wrong, and an earlier OCR with a "
+    "flaw of its own can have those words right.",
     "For a whole book of such pages, add a second OCR engine (`second_ocr` in the config; "
     "`pageledger init` writes it as a commented block), so that a second reading can confirm "
     "the first.",

@@ -146,7 +146,7 @@ cause instead: which reading, by its name, and what is wrong with it, in the wor
 table under [What is wrong with a reading](#what-is-wrong-with-a-reading). When the
 flawed reading is not the selected one, the words say so: "the selected text is
 Tesseract OCR (eng); the PDF's own text (an earlier OCR), the only other reading, has
-words run together, so the job did not compare the two and nothing confirms the selected
+words run together, so their comparison does not count and nothing confirms the selected
 text". An earlier OCR's own warnings hold a page only while nothing confirms the selected
 reading (see [hold policy 0.9](processing-spec.md#hold-policy-09)); any other reading's
 hold holds the page whatever the selected reading says, and is said as "another reading of

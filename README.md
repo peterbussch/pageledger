@@ -44,7 +44,7 @@ Reading book.pdf: each page's own text, then Tesseract OCR in English for pages 
 Finished: 3 pages read; 3 need a person.
 The job is in jobs/book.
 Why they need a person:
-  2 pages: the selected text is Tesseract OCR (eng); the PDF's own text (an earlier OCR), the only other reading, has words run together, so the job did not compare the two and nothing confirms the selected text.
+  2 pages: the selected text is Tesseract OCR (eng); the PDF's own text (an earlier OCR), the only other reading, has words run together, so their comparison does not count and nothing confirms the selected text.
   1 page: no reading found text, or one came back empty: the page may be blank.
 Next: pageledger review jobs/book shows those pages beside their page images for checking.
 Text out: pageledger export jobs/book --out book.md

@@ -1326,8 +1326,8 @@ def _render_for_reader(report: dict) -> str:
         lines += ["## Worth knowing", ""]
         if unconfirmed:
             lines += [
-                f"- On {_pages(unconfirmed)}, nothing confirms the selected text: the PDF's "
-                "earlier OCR, which could have, has a flaw of its own.",
+                f"- On {_pages(unconfirmed)}, nothing confirms the selected text: an earlier "
+                "OCR, which could have, has a flaw of its own.",
                 *(f"  - {advice}" for advice in UNCONFIRMED_ADVICE),
                 "",
             ]

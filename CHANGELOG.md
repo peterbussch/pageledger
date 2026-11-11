@@ -228,8 +228,8 @@ The contract
   their pages enter the review queue.
 - **New jobs write report format 0.9:** `report.md` is the record of how the
   text was made, with a summary on top. It opens with what happened, the pages
-  that need a person and why in plain words, and one command that is right as
-  printed in the job's folder; the source by its file name, its path written
+  that need a person and why in plain words, and the one next command, to run
+  in the job's folder; the source by its file name, its path written
   out once; then one table of the pages (what holds each, its selected text,
   its review); then the record, a short list per page with every hold and its
   cause, reading ID, outcome, warning and comparison, and hashes and custody

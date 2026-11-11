@@ -1135,7 +1135,8 @@ pageledger review jobs/book --apply review.csv --reviewer "A. Reader"
 ```
 
 `review --sheet` writes one row per page: a link to the page in the source, its
-disposition, the start of its selected text, its review reasons, and empty
+disposition, the start of its selected text, its review reasons (each in words,
+the code or the reading's ID last in parentheses), and empty
 `decision` and `note` columns. Fill those in a spreadsheet and save as CSV.
 Beside the sheet it writes `review-decisions.txt`: the command that applies the
 sheet, the decisions and what each records, and the other readings each page can
@@ -1295,13 +1296,14 @@ view to store them, until "Forget decisions in this browser" clears them.
 Nothing is recorded in the job until the downloaded file is applied:
 
 ```bash
-pageledger review jobs/book --apply review/review.json --reviewer "A. Reader" --dry-run
-pageledger review jobs/book --apply review/review.json --reviewer "A. Reader"
+pageledger review jobs/book --apply ~/Downloads/review.json --reviewer "A. Reader" --dry-run
+pageledger review jobs/book --apply ~/Downloads/review.json --reviewer "A. Reader"
 ```
 
 `review.json` is the [decisions file](#correct-the-text), and the view's one
 download button, "Download my decisions (review.json)": it carries its own
-bindings, so it can be saved anywhere. The spreadsheet route is folded under
+bindings, so it can be saved anywhere, and is applied from wherever the browser
+saved it; the view shows the command with `DOWNLOADED_FILE` in its place. The spreadsheet route is folded under
 "Working in a spreadsheet instead": there, without corrections, "Download
 review.csv" still writes the review sheet; save it in the folder in place of
 the blank `review.csv`, so that the binding is beside it, or download

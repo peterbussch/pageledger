@@ -322,8 +322,8 @@ first (the opening, "Worth knowing" and the page table):
   selected text says which text was selected: for an earlier OCR layer, whose
   own warnings hold the page only while nothing confirms the selected reading,
   "the selected text is Tesseract OCR (eng); the PDF's own text (an earlier OCR),
-  the only other reading, has words run together, so the job did not compare the
-  two and nothing confirms the selected text"; for any other reading, "…, another
+  the only other reading, has words run together, so their comparison does not
+  count and nothing confirms the selected text"; for any other reading, "…, another
   reading of the page, …". The causes are given most telling first (in the order
   of the holds, the selected reading's first), at most two in the opening and the
   page table, with how many more the record gives. A hold with no recorded cause
@@ -434,15 +434,15 @@ Finished: 3 pages read; 3 need a person.
 Source: [book.pdf][source]; 3 of its 3 pages selected, 3 read.
 
 - Need a person: 3 pages (1-3):
-  - The selected text is Tesseract OCR (eng); the PDF's own text (an earlier OCR), the only other reading, has words run together, so the job did not compare the two and nothing confirms the selected text: 2 pages (2-3).
+  - The selected text is Tesseract OCR (eng); the PDF's own text (an earlier OCR), the only other reading, has words run together, so their comparison does not count and nothing confirms the selected text: 2 pages (2-3).
   - No reading found text, or one came back empty: the page may be blank: 1 page (1).
 
 Next: in this job's folder, `pageledger review .` writes the review view, where you check the 3 pages that need a person, each beside its page image, and record what you decide.
 
 ## Worth knowing
 
-- On 2 pages (2-3), nothing confirms the selected text: the PDF's earlier OCR, which could have, has a flaw of its own.
-  - Check each page against its image in the review view, where both readings are shown: an OCR reading with no warning of its own can still be wrong, and an earlier OCR that runs words together can have the words right.
+- On 2 pages (2-3), nothing confirms the selected text: an earlier OCR, which could have, has a flaw of its own.
+  - Check each page against its image in the review view, where both readings are shown: an OCR reading with no warning of its own can still be wrong, and an earlier OCR with a flaw of its own can have those words right.
   - For a whole book of such pages, add a second OCR engine (`second_ocr` in the config; `pageledger init` writes it as a commented block), so that a second reading can confirm the first.
   - Why these pages are held: docs/processing-spec.md, under Hold policy 0.9, "What holding for the layer's warnings costs".
 
@@ -457,14 +457,14 @@ Pages that need a person come first. The review view (`pageledger review .` in t
 | Page | Held for | Selected text | Review |
 | --- | --- | --- | --- |
 | 1 | No reading found text, or one came back empty: the page may be blank. | none | not checked |
-| 2 | The selected text is Tesseract OCR (eng); the PDF's own text (an earlier OCR), the only other reading, has words run together, so the job did not compare the two and nothing confirms the selected text. | [Tesseract OCR (eng)](<attempts/local_ocr-0002/raw/doc_0001_page_0002.txt>) | not checked |
-| 3 | The selected text is Tesseract OCR (eng); the PDF's own text (an earlier OCR), the only other reading, has words run together, so the job did not compare the two and nothing confirms the selected text. | [Tesseract OCR (eng)](<attempts/local_ocr-0003/raw/doc_0001_page_0003.txt>) | not checked |
+| 2 | The selected text is Tesseract OCR (eng); the PDF's own text (an earlier OCR), the only other reading, has words run together, so their comparison does not count and nothing confirms the selected text. | [Tesseract OCR (eng)](<attempts/local_ocr-0002/raw/doc_0001_page_0002.txt>) | not checked |
+| 3 | The selected text is Tesseract OCR (eng); the PDF's own text (an earlier OCR), the only other reading, has words run together, so their comparison does not count and nothing confirms the selected text. | [Tesseract OCR (eng)](<attempts/local_ocr-0003/raw/doc_0001_page_0003.txt>) | not checked |
 
 ## For the record
 
 Everything below is in document.json, of which this report is a rendering. The codes in backticks are explained in PageLedger's docs/warnings.md.
 
-- Job: `job_150c3191e82845999e92a81f9107cfd8`, created 2026-11-11T05:59:00Z; hold policy 0.9; report format 0.9.
+- Job: `job_bad2f2dca0fa4fe6a33c9baf2ffadbaa`, created 2026-11-11T06:11:09Z; hold policy 0.9; report format 0.9.
 - Source: [../../book.pdf][source]
 - Source SHA-256: `64735b18c469f64dad4d3cb15ce67af05c7784007319bf25fa83d8c6c18110d1`
 - Read by: the `local_text` stage, the PDF's own text (`pdf_text`); the `local_ocr` stage, Tesseract OCR (eng) (`pdf_ocr`).
@@ -495,7 +495,7 @@ Each page's number in the source, its state and every hold the job recorded; the
 | Stage | Pages read | Tokens | Seconds |
 | --- | --- | --- | --- |
 | `local_text` | 3 | not reported | 0 |
-| `local_ocr` | 3 | not reported | 7.9 |
+| `local_ocr` | 3 | not reported | 9.2 |
 
 Readings sent on to the next stage for a reason other than a hold, by trigger (a page can be sent on more than once): `ocr_layer` 2.
 
@@ -517,7 +517,7 @@ PageLedger records what it knows of the source file; it does not preserve or rem
 
 ### Files
 
-- Transcript: [transcript.md](<transcript.md>), SHA-256 `e20dd99bf05de43486e697a2078b9c250f3035a7de1d59817c817f9eaca0e10c`
+- Transcript: [transcript.md](<transcript.md>), SHA-256 `3158f345166bd66d99490ca3203c30dac176567200dd0c41b51126d2604cef07`
 - Next action recorded by the job: Check the pages against the source, those that need a person first, and record decisions with pageledger review.
 
 [source]: <../../book.pdf>

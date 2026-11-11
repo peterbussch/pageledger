@@ -1973,7 +1973,9 @@ def _cmd_review(args: argparse.Namespace) -> int:
         job = args.job_dir if args.job_dir.name not in {"", ".."} else args.job_dir.resolve()
         out = job.with_name(f"{job.name}-review")
         if out.exists() or out.is_symlink():
-            state = "other" if out.is_symlink() else view_state(args.job_dir, out)
+            # A view asked for with other images is a new view, never the old one.
+            asked = out.is_symlink() or args.images is not None
+            state = "other" if asked else view_state(args.job_dir, out)
             if state == "current":
                 page = out / "index.html"
                 if args.json_output:

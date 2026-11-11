@@ -29,7 +29,7 @@ page lists supported workflows and limits; the
 | Write a job config to edit | `pageledger init --out processing.yml` |
 | Read or verify a document report | `pageledger inspect jobs/book`; `pageledger verify jobs/book` |
 | Show held pages beside their images | `pageledger review jobs/book --out review/` (or `--sheet review.csv` for a spreadsheet) |
-| Record human review | `pageledger review jobs/book --apply review/review.json --reviewer "Name"` (the file the review view downloads; a filled sheet or a JSON receipt also works; `--dry-run` checks first) |
+| Record human review | `pageledger review jobs/book --apply ~/Downloads/review.json --reviewer "Name"` (the file the review view downloads, where the browser saved it; a filled sheet or a JSON receipt also works; `--dry-run` checks first) |
 | Write the text out | `pageledger export jobs/book --format txt\|md\|jsonl\|tei --out FILE` (`--reviewed-only` for pages a person reviewed) |
 | Settle a model's contested words | `pageledger adjudicate jobs/book --packets DIR`, answer each packet against its page image, then `pageledger adjudicate jobs/book --decisions DIR --reviewer agent:NAME` |
 | Start a resumable run | `pageledger run scan.pdf --adapter pdf_ocr --resumable --out runs/a` |

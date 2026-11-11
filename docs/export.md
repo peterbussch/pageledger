@@ -26,9 +26,13 @@ A heading names the source file, its SHA-256 and the job. Each page then
 states its disposition, its review (reviewer, time and reason, or "none"), the
 reading and engine that produced the text, and the text's SHA-256, followed by
 the text exactly as the engine returned it. A page whose text a person
-corrected says so in a `Correction` line, naming the corrected text's file, the
-reading it was corrected from and how many words changed, with the corrected
-text's SHA-256; the text that follows is the person's. Markdown also links each
+corrected says so first: its review line says who corrected the text (or
+accepted it as corrected) and when, with their note; a `Text from` line says
+whose correction of which reading the text is (by the engine's name) and how
+many words changed; a `Correction` line names the corrected text's file and the
+file it was corrected from, with the corrected text's SHA-256; and `Corrected
+reading` lines give the reading's ID, engine and SHA-256. The text that follows
+is the person's. Markdown also links each
 page to the source page.
 
 ## JSONL

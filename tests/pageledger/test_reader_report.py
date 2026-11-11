@@ -115,7 +115,8 @@ def test_a_clean_job_says_nothing_waits_and_points_to_export(setup):  # noqa: F8
         "- Text selected and nothing held the page; no person has checked it: 2 pages (1-2)."
         in opening
     )
-    # A command that is right as printed, from the folder that holds the report.
+    # A command to run in the folder that holds the report; the report cannot know
+    # that folder's name after a move, so the file's name is left to the reader.
     assert opening[-1] == (
         "Next: in this job's folder, `pageledger export . --out ../NAME.md`, with NAME the "
         "folder's name, writes the selected text out beside the job."
@@ -790,7 +791,7 @@ def test_an_earlier_ocr_s_flaw_says_nothing_confirms_the_selected_text():
         (
             "coverage_defect",
             "the selected text is Tesseract OCR (eng); the PDF's own text (an earlier OCR), "
-            "the only other reading, has words run together, so the job did not compare the "
-            "two and nothing confirms the selected text",
+            "the only other reading, has words run together, so their comparison does not "
+            "count and nothing confirms the selected text",
         )
     ]

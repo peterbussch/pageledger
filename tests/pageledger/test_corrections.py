@@ -488,6 +488,15 @@ def corrected(job, tmp_path):
     return job
 
 
+def test_a_later_acceptance_of_a_correction_is_not_called_a_correction(corrected, tmp_path):
+    later = _decisions(corrected, tmp_path / "later", [_row(1, decision="accept")])
+    review_job(corrected, later, reviewer="B. Other")
+    export_job(corrected, tmp_path / "book.txt", format="txt")
+    first = (tmp_path / "book.txt").read_text().split("Page 2")[0]
+    assert ": accepted the text as corrected\n" in first
+    assert "Text from: a person's correction by A. Reader of " in first
+
+
 def test_txt_and_md_exports_carry_the_corrected_text_and_say_so(corrected, tmp_path):
     for format in ("txt", "md"):
         out = tmp_path / f"book.{format}"

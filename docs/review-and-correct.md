@@ -50,7 +50,7 @@ Tesseract, whose reading becomes the text. When that layer has a flaw of its own
 (words run together, `joined_text`) and no other reading agrees with
 Tesseract's, the page is held, and the view says: "The selected text is
 Tesseract OCR (eng); the PDF's own text (an earlier OCR), the only other reading,
-has words run together, so the job did not compare the two and nothing confirms
+has words run together, so their comparison does not count and nothing confirms
 the selected text". The hold is not a formality. In the 2026-11 re-walk, on two
 of three such pages of an 1877 book, Tesseract's clean-looking reading had
 misread dates and terms that the damaged layer had right. Compare the two
