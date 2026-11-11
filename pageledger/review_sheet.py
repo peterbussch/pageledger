@@ -39,8 +39,11 @@ DECISIONS = {
 # text and `from` the attempt it starts from, when not the selected text.
 DECISION_FIELDS = frozenset({"row_id", "page_number", "decision", "note", "text", "from"})
 # A cell starting with one of these can be read as a spreadsheet formula. A dash
-# is allowed: notes such as "-1 word illegible" are ordinary.
+# is allowed in the reviewer's own note: notes such as "-1 word illegible" are
+# ordinary. A cell PageLedger writes from a file name never starts with any of
+# _CELL_PREFIXES.
 _FORMULA_PREFIXES = ("=", "+", "@", "\t", "\r")
+_CELL_PREFIXES = ("=", "+", "-", "@", "\t", "\r")
 
 
 def binding_path(sheet: Path) -> Path:
@@ -55,6 +58,9 @@ def write_review_sheet(job: dict, sheet: Path, root: Path) -> dict:
     sheet = sheet.expanduser().resolve()
     sheet.parent.mkdir(parents=True, exist_ok=True)
     source = relative_path(job["source"]["path"], sheet.parent)
+    if source.startswith(_CELL_PREFIXES):
+        # The same path, so that no spreadsheet reads a file name as a formula.
+        source = "./" + source
     rows, bindings = [], {}
     for page in job["pages"]:
         row_id = _row_id(page)

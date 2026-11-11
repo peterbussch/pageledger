@@ -617,13 +617,14 @@ process.stdout.write(JSON.stringify(report));
 
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
-def test_the_editor_declines_a_reading_with_hidden_characters_and_notes_like_formulas(
-    job, tmp_path
+@pytest.mark.parametrize("control", ["‮", "⁧", "‏", "\x85", "\x07"])
+def test_the_editor_declines_a_reading_with_controls_and_notes_like_formulas(
+    job, tmp_path, control
 ):
     write_review_html(job, tmp_path / "view", images="none")
     document = (tmp_path / "view" / "index.html").read_text(encoding="utf-8")
     data = _embedded(document)
-    data["texts"]["p0001"] = {"": "pay ‮01$‬ now"}
+    data["texts"]["p0001"] = {"": f"pay {control}01$ now"}
     persian = "می‌خواهم"
     data["texts"]["p0002"] = {key: persian for key in data["texts"]["p0002"]}
     program = (
@@ -631,7 +632,7 @@ def test_the_editor_declines_a_reading_with_hidden_characters_and_notes_like_for
         + r"""
 const page = load({});
 const first = page.forms.p0001, second = page.forms.p0002;
-const report = {hidden: first.elements.text.disabled,
+const report = {declined: first.elements.text.disabled,
                 why: first.querySelector(".changes").textContent,
                 shaped: second.elements.text.disabled, problems: []};
 for (const note of ["=1", "\t=1", "+1", "@x", "-1 word illegible"]) {
@@ -645,7 +646,46 @@ process.stdout.write(JSON.stringify(report));
     report = json.loads(
         _node(program, {"data": data, "forms": _forms(document), "script": review_html._SCRIPT})
     )
-    assert report["hidden"] is True and "would hide" in report["why"]
+    assert report["declined"] is True and "text-direction" in report["why"]
     assert report["shaped"] is False
     assert all("spreadsheet formula" in problem for problem in report["problems"][:4])
     assert report["problems"][4] == ""
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
+def test_a_correction_keeps_soft_hyphens_and_zero_width_spaces_byte_for_byte(job, tmp_path):
+    write_review_html(job, tmp_path / "view", images="none")
+    document = (tmp_path / "view" / "index.html").read_text(encoding="utf-8")
+    data = _embedded(document)
+    reading = "Gover­nment​directory of Tula, 1912.\nIvanov, I.­P. ﻿clerk"
+    data["texts"]["p0001"] = {"": reading}
+    program = (
+        _STUB_DOM
+        + r"""
+const page = load({});
+const first = page.forms.p0001;
+const report = {editable: !first.elements.text.disabled,
+                before: first.querySelector(".changes").textContent};
+first.elements.text.value = first.elements.text.value.replace("Tula", "Tver");
+first.elements.text.fire("input");
+report.after = first.querySelector(".changes").textContent;
+page.ids["download-decisions"].fire("click");
+report.download = saved[saved.length - 1].href.text;
+process.stdout.write(JSON.stringify(report));
+"""
+    )
+    report = json.loads(
+        _node(program, {"data": data, "forms": _forms(document), "script": review_html._SCRIPT})
+    )
+    assert report["editable"] is True
+    for message in (report["before"], report["after"]):
+        assert "holds 4 characters a text box does not show (U+00AD, U+200B, U+FEFF)" in message
+        assert "stay exactly where they are" in message
+    path = tmp_path / "view" / "review.json"
+    path.write_text(report["download"], encoding="utf-8")
+    expected = reading.replace("Tula", "Tver")
+    assert json.loads(report["download"])["rows"][0]["text"] == expected
+    review_job(job, path, reviewer="A. Reader")
+    page = read_record(job / "job.json")["pages"][0]
+    stored = job / page["review"]["decisions"][0]["correction"]["artifact"]
+    assert stored.read_bytes() == expected.encode("utf-8")

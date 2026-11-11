@@ -1184,11 +1184,20 @@ text, or from another reading chosen under "Start from" (choosing
 `use:ATTEMPT` first starts it from that reading); editing it chooses
 `correct`, and the changes are marked below it, struck words the reading's and
 underlined words the reviewer's. A reading that a browser text box cannot hold
-exactly, or that holds characters a text box would hide, is not offered for
-editing; correct it with `correct:FILE`. A note cannot start with `=`, `+`,
+exactly is not offered for editing; correct it with `correct:FILE`. A note cannot start with `=`, `+`,
 `@`, a tab or a carriage return, which a spreadsheet program could run as a
 formula: the view says so and `review --apply` refuses such a sheet. A note may
-start with a dash. For a PDF source, the view renders a copy of the source
+start with a dash, because such notes are ordinary ("-1 word illegible"); so a
+review sheet received from someone else should be treated like any spreadsheet
+from outside, opened with formulas disabled. The cells PageLedger itself writes
+never start like a formula: a source path or file name that begins with `=`,
+`+`, `-`, `@`, a tab or a carriage return is written with `./` in front, which
+names the same file. A reading holding characters a text box does not show
+(soft hyphens, zero-width spaces and the like) can be corrected in the page,
+which says how many there are and which; they stay where they are unless the
+text around them is deleted. One holding control characters or text-direction
+controls, which a text box would drop or which would reorder the text while it
+is edited, is corrected through a file. For a PDF source, the view renders a copy of the source
 checked against its recorded hash, so a file changed while the view is written
 stops the command instead of showing another page. The
 browser keeps the choices and the edited texts for that job, if it allows the

@@ -54,7 +54,12 @@ _RENDER_TIMEOUT_SECONDS = 120
 # zero-width spaces, soft hyphens, tags). Zero-width joiners shape Arabic, Persian
 # and Indic script, so they are left as written. The editor's test is the same.
 _SHOWN_AS_IS = "\t\n\u200c\u200d"
-_INVISIBLE_JS = r"/(?![\t\n\u200c\u200d])[\p{Cc}\p{Cf}]/u"
+# The correction editor: a reading with controls a text box does not keep, or with
+# bidirectional controls that reorder the text while it is edited, is corrected
+# through a file; other invisible characters stay editable and are counted for
+# the reviewer.
+_UNEDITABLE_JS = r"/[\x00-\x08\x0b-\x1f\x7f-\x9f\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069]/"
+_INVISIBLE_JS = r"/(?![\t\n])[\p{Cc}\p{Cf}]/gu"
 # Comparing word by word costs up to the product of the two readings' word counts.
 MAX_DIFF_CELLS = 25_000_000
 _PIECES = re.compile(r"\s+|\S+")
@@ -362,7 +367,7 @@ class _View:
         body = [
             '<a class="skip" href="#pages">Skip to the page list</a>',
             "<header>",
-            f"<h1>{_e(title)}</h1>",
+            f"<h1>{text_html(title)}</h1>",
             f"<p>Job <code>{_e(report['job_id'])}</code>, status {_e(report['status'])}. "
             f"Source SHA-256 <code>{_e(report['source']['sha256'])}</code>.</p>",
             f"<p>{counts['selected_pages']} pages in this job; {counts['selected_outputs']} have "
@@ -418,7 +423,7 @@ class _View:
         reasons = ", ".join(_label(r) for r in page["review_reasons"]) or "nothing"
         return (
             f'<tr><th scope="row"><a href="#{row_id}">{page["page_number"]}'
-            f"{_e(_image_name(self.report, page))}</a></th>"
+            f"{text_html(_image_name(self.report, page))}</a></th>"
             f"<td>{_e(_state(page))}</td><td>{_e(reasons)}</td>"
             f"<td>{_e(_short_comparison(page, self.report))}</td><td>{_e(_review(page))}</td>"
             f'<td class="chosen" data-row="{row_id}"></td></tr>'
@@ -477,7 +482,7 @@ class _View:
         others = self._others(page, marked)
         parts = [
             f'<section class="page" id="{row_id}" aria-labelledby="{row_id}-title">',
-            f'<h2 id="{row_id}-title">Page {number}{_e(_image_name(self.report, page))}</h2>',
+            f'<h2 id="{row_id}-title">Page {number}{text_html(_image_name(self.report, page))}</h2>',
             '<p class="nav"><a href="#pages">Back to the page list</a></p>',
             "<dl>",
             *(f"<dt>{label}</dt><dd>{value}</dd>" for label, value in facts),
@@ -502,7 +507,7 @@ class _View:
 
     def _figure(self, page: dict, source_link: tuple[str, str]) -> str:
         label = f"Page {page['page_number']}{_image_name(self.report, page)} in the source"
-        links = [f'<a href="{_e(_href(*source_link))}">{_e(label)}</a>']
+        links = [f'<a href="{_e(_href(*source_link))}">{text_html(label)}</a>']
         for attempt in page["attempts"]:
             evidence = attempt.get("input_evidence")
             if not evidence:
@@ -892,9 +897,24 @@ _SCRIPT = (
     + """
 (function () {
   var data = JSON.parse(document.getElementById("review-data").textContent);
+  var UNEDITABLE = """
+    + _UNEDITABLE_JS
+    + """;
   var INVISIBLE = """
     + _INVISIBLE_JS
     + """;
+  function hiddenNotice(text) {
+    var found = text.match(INVISIBLE) || [];
+    var codes = [];
+    found.forEach(function (character) {
+      var code = "U+" + character.codePointAt(0).toString(16).toUpperCase().padStart(4, "0");
+      if (codes.indexOf(code) < 0) { codes.push(code); }
+    });
+    if (!found.length) { return ""; }
+    return "This reading holds " + found.length + " character" + (found.length === 1 ? "" : "s") +
+      " a text box does not show (" + codes.join(", ") + "). They stay exactly where they " +
+      "are unless you delete the text around them. ";
+  }
   var FORMULA = /^[=+@\\t\\r]/;
   var status = document.getElementById("storage");
   var decisions = {};
@@ -965,13 +985,16 @@ _SCRIPT = (
     function edited() {
       return area !== null && !area.disabled && normalizeLines(area.value) !== start();
     }
+    var notice = "";
     function load() {
       area.value = start();
-      var hidden = INVISIBLE.test(start());
-      area.disabled = hidden || area.value !== start();
+      var unsafe = UNEDITABLE.test(start());
+      area.disabled = unsafe || area.value !== start();
+      notice = hiddenNotice(start());
       if (area.disabled) {
-        changes.textContent = (hidden
-          ? "This reading holds characters a text box would hide (they are marked in it above). "
+        changes.textContent = (unsafe
+          ? "This reading holds control or text-direction characters (marked in it above) " +
+            "that a text box would drop or that would reorder the text as you edit it. "
           : "A browser text box cannot hold this reading exactly. ") +
           "Correct it in a text file instead, with correct:FILE in a review sheet.";
       }
@@ -981,17 +1004,17 @@ _SCRIPT = (
       if (area.disabled) { return; }
       var now = normalizeLines(area.value);
       if (now === start()) {
-        changes.textContent = "No change from the reading you started from.";
+        changes.textContent = notice + "No change from the reading you started from.";
         return;
       }
       var diff = wordDiff(start(), now);
       if (diff === null) {
-        changes.textContent = "Changed. The page is too long to mark the changes here; " +
+        changes.textContent = notice + "Changed. The page is too long to mark the changes here; " +
           "review --apply --dry-run counts them.";
         return;
       }
       var counts = diff.counts;
-      changes.textContent = "Changed here: " + counts.changed + " word" +
+      changes.textContent = notice + "Changed here: " + counts.changed + " word" +
         (counts.changed === 1 ? "" : "s") + " changed, " + counts.added + " added, " +
         counts.removed + " removed. Struck words are the reading's, underlined words yours. " +
         "review --apply counts the change again and records its own count.";

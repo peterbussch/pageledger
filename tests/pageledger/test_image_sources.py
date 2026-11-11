@@ -1216,3 +1216,61 @@ def test_without_poppler_the_review_view_links_each_page_image(scans, stub, tmp_
     page = (tmp_path / "view" / "index.html").read_text(encoding="utf-8")
     assert "No page image in this view." in page
     assert 'href="../scans/page-2.png">Page 2 (page-2.png) in the source</a>' in page
+
+
+def _sheet_rows(sheet):
+    import csv
+
+    with sheet.open(encoding="utf-8-sig", newline="") as stream:
+        return list(csv.DictReader(stream))
+
+
+def test_no_sheet_cell_written_from_a_file_name_starts_like_a_formula(stub, tmp_path):
+    from pageledger.processing import create_review_sheet, review_job
+    from pageledger.review_html import decisions_csv, write_review_html
+
+    folder = tmp_path / "-pages"
+    folder.mkdir()
+    (folder / "-1.jpg").write_bytes(jpeg("page-rgb.jpg"))
+    (folder / "@a.jpg").write_bytes(jpeg("page-gray.jpg"))
+    _job(folder, stub, tmp_path)
+    sheet = tmp_path / "review.csv"
+    create_review_sheet(tmp_path / "job", sheet)
+    rows = _sheet_rows(sheet)
+    assert [row["source_page"] for row in rows] == ["./-pages/-1.jpg", "./-pages/@a.jpg"]
+    formula = ("=", "+", "-", "@", "\t", "\r")
+    assert not any(value.startswith(formula) for row in rows for value in row.values())
+    view = tmp_path / "view"
+    write_review_html(tmp_path / "job", view, images="none")
+    embedded = _sheet_rows(view / "review.csv")
+    assert [row["source_page"] for row in embedded] == ["../-pages/-1.jpg", "../-pages/@a.jpg"]
+    sheet.write_bytes(decisions_csv(rows, {"p0001": {"decision": "accept", "note": "-1 smudge"}}))
+    assert review_job(tmp_path / "job", sheet, reviewer="A. Reader")["decisions"] == {
+        "reviewed_text": 1
+    }
+
+
+def test_a_source_named_like_a_formula_is_written_as_a_plain_path(stub, tmp_path):
+    from pageledger.processing import create_review_sheet
+
+    image = tmp_path / "=cmd.jpg"
+    image.write_bytes(jpeg("page-rgb.jpg"))
+    _job(image, stub, tmp_path)
+    sheet = tmp_path / "review.csv"
+    create_review_sheet(tmp_path / "job", sheet)
+    assert _sheet_rows(sheet)[0]["source_page"] == "./=cmd.jpg"
+
+
+def test_a_file_name_with_text_direction_controls_is_drawn_marked(stub, tmp_path):
+    from pageledger.review_html import write_review_html
+
+    folder = tmp_path / "scans"
+    folder.mkdir()
+    (folder / "0001.jpg").write_bytes(jpeg("page-rgb.jpg"))
+    (folder / "0002‮gpj.exe.jpg").write_bytes(jpeg("page-gray.jpg"))
+    _job(folder, stub, tmp_path)
+    write_review_html(tmp_path / "job", tmp_path / "view", images="none")
+    page = (tmp_path / "view" / "index.html").read_text(encoding="utf-8")
+    heading = page[page.index('<h2 id="p0002-title">') :]
+    heading = heading[: heading.index("</h2>")]
+    assert "‮" not in heading and ">U+202E</span>" in heading
