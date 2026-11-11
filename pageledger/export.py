@@ -17,6 +17,7 @@ from .document_report import (
     relative_path,
     verify_document_report,
 )
+from .image_source import page_target
 from .processing import verify_job
 
 FORMATS = ("txt", "md", "jsonl", "tei")
@@ -149,7 +150,8 @@ def _md(report: dict, pages: list[dict], source: str) -> str:
     title, job = _heading(report)
     lines = [f"# {_escape(title)}", "", f"SHA-256 `{report['source']['sha256']}`. {job}.", ""]
     for page in pages:
-        target = f"{source}#page={page['page_number']}"
+        path, fragment = page_target(report["source"], page["page_number"])
+        target = source + quote(path) + fragment
         lines += [f"## Page {page['page_number']}", "", f"- {_link('Source page', target)}"]
         lines += [f"- {label}: {_escape(value)}" for label, value in _facts(page)]
         if page["text"] is not None:
@@ -184,7 +186,9 @@ def _tei(report: dict, pages: list[dict], source: str) -> str:
     body = ET.SubElement(ET.SubElement(tei, "text"), "body")
     for page in pages:
         number = page["page_number"]
-        ET.SubElement(body, "pb", n=str(number), facs=f"{quote(source)}#page={number}")
+        path, fragment = page_target(report["source"], number)
+        facs = quote(source + path) + fragment
+        ET.SubElement(body, "pb", n=str(number), facs=facs)
         status = "reviewed" if page["review"] is not None else "unreviewed"
         div = ET.SubElement(body, "div", type="page", subtype=status)
         if page["text"] is None:

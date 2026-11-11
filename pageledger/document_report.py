@@ -11,6 +11,7 @@ from pathlib import Path
 from urllib.parse import quote
 
 from .checkpoint import atomic_bytes
+from .image_source import page_target
 from .processing_policy import (
     _DISAGREEMENTS,
     ENGINE_AGREEMENT_THRESHOLD,
@@ -637,7 +638,8 @@ def build_document_report(
                     text=content.decode("utf-8"),
                     edition=True,
                 )
-        page["source_link"] = f"{quoted_source}#page={page['page_number']}"
+        path, fragment = page_target(job["source"], page["page_number"])
+        page["source_link"] = quoted_source + quote(path) + fragment
         pages.append(page)
     report["pages"] = pages
     report["counts"] = {

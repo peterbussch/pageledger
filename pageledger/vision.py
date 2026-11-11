@@ -28,6 +28,7 @@ from .adapters import (
     _require_binary,
     _run_ocr_command,
     ocr_pdf_page_count,
+    render_warnings,
 )
 from .checkpoint import atomic_bytes, file_digest
 from .image_evidence import MAX_IMAGE_DIMENSION, jpeg_dimensions, validate_input_evidence
@@ -180,6 +181,8 @@ class VisionAdapter:
         prompt = prompt if prompt and prompt.strip() else DEFAULT_PROMPT
         started = time.perf_counter()
         jpeg, side, arguments = self._render(source, page_number)
+        # -scale-to fits the page's long side to `side` pixels.
+        warnings = render_warnings(source, page_number, pixels=(side, side))
         evidence = (
             None
             if self.evidence_dir is None
@@ -188,7 +191,7 @@ class VisionAdapter:
         try:
             response = self._post(self._request_body(prompt, jpeg))
         except AdapterFailure as failure:
-            nothing = self._result("", None, None, side, evidence, started)
+            nothing = self._result("", None, None, side, evidence, started, warnings)
             raise AdapterFailure(
                 failure.code, http_status=failure.http_status, partial_result=nothing
             ) from None
@@ -211,6 +214,7 @@ class VisionAdapter:
             side,
             evidence,
             started,
+            warnings,
         )
         reason = choice.get("finish_reason")
         reason = reason.lower() if isinstance(reason, str) else reason
@@ -390,6 +394,7 @@ class VisionAdapter:
         side: int,
         evidence: dict[str, Any] | None,
         started: float,
+        warnings: list[str],
     ) -> ExtractionResult:
         """The page's reading; with evidence, the model is the one the endpoint reported."""
         if evidence is not None:
@@ -406,7 +411,7 @@ class VisionAdapter:
             "text",
             None,
             model,
-            [],
+            warnings,
             {
                 "pages": 1,
                 "tokens": tokens if type(tokens) is int and tokens >= 0 else None,

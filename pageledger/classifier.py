@@ -14,6 +14,7 @@ import yaml
 from .adapters import _import_object, adapter_page_count, load_adapter
 from .artifacts import build_route_map, read_jsonl, write_jsonl, write_yaml
 from .config import PageLedgerConfig, load_config
+from .image_source import KIND, is_image_source, source_identity
 from .quality import _alphabetic_token_lengths, _quality_text, _text_quality_metrics
 from .runner import (
     _apply_adapter_path,
@@ -306,6 +307,12 @@ def classify(
     warnings: list[str] = list(config.warnings)
     if from_run is None:
         expanded_inputs, _skipped_inputs = _expand_inputs(inputs)
+        images = next((path for path in expanded_inputs if is_image_source(path)), None)
+        if images is not None:
+            raise ValueError(
+                f"{images} is page images, which have no text layer to classify. Read it "
+                "with an OCR engine (pageledger run), then classify that run with --from-run."
+            )
         _validate_unique_inputs(expanded_inputs)
         documents, evidence, probe_identities = _classify_inputs(
             inputs=expanded_inputs,
@@ -524,10 +531,11 @@ def _classify_from_run(
         source = source.resolve()
         manifest_input = inputs[document_index]
         recorded_hash = manifest_input.get("sha256")
+        kind = manifest_input.get("kind")
         if isinstance(recorded_hash, str):
-            if not source.is_file():
+            if not (source.is_file() or (kind == KIND and source.is_dir())):
                 warnings.append(f"Source is unavailable since parent run: {source}")
-            elif _sha256_path(source) != recorded_hash:
+            elif source_identity(source, kind) != recorded_hash:
                 warnings.append(f"Source changed since parent run: {source}")
         pages: list[dict[str, Any]] = []
         for page in document["pages"]:

@@ -329,7 +329,10 @@ def build_parser() -> argparse.ArgumentParser:
         "inputs",
         nargs="+",
         type=Path,
-        help="Input files or directories; directories are expanded to direct child files",
+        help=(
+            "Input files or directories; a directory expands to its direct child files, "
+            "or is one document when it holds JPEG or PNG page images"
+        ),
     )
     run_config = run_parser.add_mutually_exclusive_group(required=True)
     run_config.add_argument("--config", type=Path, help="PageLedger YAML config")

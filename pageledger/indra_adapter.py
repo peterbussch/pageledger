@@ -24,7 +24,7 @@ from pathlib import Path
 from statistics import mean
 from typing import Any, ClassVar
 
-from .adapters import ExtractionResult, ocr_pdf_page_count
+from .adapters import ExtractionResult, ocr_pdf_page_count, render_warnings
 
 INDRA_MODES = ("ocr", "auto")
 INDRA_OUTPUTS = ("text", "markdown")
@@ -173,7 +173,10 @@ class IndraAdapter:
                 + ("; math" if self.math else "")
                 + f"; source={page.source}"
             ),
-            warnings=[],
+            # In auto mode a page may come from its text layer, which renders nothing.
+            warnings=render_warnings(source, page_number, dpi=self.dpi)
+            if page.source == "ocr"
+            else [],
             usage={
                 "pages": 1,
                 "tokens": None,

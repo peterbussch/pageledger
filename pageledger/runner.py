@@ -9,6 +9,7 @@ import re
 import sys
 import time
 from collections.abc import Callable, Sequence
+from contextlib import ExitStack
 from datetime import datetime, timezone
 from pathlib import Path
 from shutil import copyfile
@@ -21,8 +22,10 @@ from .adapters import (
     PDF_ONLY_ADAPTER_NAMES,
     AdapterFailure,
     PageLedgerDiagnostic,
+    PdfTextAdapter,
     adapter_page_count,
     load_adapter,
+    native_page_pixels,
     ocr_pdf_page_count,
     paginate,
     pdf_page_count,
@@ -53,6 +56,15 @@ from .budget import (
 )
 from .config import load_config
 from .grading import grade_page
+from .image_source import (
+    KIND,
+    ImageSource,
+    carrier,
+    is_image_source,
+    read_image_source,
+    read_sha256,
+    source_identity,
+)
 from .policy import generative_page_ids, rebuild_policy_queues
 from .quality import _build_quality_entry, mark_repeated_page_text, repeated_text_key
 from .replay import build_reproducibility_profile
@@ -361,7 +373,13 @@ def resume(run_dir: Path, *, adapter_path: Path | None = None) -> dict[str, Any]
         )
 
 
-def _run(
+def _run(**arguments: Any) -> dict[str, Any]:
+    # Carriers for page-image sources exist only while the run reads its pages.
+    with ExitStack() as carriers:
+        return _run_pages(**arguments, _carriers=carriers)
+
+
+def _run_pages(
     *,
     inputs: list[Path],
     config_path: Path,
@@ -380,6 +398,7 @@ def _run(
     _reproducibility_profile: dict[str, Any] | None = None,
     _phase_observer: PhaseObserver | None = None,
     _checkpoint: Any | None = None,
+    _carriers: ExitStack,
 ) -> dict[str, Any]:
     """Run the alpha PageLedger loop.
 
@@ -473,7 +492,18 @@ def _run(
         if len(input_paths) != 1:
             raise ValueError("--pages requires a single input file")
         selected_page_numbers = _parse_pages_expression(pages)
-    _validate_adapter_inputs(input_paths, adapter_name=effective_adapter_name)
+    images: dict[Path, ImageSource] = {}
+    for path in input_paths:
+        if is_image_source(path):
+            images[path] = read_image_source(path)
+            skipped_inputs.extend(path / name for name in images[path].skipped)
+    _validate_adapter_inputs(input_paths, adapter_name=effective_adapter_name, images=images)
+
+    def count_pages(source: Path) -> int:
+        if source in images:
+            return len(images[source].pages)
+        return _planned_page_count(source, adapter=adapter, adapter_name=effective_adapter_name)
+
     if adapter is not None and not dry_run and callable(getattr(adapter, "preflight", None)):
         adapter.preflight(input_paths)
     if _checkpoint is None:
@@ -484,9 +514,7 @@ def _run(
     page_counts: dict[Path, int] = {}
     if routes_path is not None:
         for source in input_paths:
-            page_counts[source.resolve()] = _planned_page_count(
-                source, adapter=adapter, adapter_name=effective_adapter_name
-            )
+            page_counts[source.resolve()] = count_pages(source)
         taxonomy = config.data.get("taxonomy") or {}
         page_types = set((taxonomy.get("page_types") or {}).keys())
         imported_routes, route_warnings = load_route_map(
@@ -554,9 +582,7 @@ def _run(
                 page_count = page_counts[resolved_source]
                 routed_pages = [dict(page) for page in imported_document["pages"]]
             elif selection_by_source is None:
-                page_count = _planned_page_count(
-                    source, adapter=adapter, adapter_name=effective_adapter_name
-                )
+                page_count = count_pages(source)
                 page_numbers: Sequence[int] = range(1, page_count + 1)
                 if selected_page_numbers is not None:
                     highest = selected_page_numbers[-1]
@@ -577,11 +603,7 @@ def _run(
                     else None
                 )
                 page_count = (
-                    declared_page_count
-                    if declared_page_count is not None
-                    else _planned_page_count(
-                        source, adapter=adapter, adapter_name=effective_adapter_name
-                    )
+                    declared_page_count if declared_page_count is not None else count_pages(source)
                 )
                 planned = [(item["page_id"], int(item["page_number"])) for item in selected]
                 if any(page_number > page_count for _, page_number in planned):
@@ -609,14 +631,16 @@ def _run(
                         page["review"] = True
                     routed_pages.append(page)
             try:
-                source_sha256 = _sha256_path(source)
+                source_sha256 = images[source].sha256 if source in images else _sha256_path(source)
             except OSError as exc:
                 raise RuntimeError(f"Cannot read input file '{source}': {exc}") from exc
-            input_entry = {
+            input_entry: dict[str, Any] = {
                 "path": str(source),
                 "sha256": source_sha256,
                 "page_count": page_count,
             }
+            if source in images:
+                input_entry.update(kind=KIND, images=images[source].manifest())
             if selected_page_numbers is not None:
                 input_entry["pages"] = pages
             elif selection_by_source is not None:
@@ -648,6 +672,7 @@ def _run(
         for page in document["pages"]
     ]
     source_sha256_map = {Path(item["path"]): item["sha256"] for item in input_entries}
+    input_entries_by_path = {Path(item["path"]): item for item in input_entries}
     readable_sources: dict[Path, Path] = {}
     if _checkpoint is not None and recovery_job is not None:
         located = _checkpoint.sources or _checkpoint.check_sources()
@@ -686,6 +711,33 @@ def _run(
         if recovery_job is not None
         else [path.name for path in skipped_inputs]
     )
+    # What each page-image document's engine reads: a carrier PDF, or with an adapter
+    # that reads images and not PDFs, the page images themselves.
+    image_documents: dict[Path, ImageSource] = {}
+    carrier_paths: dict[Path, Path] = {}
+    input_types = getattr(adapter, "input_types", ())
+    reads_images = "image" in input_types and "pdf" not in input_types
+    # Built-in pdf_text renders nothing, so its carrier holds no image bytes.
+    reads_text = isinstance(adapter, PdfTextAdapter)
+    for input_path, input_entry, document in zip(
+        input_paths, input_entries, documents, strict=True
+    ):
+        if input_entry.get("kind") != KIND:
+            continue
+        image_documents[Path(input_entry["path"])] = images[input_path]
+        read_pages = sorted(
+            page["page_number"] for page in document["pages"] if _requires_adapter(page["action"])
+        )
+        if dry_run or adapter is None or reads_images or not read_pages:
+            continue
+        carried = [] if reads_text else read_pages
+        path, sha256 = _carriers.enter_context(carrier(images[input_path], carried))
+        if recovery_job is None:
+            input_entry["carrier"] = {"sha256": sha256, "derived": True, "pages": carried}
+        elif input_entry.get("carrier", {}).get("sha256") != sha256:
+            raise ValueError("Recovery page-image carrier differs from the recorded one")
+        carrier_paths[Path(input_entry["path"])] = path
+
     if _checkpoint is not None and recovery_job is None:
         from .checkpoint import adapter_identity
 
@@ -767,6 +819,11 @@ def _run(
         page_prompt = cast(str | None, page.get("prompt"))
         prompt_hash = _sha256_text(page_prompt or "")
         readable = readable_sources.get(source, source)
+        reading, reading_sha256, page_image = readable, None, None
+        if source in image_documents:
+            page_image = image_documents[source].page(page["page_number"])
+            reading = carrier_paths.get(source, page_image.path)
+            reading_sha256 = read_sha256(input_entries_by_path[source], page["page_number"])
 
         phase_clock.switch("adapter_call")
         try:
@@ -782,7 +839,7 @@ def _run(
                 extract_kwargs = {}
             result, extraction_seconds, extraction_started_at, attempt, adapter_error = extract(
                 adapter=adapter,
-                source=readable,
+                source=reading,
                 page=page,
                 prompt=page_prompt,
                 **extract_kwargs,
@@ -814,7 +871,7 @@ def _run(
             validate_input_evidence(
                 result.input_evidence,
                 root=out_dir,
-                source_sha256=_sha256_path(readable),
+                source_sha256=reading_sha256 or _sha256_path(readable),
                 page_number=page["page_number"],
                 prompt_sha256=prompt_hash,
             )
@@ -904,6 +961,7 @@ def _run(
                 adapter_capabilities=adapter_capabilities,
                 page_cost=page_cost,
                 page_cost_basis=page_cost_basis,
+                source_detail=_source_detail(readable, page, adapter, page_image),
             )
         )
         phase_clock.switch("quality")
@@ -1335,15 +1393,16 @@ def rerun(
         source = Path(source_str)
         recorded_input = recorded_inputs.get(str(source.resolve()))
         recorded = recorded_input.get("sha256") if recorded_input else None
+        kind = recorded_input.get("kind") if recorded_input else None
         if not source.exists():
             from .source_index import find_indexed
 
-            located = find_indexed(recorded) if isinstance(recorded, str) else None
+            located = find_indexed(recorded, kind) if isinstance(recorded, str) else None
             if located is None:
                 raise ValueError(f"Rerun source no longer exists: {source}")
             # The parent keeps its recorded path; the child records where it read.
             relocated[source_str] = source = located
-        elif not isinstance(recorded, str) or _sha256_path(source) != recorded:
+        elif not isinstance(recorded, str) or source_identity(source, kind) != recorded:
             raise ValueError(
                 f"Source changed since parent run: {source} (sha256 does not match parent manifest)"
             )
@@ -1499,14 +1558,17 @@ def _expand_inputs(inputs: list[Path]) -> tuple[list[Path], list[Path]]:
 
     Hidden entries (names starting with ".") include macOS .DS_Store files and
     AppleDouble "._*" sidecars. They are skipped and returned separately so the
-    run can report them. Files named explicitly are always kept.
+    run can report them. Files named explicitly are always kept. A folder of
+    page images is one document and stays a single input.
     """
     expanded: list[Path] = []
     skipped: list[Path] = []
     for path in inputs:
         if not path.exists():
             raise ValueError(f"Input path does not exist: {path}")
-        if path.is_dir():
+        if path.is_dir() and is_image_source(path):
+            expanded.append(path)
+        elif path.is_dir():
             for child in sorted(path.iterdir()):
                 if child.is_file():
                     (skipped if child.name.startswith(".") else expanded).append(child)
@@ -1517,7 +1579,14 @@ def _expand_inputs(inputs: list[Path]) -> tuple[list[Path], list[Path]]:
     return expanded, skipped
 
 
-def _validate_adapter_inputs(inputs: list[Path], *, adapter_name: str | None) -> None:
+def _validate_adapter_inputs(
+    inputs: list[Path], *, adapter_name: str | None, images: dict[Path, ImageSource]
+) -> None:
+    if adapter_name == "text" and images:
+        raise ValueError(
+            f"Adapter 'text' cannot read page images: {next(iter(images))}. "
+            "Use an OCR adapter such as pdf_ocr or rapidocr."
+        )
     if adapter_name == "text":
         pdf_inputs = [path for path in inputs if path.suffix.lower() == ".pdf"]
         if pdf_inputs:
@@ -1528,7 +1597,9 @@ def _validate_adapter_inputs(inputs: list[Path], *, adapter_name: str | None) ->
                 "run.adapter: pdf_ocr for scanned PDFs."
             )
     if adapter_name in PDF_ONLY_ADAPTER_NAMES:
-        non_pdf_inputs = [path for path in inputs if path.suffix.lower() != ".pdf"]
+        non_pdf_inputs = [
+            path for path in inputs if path.suffix.lower() != ".pdf" and path not in images
+        ]
         if non_pdf_inputs:
             first = non_pdf_inputs[0]
             raise ValueError(
@@ -1662,6 +1733,7 @@ def _build_provenance_entry(
     adapter_capabilities: list[str],
     page_cost: float | None,
     page_cost_basis: str | None,
+    source_detail: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     return {
         "schema_version": schema_version,
@@ -1671,6 +1743,7 @@ def _build_provenance_entry(
             "path": str(source),
             "page_number": page["page_number"],
             "sha256": source_sha256,
+            **(source_detail or {}),
         },
         "route": {
             "type": page["type"],
@@ -1705,6 +1778,21 @@ def _build_provenance_entry(
             else {}
         ),
     }
+
+
+def _source_detail(
+    source: Path, page: dict[str, Any], adapter: Any, image: Any | None
+) -> dict[str, Any]:
+    """A page's own image, and the native pixels of what an engine rendered, when known."""
+    if image is not None:
+        return {
+            "image": image.record(),
+            "native_pixels": {"width": image.width, "height": image.height},
+        }
+    if source.suffix.lower() != ".pdf" or "embedded_text" in getattr(adapter, "capabilities", ()):
+        return {}
+    native = native_page_pixels(source, page["page_number"])
+    return {} if native is None else {"native_pixels": {"width": native[0], "height": native[1]}}
 
 
 def _artifact_extension(result_format: str) -> str:

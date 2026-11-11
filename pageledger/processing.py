@@ -33,6 +33,7 @@ from .classifier import classify_signals, merge_classify_thresholds, structural_
 from .comparison import compare_texts
 from .config import load_config
 from .contest import contest as contest_spans
+from .image_source import KIND, is_image_source, manifest_changes, read_image_source
 from .lexicon import load_lexicon, roughness
 from .processing_config import ladder, processing_config
 from .processing_policy import (
@@ -77,9 +78,28 @@ def _publish(job: dict, root: Path) -> dict:
 def _check_source(job: dict) -> Path:
     """Return where the recorded source bytes are now; job.json keeps the recorded path."""
     try:
-        return resolve_source(job["source"]["path"], job["source"]["sha256"])
+        return resolve_source(
+            job["source"]["path"], job["source"]["sha256"], job["source"].get("kind")
+        )
     except SourceUnavailable as exc:
-        raise ValueError("Document job source changed or is missing") from exc
+        raise ValueError("Document job source changed or is missing" + _changes(job)) from exc
+
+
+def _changes(job: dict) -> str:
+    """Which page images differ from the recorded ones, when the folder is still there."""
+    source = job["source"]
+    if source.get("kind") != KIND or not Path(source["path"]).exists():
+        return ""
+    try:
+        current = read_image_source(Path(source["path"])).manifest()
+    except (OSError, ValueError, RuntimeError) as exc:
+        return f": {exc}"
+    return ": " + "; ".join(manifest_changes(source["images"], current))
+
+
+def _pdf_like(source: dict) -> bool:
+    """Page images are read through a PDF carrier, so they take the PDF stage defaults."""
+    return source.get("kind") == KIND or Path(source["path"]).suffix.lower() == ".pdf"
 
 
 def _build_comparisons(attempts: list[dict]) -> list[dict]:
@@ -130,15 +150,14 @@ def _load(root: Path) -> dict:
     if job.get("config_sha256") != digest(job.get("config")):
         raise ValueError("Document job configuration changed")
     config = job["config"]
-    expected_policy = processing_config(
-        config, pdf=Path(job["source"]["path"]).suffix.lower() == ".pdf"
-    )
+    expected_policy = processing_config(config, pdf=_pdf_like(job["source"]))
     if job.get("policy") != expected_policy or job.get("limits") != _effective_limits(
         expected_policy["limits"], job.get("limits_history", [])
     ):
         raise ValueError("Document processing policy changed")
     selected = job.get("selected_pages")
     count = job["source"]["page_count"]
+    images = job["source"].get("images")
     if (
         not isinstance(selected, list)
         or selected != sorted(set(selected))
@@ -147,6 +166,8 @@ def _load(root: Path) -> dict:
         or any(
             p["page_id"] != _page_id(p["page_number"])
             or p["source_sha256"] != job["source"]["sha256"]
+            or p.get("source_image_sha256")
+            != (images[p["page_number"] - 1]["sha256"] if images else None)
             for p in job["pages"]
         )
     ):
@@ -369,7 +390,17 @@ def _process(
         )
     if config.max_retries or config.on_page_error != "stop":
         raise ValueError("process requires zero retries and on_page_error: stop")
-    policy = processing_config(config.data, pdf=source.suffix.lower() == ".pdf")
+    images = read_image_source(source) if is_image_source(source) else None
+    policy = processing_config(
+        config.data, pdf=images is not None or source.suffix.lower() == ".pdf"
+    )
+    if images is not None and any(
+        policy[name] is not None and policy[name]["adapter"] == "text" for name in ladder(policy)
+    ):
+        raise ValueError(
+            "The text adapter cannot read page images; use pdf_text for processing.local_text "
+            "and an OCR adapter for processing.local_ocr."
+        )
     # Build every stage's adapter now, so a bad option fails before the job exists
     # rather than when the first page reaches that stage. Constructors make no requests.
     runner._apply_adapter_path(adapter_path)
@@ -381,11 +412,15 @@ def _process(
                 raise ValueError(f"processing.{name}: {exc}") from exc
     # A missing or unreadable word list fails here, before the job exists.
     lexicon = load_lexicon(policy["lexicon"]).identity if policy.get("lexicon") else None
-    source_sha = file_digest(source)
+    source_sha = images.sha256 if images else file_digest(source)
     container_error = None
     container_action = "Obtain a valid source container and start a new job."
     try:
-        count, annotations = inspect_source(source)
+        count, annotations = (
+            (len(images.pages), {"status": "none", "count": 0})
+            if images
+            else inspect_source(source)
+        )
     except PageLedgerDiagnostic as exc:
         count, annotations = None, {"status": "unknown", "count": None}
         container_error = f"source_container_invalid:{exc.code}"
@@ -438,6 +473,7 @@ def _process(
             "sha256": source_sha,
             "page_count": count,
             "annotations": annotations,
+            **({"kind": KIND, "images": images.manifest()} if images else {}),
         },
         "config": config.data,
         "config_sha256": digest(config.data),
@@ -466,6 +502,7 @@ def _process(
             page_id=_page_id(n),
             page_number=n,
             source_sha256=source_sha,
+            **({"source_image_sha256": images.page(n).sha256} if images else {}),
             attempts=[],
             selected_attempt=None,
             disposition="pending",
@@ -720,7 +757,7 @@ def _refresh(job: dict, root: Path, *, materialize: bool = True) -> None:
                     signals,
                     merge_classify_thresholds(None),
                     pdf_embedded_text_probe=stage["stage"] == "local_text"
-                    and Path(job["source"]["path"]).suffix.lower() == ".pdf",
+                    and _pdf_like(job["source"]),
                 )
             )
             attempt = {

@@ -67,6 +67,45 @@
                 "count"
               ],
               "additionalProperties": false
+            },
+            "kind": {
+              "const": "page_images"
+            },
+            "images": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "sha256": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{64}$"
+                  },
+                  "bytes": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "width": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "height": {
+                    "type": "integer",
+                    "minimum": 1
+                  }
+                },
+                "required": [
+                  "name",
+                  "sha256",
+                  "bytes",
+                  "width",
+                  "height"
+                ],
+                "additionalProperties": false
+              }
             }
           },
           "required": [
@@ -107,6 +146,10 @@
                 "minimum": 1
               },
               "source_sha256": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              },
+              "source_image_sha256": {
                 "type": "string",
                 "pattern": "^[0-9a-f]{64}$"
               },

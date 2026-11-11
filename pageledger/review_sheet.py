@@ -10,6 +10,7 @@ from pathlib import Path
 
 from .checkpoint import atomic_bytes
 from .document_report import relative_path
+from .image_source import page_target
 from .runner import _utc_now
 
 FIELDS = (
@@ -55,7 +56,7 @@ def write_review_sheet(job: dict, sheet: Path, root: Path) -> dict:
             {
                 "row_id": row_id,
                 "page_number": str(page["page_number"]),
-                "source_page": f"{source}#page={page['page_number']}",
+                "source_page": source + "".join(page_target(job["source"], page["page_number"])),
                 "disposition": page["disposition"],
                 "attempt_summary": _summary(root, page, _selected(page)),
                 "review_reasons": "; ".join(page["review_reasons"]),

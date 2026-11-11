@@ -15,6 +15,14 @@ import yaml
 
 from .artifacts import ARTIFACT_PATHS, _safe_resolve, build_rerun_manifest, render_audit_markdown
 from .config import PageLedgerConfig
+from .image_source import (
+    KIND,
+    carrier_sha256,
+    manifest_changes,
+    manifest_sha256,
+    read_image_source,
+    read_sha256,
+)
 from .replay import ReplayError, _validate_reproducibility_profile
 from .source_index import find_indexed
 
@@ -237,6 +245,9 @@ def verify_run(
     if not isinstance(manifest_inputs, list):
         manifest_inputs = []
         _add(errors, "manifest_structure_invalid", "Manifest inputs must be a list")
+    for entry in manifest_inputs:
+        if isinstance(entry, dict) and "kind" in entry:
+            _check_image_input(entry, errors)
     summary = manifest.get("summary")
     if not isinstance(summary, dict):
         summary = {}
@@ -412,6 +423,7 @@ def verify_run(
                         "page_number": page.get("page_number"),
                         "source": source,
                         "source_sha256": source_sha256,
+                        "input": manifest_input if isinstance(manifest_input, dict) else None,
                         "type": page.get("type"),
                         "action": page.get("action"),
                         "confidence": page.get("confidence"),
@@ -546,6 +558,7 @@ def verify_run(
                     errors,
                     "provenance.jsonl",
                 )
+                _check_page_image(page_id, source, route_page.get("input"), errors)
         evidence = entry.get("input_evidence")
         if evidence is not None:
             from .image_evidence import validate_input_evidence
@@ -554,7 +567,7 @@ def verify_run(
                 validate_input_evidence(
                     evidence,
                     root=root,
-                    source_sha256=source.get("sha256") if isinstance(source, dict) else None,
+                    source_sha256=_read_hash(source, route_page),
                     page_number=source.get("page_number") if isinstance(source, dict) else None,
                     prompt_sha256=entry.get("extractor", {}).get("prompt_hash"),
                 )
@@ -1966,8 +1979,79 @@ def _check_schema(
         )
 
 
+def _check_image_input(entry: dict[str, Any], errors: list[dict[str, Any]]) -> None:
+    images, carrier = entry.get("images"), entry.get("carrier")
+    try:
+        valid = (
+            entry["kind"] == KIND
+            and isinstance(images, list)
+            and len(images) == entry.get("page_count")
+            and manifest_sha256(images) == entry.get("sha256")
+            and (
+                carrier is None
+                or (
+                    _is_sha256(carrier.get("sha256"))
+                    and all(
+                        type(n) is int and 1 <= n <= len(images) for n in carrier.get("pages", [])
+                    )
+                )
+            )
+        )
+    except (AttributeError, TypeError, ValueError):
+        valid = False
+    if not valid:
+        _add(
+            errors,
+            "source_identity_mismatch",
+            f"Manifest page-image list does not match its source identity: {entry.get('path')}",
+            source=entry.get("path"),
+        )
+
+
+def _check_page_image(
+    page_id: str, source: dict[str, Any], manifest_input: Any, errors: list[dict[str, Any]]
+) -> None:
+    """A page of page images names the image the manifest lists at its place."""
+    if not isinstance(manifest_input, dict) or manifest_input.get("kind") != KIND:
+        return
+    images = manifest_input.get("images")
+    number = source.get("page_number")
+    image = source.get("image")
+    expected = (
+        images[number - 1]
+        if isinstance(images, list) and type(number) is int and 1 <= number <= len(images)
+        else None
+    )
+    if (
+        not isinstance(expected, dict)
+        or not isinstance(image, dict)
+        or {key: image.get(key) for key in expected} != expected
+    ):
+        _add(
+            errors,
+            "source_identity_mismatch",
+            f"Provenance page image differs from the manifest's page {number} for {page_id}",
+            page_id=page_id,
+        )
+
+
+def _read_hash(source: Any, route_page: dict[str, Any] | None) -> str | None:
+    """The hash of the file the engine read: a page-image carrier, a page image, or the source."""
+    if not isinstance(source, dict):
+        return None
+    manifest_input = route_page.get("input") if route_page is not None else None
+    if isinstance(manifest_input, dict) and manifest_input.get("kind") == KIND:
+        try:
+            return read_sha256(manifest_input, source["page_number"])
+        except (KeyError, IndexError, TypeError):
+            return None
+    return source.get("sha256")
+
+
 def _check_external_sources(
-    inputs: Any, route_sources: list[Any], warnings: list[dict[str, Any]]
+    inputs: Any,
+    route_sources: list[Any],
+    warnings: list[dict[str, Any]],
 ) -> None:
     if not isinstance(inputs, list):
         return
@@ -1983,6 +2067,10 @@ def _check_external_sources(
         source_path = route_source if isinstance(route_source, str) else entry["path"]
         path = Path(source_path).expanduser()
         expected = entry.get("sha256")
+        kind = entry.get("kind")
+        if kind == KIND:
+            _check_external_images(path, entry, warnings)
+            continue
         present = path.is_file()
         if present and not isinstance(expected, str):
             _add(
@@ -2019,6 +2107,69 @@ def _check_external_sources(
                 f"External source file no longer matches the manifest: {path}",
                 source=str(path),
             )
+
+
+def _check_external_images(
+    path: Path, entry: dict[str, Any], warnings: list[dict[str, Any]]
+) -> None:
+    """Name each image that changed, went missing, was added or moved; rebuild the carrier."""
+    expected = entry.get("sha256")
+    if not path.exists():
+        relocated = find_indexed(expected, KIND) if isinstance(expected, str) else None
+        if relocated is not None:
+            _add(
+                warnings,
+                "source_relocated",
+                f"External source found through the source index: {path} -> {relocated}",
+                source=str(path),
+                located=str(relocated),
+            )
+            return
+        _add(warnings, "source_missing", f"External source is missing: {path}", source=str(path))
+        return
+    try:
+        current = read_image_source(path)
+    except (OSError, ValueError, RuntimeError) as exc:
+        _add(
+            warnings,
+            "source_changed",
+            f"External page images no longer match the manifest: {path}: {exc}",
+            source=str(path),
+        )
+        return
+    if current.sha256 != expected:
+        relocated = find_indexed(expected, KIND) if isinstance(expected, str) else None
+        if relocated is not None:
+            _add(
+                warnings,
+                "source_relocated",
+                f"External source found through the source index: {path} -> {relocated}",
+                source=str(path),
+                located=str(relocated),
+            )
+            return
+        changes = manifest_changes(entry.get("images") or [], current.manifest())
+        _add(
+            warnings,
+            "source_changed",
+            f"External page images no longer match the manifest: {path} ({'; '.join(changes)})",
+            source=str(path),
+            changes=changes,
+        )
+        return
+    recorded = entry.get("carrier")
+    if (
+        isinstance(recorded, dict)
+        and isinstance(recorded.get("pages"), list)
+        and carrier_sha256(current, recorded["pages"]) != recorded.get("sha256")
+    ):
+        _add(
+            warnings,
+            "carrier_not_reproduced",
+            f"The page-image carrier rebuilt from {path} differs from the recorded one; "
+            "the images match, so the PageLedger version that wrote it differs",
+            source=str(path),
+        )
 
 
 def _sha256(path: Path) -> str:

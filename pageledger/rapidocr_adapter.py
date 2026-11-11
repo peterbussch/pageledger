@@ -25,7 +25,7 @@ from typing import Any, ClassVar
 
 import yaml
 
-from .adapters import ExtractionResult, ocr_pdf_page_count
+from .adapters import ExtractionResult, ocr_pdf_page_count, render_warnings
 
 
 @dataclass(frozen=True)
@@ -168,6 +168,7 @@ class RapidOCRAdapter:
             image = Path(tmp) / "page.png"
             if not image.is_file():
                 raise RuntimeError(f"pdftoppm produced no image for page {page_number}")
+            warnings = render_warnings(source, page_number, pixels=(self.max_side, self.max_side))
             result = engine(str(image))
         lines = []
         boxes = result.boxes if result.boxes is not None else []

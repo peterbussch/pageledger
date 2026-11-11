@@ -997,3 +997,42 @@ class JsonAdapter:
     raw_files = list((out_dir / "raw").glob("*.json"))
     assert len(raw_files) == 1
     assert json.loads(raw_files[0].read_text(encoding="utf-8")) == [{"place": "Baku", "total": 500}]
+
+
+def _png_page(width: int = 8, height: int = 4) -> bytes:
+    import struct
+    import zlib
+
+    def chunk(kind: bytes, body: bytes) -> bytes:
+        return (
+            struct.pack(">I", len(body)) + kind + body + struct.pack(">I", zlib.crc32(kind + body))
+        )
+
+    rows = b"".join(b"\x00" + b"\x80" * width for _ in range(height))
+    header = struct.pack(">IIBBBBB", width, height, 8, 0, 0, 0, 0)
+    return (
+        b"\x89PNG\r\n\x1a\n"
+        + chunk(b"IHDR", header)
+        + chunk(b"IDAT", zlib.compress(rows))
+        + chunk(b"IEND", b"")
+    )
+
+
+def test_page_image_run_artifacts_validate(tmp_path: Path) -> None:
+    """A run of a folder of page images writes artifacts its schemas accept."""
+    folder = tmp_path / "scans"
+    folder.mkdir()
+    (folder / "page-1.png").write_bytes(_png_page())
+    (folder / "page-2.png").write_bytes(_png_page(4, 8))
+    config = MINIMAL_CONFIG.replace("adapter: text", "adapter: pdf_text")
+    out_dir = _run_pageledger(tmp_path, config_yaml=config, inputs=[str(folder)])
+    manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
+    _validate(_manifest_schema, manifest, "manifest.json (page images)")
+    (entry,) = manifest["inputs"]
+    assert entry["kind"] == "page_images" and len(entry["images"]) == 2
+    assert entry["carrier"]["pages"] == []
+    lines = _validate_jsonl(out_dir / "provenance.jsonl", _provenance_schema, "provenance")
+    assert [line["source"]["image"]["name"] for line in lines] == ["page-1.png", "page-2.png"]
+    assert lines[1]["source"]["native_pixels"] == {"width": 4, "height": 8}
+    quality = _validate_jsonl(out_dir / "quality.jsonl", _quality_schema, "quality")
+    assert all("no_text_layer" in line["warnings"] for line in quality)

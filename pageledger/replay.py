@@ -394,6 +394,11 @@ def bundle_run(run_dir: Path, out_dir: Path) -> dict[str, Any]:
     if report.get("status") != "pass":
         raise ReplayError("run_not_verified", "Run directory did not pass verification")
     manifest = _read_json_object(run_root / "manifest.json", "manifest")
+    if any(isinstance(entry, dict) and "kind" in entry for entry in manifest.get("inputs") or []):
+        _fail(
+            "image_source_unsupported",
+            "Bundles do not yet carry page-image sources; keep the run and its images together",
+        )
     _reject_image_evidence(run_root, manifest)
     _check_bundle_eligibility(manifest)
     _validate_manifest_artifacts(manifest)

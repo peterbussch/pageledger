@@ -75,6 +75,8 @@ class PageLedgerDiagnostic(RuntimeError):
             "malformed_pdf",
             "render_limit",
             "engine_timeout",
+            "unsupported_image",
+            "malformed_image",
         }
     )
 
@@ -245,6 +247,18 @@ class PdfTextAdapter:
             raise ValueError(f"PDF text adapter does not support action: {action}")
 
         _ = page_id, prompt
+        from .image_source import carrier_page
+
+        if carrier_page(source, page_number) is not None:
+            # A carrier PageLedger wrote for page images has nothing but the images.
+            return ExtractionResult(
+                content="",
+                format="text",
+                confidence=None,
+                model="page image; no text layer",
+                warnings=["no_text_layer"],
+                usage={"pages": 1, "tokens": None, "compute_seconds": None, "cost_usd": None},
+            )
         if type(page_number) is not int or not 1 <= page_number <= self.page_count(source):
             raise ValueError(f"page_number {page_number} out of range for {source}")
         text, ocr_layer = _read_once(
@@ -371,7 +385,12 @@ class PdfOcrAdapter:
         started = time.perf_counter()
         target_dpi = _native_image_dpi(source, page_number, self.dpi, self._image_ppis)
         render_dpi, capped = _render_dpi(
-            pdftoppm, source, page_number, target_dpi, self.max_render_pixels
+            pdftoppm,
+            source,
+            page_number,
+            target_dpi,
+            self.max_render_pixels,
+            _render_floor(source, page_number),
         )
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
@@ -395,6 +414,7 @@ class PdfOcrAdapter:
             images = sorted(tmp_path.glob("page-*.png"))
             if not images:
                 raise RuntimeError(f"pdftoppm produced no image for page {page_number} of {source}")
+            rendered = _png_size(images[0])
             output_prefix = tmp_path / "ocr"
             _run_ocr_command(
                 [tesseract, str(images[0]), str(output_prefix), "-l", self.lang, "txt", "tsv"],
@@ -414,7 +434,8 @@ class PdfOcrAdapter:
                 f"{_dpi_note(render_dpi, self.dpi, raised=target_dpi > self.dpi)}; "
                 f"lang={self.lang}"
             ),
-            warnings=["render_dpi_capped"] if capped else [],
+            warnings=(["render_dpi_capped"] if capped else [])
+            + render_warnings(source, page_number, pixels=rendered),
             usage={
                 "pages": 1,
                 "tokens": None,
@@ -621,6 +642,11 @@ def _native_image_dpi(source: Path, page_number: int, requested_dpi: int, cache:
     Without pypdf, or when pypdf cannot read the file, the requested DPI stands;
     pdftoppm then renders the page or refuses it with its own error.
     """
+    from .image_source import carrier_page
+
+    image = carrier_page(source, page_number)
+    if image is not None:
+        return max(requested_dpi, min(round(max(image.ppi)), _MAX_NATIVE_DPI))
     if importlib.util.find_spec("pypdf") is None:
         return requested_dpi
     try:
@@ -629,6 +655,102 @@ def _native_image_dpi(source: Path, page_number: int, requested_dpi: int, cache:
         return requested_dpi
     ppi = page_ppis[page_number - 1] if page_number <= len(page_ppis) else 0.0
     return max(requested_dpi, min(round(ppi), _MAX_NATIVE_DPI))
+
+
+def _render_floor(source: Path, page_number: int) -> int:
+    """The lowest DPI a page may be rendered at to fit the pixel limit.
+
+    A page image rendered near its own resolution is legible whatever its declared
+    density, so its floor is half that resolution rather than the fixed minimum.
+    """
+    from .image_source import carrier_page
+
+    image = carrier_page(source, page_number)
+    if image is None:
+        return _MIN_RENDER_DPI
+    return min(_MIN_RENDER_DPI, max(1, int(min(image.ppi) / 2)))
+
+
+# A render with more than this many times the source image's pixels along the
+# long side is upsampled; 300 DPI on a 200 ppi scan is routine and stays quiet.
+UPSAMPLE_FACTOR = 1.5
+# A PDF page's largest image is its scan only when it has the page's proportions.
+_SCAN_ASPECT_TOLERANCE = 0.03
+
+
+def native_page_pixels(source: Path, page_number: int) -> tuple[int, int, float] | None:
+    """Pixel width and height of the image that is the page, and the page's long side in inches.
+
+    For a page image that is the image itself. For a PDF page it is the largest
+    embedded image when that image has the page's proportions, so that it is
+    plausibly the scan; figures and logos on a born-digital page are not. None
+    when unknown, including PDFs without the pypdf extra. Image data is never decoded.
+    """
+    from .image_source import carrier_page
+
+    image = carrier_page(source, page_number)
+    if image is not None:
+        width, height = image.points
+        return image.width, image.height, max(width, height) / 72
+    if source.suffix.lower() != ".pdf" or importlib.util.find_spec("pypdf") is None:
+        return None
+    try:
+        scans = _pdf_scans(str(source.absolute()), _file_identity(source))
+    except (OSError, PageLedgerDiagnostic):
+        return None
+    return scans[page_number - 1] if 1 <= page_number <= len(scans) else None
+
+
+@lru_cache(maxsize=8)
+def _pdf_scans(path: str, identity: tuple[int, ...]) -> tuple[tuple[int, int, float] | None, ...]:
+    _ = identity
+    source = Path(path)
+    with source.open("rb") as handle, _reading_pdf(source) as open_pdf:
+        return tuple(_page_scan(page) for page in open_pdf(handle).pages)
+
+
+def _page_scan(page: Any) -> tuple[int, int, float] | None:
+    width, height = float(page.cropbox.width), float(page.cropbox.height)
+    resources = page["/Resources"] if "/Resources" in page else {}
+    xobjects = resources["/XObject"] if "/XObject" in resources else {}
+    sizes = [
+        (int(xobjects[name]["/Width"]), int(xobjects[name]["/Height"]))
+        for name in xobjects
+        if xobjects[name].get("/Subtype") == "/Image"
+    ]
+    if width <= 0 or height <= 0 or not sizes:
+        return None
+    image = max(sizes, key=lambda size: size[0] * size[1])
+    if min(image) <= 0:
+        return None
+    page_shape = min(width, height) / max(width, height)
+    if abs(min(image) / max(image) - page_shape) > _SCAN_ASPECT_TOLERANCE * page_shape:
+        return None
+    return image[0], image[1], max(width, height) / 72
+
+
+def render_warnings(
+    source: Path,
+    page_number: int,
+    *,
+    pixels: tuple[int, int] | None = None,
+    dpi: float | None = None,
+) -> list[str]:
+    """``render_upsampled`` when a page was rendered well beyond its source image's pixels.
+
+    Give the rendered image's size, or the DPI it was rendered at. Engines that
+    render pages call this; a custom adapter may too.
+    """
+    native = native_page_pixels(source, page_number)
+    if native is None:
+        return []
+    if pixels is not None:
+        rendered = float(max(pixels))
+    elif dpi is not None:
+        rendered = native[2] * dpi
+    else:
+        return []
+    return ["render_upsampled"] if rendered > max(native[:2]) * UPSAMPLE_FACTOR else []
 
 
 def _page_image_ppis(source: Path) -> tuple[float, ...]:

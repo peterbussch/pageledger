@@ -14,6 +14,7 @@ from typing import Any
 
 from .adapters import ADAPTER_FAILURE_CODES, AdapterFailure, ExtractionResult
 from .image_evidence import validate_input_evidence
+from .image_source import KIND, manifest_sha256, read_sha256
 from .replay import _adapter_code_sha256, _package_code_sha256
 
 PAGE_ID = re.compile(r"[A-Za-z0-9_-]+\Z")
@@ -45,6 +46,33 @@ def file_digest(path: Path) -> str:
         for chunk in iter(lambda: handle.read(1024 * 1024), b""):
             hasher.update(chunk)
     return hasher.hexdigest()
+
+
+def _valid_images(source: dict[str, Any]) -> bool:
+    """A page-image input lists one image per page whose manifest hash is its identity."""
+    images, carrier = source.get("images"), source.get("carrier")
+    try:
+        return (
+            source["kind"] == KIND
+            and isinstance(images, list)
+            and len(images) == source["page_count"]
+            and manifest_sha256(images) == source["sha256"]
+            and all(
+                isinstance(item, dict)
+                and set(item) == {"name", "sha256", "bytes", "width", "height"}
+                for item in images
+            )
+            and (
+                carrier is None
+                or (
+                    isinstance(carrier, dict)
+                    and isinstance(carrier.get("sha256"), str)
+                    and all(type(n) is int for n in carrier.get("pages", []))
+                )
+            )
+        )
+    except (TypeError, ValueError):
+        return False
 
 
 def _sync_directory(path: Path) -> None:
@@ -202,7 +230,9 @@ class Checkpoint:
             ):
                 raise ValueError("Invalid recovery source identity")
             try:
-                located[source["path"]] = resolve_source(source["path"], source["sha256"])
+                located[source["path"]] = resolve_source(
+                    source["path"], source["sha256"], source.get("kind")
+                )
             except SourceUnavailable as exc:
                 raise ValueError("Recovery source identity changed or source is missing") from exc
         self.sources = located
@@ -227,7 +257,8 @@ class Checkpoint:
         }
         if (
             not isinstance(job, dict)
-            or set(job) != required
+            or set(job) - {"skipped_inputs"} != required
+            or not all(isinstance(name, str) for name in job.get("skipped_inputs", []))
             or not all(
                 isinstance(job[key], str) and job[key]
                 for key in (
@@ -281,6 +312,8 @@ class Checkpoint:
                 or not isinstance(document.get("pages"), list)
             ):
                 raise ValueError("Invalid recovery source inventory")
+            if "kind" in source and not _valid_images(source):
+                raise ValueError("Invalid recovery page image inventory")
             if source["path"] in source_paths:
                 raise ValueError("Duplicate recovery source identity")
             source_paths.add(source["path"])
@@ -299,7 +332,7 @@ class Checkpoint:
                 self.page_path(page["page_id"])
                 numbers.add(page["page_number"])
                 expected[page["page_id"]] = page
-                page_sources[page["page_id"]] = source["sha256"]
+                page_sources[page["page_id"]] = read_sha256(source, page["page_number"])
             from .runner import _parse_pages_expression
 
             planned_numbers = (
