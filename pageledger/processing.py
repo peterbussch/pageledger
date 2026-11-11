@@ -221,8 +221,8 @@ def _refuse_relocated_resume(job: dict, root: Path) -> None:
     if _relocated(job, root):
         raise ValueError(
             f"This job was written in {job['root']} and is now in {root}. It resumes only "
-            f"where it was written: move it back to {job['root']} to resume it. verify-job, "
-            "review-job, adjudicate and export work where it is now."
+            f"where it was written: move it back to {job['root']} to resume it. verify, "
+            "review, adjudicate and export work where it is now."
         )
 
 

@@ -446,7 +446,7 @@ def _run_pages(
         raise ValueError(
             "No extraction route: this config has no taxonomy.page_types, so every page "
             "would go to review and nothing would be extracted. Add taxonomy.page_types "
-            "(pageledger init-config writes a working example), pass --routes with a "
+            "(pageledger init --run writes a working example), pass --routes with a "
             "reviewed route map, or use --adapter for a quick run. For an intentional "
             "review-only run, map a page type to default_action: review."
         )

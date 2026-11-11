@@ -266,6 +266,12 @@ def test_exit_codes(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     assert cli.main(["verify-run", str(tmp_path / "missing")]) == 1
     run = _copy_release("0.7.0", "run", tmp_path)
     assert cli.main(["verify-run", str(run)]) == 0
+    with pytest.raises(SystemExit) as usage:
+        cli.main(["verify"])
+    assert usage.value.code == 2
+    assert cli.main(["verify", str(tmp_path / "missing")]) == 1
+    assert cli.main(["verify", str(run)]) == 0
+    assert cli.main(["verify", str(_copy_release("0.7.0", "job", tmp_path))]) == 0
     capsys.readouterr()
 
 

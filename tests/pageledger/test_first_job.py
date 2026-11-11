@@ -1,4 +1,4 @@
-"""A first document job: init-config --processing, and process without --config."""
+"""A first document job: init, and process without --config."""
 
 from __future__ import annotations
 
@@ -31,7 +31,7 @@ def _engine_args(name: str, tmp_path: Path) -> list[str]:
 
 def _write_config(tmp_path: Path, *args: str) -> Path:
     path = tmp_path / "processing.yml"
-    assert main(["init-config", "--processing", *args, "--out", str(path)]) == 0
+    assert main(["init", *args, "--out", str(path)]) == 0
     return path
 
 
@@ -94,11 +94,13 @@ def test_written_config_follows_the_source_for_local_text(tmp_path: Path) -> Non
     [
         (["init-config", "--engine", "indra"], "go with --processing"),
         (["init-config", "--processing", "--adapter", "pdf_ocr"], "does not go with --processing"),
-        (["init-config", "--processing", "--engine", "indra", "--lang", "rus"], "indra takes none"),
-        (["init-config", "--processing", "--engine", "rapidocr"], "rapidocr needs --model-dir"),
-        (["init-config", "--processing", "--lang", "eng; rm"], "--lang must be Tesseract"),
-        (["init-config", "--processing", "--model-dir", "m"], "not pdf_ocr"),
-        (["init-config", "--processing", "--engine", "none", "--lang", "eng"], "need an OCR"),
+        (["init", "--run", "--engine", "indra"], "do not go with --run"),
+        (["init", "--adapter", "pdf_ocr"], "--adapter goes with --run"),
+        (["init", "--engine", "indra", "--lang", "rus"], "indra takes none"),
+        (["init", "--engine", "rapidocr"], "rapidocr needs --model-dir"),
+        (["init", "--lang", "eng; rm"], "--lang must be Tesseract"),
+        (["init", "--model-dir", "m"], "not pdf_ocr"),
+        (["init", "--engine", "none", "--lang", "eng"], "need an OCR"),
         (
             ["process", "a.pdf", "--config", "c.yml", "--engine", "indra", "--out", "j"],
             "set them in the config file",
@@ -140,7 +142,7 @@ def test_process_without_config_records_what_the_written_config_would(
     assert main(["process", str(source), "--out", str(implicit)]) == 0
     err = capsys.readouterr().err
     assert "no --config given" in err
-    assert "pageledger init-config --processing --engine none --out processing.yml" in err
+    assert "pageledger init --engine none --out processing.yml" in err
     config = _write_config(tmp_path, "--engine", "none")
     assert main(["process", str(source), "--config", str(config), "--out", str(explicit)]) == 0
     capsys.readouterr()
@@ -263,7 +265,7 @@ def test_completed_process_prints_the_next_steps_but_not_in_json(
     assert lines[0] == "Status: completed"
     needing = next(line for line in lines if line.startswith("Pages needing a person:"))
     assert re.fullmatch(r"Pages needing a person: \d of 2, listed first in the report\.", needing)
-    assert any(line.startswith("Next: pageledger inspect-job ") for line in lines)
+    assert any(line.startswith("Next: pageledger inspect ") for line in lines)
     assert any("pageledger export " in line and "letters.md" in line for line in lines)
 
     assert main(["process", str(source), "--out", str(tmp_path / "b"), "--json"]) == 0
@@ -272,9 +274,9 @@ def test_completed_process_prints_the_next_steps_but_not_in_json(
     assert set(json.loads(out)) == {"job_id", "out_dir", "status", "report", "next_action"}
 
 
-def test_the_processing_example_is_what_init_config_writes(
+def test_the_processing_example_is_what_init_writes(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     example = Path(__file__).resolve().parents[2] / "docs" / "examples" / "processing.yml"
-    assert main(["init-config", "--processing"]) == 0
+    assert main(["init"]) == 0
     assert capsys.readouterr().out == example.read_text(encoding="utf-8")

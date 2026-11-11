@@ -1,4 +1,4 @@
-# A PageLedger document job, as written by `pageledger init-config --processing`.
+# A PageLedger document job, as written by `pageledger init`.
 # The job reads the text each page already carries, then sends the pages
 # that look wrong to OCR on this machine.
 # Nothing below calls a paid service. Every stage and setting is explained in

@@ -795,22 +795,22 @@ def test_cli_fetch_iiif_json_and_exit_codes(tmp_path: Path, monkeypatch, capsys)
     monkeypatch.setattr(iiif, "default_opener", lambda: server)
     monkeypatch.setattr(iiif.time, "sleep", lambda _s: None)
     out = tmp_path / "snap"
-    assert main(["fetch-iiif", MANIFEST_URL, "--out", str(out), "--json"]) == 0
+    assert main(["fetch", MANIFEST_URL, "--out", str(out), "--json"]) == 0
     summary = json.loads(capsys.readouterr().out)
     assert summary["status"] == "complete" and summary["fetched"] == 2
 
     server.routes[f"{SERVICE}1/full/max/0/default.jpg"] = FakeResponse(404)
-    assert main(["fetch-iiif", MANIFEST_URL, "--out", str(tmp_path / "b"), "--delay", "0"]) == 1
+    assert main(["fetch", MANIFEST_URL, "--out", str(tmp_path / "b"), "--delay", "0"]) == 1
     captured = capsys.readouterr()
     assert captured.out.startswith("Incomplete: 1 of 2")
     assert "missing: canvas 1: canvas 1: HTTP 404" in captured.out
     assert "canvas 2 of 2" in captured.err
 
-    assert main(["fetch-iiif", MANIFEST_URL, "--out", str(out), "--json"]) == 1
+    assert main(["fetch", MANIFEST_URL, "--out", str(out), "--json"]) == 1
     error = json.loads(capsys.readouterr().out)
     assert error["status"] == "error" and error["code"] == "iiif_error"
     with pytest.raises(SystemExit) as usage:
-        main(["fetch-iiif", MANIFEST_URL])
+        main(["fetch", MANIFEST_URL])
     assert usage.value.code == 2
 
 
@@ -823,7 +823,7 @@ def test_cli_reports_below_native_warning(tmp_path: Path, monkeypatch, capsys) -
     )
     monkeypatch.setattr(iiif, "default_opener", lambda: server)
     monkeypatch.setattr(iiif.time, "sleep", lambda _s: None)
-    assert main(["fetch-iiif", f"{SERVICE}/info.json", "--out", str(tmp_path / "s")]) == 0
+    assert main(["fetch", f"{SERVICE}/info.json", "--out", str(tmp_path / "s")]) == 0
     out = capsys.readouterr()
     assert "warning: iiif_below_native: canvas 1: the server allows only 2000x1200" in out.out
 

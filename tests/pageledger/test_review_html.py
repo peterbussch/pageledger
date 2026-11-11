@@ -101,7 +101,8 @@ def test_the_view_shows_each_page_and_changes_nothing_in_the_job(job, tmp_path):
     assert "Possible missing or incomplete content (coverage_defect)" in document
     assert "warnings.md#document-job-dispositions" in document
     assert "Nothing you choose here is recorded in the job." in document
-    assert "pageledger review-job" in document and "--reviewer" in document
+    assert "pageledger review " in document and "--apply" in document
+    assert "--reviewer" in document
     assert "No page image in this view." in document
     # Nothing is fetched; the only web addresses are links to the documentation.
     assert not re.search(r"src=\"[a-z]+:|<link|@import|url\(", document)
@@ -291,9 +292,9 @@ def test_the_view_refuses_an_existing_folder_and_a_job_that_does_not_verify(job,
 
 
 def test_the_command_writes_the_view(job, tmp_path, capsys):
-    assert main(["review-html", str(job), "--out", str(tmp_path / "view"), "--images", "none"]) == 0
+    assert main(["review", str(job), "--out", str(tmp_path / "view"), "--images", "none"]) == 0
     assert "Review view:" in capsys.readouterr().out
-    assert main(["review-html", str(job), "--out", str(tmp_path / "view"), "--json"]) == 1
+    assert main(["review", str(job), "--out", str(tmp_path / "view"), "--json"]) == 1
     assert json.loads(capsys.readouterr().out)["status"] == "error"
 
 

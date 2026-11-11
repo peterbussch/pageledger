@@ -2,7 +2,7 @@
 
 The view is a rendering of a verified job, like report.md. It writes nothing into
 the job. Decisions made in it leave the browser as the same CSV and binding that
-`review-sheet` writes, and count only once `review-job` applies them.
+`review --sheet` writes, and count only once `review --apply` applies them.
 """
 
 from __future__ import annotations
@@ -282,8 +282,8 @@ class _View:
         counts = report["counts"]
         needing = sum(_needs_person(page) for page in report["pages"])
         command = (
-            f"pageledger review-job {shlex.quote(str(self.root))} "
-            f'--review {shlex.quote(str(self.out / SHEET))} --reviewer "YOUR NAME"'
+            f"pageledger review {shlex.quote(str(self.root))} "
+            f'--apply {shlex.quote(str(self.out / SHEET))} --reviewer "YOUR NAME"'
         )
         body = [
             '<a class="skip" href="#pages">Skip to the page list</a>',
@@ -298,13 +298,13 @@ class _View:
             '<section class="decisions" aria-labelledby="decisions-title">',
             '<h2 id="decisions-title">Recording decisions</h2>',
             "<p><strong>Nothing you choose here is recorded in the job.</strong> This page is "
-            "a reading copy of the job, written by <code>pageledger review-html</code>. "
+            "a reading copy of the job, written by <code>pageledger review</code>. "
             "Choose a decision under any page, then download the review sheet, save it in "
             f"this folder in place of the blank <code>{SHEET}</code> (its binding, "
             f"<code>{SHEET}.binding.json</code>, is already here), and apply it:</p>",
             f'<pre class="command">{_e(command)}</pre>',
             "<p>Add <code>--dry-run</code> first to check every decision without recording "
-            "any. <code>review-job</code> refuses the sheet if the job has changed since "
+            "any. <code>review --apply</code> refuses the sheet if the job has changed since "
             "this view was written.</p>",
             "<noscript><p>Choosing decisions here needs JavaScript. Without it, fill in "
             f"<code>{SHEET}</code> in a spreadsheet instead.</p></noscript>",
@@ -642,7 +642,7 @@ button { font-size: .95rem; padding: .3rem .7rem; }
 @media (prefers-color-scheme: dark) { .problem { color: #f2b8b5; } }
 """
 
-# buildCsv must stay a pure function: tests run it with node against review-job.
+# buildCsv must stay a pure function: tests run it with node against review --apply.
 CSV_JS = """
 function buildCsv(fields, rows, decisions) {
   var quote = function (value) { return '"' + String(value).replace(/"/g, '""') + '"'; };
@@ -717,7 +717,7 @@ _SCRIPT = (
     }
     function update() {
       if (FORMULA.test(note.value)) {
-        problem.textContent = "A note cannot start with =, + or @: review-job refuses it " +
+        problem.textContent = "A note cannot start with =, + or @: review --apply refuses it " +
           "as a spreadsheet formula. This change is not kept.";
         return;
       }
