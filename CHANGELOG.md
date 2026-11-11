@@ -136,7 +136,7 @@ and, from 1.0, [stability](docs/stability.md).
   a document job copies that digest to the attempt. Adapters without layouts and recovery records written
   before this release are unchanged.
 - Tiled reads of dense pages. With `processing.tiling` (`stages`, `layout`, optional `min_line_pixels` and
-  `max_tiles`), a document job cuts each page a reader stage reads into tiles along the whitespace of the
+  `max_tiles`), a document job cuts each page its `image` stage reads into tiles along the whitespace of the
   `layout` stage's boxes (the job's RapidOCR, or ALTO checked against it), and `vision` reads every tile as
   its own image and request; the reading is the tiles' texts in order. The plan is kept in the stage's hashed
   configuration and planned again from the retained layout by `verify-job`; the evidence is a new
@@ -229,7 +229,8 @@ and, from 1.0, [stability](docs/stability.md).
   manifests are not supported.
 - Tiles are cut along a layout only, never as a blind grid; a tiled page is read whole (every tile) and read
   again whole on a retry; each tile gets the stage's prompt without the heading it continues; the OCR still
-  reads the whole page; column order assumes left-to-right print; `vision` is the only built-in adapter that
+  reads the whole page; column order assumes left-to-right print; only the `image` stage is read in tiles,
+  not `local_image` or `second_opinion`; `vision` is the only built-in adapter that
   reads tiles. Uncontested engine comparisons compare a tiled reading with the OCR in each reading's own
   order.
 

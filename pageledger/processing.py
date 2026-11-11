@@ -1142,6 +1142,10 @@ def _plan_stage(
 
 
 def _check_tiling_adapters(tiling: dict, adapters: dict) -> None:
+    import shutil
+
+    if shutil.which("pdfinfo") is None:
+        raise ValueError("processing.tiling needs pdfinfo for each page's size; install Poppler")
     layout = adapters[tiling["layout"]]
     if "layout" not in getattr(layout, "capabilities", ()):
         raise ValueError(
@@ -1295,17 +1299,19 @@ def _check_tiled_attempt(job: dict, root: Path, page: dict, attempt: dict, stage
                 f"{attempt['attempt_id']} tile {tile['tile_id']} is not its planned box"
             )
     validate_tile_text(evidence, attempt["text"])
+    chosen = by_id.get(source) if source else None
+    rejected = chosen is not None and chosen["stage"] != tiling["layout"]
+    # Boxes set aside as pointing elsewhere on the page say nothing about the cuts.
     literal = [
         _attempt_layout(root, item)
         for item in page["attempts"]
         if item["stage"] in LAYOUT_STAGES
+        and not (rejected and item["stage"] == tiling["layout"])
         and item["outcome"] == "completed"
         and item.get("layout_sha256")
     ]
     failed = [tile["tile_id"] for tile in evidence["tiles"] if tile["outcome"] == "failed"]
     edge_cut = check_edges(plan, literal)
-    chosen = by_id.get(source) if source else None
-    rejected = chosen is not None and chosen["stage"] != tiling["layout"]
     codes = {
         "tile_failed": bool(failed),
         "tile_edge_cut": bool(edge_cut),

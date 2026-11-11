@@ -350,11 +350,18 @@ class VisionAdapter:
             )
 
         for tile in self.tiles["tiles"]:
-            jpeg, dpi, arguments, crop = self._render_tile(source, page_number, tile)
-            dpis.append(dpi)
             artifact = self.evidence_dir / f"{page_id}-{tile['tile_id']}.jpg"
-            if artifact.exists() or artifact.is_symlink():
-                raise AdapterFailure("IMAGE_EVIDENCE_INVALID")
+            try:
+                if artifact.exists() or artifact.is_symlink():
+                    raise AdapterFailure("IMAGE_EVIDENCE_INVALID")
+                jpeg, dpi, arguments, crop = self._render_tile(source, page_number, tile)
+            except (AdapterFailure, PageLedgerDiagnostic) as failure:
+                if not evidence["tiles"]:
+                    raise
+                # Tiles already sent were paid for: keep them as the page's partial result.
+                code = failure.code if isinstance(failure, AdapterFailure) else "IMAGE_RENDER_ERROR"
+                raise AdapterFailure(code, partial_result=result()) from None
+            dpis.append(dpi)
             atomic_bytes(artifact, jpeg)
             record = {
                 "tile_id": tile["tile_id"],

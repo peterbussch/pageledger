@@ -69,7 +69,8 @@ plan, every tile image and where each tile's text lies are kept and checked by
 order. Tiles follow a layout only (no blind grid), every tile of a page is read
 and a retried page is read again whole, the model gets the stage's prompt
 without the entry heading a tile continues, the OCR still reads the whole page,
-column order assumes left-to-right print, and `vision` is the only built-in
+column order assumes left-to-right print, only the `image` stage is read in
+tiles (not `local_image` or `second_opinion`), and `vision` is the only built-in
 adapter that reads tiles. See
 [Read dense pages in tiles](processing-spec.md#read-dense-pages-in-tiles).
 

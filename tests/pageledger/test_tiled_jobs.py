@@ -30,6 +30,7 @@ from pageledger.processing import (
 )
 from pageledger.tiling import project_witness
 
+pytest.importorskip("pypdf")  # a document job reads the PDF's page list with it
 pytestmark = pytest.mark.skipif(shutil.which("pdfinfo") is None, reason="needs pdfinfo")
 
 WIDTH, HEIGHT = 612, 792
@@ -386,6 +387,65 @@ def test_a_failed_tile_holds_the_page_and_names_the_tile(tiled_job, monkeypatch)
     assert "t03" in report
 
 
+def test_a_tile_request_that_times_out_halts_with_the_tiles_already_paid_for(
+    tiled_job, monkeypatch
+):
+    from pageledger.adapters import AdapterFailure
+
+    original = vision.VisionAdapter._post
+    calls = []
+
+    def time_out_third(self, body):
+        calls.append(1)
+        if len(calls) == 3:
+            raise AdapterFailure("MODEL_TIMEOUT")
+        return original(self, body)
+
+    monkeypatch.setattr(vision.VisionAdapter, "_post", time_out_third)
+    source, config, root, log = tiled_job
+    result = process(source=source, config_path=config, out_dir=root)
+    assert result["status"] == "halted"
+    job = read_record(root / "job.json")
+    assert job["halt_reason"].startswith("attempt_stopped:image-0001:")
+    assert job["usage"]["image_requests"] == 3
+    reading = next(a for a in job["pages"][0]["attempts"] if a["stage"] == "image")
+    assert reading["outcome"] == "failed"
+    assert [t["outcome"] for t in reading["input_evidence"]["tiles"]] == [
+        "completed",
+        "completed",
+        "failed",
+    ]
+    assert reading["tiling"]["sent"] == 3 and reading["tiling"]["failed"] == ["t03"]
+    assert (root / reading["raw_artifact"]).read_text().count("entry p1") > 0
+    assert verify_job(root)["status"] == "pass"
+    # Nothing is bought again without the user: resuming sends no tile.
+    rendered = len(log.read_text().splitlines())
+    assert resume_job(root)["status"] == "halted"
+    assert len(log.read_text().splitlines()) == rendered
+
+
+def test_a_retried_tiled_page_reads_its_plan_again_and_pays_for_every_tile(tiled_job, monkeypatch):
+    from pageledger.adapters import AdapterFailure
+
+    original = vision.VisionAdapter.extract
+    calls = []
+
+    def fail_first(self, source, **kwargs):
+        calls.append(1)
+        if len(calls) == 1:
+            raise AdapterFailure("MODEL_TIMEOUT")
+        return original(self, source, **kwargs)
+
+    monkeypatch.setattr(vision.VisionAdapter, "extract", fail_first)
+    root, job = _completed(tiled_job)
+    first, retry = [s for s in job["stages"] if s["stage"] == "image"][:2]
+    assert retry["stage_id"] == f"{first['stage_id']}-retry-1"
+    assert retry["tiles"] == first["tiles"]
+    # The failed request counts once, the retry once per tile, and page 2 the same.
+    assert job["usage"]["image_requests"] == 1 + 9 + 9
+    assert job["pages"][0]["attempts"][-1]["attempt_id"].startswith(retry["stage_id"])
+
+
 def test_projection_matches_the_reading_order_of_the_tiles():
     layout = Literal("local_ocr").extract(Path("x"), page_id="p", page_number=1, action="t").layout
     from pageledger.tiling import plan_tiles
@@ -421,6 +481,8 @@ def test_an_earlier_ocr_layout_is_cut_along_only_where_the_jobs_ocr_confirms_it(
     cut_along = reading["tiling"]["layout_attempt"]
     assert cut_along.startswith("local_ocr" if rejected else "local_text")
     assert ("alto_layout_rejected" in reading["warnings"]) is rejected
+    # Boxes set aside do not make the cuts look bad.
+    assert reading["tiling"]["edge_cut"] == []
     assert verify_job(root)["status"] == "pass"
 
 

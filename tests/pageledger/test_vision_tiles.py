@@ -27,8 +27,10 @@ if args == ["-v"]:
     sys.exit(0)
 with open(os.environ["STUB_PDFTOPPM_LOG"], "a") as log:
     log.write(json.dumps(args) + "\\n")
+calls = len(open(os.environ["STUB_PDFTOPPM_LOG"]).read().splitlines())
 width, height = int(args[args.index("-W") + 1]), int(args[args.index("-H") + 1])
-width -= int(os.environ.get("STUB_PDFTOPPM_SHORT", "0"))
+if calls > int(os.environ.get("STUB_PDFTOPPM_GOOD", "999")):
+    width -= int(os.environ.get("STUB_PDFTOPPM_SHORT", "0"))
 jpeg = (
     b"\\xff\\xd8\\xff\\xc0" + struct.pack(">H B H H B", 17, 8, height, width, 3)
     + b"\\x01\\x11\\x00\\x02\\x11\\x00\\x03\\x11\\x00"
@@ -241,9 +243,24 @@ def test_tiles_served_by_different_models_fail_the_page(tiled):
 def test_a_render_of_the_wrong_size_is_a_render_error(tiled, monkeypatch):
     read, *_ = tiled
     monkeypatch.setenv("STUB_PDFTOPPM_SHORT", "5")
+    monkeypatch.setenv("STUB_PDFTOPPM_GOOD", "0")
     with pytest.raises(AdapterFailure) as caught:
         read([])
     assert caught.value.code == "IMAGE_RENDER_ERROR"
+    assert caught.value.partial_result is None
+
+
+def test_a_render_failure_after_paid_tiles_keeps_them_as_a_partial(tiled, monkeypatch):
+    read, _, run, _, _ = tiled
+    monkeypatch.setenv("STUB_PDFTOPPM_SHORT", "5")
+    monkeypatch.setenv("STUB_PDFTOPPM_GOOD", "2")
+    with pytest.raises(AdapterFailure) as caught:
+        read([reply("text 0"), reply("text 1")])
+    assert caught.value.code == "IMAGE_RENDER_ERROR"
+    partial = caught.value.partial_result
+    assert [tile["tile_id"] for tile in partial.input_evidence["tiles"]] == ["t01", "t02"]
+    assert partial.content == "text 0\ntext 1"
+    validate_input_evidence(partial.input_evidence, root=run)
 
 
 def test_text_that_does_not_match_its_tiles_is_refused(tiled):

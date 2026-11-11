@@ -187,9 +187,10 @@ def processing_config(data: dict[str, Any], *, pdf: bool) -> dict[str, Any]:
     return result
 
 
-# Stages that read a page image with a model, which tiling can cut up, and the
-# literal stages whose layout it can cut along.
-TILED_STAGES = ("local_image", "image", "second_opinion")
+# The reader stages tiling can cut up (only the paid reader so far: local_image and
+# second_opinion have not been tested in tiles), and the literal stages whose layout
+# it can cut along.
+TILED_STAGES = ("image",)
 LAYOUT_STAGES = ("local_text", "local_ocr", "second_ocr")
 TILING_DEFAULTS = {"min_line_pixels": 32, "max_tiles": 24}
 

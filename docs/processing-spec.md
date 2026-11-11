@@ -607,7 +607,7 @@ processing:
   local_ocr: {adapter: rapidocr, adapter_options: {rec_model_dir: ..., reading_order: columns}}
   image: {adapter: vision, adapter_options: {base_url: ..., model: ..., max_image_side: 2048}}
   tiling:
-    stages: [image]          # any of local_image, image, second_opinion
+    stages: [image]          # the stages read in tiles: image only, for now
     layout: local_ocr        # the stage whose boxes the page is cut along; or local_text for alto
     min_line_pixels: 32      # optional: how tall a median line should render, in pixels
     max_tiles: 24            # optional: most tiles for one page (at most 99)
@@ -663,7 +663,8 @@ literal reading's own layout regrouped tile by tile
 (`tiling.project_witness`), written to `witnesses/<page_id>.txt` and named in
 the contested record as `witness.projection` and on the page as
 `contested.witness_projection`; spans are then about words, not about order.
-Adjudication packets for a tiled page have no single image: each span names
+This needs a witness with a layout (`rapidocr`, `alto`); a witness without one,
+such as a PDF text layer, is compared in its own order. Adjudication packets for a tiled page have no single image: each span names
 its `tile_id`, the tile images are copied beside the packet as
 `<page_id>-tNN.jpg` and listed under `images`, and the receipt's
 `image_sha256` is null.
@@ -679,7 +680,8 @@ reads every tile of a page; it cannot read only some. A page that is retried is
 read again whole, tiles already read are not reused. Each tile gets the stage's
 own prompt, without the heading or any word of where the tile lies. The literal
 OCR still reads the whole page, not the tiles. Column order assumes
-left-to-right print. `vision` is the only built-in adapter that reads tiles
+left-to-right print. Only the `image` stage can be read in tiles so far, not
+`local_image` or `second_opinion`. `vision` is the only built-in adapter that reads tiles
 (capability `page_tiles`); `rapidocr` and `alto` are the built-in layouts
 (capability `layout`). Engine comparisons that are not contested (`engine_disagreement`)
 compare the tiled reading with the literal one in each reading's own order: use
