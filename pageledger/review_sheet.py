@@ -201,7 +201,7 @@ def _receipt(
                 "write a new review sheet"
             )
         token = row["decision"].strip()
-        text, start = row.get("text"), row.get("from")
+        text, start = row.get("text"), row.get("from") or None
         if token == "correct" or token.startswith("correct:"):
             if token == "correct" and sheet:
                 raise ValueError(

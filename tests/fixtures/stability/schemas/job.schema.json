@@ -726,6 +726,54 @@
                             }
                           ],
                           "properties": {
+                            "correction": {
+                              "additionalProperties": false,
+                              "description": "Present when a person corrected the page's text; see job-review.schema.json.",
+                              "properties": {
+                                "artifact": {
+                                  "pattern": "^corrections/[^/]+-[0-9a-f]{64}\\.txt$",
+                                  "type": "string"
+                                },
+                                "from_sha256": {
+                                  "pattern": "^[0-9a-f]{64}$",
+                                  "type": "string"
+                                },
+                                "sha256": {
+                                  "pattern": "^[0-9a-f]{64}$",
+                                  "type": "string"
+                                },
+                                "words": {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "added": {
+                                      "minimum": 0,
+                                      "type": "integer"
+                                    },
+                                    "changed": {
+                                      "minimum": 0,
+                                      "type": "integer"
+                                    },
+                                    "removed": {
+                                      "minimum": 0,
+                                      "type": "integer"
+                                    }
+                                  },
+                                  "required": [
+                                    "changed",
+                                    "added",
+                                    "removed"
+                                  ],
+                                  "type": "object"
+                                }
+                              },
+                              "required": [
+                                "artifact",
+                                "sha256",
+                                "from_sha256",
+                                "words"
+                              ],
+                              "type": "object"
+                            },
                             "disposition": {
                               "enum": [
                                 "reviewed_text",
@@ -867,6 +915,54 @@
                           }
                         ],
                         "properties": {
+                          "correction": {
+                            "additionalProperties": false,
+                            "description": "Present when a person corrected the page's text; see job-review.schema.json.",
+                            "properties": {
+                              "artifact": {
+                                "pattern": "^corrections/[^/]+-[0-9a-f]{64}\\.txt$",
+                                "type": "string"
+                              },
+                              "from_sha256": {
+                                "pattern": "^[0-9a-f]{64}$",
+                                "type": "string"
+                              },
+                              "sha256": {
+                                "pattern": "^[0-9a-f]{64}$",
+                                "type": "string"
+                              },
+                              "words": {
+                                "additionalProperties": false,
+                                "properties": {
+                                  "added": {
+                                    "minimum": 0,
+                                    "type": "integer"
+                                  },
+                                  "changed": {
+                                    "minimum": 0,
+                                    "type": "integer"
+                                  },
+                                  "removed": {
+                                    "minimum": 0,
+                                    "type": "integer"
+                                  }
+                                },
+                                "required": [
+                                  "changed",
+                                  "added",
+                                  "removed"
+                                ],
+                                "type": "object"
+                              }
+                            },
+                            "required": [
+                              "artifact",
+                              "sha256",
+                              "from_sha256",
+                              "words"
+                            ],
+                            "type": "object"
+                          },
                           "disposition": {
                             "enum": [
                               "reviewed_text",

@@ -12,6 +12,11 @@
           "minimum": 0,
           "type": "integer"
         },
+        "corrected_pages": {
+          "description": "Pages whose selected text is a person's correction. Present only when there is one.",
+          "minimum": 1,
+          "type": "integer"
+        },
         "processed_pages": {
           "minimum": 0,
           "type": "integer"
@@ -681,6 +686,54 @@
                         }
                       ],
                       "properties": {
+                        "correction": {
+                          "additionalProperties": false,
+                          "description": "Present when a person corrected the page's text; see job-review.schema.json.",
+                          "properties": {
+                            "artifact": {
+                              "pattern": "^corrections/[^/]+-[0-9a-f]{64}\\.txt$",
+                              "type": "string"
+                            },
+                            "from_sha256": {
+                              "pattern": "^[0-9a-f]{64}$",
+                              "type": "string"
+                            },
+                            "sha256": {
+                              "pattern": "^[0-9a-f]{64}$",
+                              "type": "string"
+                            },
+                            "words": {
+                              "additionalProperties": false,
+                              "properties": {
+                                "added": {
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                "changed": {
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                "removed": {
+                                  "minimum": 0,
+                                  "type": "integer"
+                                }
+                              },
+                              "required": [
+                                "changed",
+                                "added",
+                                "removed"
+                              ],
+                              "type": "object"
+                            }
+                          },
+                          "required": [
+                            "artifact",
+                            "sha256",
+                            "from_sha256",
+                            "words"
+                          ],
+                          "type": "object"
+                        },
                         "disposition": {
                           "enum": [
                             "reviewed_text",
@@ -822,6 +875,54 @@
                       }
                     ],
                     "properties": {
+                      "correction": {
+                        "additionalProperties": false,
+                        "description": "Present when a person corrected the page's text; see job-review.schema.json.",
+                        "properties": {
+                          "artifact": {
+                            "pattern": "^corrections/[^/]+-[0-9a-f]{64}\\.txt$",
+                            "type": "string"
+                          },
+                          "from_sha256": {
+                            "pattern": "^[0-9a-f]{64}$",
+                            "type": "string"
+                          },
+                          "sha256": {
+                            "pattern": "^[0-9a-f]{64}$",
+                            "type": "string"
+                          },
+                          "words": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "added": {
+                                "minimum": 0,
+                                "type": "integer"
+                              },
+                              "changed": {
+                                "minimum": 0,
+                                "type": "integer"
+                              },
+                              "removed": {
+                                "minimum": 0,
+                                "type": "integer"
+                              }
+                            },
+                            "required": [
+                              "changed",
+                              "added",
+                              "removed"
+                            ],
+                            "type": "object"
+                          }
+                        },
+                        "required": [
+                          "artifact",
+                          "sha256",
+                          "from_sha256",
+                          "words"
+                        ],
+                        "type": "object"
+                      },
                       "disposition": {
                         "enum": [
                           "reviewed_text",
@@ -921,6 +1022,49 @@
                   "attempt_id": {
                     "minLength": 1,
                     "type": "string"
+                  },
+                  "correction": {
+                    "additionalProperties": false,
+                    "description": "Present when the text is a person's correction, recorded in the page's review receipt. path and sha256 then name the corrected text; from_path and from_sha256 the text it was made from (the attempt's output, its edition, or an earlier correction); words what it changed.",
+                    "properties": {
+                      "from_path": {
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "from_sha256": {
+                        "pattern": "^[0-9a-f]{64}$",
+                        "type": "string"
+                      },
+                      "words": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "added": {
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "changed": {
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "removed": {
+                            "minimum": 0,
+                            "type": "integer"
+                          }
+                        },
+                        "required": [
+                          "changed",
+                          "added",
+                          "removed"
+                        ],
+                        "type": "object"
+                      }
+                    },
+                    "required": [
+                      "from_path",
+                      "from_sha256",
+                      "words"
+                    ],
+                    "type": "object"
                   },
                   "edition": {
                     "const": true,

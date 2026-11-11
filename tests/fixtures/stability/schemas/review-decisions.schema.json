@@ -1,0 +1,59 @@
+{
+  "$id": "https://github.com/peterbussch/pageledger/schemas/review-decisions.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The JSON form of a review sheet, which the review view downloads as review.json and review --apply reads. bindings is the sheet's binding (see review-sheet-binding.schema.json); rows hold only the pages with a decision. A row's text is a corrected page, recorded exactly after CRLF and lone CR are made LF.",
+  "properties": {
+    "bindings": {
+      "type": "object"
+    },
+    "rows": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "decision": {
+            "description": "A review sheet decision (accept, blank, illustration, handwriting, unreadable, source_defect, use:ATTEMPT, correct:FILE), or correct with the corrected text in text.",
+            "type": "string"
+          },
+          "from": {
+            "description": "With a correct decision: the attempt whose own reading the correction starts from. Absent or empty: the page's selected text.",
+            "type": "string"
+          },
+          "note": {
+            "description": "Becomes the receipt's reason.",
+            "type": "string"
+          },
+          "page_number": {
+            "pattern": "^[1-9][0-9]*$",
+            "type": "string"
+          },
+          "row_id": {
+            "pattern": "^p[0-9]{4,}$",
+            "type": "string"
+          },
+          "text": {
+            "description": "The corrected text, with decision correct.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "row_id",
+          "page_number",
+          "decision"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "schema_version": {
+      "const": "0.1"
+    }
+  },
+  "required": [
+    "schema_version",
+    "bindings",
+    "rows"
+  ],
+  "title": "PageLedger Review Decisions File",
+  "type": "object"
+}

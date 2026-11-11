@@ -14,6 +14,7 @@ from pathlib import Path
 
 import pytest
 import yaml
+from jsonschema import validate
 from test_processing import TEXT, StageAdapter, _contesting, launch, setup  # noqa: F401
 
 from pageledger import review_html, runner
@@ -371,6 +372,8 @@ def test_a_correction_downloaded_from_the_page_is_recorded_exactly(job, tmp_path
     )
     path = tmp_path / "view" / "review.json"
     path.write_bytes(built)
+    schemas = Path(__file__).resolve().parents[2] / "schemas"
+    validate(json.loads(built), json.loads((schemas / "review-decisions.schema.json").read_text()))
 
     result = review_job(job, path, reviewer="A. Reader")
 

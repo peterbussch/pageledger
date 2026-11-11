@@ -43,6 +43,59 @@
         "null"
       ]
     },
+    "correction": {
+      "additionalProperties": false,
+      "description": "Present when the text is a person's correction: its file and hash, the text it was made from (the attempt's output, an edition, or an earlier correction), and the words it changed, added and removed. The review names who made it.",
+      "properties": {
+        "from_path": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "from_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "path": {
+          "pattern": "^corrections/",
+          "type": "string"
+        },
+        "sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "words": {
+          "additionalProperties": false,
+          "properties": {
+            "added": {
+              "minimum": 0,
+              "type": "integer"
+            },
+            "changed": {
+              "minimum": 0,
+              "type": "integer"
+            },
+            "removed": {
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "changed",
+            "added",
+            "removed"
+          ],
+          "type": "object"
+        }
+      },
+      "required": [
+        "path",
+        "sha256",
+        "from_path",
+        "from_sha256",
+        "words"
+      ],
+      "type": "object"
+    },
     "disposition": {
       "minLength": 1,
       "type": "string"
