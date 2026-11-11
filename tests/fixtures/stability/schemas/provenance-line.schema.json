@@ -102,6 +102,11 @@
         }
       ]
     },
+    "layout_sha256": {
+      "description": "SHA-256 of the canonical JSON of the layout the adapter returned (pageledger/layout.py); absent when it returned none. The layout itself is kept in the run's recovery record.",
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
     "metrics": {
       "additionalProperties": false,
       "description": "Flat copy of usage for analytical workflows.",

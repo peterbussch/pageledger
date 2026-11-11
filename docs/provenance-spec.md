@@ -68,6 +68,14 @@ actual returned model/provider. `result.raw_sha256` continues to hash output;
 `input_evidence.sha256` hashes the transmitted input. Existing records may omit
 the field or use null. Final verification checks non-null image evidence.
 
+An adapter that returns a layout (where on the page it found the text; see the
+[adapter protocol](adapter-protocol.md#result-fields)) adds top-level
+`layout_sha256`, the SHA-256 of the layout's canonical JSON (keys sorted,
+separators `,` and `:`, UTF-8). The layout itself is kept in the run's recovery
+record (`.checkpoint/pages/{page_id}.json`), which must still hash to this
+value; a document job plans tiles from it. Records of adapters without a
+layout omit the field.
+
 Normalized output is linked at file level, not per record. Each
 `normalized/{page_id}.json` carries `run_id`, `page_id`, and `raw_artifact`;
 individual records do not carry provenance identifiers. See the

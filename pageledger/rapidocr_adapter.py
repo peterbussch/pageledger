@@ -25,7 +25,8 @@ from typing import Any, ClassVar
 
 import yaml
 
-from .adapters import ExtractionResult, ocr_pdf_page_count, render_warnings
+from .adapters import ExtractionResult, _png_size, ocr_pdf_page_count, render_warnings
+from .layout import UNITS, grid_box
 
 
 @dataclass(frozen=True)
@@ -40,7 +41,7 @@ class RapidOCRAdapter:
     deterministic: ClassVar[bool] = True
     input_types: ClassVar[tuple[str, ...]] = ("pdf",)
     output_types: ClassVar[tuple[str, ...]] = ("text",)
-    capabilities: ClassVar[tuple[str, ...]] = ("ocr", "page_image")
+    capabilities: ClassVar[tuple[str, ...]] = ("ocr", "page_image", "layout")
 
     def __post_init__(self) -> None:
         model_dir = Path(self.rec_model_dir).expanduser()
@@ -169,6 +170,7 @@ class RapidOCRAdapter:
             if not image.is_file():
                 raise RuntimeError(f"pdftoppm produced no image for page {page_number}")
             warnings = render_warnings(source, page_number, pixels=(self.max_side, self.max_side))
+            size = _png_size(image)
             result = engine(str(image))
         lines = []
         boxes = result.boxes if result.boxes is not None else []
@@ -189,6 +191,7 @@ class RapidOCRAdapter:
                 }
             )
         content = assemble(lines, reading_order=self.reading_order)
+        layout = None if size is None else _layout(lines, *size)
         if self.reading_order == "rows" and _multi_column_rows(lines):
             warnings = [*warnings, "multi_column_rows"]
         scores = [line["score"] * 100 for line in lines]
@@ -221,7 +224,18 @@ class RapidOCRAdapter:
                 "cost_usd": None,
             },
             confidence_detail=detail,
+            layout=layout,
         )
+
+
+def _layout(lines: list[dict[str, Any]], width: int, height: int) -> dict[str, Any]:
+    """The detected lines on the layout grid; a box that rounds to nothing is left out."""
+    items = []
+    for line in lines:
+        box = grid_box(line["x0"], line["y0"], line["x1"], line["y1"], width, height)
+        if box[0] < box[2] and box[1] < box[3]:
+            items.append({"box": box, "text": line["text"]})
+    return {"units": UNITS, "level": "line", "items": items, "source": {}}
 
 
 READING_ORDERS = ("rows", "columns")

@@ -810,6 +810,9 @@ def _refresh(job: dict, root: Path, *, materialize: bool = True) -> None:
                 attempt["adapter_capabilities"] = provenance.get("extractor", {}).get(
                     "capabilities", []
                 )
+            # A layout counts once its run has bound it: a completed page's provenance hashes it.
+            if state == "completed" and result.get("layout") is not None:
+                attempt["layout_sha256"] = provenance["layout_sha256"]
             if (
                 stage["stage"] in IMAGE_STAGES
                 and state == "completed"

@@ -501,6 +501,30 @@ def test_rapidocr_warns_for_rows_joining_four_lines_in_most_rows(
     assert "multi_column_rows" not in column_result.warnings
 
 
+def test_rapidocr_returns_its_line_boxes_as_a_layout(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from pageledger.adapters import load_adapter
+    from pageledger.layout import validate_layout
+
+    lines = [*TWO_COLUMNS, (_box(-5, 400, 30, 420), "padded past the edge")]
+    _fake_rapidocr(monkeypatch, _engine_for(lines))
+    adapter = load_adapter(
+        "rapidocr", {"rec_model_dir": str(_recognizer(tmp_path / "rec")), "max_side": 1000}
+    )
+    assert "layout" in adapter.capabilities
+    result = adapter.extract(
+        _pdf(tmp_path / "sample.pdf"), page_id="p1", page_number=1, action="transcribe_text"
+    )
+    layout = result.layout
+    validate_layout(layout)
+    assert layout["level"] == "line" and layout["source"] == {}
+    # The 72-point page renders at 1000 x 1000 pixels: a pixel is 1000 grid steps.
+    assert layout["items"][0] == {"box": [0, 0, 420_000, 20_000], "text": "Title across the page"}
+    assert layout["items"][-1]["box"] == [0, 400_000, 30_000, 420_000]
+    assert len(layout["items"]) == len(lines)
+
+
 def test_multi_column_rows_threshold_excludes_single_and_two_column_rows():
     from pageledger.rapidocr_adapter import _multi_column_rows
 

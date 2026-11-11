@@ -15,6 +15,7 @@ from typing import Any
 from .adapters import ADAPTER_FAILURE_CODES, AdapterFailure, ExtractionResult
 from .image_evidence import validate_input_evidence
 from .image_source import KIND, manifest_sha256, read_sha256
+from .layout import layout_sha256
 from .replay import _adapter_code_sha256, _package_code_sha256
 
 PAGE_ID = re.compile(r"[A-Za-z0-9_-]+\Z")
@@ -29,7 +30,18 @@ RESULT_FIELDS = {
     "usage",
     "confidence_detail",
     "input_evidence",
+    "layout",
 }
+# Fields a saved result may lack: older runs saved no input_evidence, and a result
+# without a layout is saved without the key, so a run with no layouts writes what 0.8 wrote.
+_OPTIONAL_RESULT_FIELDS = {"input_evidence", "layout"}
+
+
+def _saved_result(result: Any) -> dict[str, Any]:
+    data = {key: getattr(result, key, None) for key in RESULT_FIELDS}
+    if data["layout"] is None:
+        del data["layout"]
+    return data
 
 
 def digest(value: Any) -> str:
@@ -477,6 +489,8 @@ class Checkpoint:
                         or completion["provenance"].get("result", {}).get("raw_artifact")
                         != relative
                         or completion["provenance"].get("input_evidence") != result.input_evidence
+                        or completion["provenance"].get("layout_sha256")
+                        != (None if result.layout is None else layout_sha256(result.layout))
                     ):
                         raise ValueError("Invalid completion evidence")
                     alignment = completion["alignment"]
@@ -517,9 +531,9 @@ class Checkpoint:
     ) -> ExtractionResult:
         from .runner import _validate_extraction_result
 
-        if not isinstance(data, dict) or set(data) not in (
-            RESULT_FIELDS,
-            RESULT_FIELDS - {"input_evidence"},
+        if (
+            not isinstance(data, dict)
+            or not RESULT_FIELDS - _OPTIONAL_RESULT_FIELDS <= set(data) <= RESULT_FIELDS
         ):
             raise ValueError("Invalid saved response")
         result = ExtractionResult(**data)
@@ -600,7 +614,7 @@ class Checkpoint:
                     page_number=page["page_number"],
                     prompt_sha256=hashlib.sha256((prompt or "").encode()).hexdigest(),
                 )
-            result_data = {key: getattr(result, key, None) for key in RESULT_FIELDS}
+            saved = _saved_result(result)
         except Exception as exc:
             error_type = type(exc).__name__
             error: dict[str, Any] = {
@@ -628,9 +642,7 @@ class Checkpoint:
                     break
             failed: dict[str, Any] = {"state": "failed", "started_at": started_at, "error": error}
             if isinstance(exc, AdapterFailure) and exc.partial_result is not None:
-                partial: dict[str, Any] = {
-                    key: getattr(exc.partial_result, key, None) for key in RESULT_FIELDS
-                }
+                partial = _saved_result(exc.partial_result)
                 try:
                     self._validate_saved_result(
                         partial, file_digest(source), {**page, "prompt": prompt}
@@ -656,7 +668,7 @@ class Checkpoint:
                 "state": "response",
                 "started_at": started_at,
                 "extraction_seconds": elapsed,
-                "result": result_data,
+                "result": saved,
             },
         )
         return result, elapsed, started_at, 1, None

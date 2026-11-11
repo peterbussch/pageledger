@@ -306,6 +306,10 @@
                         "null"
                       ]
                     },
+                    "layout_sha256": {
+                      "pattern": "^[0-9a-f]{64}$",
+                      "type": "string"
+                    },
                     "outcome": {
                       "enum": [
                         "completed",

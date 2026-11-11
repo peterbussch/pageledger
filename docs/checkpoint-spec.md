@@ -178,8 +178,13 @@ and page-payload fields are rejected. The schemas define the complete shapes
 and allowed diagnostic codes.
 
 Successful response records preserve content, format, confidence, actual
-returned model, warnings, usage, optional confidence detail and optional image
-input evidence. Reported numeric usage values are finite and non-negative;
+returned model, warnings, usage, optional confidence detail, optional image
+input evidence and an optional `layout` (the boxes where the engine found the
+text; see the [adapter protocol](adapter-protocol.md#result-fields)). A result
+without a layout is saved without the `layout` key, and records written before
+either optional field existed still load. This record is where a run keeps a
+layout: a completed page's provenance holds its `layout_sha256`, and recovery
+refuses a layout that no longer hashes to it. Reported numeric usage values are finite and non-negative;
 unknown values remain null. Partial failure results are retained in the failure receipt,
 never counted as completed or eligible for automatic retry. Final
 provenance still contains one successful extraction record per page; recovery

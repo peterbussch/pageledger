@@ -65,6 +65,7 @@ from .image_source import (
     read_sha256,
     source_identity,
 )
+from .layout import layout_sha256
 from .policy import generative_page_ids, rebuild_policy_queues
 from .quality import _build_quality_entry, mark_repeated_page_text, repeated_text_key
 from .replay import build_reproducibility_profile
@@ -1634,6 +1635,14 @@ def _validate_extraction_result(adapter_name: str, result: Any) -> None:
         validate_input_evidence(input_evidence)
         if input_evidence["model"] != result.model:
             raise ValueError("Image evidence actual model disagrees with extraction result")
+    layout = getattr(result, "layout", None)
+    if layout is not None:
+        from .layout import validate_layout
+
+        try:
+            validate_layout(layout)
+        except ValueError as exc:
+            raise ValueError(f"Adapter '{adapter_name}' {exc}") from None
     if not isinstance(result.content, (str, dict, list)):
         raise ValueError(f"Adapter '{adapter_name}' content must be string, object, or list")
     _require_json_serializable(
@@ -1777,6 +1786,11 @@ def _build_provenance_entry(
         **(
             {"input_evidence": result.input_evidence}
             if getattr(result, "input_evidence", None) is not None
+            else {}
+        ),
+        **(
+            {"layout_sha256": layout_sha256(result.layout)}
+            if getattr(result, "layout", None) is not None
             else {}
         ),
     }

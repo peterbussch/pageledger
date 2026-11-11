@@ -146,6 +146,7 @@ class ExtractionResult:
     usage: dict[str, Any]  # {"pages": 1, "tokens": int|None, ...}
     confidence_detail: dict[str, Any] | None = None  # engine-native evidence
     input_evidence: dict[str, Any] | None = None  # exact page image descriptor
+    layout: dict[str, Any] | None = None  # where the engine found the text
 
 
 class ExtractorAdapter:
@@ -221,6 +222,30 @@ An optional `ExtractionResult.input_evidence` dictionary records an exact page
 JPEG and its rendering/request identity; see
 [`image-evidence-spec.md`](image-evidence-spec.md). It defaults to null, so old
 adapters remain compatible.
+
+An optional `ExtractionResult.layout` says where on the page the engine found
+its text. It is a JSON object with exactly four keys:
+
+```json
+{"units": "page_millionths", "level": "line",
+ "items": [{"box": [x0, y0, x1, y1], "text": "..."}],
+ "source": {}}
+```
+
+Each `box` is four integers on a grid of 1,000,000 steps per page side, with
+the origin at the top-left corner of the page as rendered (after its
+`/Rotate`), `x` to the right and `y` downward, and `0 <= x0 < x1 <= 1000000`,
+likewise for `y`. An engine that read a `pdftoppm` render divides its pixel
+boxes by the render's width and height (`pageledger.layout.grid_box`). `level`
+is `line` (a detector's text line) or `word` (an ALTO `String`); `text` is what
+the engine read there and may be empty; `source` describes where the layout
+came from and may be empty. `pageledger.layout.validate_layout` checks the
+shape and a malformed layout fails the page. The run keeps the layout in the
+page's recovery record and writes its digest to provenance as
+`layout_sha256`; an adapter that declares `layout` in `capabilities` is one a
+job may plan tiles from. `rapidocr` returns its line boxes and `alto` its word
+boxes. The field defaults to null, so adapters that know nothing of layouts
+are unchanged.
 
 ## The `usage.pages` contract
 
@@ -517,6 +542,7 @@ Adapters should return `ExtractionResult` instances with:
 | `usage` | object | **`pages` must be 1**; `tokens`, `compute_seconds`, `cost_usd` optional/nullable. |
 | `confidence_detail` | object or null | Optional engine-native confidence data, adapter-defined shape; recorded into `quality.jsonl` verbatim. `pdf_ocr` fills Tesseract per-word statistics (`scale`, `word_count`, `mean`, `min`, `below_60_count`, `below_60_ratio`). |
 | `input_evidence` | object or null | Optional exact page image descriptor; shape, file containment, hashes and dimensions follow [the image evidence contract](image-evidence-spec.md). |
+| `layout` | object or null | Optional boxes of the page's lines or words on a 1,000,000-step grid (see above); hashed into provenance as `layout_sha256`. |
 
 An adapter whose output a model generates, and so can contain text that is
 not on the page, should declare `generative` in `capabilities`. Document jobs

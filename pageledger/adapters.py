@@ -42,6 +42,8 @@ class ExtractionResult:
     # calibrated probability.
     confidence_detail: dict[str, Any] | None = None
     input_evidence: dict[str, Any] | None = None
+    # Where the engine found the page's text (pageledger.layout); optional.
+    layout: dict[str, Any] | None = None
 
 
 ADAPTER_FAILURE_CODES = frozenset(

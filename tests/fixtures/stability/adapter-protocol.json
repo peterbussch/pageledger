@@ -1,7 +1,8 @@
 {
   "extraction_result_optional": [
     "confidence_detail",
-    "input_evidence"
+    "input_evidence",
+    "layout"
   ],
   "extraction_result_required": [
     "content",

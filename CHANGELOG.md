@@ -129,6 +129,12 @@ and, from 1.0, [stability](docs/stability.md).
 - `review-html` shows a job's own page images: each image is found by its recorded name and hash and rendered
   through a one-page carrier to a JPEG of at most 1,600 pixels, as PDF pages are. Without Poppler the view is
   still written, and each page links to its image file.
+- Layouts. An adapter may return `ExtractionResult.layout`, the boxes where it found the page's lines or
+  words on a grid of a million steps per page side ([adapter protocol](docs/adapter-protocol.md#result-fields)).
+  `rapidocr` returns its detected lines and `alto` its words, and both declare the `layout` capability. A run
+  keeps the layout in the page's recovery record and writes its digest to provenance as `layout_sha256`;
+  a document job copies that digest to the attempt. Adapters without layouts and recovery records written
+  before this release are unchanged.
 
 ### Changed
 

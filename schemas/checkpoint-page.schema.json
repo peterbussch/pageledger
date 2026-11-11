@@ -188,6 +188,16 @@
                       "$ref": "image-evidence.schema.json"
                     }
                   ]
+                },
+                "layout": {
+                  "anyOf": [
+                    {
+                      "type": "null"
+                    },
+                    {
+                      "$ref": "layout.schema.json"
+                    }
+                  ]
                 }
               },
               "required": [
@@ -314,6 +324,16 @@
                     },
                     {
                       "$ref": "image-evidence.schema.json"
+                    }
+                  ]
+                },
+                "layout": {
+                  "anyOf": [
+                    {
+                      "type": "null"
+                    },
+                    {
+                      "$ref": "layout.schema.json"
                     }
                   ]
                 }
@@ -519,6 +539,16 @@
                     },
                     {
                       "$ref": "image-evidence.schema.json"
+                    }
+                  ]
+                },
+                "layout": {
+                  "anyOf": [
+                    {
+                      "type": "null"
+                    },
+                    {
+                      "$ref": "layout.schema.json"
                     }
                   ]
                 }

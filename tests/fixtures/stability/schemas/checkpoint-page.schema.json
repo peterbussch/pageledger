@@ -129,6 +129,16 @@
                     }
                   ]
                 },
+                "layout": {
+                  "anyOf": [
+                    {
+                      "type": "null"
+                    },
+                    {
+                      "$ref": "layout.schema.json"
+                    }
+                  ]
+                },
                 "model": {
                   "type": [
                     "string",
@@ -281,6 +291,16 @@
                     },
                     {
                       "$ref": "image-evidence.schema.json"
+                    }
+                  ]
+                },
+                "layout": {
+                  "anyOf": [
+                    {
+                      "type": "null"
+                    },
+                    {
+                      "$ref": "layout.schema.json"
                     }
                   ]
                 },
@@ -467,6 +487,16 @@
                     },
                     {
                       "$ref": "image-evidence.schema.json"
+                    }
+                  ]
+                },
+                "layout": {
+                  "anyOf": [
+                    {
+                      "type": "null"
+                    },
+                    {
+                      "$ref": "layout.schema.json"
                     }
                   ]
                 },

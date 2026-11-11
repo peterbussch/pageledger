@@ -436,7 +436,7 @@ class AltoAdapter:
     deterministic: ClassVar[bool] = True
     input_types: ClassVar[tuple[str, ...]] = ("pdf",)
     output_types: ClassVar[tuple[str, ...]] = ("text",)
-    capabilities: ClassVar[tuple[str, ...]] = ("embedded_text", "local")
+    capabilities: ClassVar[tuple[str, ...]] = ("embedded_text", "local", "layout")
 
     def __init__(self, dir: str, name: str = DEFAULT_NAME) -> None:
         if type(dir) is not str or not dir:
@@ -530,6 +530,7 @@ class AltoAdapter:
             warnings=warnings,
             usage={"pages": 1, "tokens": None, "compute_seconds": None, "cost_usd": None},
             confidence_detail=detail,
+            layout=layout,
         )
 
     def _empty(self, model: str, warning: str) -> ExtractionResult:
