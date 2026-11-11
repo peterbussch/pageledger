@@ -437,6 +437,46 @@ def test_alpha_png_data_must_match_its_header(tmp_path, raw, what):
     assert error.value.code == "malformed_image"
 
 
+_RGB_PALETTE = _chunk(b"PLTE", b"\xc8\x1e\x1e\x1e\xc8\x1e\x1e\x1e\xc8")
+
+
+def _palette_png(transparency):
+    rows = [b"\x00" + b"\x00" * 8 + b"\x01" * 8 + b"\x02" * 8] * 8
+    return _png_rows(24, 8, 3, 8, rows, _RGB_PALETTE + _chunk(b"tRNS", transparency))
+
+
+@pytest.mark.parametrize(
+    ("palette", "depth"),
+    [(b"\xc8\x1e\x1e\x00", 8), (b"\x00" * 15, 2)],
+    ids=["not-whole-colours", "more-than-the-depth-indexes"],
+)
+def test_a_palette_png_needs_a_valid_palette(tmp_path, palette, depth):
+    rows = [b"\x00" + b"\x00" * (4 * depth // 8)] * 2
+    (tmp_path / "page.png").write_bytes(_png_rows(4, 2, 3, depth, rows, _chunk(b"PLTE", palette)))
+    with pytest.raises(PageLedgerDiagnostic, match="invalid palette") as error:
+        read_image_source(tmp_path / "page.png")
+    assert error.value.code == "malformed_image"
+
+
+def test_transparent_palette_colours_must_be_one_range(tmp_path):
+    (tmp_path / "page.png").write_bytes(_palette_png(b"\x00\xff\x00"))
+    with pytest.raises(PageLedgerDiagnostic, match="not next to each other") as error:
+        read_image_source(tmp_path / "page.png")
+    assert error.value.code == "unsupported_image"
+
+
+@pytest.mark.skipif(shutil.which("pdftoppm") is None, reason="needs Poppler's pdftoppm")
+def test_poppler_shows_the_paper_behind_every_transparent_palette_colour(tmp_path):
+    (tmp_path / "page.png").write_bytes(_palette_png(b"\x00\x00\xff"))
+    with carrier(read_image_source(tmp_path / "page.png"), [1]) as (path, _):
+        rendered = _render(path, 1, tmp_path / "r")
+    chunks = _png_chunks(rendered.read_bytes(), "r")
+    out = _unfilter(zlib.decompress(chunks["data"]), 8, 24 * 3, 3)
+    bands = [tuple(out[4 * 72 + x * 3 : 4 * 72 + x * 3 + 3]) for x in (4, 12, 20)]
+    assert bands[:2] == [(255, 255, 255)] * 2
+    assert all(abs(a - b) <= 8 for a, b in zip(bands[2], (30, 30, 200), strict=True))
+
+
 def test_an_image_larger_than_any_render_is_refused_from_its_header(tmp_path, monkeypatch):
     monkeypatch.setattr(image_source, "MAX_IMAGE_PIXELS", 511)
     (tmp_path / "page.png").write_bytes(png(width=32, height=16))

@@ -565,6 +565,8 @@ def _png_chunks(data: bytes, name: str) -> dict[str, Any]:
         or (color == 3 and not palette)
     ):
         raise _malformed(name, "invalid image header")
+    if color == 3 and (len(palette) % 3 or len(palette) > 3 << depth):
+        raise _malformed(name, "invalid palette")
     if interlace:
         raise _diagnostic(
             "unsupported_image",
@@ -597,7 +599,7 @@ def _png(data: bytes, name: str) -> tuple[int, int, tuple[float, float] | None, 
 
 
 def _png_mask(chunks: dict[str, Any], name: str) -> list[int] | None:
-    """A PNG's single transparent colour as a PDF colour-key mask."""
+    """A PNG's transparent colour, or range of palette colours, as a PDF colour-key mask."""
     transparency, color = chunks["transparency"], chunks["color"]
     if transparency is None or color in (4, 6):
         return None
@@ -608,11 +610,16 @@ def _png_mask(chunks: dict[str, Any], name: str) -> list[int] | None:
         values = struct.unpack(">HHH", transparency[:6])
         return [value for value in values for _ in range(2)]
     if color == 3 and set(transparency) <= {0, 255}:
+        # A colour-key mask on a palette is a single range of indexes.
         clear = [index for index, alpha in enumerate(transparency) if alpha == 0]
-        return [value for index in clear for value in (index, index)] or None
+        if not clear:
+            return None
+        if clear == list(range(clear[0], clear[-1] + 1)):
+            return [clear[0], clear[-1]]
     raise _diagnostic(
         "unsupported_image",
-        f"'{name}' has a palette with partial transparency. Save it as an RGB PNG first, "
+        f"'{name}' has a palette with partial transparency, or transparent colours that are not "
+        "next to each other in it. Save it as an RGB PNG first, "
         "for example: magick page.png -type TrueColorAlpha page-rgb.png",
     )
 

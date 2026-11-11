@@ -203,7 +203,8 @@ the commands.
   refused with `unsupported_image`; convert them losslessly to PNG, and the
   converted files become the recorded source. So are a 12-bit, lossless or
   arithmetic-coded JPEG, an interlaced PNG, a palette PNG with partial
-  transparency and an image stored mirrored (EXIF orientations 2, 4, 5 and 7).
+  transparency or with transparent colours that are not consecutive palette
+  entries, and an image stored mirrored (EXIF orientations 2, 4, 5 and 7).
 - A folder is read at its top level only, as one document. Pages follow the
   file names, so the names must sort into page order; PageLedger does not read
   page numbers from the images or from any metadata file.
