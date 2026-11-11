@@ -405,6 +405,9 @@ def test_open_contested_spans_are_marked_in_the_text(setup, monkeypatch, tmp_pat
     assert 'href="#p0001-sp_' in document
     marked = document[document.index("<h3>Selected text</h3>") :]
     assert marked.index('<mark class="open"') < marked.index("</pre>")
+    # The spans are said to lie between two readings named in words, not by their IDs.
+    assert "Places where the engine image and RapidOCR differ" in document
+    assert not re.search(r"[a-z_]+(?:-\d{4})?:doc_\d{4}_page_\d{4}", _visible(document))
 
 
 def _node(program: str, payload: object) -> bytes:
@@ -514,6 +517,12 @@ def test_a_corrected_page_shows_the_correction_and_the_reading_beneath(job, tmp_
     page = read_record(job / "job.json")["pages"][0]
     assert "A person&#x27;s correction of the engine local_text, by A. Reader at" in document
     assert "A person checked the text against the page with a correction, by A. Reader" in document
+    # The reviewed page is listed under what held it, not as needing a person.
+    row = re.search(r'<tr><th scope="row"><a href="#p0001">.*?</tr>', document)[0]
+    assert "<td>nothing</td>" in row and "; 1 need a person;" in document
+    assert '<th scope="col">Held for</th>' in document
+    shown = _visible(document)
+    assert not re.search(r"[a-z_]+(?:-\d{4})?:doc_\d{4}_page_\d{4}", shown)
     assert data["texts"]["p0001"] == {
         "": TEXT.replace("prose", "verse"),
         page["selected_attempt"]: TEXT,

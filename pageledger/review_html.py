@@ -35,6 +35,7 @@ from .document_report import (
     _short_comparison,
     empty_reading,
     hold_in_words,
+    is_pending,
     needs_person,
     reader_name,
     relative_path,
@@ -411,7 +412,7 @@ class _View:
             '<h2 id="pages-title">Pages</h2>',
             "<p>Pages that need a person come first.</p>",
             '<div class="table"><table>',
-            '<thead><tr><th scope="col">Page</th><th scope="col">Needs a person because</th>'
+            '<thead><tr><th scope="col">Page</th><th scope="col">Held for</th>'
             '<th scope="col">Review</th><th scope="col">Your decision</th></tr></thead><tbody>',
             *(self._row(page) for page in ordered),
             "</tbody></table></div></section>",
@@ -437,7 +438,7 @@ class _View:
         path, fragment = page_target(self.report["source"], number)
         source_link = (relative_path(str(self.source), self.out) + path, fragment)
         facts = [
-            ("Needs a person because", _e(_why(page, self.report))),
+            ("Held for", _e(_why(page, self.report))),
             ("Selected text", _e(self._selected(page))),
             ("Engines agree", _e(_short_comparison(page, self.report))),
             ("Review", _e(_review(page))),
@@ -761,13 +762,17 @@ def _usable(attempt: dict) -> bool:
 
 
 def _why(page: dict, report: dict) -> str:
-    """Why the page needs a person, in plain words: the holds shown, or nothing."""
+    """What holds the page, in plain words, as the report's page table says it."""
+    pending = is_pending(page, report)
     if not page["review_reasons"] and not needs_person(page, report):
-        return "nothing"
-    return "; ".join(
+        return "not finished yet" if pending else "nothing"
+    held = "; ".join(
         text if index == 0 else text[:1].lower() + text[1:]
         for index, text in enumerate(hold_in_words(page, code) for code in shown_holds(page))
     )
+    if pending:
+        return "not finished yet; held so far: " + held[:1].lower() + held[1:]
+    return held
 
 
 def _state(page: dict) -> str:

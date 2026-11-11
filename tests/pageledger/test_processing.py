@@ -444,7 +444,8 @@ def test_uncertain_ocr_page_is_reported_as_uncertain_not_incomplete(setup, monke
     assert job["hold_policy"] == HOLD_POLICY
     assert job["pages"][0]["disposition"] == "low_confidence"
     report = (setup[2] / "report.md").read_text(encoding="utf-8")
-    assert "The OCR engine was unsure of many words (`low_confidence`)" in report
+    assert "| The OCR engine was unsure of many words |" in report
+    assert "held for `low_confidence`" in report
     assert "Text may be missing or damaged" not in report
     assert verify_job(setup[2])["status"] == "pass", result
 
@@ -615,7 +616,7 @@ def test_scanned_page_read_cleanly_by_ocr_does_not_need_a_person(setup):
     assert page["review_reasons"] == []
     report = (setup[2] / "report.md").read_text(encoding="utf-8")
     assert "Need a person" not in report
-    assert "no person has checked it (`unreviewed_text`): 1 page (1)." in report
+    assert "no person has checked it: 1 page (1)." in report
     assert verify_job(setup[2])["status"] == "pass"
 
 
@@ -793,10 +794,7 @@ def test_a_readers_changes_are_contested_and_the_artifact_verifies(setup, monkey
         "Contested spans on 1 pages: glyph 8, word 8. Settled by rule: 8; by adjudication: 0; "
         "open: 8, holding 1 pages. Adjudicated pages: 0." in report
     )
-    assert (
-        "8 of 16 differences are open; they are listed in "
-        "[the contested spans](<contested/doc_0001_page_0001.json>)." in report
-    )
+    assert "Contested spans: [8 of 16 open](<contested/doc_0001_page_0001.json>)." in report
     _validate_schemas(setup[2], contested=contested["artifact"])
     assert verify_job(setup[2])["status"] == "pass"
 
@@ -900,7 +898,9 @@ def test_adjudicated_decisions_make_an_edition_that_verifies_and_exports(
     edition = (setup[2] / page["edition"]["artifact"]).read_text(encoding="utf-8")
     assert edition == READER.replace("поныне", "полные")
     transcript = (setup[2] / "transcript.md").read_text(encoding="utf-8")
-    assert "Edition of attempt image-0001:doc_0001_page_0001" in transcript
+    assert "[Selected reading: the engine image, with its settled differences applied](<" in (
+        transcript
+    )
     assert READER.replace("поныне", "полные") in transcript
     _validate_schemas(setup[2])
     assert verify_job(setup[2])["status"] == "pass"
