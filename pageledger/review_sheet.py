@@ -85,18 +85,39 @@ def read_review_sheet(job: dict, sheet: Path, reviewer: str | None) -> dict:
     try:
         reader = csv.DictReader(io.StringIO(sheet.read_text(encoding="utf-8-sig"), newline=""))
         rows = list(reader)
-        binding = json.loads(binding_path(sheet).read_text(encoding="utf-8"))
-    except (OSError, UnicodeError, csv.Error, json.JSONDecodeError) as exc:
-        raise ValueError(f"Cannot read the review sheet or its binding: {exc}") from exc
+    except (OSError, UnicodeError, csv.Error) as exc:
+        raise ValueError(f"Cannot read the review sheet: {exc}") from exc
     if reader.fieldnames != list(FIELDS):
         raise ValueError(f"Review sheet columns must be: {', '.join(FIELDS)}")
     pages = {_row_id(page): page for page in job["pages"]}
+    expected_binding = binding_path(sheet)
+    if expected_binding.is_file():
+        binding_file = expected_binding
+    else:
+        matches = []
+        for candidate in sheet.parent.glob("*.binding.json"):
+            try:
+                proposed = json.loads(candidate.read_text(encoding="utf-8"))
+            except (OSError, UnicodeError, json.JSONDecodeError):
+                continue
+            if _binding_matches_rows(proposed, rows, job, pages):
+                matches.append(candidate)
+        if len(matches) != 1:
+            raise ValueError(
+                f"Binding file {expected_binding.name} is missing or ambiguous. Keep the "
+                f"sheet's binding beside it and name it {sheet.name}.binding.json."
+            )
+        binding_file = matches[0]
+    try:
+        binding = json.loads(binding_file.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        raise ValueError(f"Cannot read review sheet binding {binding_file}: {exc}") from exc
     if (
         not isinstance(binding, dict)
         or binding.get("schema_version") != "0.1"
         or not isinstance(binding.get("bindings"), dict)
     ):
-        raise ValueError(f"Review sheet binding is invalid: {binding_path(sheet)}")
+        raise ValueError(f"Review sheet binding is invalid: {binding_file}")
     bindings = binding["bindings"]
     if set(bindings) != set(pages):
         raise ValueError("Review sheet was written for a different set of pages")
@@ -139,6 +160,33 @@ def read_review_sheet(job: dict, sheet: Path, reviewer: str | None) -> dict:
         "source_sha256": job["source"]["sha256"],
         "decisions": decisions,
     }
+
+
+def _binding_matches_rows(
+    binding: object, rows: list[dict[str, str]], job: dict, pages: dict
+) -> bool:
+    if (
+        not isinstance(binding, dict)
+        or binding.get("schema_version") != "0.1"
+        or not isinstance(binding.get("bindings"), dict)
+    ):
+        return False
+    bindings = binding["bindings"]
+    if set(bindings) != set(pages) or len(rows) != len(pages):
+        return False
+    seen = set()
+    for row in rows:
+        row_id = row.get("row_id")
+        page = pages.get(row_id)
+        if (
+            page is None
+            or row_id in seen
+            or bindings.get(row_id) != _binding(job, page)
+            or row.get("page_number") != str(page["page_number"])
+        ):
+            return False
+        seen.add(row_id)
+    return seen == set(pages)
 
 
 def _decision(page: dict, row_id: str, token: str) -> dict:

@@ -83,13 +83,18 @@ warning.
 
 | Flag | Effect |
 |---|---|
-| `--pages "1-10,25"` | Select source pages while preserving original numbering. |
+| `--pages "1-10,15"` | Select source pages while preserving original numbering. |
 | `--adapter-path DIR` | Add a trusted import directory for custom adapters. |
 | `--review FILE` | Apply source-bound human review receipts before extraction. |
 | `--engine pdf_ocr\|rapidocr\|indra\|none` | Without `--config`: the local OCR engine, or no OCR stage. |
 | `--lang LANGS` | Without `--config`: Tesseract languages for `pdf_ocr`, e.g. `rus+eng`. |
 | `--model-dir DIR` | Without `--config`: the recognizer directory `rapidocr` requires, or a model directory for `indra`. |
 | `--json` | Print the job result as JSON. |
+
+`--pages` accepts a comma-separated list of pages and ranges, for example
+`--pages "1-10,15"`. If the selection ends past the source, PageLedger names
+the first page outside it and the source's page count. If `--out` already
+exists, inspect or resume the job there, or choose another output folder.
 
 A job that completes also prints, after its status, how many pages need a
 person and the next commands (`inspect`, then `review` or `export`).
@@ -281,6 +286,10 @@ Page images have no text layer to probe, so `classify` refuses a folder of
 them or an image file; read them with an OCR engine first, then classify that
 run with `--from-run`.
 
+`classify` has no `--pages` filter: route maps must cover every source page to
+remain valid when passed to `run --routes`, which cannot be combined with
+`run --pages`.
+
 Flags:
 
 | Flag | Effect |
@@ -364,6 +373,8 @@ grades, adapters, provenance, and cost. Directional totals such as “improved�
 and “resolved” are counted only when the stated comparison gates pass.
 `--json` reports extraction and grade comparability separately for each shared
 page id.
+When extractors differ, grades are not ranked. The text report still shows
+page lengths and warning changes side by side.
 
 | Is a directional improvement counted? | Rule |
 |---|---|
@@ -436,6 +447,10 @@ files under `sources/`, an inventory with SHA-256 hashes, and
 manifest hash, extractor identity/profile, source identities, and portable
 paths; replay evidence records the exact `bundle.json` index hash. The output
 directory must not already exist; no archive is created.
+
+`bundle` accepts a run that was not itself a rerun. Bundle the original run;
+reruns cannot be replayed yet. A document job is not a run and is shared as its
+folder; see [Deposit a job](share-and-cite.md#deposit-a-job).
 
 The only accepted flags are `--out DIR` (required) and `--json`. There are no
 config, adapter, or source override flags. Credential filtering checks only

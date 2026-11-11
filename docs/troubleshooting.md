@@ -10,9 +10,47 @@ establish the cause.
 
 `pdf_ocr` cannot find Poppler's `pdftoppm`, Tesseract, or a requested Tesseract
 language pack. Run `pageledger doctor` and inspect the command and language
-availability. Install the missing system tool or language data, or change
-`run.adapter_options.lang` to an installed language. `doctor` checks setup; a
-successful doctor check does not test every input page.
+availability. Tesseract uses three-letter language codes; an unavailable code
+message suggests close installed codes and names the number available. Install
+the missing system tool or language data, or set `--lang` (without a config),
+`run.adapter_options.lang` (in a run config), or
+`processing.local_ocr.adapter_options.lang` (in a job config). `doctor` checks
+setup; a successful doctor check does not test every input page.
+
+## A source file or output folder is missing or already in use
+
+If `process` says the source file was not found, check the spelling and path.
+If the output folder already exists, inspect it with `pageledger inspect DIR`,
+continue the job with `pageledger resume DIR`, or choose another `--out` folder.
+PageLedger checks these paths before printing the default-config notice.
+`run` also reports a missing source as a named PageLedger error.
+
+If a selected page is past the end, PageLedger names that page and the source's
+page count. Correct the `--pages` range; for example, a 124-page source cannot
+include page 125.
+
+## A review sheet was renamed
+
+Keep the `.binding.json` file beside the CSV. If a spreadsheet saved the CSV
+under a new name, `review --apply` can locate the unique matching binding in
+that folder. If there is no unique match, rename the binding to
+`SHEET.csv.binding.json`. The binding still checks each row against the job's
+selected output and hashes.
+
+## `bundle` refuses a directory
+
+`bundle` accepts a run that was not itself a rerun. Bundle the original run;
+reruns cannot be replayed yet. A document job is shared as its folder, not as
+a replay bundle; follow [Deposit a job](share-and-cite.md#deposit-a-job).
+
+## `compare` shows incomparable grades
+
+PageLedger does not rank grades from different extractors. The text report
+still shows page lengths and warning changes side by side for each shared page.
+
+When reading a damaged PDF, pypdf may report that it repaired structural
+objects. PageLedger summarizes these notices on stderr and keeps other pypdf
+warnings visible.
 
 A generic custom-adapter failure may instead appear redacted in `run.log`.
 PageLedger does not reveal adapter-controlled stderr. Check the local setup

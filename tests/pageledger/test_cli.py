@@ -59,6 +59,41 @@ def test_init_config_missing_parent_returns_cli_error(tmp_path, capsys):
     assert not target.exists()
 
 
+@pytest.mark.parametrize("failure", ["missing-source", "existing-output"])
+def test_process_checks_source_and_output_before_default_config_banner(tmp_path, failure):
+    source = tmp_path / "source.txt"
+    out = tmp_path / "job"
+    if failure == "existing-output":
+        source.write_text("one page", encoding="utf-8")
+        out.mkdir()
+    exit_code, _, stderr = _run_cli(["process", str(source), "--out", str(out), "--engine", "none"])
+    assert exit_code == 1
+    assert "no --config given" not in stderr
+    if failure == "missing-source":
+        assert "Source file was not found" in stderr
+    else:
+        assert "already at" in stderr
+        assert "pageledger inspect" in stderr and "pageledger resume" in stderr
+
+
+def test_run_missing_source_has_plain_message(tmp_path):
+    exit_code, _, stderr = _run_cli(
+        ["run", str(tmp_path / "missing.pdf"), "--adapter", "text", "--out", str(tmp_path / "run")]
+    )
+    assert exit_code == 1
+    assert "Source file was not found" in stderr
+    assert "Errno 2" not in stderr
+
+
+def test_process_pages_help_shows_range_example(capsys):
+    from pageledger.cli import build_parser
+
+    with pytest.raises(SystemExit) as excinfo:
+        build_parser().parse_args(["process", "--help"])
+    assert excinfo.value.code == 0
+    assert "e.g. '1-10,15'" in capsys.readouterr().out
+
+
 def _run_cli(args: list[str], *, cwd: Path | None = None) -> tuple[int, str, str]:
     """Run pageledger CLI and return (exit_code, stdout, stderr)."""
     import subprocess

@@ -16,7 +16,7 @@ from pathlib import Path
 import yaml
 
 from ._version import __version__
-from .adapters import _LANG_PATTERN, PageLedgerDiagnostic, load_adapter
+from .adapters import _LANG_PATTERN, PageLedgerDiagnostic, capture_pypdf_repairs, load_adapter
 from .aligner import align_run
 from .classifier import classify
 from .compare import compare_runs, render_comparison
@@ -438,7 +438,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--pages",
         default=None,
         metavar="RANGE",
-        help="Only these pages, e.g. '1-10,25'; pages keep their numbers",
+        help="Only these pages, e.g. '1-10,15'; pages keep their numbers",
     )
     process_parser.add_argument(
         "--adapter-path",
@@ -1277,17 +1277,18 @@ def _cmd_run(args: argparse.Namespace) -> int:
         config_path = Path(temp_config)
     cost_existed = (args.out / "cost.json").exists()
     try:
-        result = run(
-            inputs=args.inputs,
-            config_path=config_path,
-            out_dir=args.out,
-            dry_run=args.dry_run,
-            log_level=args.log_level,
-            pages=args.pages,
-            adapter_path=args.adapter_path,
-            routes_path=args.routes,
-            resumable=args.resumable,
-        )
+        with capture_pypdf_repairs():
+            result = run(
+                inputs=args.inputs,
+                config_path=config_path,
+                out_dir=args.out,
+                dry_run=args.dry_run,
+                log_level=args.log_level,
+                pages=args.pages,
+                adapter_path=args.adapter_path,
+                routes_path=args.routes,
+                resumable=args.resumable,
+            )
     except (RuntimeError, ValueError, OSError):
         if not args.json_output and not cost_existed:
             _print_persisted_budget_alerts(args.out)
@@ -1388,17 +1389,19 @@ def _cmd_job(args: argparse.Namespace) -> int:
         verify_job,
     )
 
-    if args.command == "process" and args.config is None:
-        result = _process_without_config(args, process)
-    elif args.command == "process":
-        result = process(
-            source=args.source,
-            config_path=args.config,
-            out_dir=args.out,
-            pages=args.pages,
-            adapter_path=args.adapter_path,
-            review_path=args.review,
-        )
+    if args.command == "process":
+        with capture_pypdf_repairs():
+            if args.config is None:
+                result = _process_without_config(args, process)
+            else:
+                result = process(
+                    source=args.source,
+                    config_path=args.config,
+                    out_dir=args.out,
+                    pages=args.pages,
+                    adapter_path=args.adapter_path,
+                    review_path=args.review,
+                )
     elif args.command == "review-job":
         result = review_job(args.job_dir, args.review, reviewer=args.reviewer, dry_run=args.dry_run)
     elif args.command == "review-sheet":
@@ -1461,6 +1464,7 @@ def _process_without_config(args: argparse.Namespace, process: Callable[..., dic
     Nothing is read from the working directory or guessed from the machine; the
     job records this config exactly as it would record the same file.
     """
+    _check_process_paths(args.source, args.out)
     engine = _engine(args)
     config_text = _processing_template(engine, args.lang, args.model_dir)
     if engine == "none":
@@ -1512,6 +1516,17 @@ def _check_engine(engine: str, options: dict, source: Path) -> None:
         if "install" in message and "doctor" not in message:
             message += ". Run 'pageledger doctor' to see which tools are installed"
         raise ValueError(f"{engine}: {message}.") from exc
+
+
+def _check_process_paths(source: Path, out: Path) -> None:
+    source = source.expanduser()
+    if not source.exists():
+        raise ValueError(f"Source file was not found: {source}")
+    if out.expanduser().exists():
+        raise ValueError(
+            f"A job or another file is already at {out}. Use `pageledger inspect {out}`, "
+            f"`pageledger resume {out}`, or choose another --out directory."
+        )
 
 
 def _print_job_next_steps(args: argparse.Namespace) -> None:

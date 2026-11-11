@@ -389,6 +389,13 @@ def bundle_run(run_dir: Path, out_dir: Path) -> dict[str, Any]:
     """Create an inspectable, portable bundle from a verified execute run."""
     from .verify import verify_run
 
+    requested = Path(run_dir).expanduser()
+    if (requested / "job.json").is_file():
+        _fail(
+            "job_not_bundleable",
+            "`bundle` accepts a run, not a document job. Share the job as its folder; "
+            "see the 'Deposit a job' section in docs/share-and-cite.md.",
+        )
     run_root = _resolve_directory(run_dir, "run_path_invalid")
     report = verify_run(run_root)
     if report.get("status") != "pass":
@@ -1006,7 +1013,11 @@ def _check_bundle_eligibility(manifest: dict[str, Any]) -> None:
     if manifest.get("execution_mode") != "execute":
         _fail("run_ineligible", "Replay bundles require execute mode")
     if type(manifest.get("run_depth")) is not int or manifest.get("run_depth") != 0:
-        _fail("run_ineligible", "Replay bundles require generation zero")
+        _fail(
+            "run_ineligible",
+            "`bundle` accepts a run that was not itself a rerun. Bundle the original run; "
+            "reruns cannot be replayed yet.",
+        )
     if manifest.get("status") not in {"completed", "partial"}:
         _fail("run_ineligible", "Run status is not eligible for replay bundling")
     summary = manifest.get("summary")

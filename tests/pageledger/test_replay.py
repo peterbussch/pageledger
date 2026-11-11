@@ -1560,7 +1560,7 @@ def test_bundle_rejects_dry_run(tmp_path: Path) -> None:
 @pytest.mark.parametrize(
     ("manifest_update", "message"),
     [
-        ({"run_depth": 1}, "generation zero"),
+        ({"run_depth": 1}, "not itself a rerun"),
         ({"status": "failed"}, "status"),
         ({"summary": {"pages_failed": 1}}, "failed"),
         ({"summary": {"pages_not_attempted": 1}}, "unattempted"),
@@ -1675,7 +1675,19 @@ def test_bundle_rejects_generation_one_from_real_rerun_api(tmp_path: Path) -> No
     with pytest.raises(ReplayError) as exc_info:
         bundle_run(child_dir, tmp_path / "bundle")
     assert exc_info.value.code == "run_ineligible"
-    assert str(exc_info.value) == "Replay bundles require generation zero"
+    assert "Bundle the original run" in str(exc_info.value)
+
+
+def test_bundle_explains_that_a_document_job_is_shared_as_a_folder(tmp_path: Path) -> None:
+    from pageledger.replay import ReplayError, bundle_run
+
+    job = tmp_path / "job"
+    job.mkdir()
+    (job / "job.json").write_text("{}", encoding="utf-8")
+    with pytest.raises(ReplayError) as excinfo:
+        bundle_run(job, tmp_path / "bundle")
+    assert "bundle` accepts a run, not a document job" in str(excinfo.value)
+    assert "Deposit a job" in str(excinfo.value)
 
 
 @pytest.mark.parametrize("unsafe_path", ["/tmp/escape", "../escape"])

@@ -233,6 +233,10 @@ def render_comparison(report: dict[str, Any]) -> str:
         )
     if grade_comparable_pages == 0:
         lines.append("Grade changes: not assessed (0 grade-comparable pages)")
+        if any(page.get("comparability") == "incomparable_extractor" for page in report["pages"]):
+            lines.append(
+                "Grades from different extractors are not ranked; page lengths and warning changes are shown below."
+            )
     else:
         lines.append(
             f"Grades (matching basis/schema only): improved {report['grades_improved_total']}"
@@ -242,7 +246,8 @@ def render_comparison(report: dict[str, Any]) -> str:
     changed = [
         page
         for page in report["pages"]
-        if page["warnings_resolved"]
+        if grade_comparable_pages == 0
+        or page["warnings_resolved"]
         or page["warnings_introduced"]
         or (
             page["grade_a"] is not None

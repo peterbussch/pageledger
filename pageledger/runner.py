@@ -1565,7 +1565,7 @@ def _expand_inputs(inputs: list[Path]) -> tuple[list[Path], list[Path]]:
     skipped: list[Path] = []
     for path in inputs:
         if not path.exists():
-            raise ValueError(f"Input path does not exist: {path}")
+            raise ValueError(f"Source file was not found: {path}")
         if path.is_dir() and is_image_source(path):
             expanded.append(path)
         elif path.is_dir():

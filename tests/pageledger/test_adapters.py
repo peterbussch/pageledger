@@ -1200,12 +1200,61 @@ def test_pdf_ocr_rejects_missing_language_pack(tmp_path: Path, monkeypatch) -> N
     assert "rus" in message
     assert "eng" in message  # names what IS installed
     assert "doctor" in message
+    assert "three-letter" in message
+    assert "--lang" in message
+
+
+@pytest.mark.parametrize("requested", ["ru", "russian"])
+def test_pdf_ocr_suggests_installed_tesseract_language_codes(tmp_path, monkeypatch, requested):
+    _fake_binaries_with_langs(monkeypatch, ["eng", "rus", "osd"])
+    with pytest.raises(RuntimeError, match="Did you mean rus") as excinfo:
+        _extract_one(PdfOcrAdapter(lang=requested), tmp_path)
+    assert "Tesseract uses three-letter language codes" in str(excinfo.value)
+
+
+def test_pdf_ocr_shows_only_a_few_installed_languages(tmp_path, monkeypatch):
+    langs = [f"q{i:02d}" for i in range(20)]
+    _fake_binaries_with_langs(monkeypatch, langs)
+    with pytest.raises(RuntimeError) as excinfo:
+        _extract_one(PdfOcrAdapter(lang="missing"), tmp_path)
+    message = str(excinfo.value)
+    assert "20 codes" in message
+    assert "q00, q01, q02, q03, q04, q05, q06, q07, …" in message
+    assert "q08" not in message
+    assert "pageledger doctor" in message
 
 
 def test_pdf_ocr_accepts_installed_language_pack(tmp_path: Path, monkeypatch) -> None:
     _fake_binaries_with_langs(monkeypatch, ["eng", "rus", "osd"])
     result = _extract_one(PdfOcrAdapter(lang="eng+rus"), tmp_path)
     assert result.content == "OCR TEXT\n"
+
+
+def test_pdf_reader_summarizes_structural_repair_logs_and_keeps_other_warnings(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    import logging
+
+    pytest.importorskip("pypdf")
+
+    class Reader:
+        def __init__(self, stream, *, strict=False):
+            logger = logging.getLogger("pypdf._reader")
+            logger.warning("Ignoring wrong pointing object 6 0 (offset 0)")
+            logger.warning("Ignoring wrong pointing object 7 0 (offset 0)")
+            logger.warning("A different pypdf warning")
+
+    monkeypatch.setattr(adapters_module, "_load_pypdf", lambda: Reader)
+    source = tmp_path / "source.pdf"
+    source.write_bytes(b"%PDF")
+    with adapters_module.capture_pypdf_repairs():
+        for _ in range(2):
+            with source.open("rb") as stream, adapters_module._reading_pdf(source) as open_pdf:
+                open_pdf(stream)
+    stderr = capsys.readouterr().err
+    assert stderr.count("pypdf repaired 4 objects while reading PDF files") == 1
+    assert "Ignoring wrong pointing object" not in stderr
+    assert "A different pypdf warning" in stderr
 
 
 def test_pdf_ocr_skips_lang_check_when_listing_fails(tmp_path: Path, monkeypatch) -> None:

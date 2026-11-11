@@ -383,6 +383,14 @@ def _process(
     review_path: Path | None = None,
 ) -> dict:
     source = source.expanduser().resolve()
+    if not source.exists():
+        raise ValueError(f"Source file was not found: {source}")
+    if out_dir.expanduser().exists():
+        raise ValueError(
+            f"A job or another file is already at {out_dir.expanduser()}. "
+            f"Use `pageledger inspect {out_dir}`, `pageledger resume {out_dir}`, "
+            "or choose another --out directory."
+        )
     config = load_config(config_path, validate_adapter=False)
     if config.adapter_order is not None:
         raise ValueError(
@@ -436,7 +444,9 @@ def _process(
         else []
     )
     if count is not None and (not selected or max(selected) > count):
-        raise ValueError("Selected page exceeds the verified source page inventory")
+        if selected and max(selected) > count:
+            raise ValueError(f"Page {count + 1} is past the end: the source has {count} pages.")
+        raise ValueError("No pages were selected.")
     if container_error:
         selected = []
     attempt_limit = policy["limits"].get("max_attempt_pages")

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import csv
 import json
+import shutil
 from pathlib import Path
 
 import pytest
@@ -84,6 +85,32 @@ def test_a_filled_in_sheet_records_decisions_and_leaves_blank_rows_unreviewed(jo
     assert first["review"]["decisions"][0]["reason"] == "Checked against the scan"
     assert second["review"] is None
     assert verify_job(job)["status"] == "pass"
+
+
+def test_a_renamed_spreadsheet_sheet_finds_its_unique_binding(job, tmp_path):
+    original = _sheet(job, tmp_path / "review.csv")
+    renamed = tmp_path / "review-done.csv"
+    shutil.copyfile(original, renamed)
+    _edit(renamed, lambda rows: rows[0].update(decision="accept"))
+
+    result = review_job(job, renamed, reviewer="A. Reader")
+
+    assert result["decisions"] == {"reviewed_text": 1}
+    assert _pages(job)[0]["disposition"] == "reviewed_text"
+
+
+def test_renamed_sheet_reports_missing_or_ambiguous_binding(job, tmp_path):
+    original = _sheet(job, tmp_path / "review.csv")
+    renamed = tmp_path / "review-done.csv"
+    shutil.copyfile(original, renamed)
+    shutil.copyfile(binding_path(original), tmp_path / "copy.binding.json")
+    with pytest.raises(ValueError, match="review-done.csv.binding.json"):
+        review_job(job, renamed, reviewer="A. Reader")
+
+    (tmp_path / "copy.binding.json").unlink()
+    binding_path(original).unlink()
+    with pytest.raises(ValueError, match="review-done.csv.binding.json"):
+        review_job(job, renamed, reviewer="A. Reader")
 
 
 def test_the_binding_follows_its_schema(job, tmp_path):

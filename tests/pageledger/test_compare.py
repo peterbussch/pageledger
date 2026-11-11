@@ -423,7 +423,7 @@ def test_compare_cross_adapter_changes_are_unranked(tmp_path):
 
 def test_compare_same_adapter_different_model_is_unranked(tmp_path):
     """A shared adapter name must not make different model pipelines rankable."""
-    from pageledger.compare import compare_runs
+    from pageledger.compare import compare_runs, render_comparison
 
     source = tmp_path / "doc.txt"
     source.write_text("short\n", encoding="utf-8")
@@ -454,6 +454,9 @@ def test_compare_same_adapter_different_model_is_unranked(tmp_path):
     assert report["pages_comparable_total"] == 0
     assert report["warnings_resolved_total"] == 0
     assert report["grades_improved_total"] == 0
+    rendered = render_comparison(report)
+    assert "Grades from different extractors are not ranked" in rendered
+    assert "chars A→B" in rendered
 
 
 def test_compare_same_adapter_different_options_is_unranked(tmp_path):

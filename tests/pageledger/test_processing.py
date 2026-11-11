@@ -113,6 +113,13 @@ def launch(setup, **kwargs):
     return process(source=source, config_path=config, out_dir=out, **kwargs)
 
 
+def test_process_names_the_first_page_past_the_source_end(setup):
+    source, config, out, _ = setup
+    with pytest.raises(ValueError, match="Page 4 is past the end: the source has 3 pages"):
+        process(source=source, config_path=config, out_dir=out, pages="120-130")
+    assert not out.exists()
+
+
 def test_serial_escalation_preserves_exact_denominator_and_review_holds(setup):
     result = launch(setup, pages="2-3")
     assert result["status"] == "completed"

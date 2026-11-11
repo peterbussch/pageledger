@@ -153,6 +153,19 @@ and, from 1.0, [stability](docs/stability.md).
 
 ### Fixed
 
+- `process` names a missing source or an existing output folder before the default-config notice; an
+  existing job message offers `inspect`, `resume` or another `--out`. `run` names a missing source,
+  and page ranges past the source name the first out-of-range page and total page count.
+- Missing Tesseract languages now suggest close installed codes, explain the three-letter convention,
+  show only a short sample with the full count, and point to `pageledger doctor` and the right setting.
+- `bundle` explains that it accepts an original run, that reruns are not replayable yet, and that a
+  document job is shared as its folder. `compare` explains why different extractors' grades are not
+  ranked and shows per-page lengths and warning changes in that case.
+- A review CSV saved under another name can use the unique matching binding in its folder; ambiguous
+  or missing bindings name the expected sidecar. pypdf structural repair notices are summarized on
+  stderr while other pypdf warnings remain visible.
+- `process --pages` help includes a range example. `classify` has no page filter because its route map
+  must cover the full source and `run --routes` cannot be combined with `run --pages`.
 - A resumable run (and so every document job) of a folder holding hidden files such as `.DS_Store` no longer
   fails its own checkpoint validation; the skipped names are kept, as the schema already allowed.
 
