@@ -65,7 +65,9 @@ pageledger verify jobs/complete
 ```
 
 The report opens with what happened: the job's status, how many pages need a
-person and why, and the one command to run next. Hashes, readings and custody
+person and why, and the one command to run next. Here all three pages need a
+person: each holds one short sentence, and a page with very little text is
+held (`sparse`, shown as `coverage_defect`) in case text is missing. Hashes, readings and custody
 come last, for the record. It shows unknown cost because the local adapter
 supplies no charge.
 Unknown cost is different from a known zero. The selected text remains subject
