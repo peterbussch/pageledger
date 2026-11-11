@@ -20,7 +20,7 @@ how each page was read, so that the text can be checked and cited. The
 | the scans are on a library's IIIF server | [Fetch page images from a IIIF server](iiif.md) |
 | text in Russian, pre-reform spelling or another language | [Non-English and historical OCR](multilingual-ocr.md) |
 | to choose an OCR engine, or a vision model | [OCR options](ocr-options.md), then [engine recipes](engine-recipes.md) and [read pages with a vision model](vision-adapter.md) |
-| to review and correct pages | [Reports and review](processing-spec.md#reports-and-review) |
+| to review and correct pages | [Review and correct](review-and-correct.md), then [reports and review](processing-spec.md#reports-and-review) |
 | to write the text out | [Export document text](export.md) |
 | to cite or deposit a job | [Share and cite results](share-and-cite.md) |
 | to estimate time and cost before a large job | [Plan time and cost](plan-time-and-cost.md) |

@@ -24,8 +24,12 @@
             "type": "string"
           },
           "page_number": {
+            "description": "The page number as text, as the review view writes it; since 0.9 also as an integer. The pattern applies to text only.",
             "pattern": "^[1-9][0-9]*$",
-            "type": "string"
+            "type": [
+              "string",
+              "integer"
+            ]
           },
           "row_id": {
             "pattern": "^p[0-9]{4,}$",

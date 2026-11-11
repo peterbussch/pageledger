@@ -241,6 +241,25 @@ def test_decisions_downloaded_from_the_page_are_accepted_by_review_job(job, tmp_
     assert verify_job(job)["status"] == "pass"
 
 
+def test_a_decisions_file_may_give_the_page_as_a_number(job, tmp_path):
+    write_review_html(job, tmp_path / "view", images="none")
+    data = _embedded((tmp_path / "view" / "index.html").read_text(encoding="utf-8"))
+    written = {
+        "schema_version": "0.1",
+        "bindings": json.loads(data["binding"])["bindings"],
+        "rows": [{"row_id": "p0001", "page_number": 1, "decision": "accept"}],
+    }
+    schema = Path(__file__).parents[2] / "schemas" / "review-decisions.schema.json"
+    validate(written, json.loads(schema.read_text()))
+    path = tmp_path / "view" / "review.json"
+    path.write_text(json.dumps(written), encoding="utf-8")
+    assert review_job(job, path, reviewer="A. Reader")["decisions"] == {"reviewed_text": 1}
+    written["rows"][0]["page_number"] = True
+    path.write_text(json.dumps(written), encoding="utf-8")
+    with pytest.raises(ValueError, match="page_number may be a number"):
+        review_job(job, path, reviewer="A. Reader")
+
+
 @pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
 def test_the_pages_javascript_builds_the_same_sheet(job, tmp_path):
     write_review_html(job, tmp_path / "view", images="none")
@@ -763,10 +782,12 @@ def test_the_decision_list_is_grouped_in_plain_words(job, tmp_path):
         in select
     )
     assert '<option value="source_defect">Damaged or missing source page</option>' in select
-    # Each choice says what it records, once, above the pages.
+    # Each choice says what it records, once, above the pages, as the how-to does.
+    how_to = (Path(__file__).parents[2] / "docs" / review_html.HOW_TO).read_text()
     for _title, choices in wording.DECISION_GROUPS:
         for _token, _label, records in choices:
             assert html.escape(records, quote=True) in document
+            assert f"| {records} |" in how_to
 
 
 def test_the_sheet_carries_a_guide_to_its_decisions(job, tmp_path):

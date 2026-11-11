@@ -216,7 +216,10 @@ def read_review_decisions(
             "A decisions file holds schema_version 0.1, the sheet's bindings and a list of rows"
         )
     required = {"row_id", "page_number", "decision"}
-    for row in rows:
+    for index, row in enumerate(rows):
+        if isinstance(row, dict) and type(row.get("page_number")) is int:
+            # A file written by hand or by a script may give the page as a number.
+            rows[index] = row = {**row, "page_number": str(row["page_number"])}
         if (
             not isinstance(row, dict)
             or not required <= set(row) <= DECISION_FIELDS
@@ -225,7 +228,7 @@ def read_review_decisions(
             optional = ", ".join(sorted(DECISION_FIELDS - required))
             raise ValueError(
                 "Each row of a decisions file has row_id, page_number and decision, "
-                f"and may have {optional}, all as text"
+                f"and may have {optional}, all as text (page_number may be a number)"
             )
     return _receipt(job, root, rows, data["bindings"], reviewer, path.parent, sheet=False)
 

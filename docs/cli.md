@@ -105,10 +105,11 @@ warning.
 the first page outside it and the source's page count. If `--out` already
 exists, inspect or resume the job there, or choose another output folder.
 
-`process` ends by printing the opening of the job's report, for a finished,
-paused or halted job alike: its status, how many pages were read, how many
-need a person and why, the one command to run next, and the `inspect` command
-that shows the full report. `--json` prints the job result instead.
+`process` ends with a few lines in plain words, for a finished, paused or
+halted job alike: how many pages were read and how many need a person, where
+the job is, the commonest reasons pages are held, the one command to run next
+(`review`, or `resume` for a job that did not finish) and the `export` command
+that writes the text out. `--json` prints the job result instead.
 
 While a job runs, `process` and `resume` show on stderr how many pages are
 done, how many need a person so far, and what is being read now: one line
@@ -149,7 +150,7 @@ and `--apply`; giving more than one is a usage error (exit 2).
 With none of them, or with `--out DIR`, it verifies the job, then writes a new
 folder holding
 `index.html`, a reading view of every page with its image beside its text, and
-the blank `review.csv` and binding that `--sheet` writes. Decisions chosen and
+the blank `review.csv`, binding and `review-decisions.txt` that `--sheet` writes. Decisions chosen and
 texts corrected in the view are downloaded as `review.json`, a decisions file
 (or, without corrections, as that `review.csv`), and recorded only by `--apply`.
 The folder is `JOB_DIR-review` beside the job unless `--out` names another; if
@@ -159,7 +160,8 @@ pages that need a person (`held`), or none (`none`, which needs no Poppler).
 See [Review beside the page image](processing-spec.md#review-beside-the-page-image).
 
 `--sheet FILE` writes only the CSV of the job's pages, to fill in with a
-spreadsheet, and its binding beside it.
+spreadsheet, its binding beside it, and `review-decisions.txt`, which lists the
+decisions and the readings each page can use.
 
 `--apply FILE` records human decisions from that sheet, from a decisions file
 (JSON with the sheet's bindings, which the view downloads), or from a JSON file
@@ -568,8 +570,8 @@ pageledger inspect runs/run-001/ --csv > pages.csv
 
 Shows a job or a run, recognized as [verify](#verify) recognizes
 them. For a job, `inspect` displays `report.md`, which opens with the job's
-status, the pages that need a person and why, and the next command (the lines
-`process` prints when it ends), or `document.json` with `--json`; `--csv` is for runs and is refused for a job (exit 1).
+status, the pages that need a person and why, and the next command, then a table
+of the pages and the record of how each was read, or `document.json` with `--json`; `--csv` is for runs and is refused for a job (exit 1).
 
 For a run, it summarizes the run directory: status, page counts, warnings, failures,
 review-queue size, records normalized, grade distributions grouped by evidence

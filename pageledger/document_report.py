@@ -761,8 +761,12 @@ def closing_lines(report: dict, job: Path | str) -> list[str]:
     if status == "processing":
         lines.append(f"Next: pageledger resume {folder} finishes the job.")
     elif held:
-        beside = " beside their page images" if _has_images(report) else ""
-        lines.append(f"Next: pageledger review {folder} shows those pages{beside} for checking.")
+        one = len(held) == 1
+        those = "that page" if one else "those pages"
+        beside = (" beside its page image" if one else " beside their page images") * _has_images(
+            report
+        )
+        lines.append(f"Next: pageledger review {folder} shows {those}{beside} for checking.")
     if report["counts"]["selected_outputs"] and status != "processing":
         out = shlex.quote(Path(str(job)).name + ".md")
         lines.append(f"Text out: pageledger export {folder} --format md --out {out}")

@@ -388,8 +388,9 @@ class _View:
             _choices_legend(),
             "<details><summary>Working in a spreadsheet instead</summary>",
             f"<p><code>{SHEET}</code> in this folder has one row per page; type a decision in "
-            "its <code>decision</code> column (the words in brackets above, or "
-            f"<code>use:</code> with a reading's ID, which each page lists under "
+            "its <code>decision</code> column (the codes in parentheses under <em>What each "
+            "decision records</em>, or <code>use:</code> with a reading's ID, which each page "
+            "lists under "
             "<em>From the record</em>), and apply the sheet with the same command, "
             f"naming <code>{SHEET}</code>. <code>review-decisions.txt</code> beside it lists "
             "the decisions. A sheet cannot carry corrected text in a cell: save the text in a "
@@ -792,7 +793,7 @@ def _choices_legend() -> str:
     items = []
     for title, choices in DECISION_GROUPS:
         lines = "".join(
-            f"<li>{_e(label.replace('READING', 'a reading'))} "
+            f"<li>{_e(label.replace('READING', 'another reading'))} "
             f"(<code>{_e(token + 'ID' if token == 'use:' else token)}</code>): "
             f"records {_e(records)}.</li>"
             for token, label, records in choices

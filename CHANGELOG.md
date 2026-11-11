@@ -116,13 +116,25 @@ Reviewing and exporting
 - `review JOB` writes a review view into `JOB-review` beside the job (or
   `--out DIR`) to open in a browser: each page's
   image beside its text, the other readings compared word by word, and why the
-  page is held, the pages that need a person first. Decisions download as
-  `review.json` ([schema](schemas/review-decisions.schema.json)) or, without
-  corrections, as a review sheet, and are recorded only by `review --apply`.
-  Page images of PDFs and of image folders are rendered with Poppler;
-  `--images held` renders only held pages, and `--images none` needs no
-  Poppler (a view of page images then links to each image). See
+  page needs a person in plain words, those pages first; codes and reading IDs
+  are folded under "From the record". Readings are named by what made them
+  ("Tesseract OCR (rus)", "the PDF's own text"), and an empty reading is not
+  offered to use or to correct from. The decisions are grouped as a person
+  decides ("The text is right", "Use another reading", "I corrected the text",
+  "This page has no text to transcribe", "The page cannot be read"), with what
+  each records. One download, `review.json`
+  ([schema](schemas/review-decisions.schema.json)), carries decisions and
+  corrections, and is recorded only by `review --apply`; the review sheet
+  route is folded under "Working in a spreadsheet instead". Page images of PDFs
+  and of image folders are rendered with Poppler; `--images held` renders only
+  held pages, and `--images none` needs no Poppler (a view of page images then
+  links to each image). See [review and correct](docs/review-and-correct.md),
+  a new how-to, and
   [review beside the page image](docs/processing-spec.md#review-beside-the-page-image).
+- Every review sheet, from `review --sheet` or in the review view's folder, has
+  `review-decisions.txt` beside it: the command that applies it, the decisions
+  and what each records, and the readings each page can use. See
+  [review in a spreadsheet](docs/processing-spec.md#review-in-a-spreadsheet).
 - A reviewer can correct a page's text, in the view or with `correct:FILE` in a
   sheet. The correction is a new file; the engine's reading is never edited.
   The receipt names what it started from and the words changed (`--dry-run`
@@ -192,15 +204,22 @@ The contract
   [hold policy 0.9](docs/processing-spec.md#hold-policy-09).
   `pdf_text` marks these layers `ocr_text_layer` in plain runs too, so more of
   their pages enter the review queue.
-- **New jobs write report format 0.9:** `report.md` opens with what happened
-  and what to do, gives each page that needs a person with the evidence for
-  its holds, and keeps hashes and custody for the end. `document.json` gains
-  `hold_causes`. `process`, `inspect`, the review view and the exports now
+- **New jobs write report format 0.9:** `report.md` is the record of how the
+  text was made, with a summary on top. It opens with what happened, the pages
+  that need a person and why in plain words, and one command that is right as
+  printed in the job's folder; then one table of the pages (what holds each,
+  its selected text, its review); then the record, one line per page with
+  every hold code, reading ID, outcome, warning and comparison, and hashes and
+  custody last. Readings are named by what made them, from `engines`, which
+  `document.json` gains with `hold_causes`; a scan page that another reason
+  holds is no longer also called blank, though the record keeps the reason. A
+  25-page scan's report falls from about 300 lines to about 120. `transcript.md`
+  names each selected reading the same way. `process` ends with a few plain
+  lines: what was read, how many pages need a person and why, where the job is,
+  and the next command. `process`, `inspect`, the review view and the exports
   count pages that need a person the same way, and a page still waiting for a
-  stage of an unfinished job is shown as not finished. A finished job's
-  recorded next action is now plain, and a blank candidate whose selected
-  reading has text is described as such. Reports of older jobs render as
-  before. See [report format 0.9](docs/document-report-spec.md#report-format-09).
+  stage of an unfinished job is shown as not finished. Reports of older jobs
+  render as before. See [report format 0.9](docs/document-report-spec.md#report-format-09).
 - **`verify` reports more and needs less.** It no longer needs the source: a
   missing one is the warning `source_missing`, one found through the source
   index `source_relocated`. Its result has a `warnings` list, which can also

@@ -242,4 +242,5 @@ under a page, or correct its text in the box below it, download `review.json`
 into the `review` folder, and apply it with `pageledger review jobs/complete
 --apply review/review.json --reviewer "Your Name"`. Nothing is recorded until
 you do.
-See [review beside the page image](processing-spec.md#review-beside-the-page-image).
+[Review and correct](review-and-correct.md) goes through each step; the
+reference is [review beside the page image](processing-spec.md#review-beside-the-page-image).

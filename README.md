@@ -36,27 +36,19 @@ your machine: Tesseract, in English, unless you choose otherwise. It never
 calls a paid service unless you configure one. The folder `jobs/book` is
 the *job*: the record of everything done to this one document.
 
-On a three-page scan, the screen shows:
+On a three-page scan whose first page is blank, the screen shows:
 
 ```text
-Reading book.pdf: each page's own text, then Tesseract OCR in English for pages that need it. Nothing is sent anywhere.
-Status: finished. Every stage this job is configured to run has run.
-
-Source: book.pdf; 3 of its 3 pages selected, 3 read.
-
-- Text selected and nothing held the page; no person has checked it (unreviewed_text): 3 pages (1-3).
-
-Next: pageledger export jobs/book --format md --out book.md writes the selected text out.
-
-The full report: pageledger inspect jobs/book
+SAMPLE
 ```
 
 When something looks wrong on a page (text missing, an engine unsure of many
 words, two engines disagreeing), the job *holds* the page, and the screen says
 how many pages need a person and why. Then:
 
-- `pageledger inspect jobs/book` shows the job's report, `report.md`: each
-  page that needs a person, with the evidence for it.
+- `pageledger inspect jobs/book` shows the job's report, `report.md`: where
+  each page stands and which reading was selected, then the record of how
+  every page was read.
 - `pageledger review jobs/book` writes a review view into `jobs/book-review`
   to open in a browser: each page's image beside its text. Choose a decision for each
   page or correct its text there, and record the decisions with

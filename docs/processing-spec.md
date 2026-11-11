@@ -1106,15 +1106,17 @@ pageledger review jobs/book --apply review.csv --reviewer "A. Reader"
 
 `review --sheet` writes one row per page: a link to the page in the source, its
 disposition, the start of its selected text, its review reasons, and empty
-`decision` and `note` columns. Fill those in a spreadsheet and save as CSV. A
-decision is one of:
+`decision` and `note` columns. Fill those in a spreadsheet and save as CSV.
+Beside the sheet it writes `review-decisions.txt`: the command that applies the
+sheet, the decisions and what each records, and the other readings each page can
+use, by ID and by what made them. A decision is one of:
 
 | Decision | Records |
 |---|---|
 | `accept` | The selected text, as `reviewed_text` |
 | `blank` | The page as blank, `reviewed_blank` |
 | `illustration`, `handwriting`, `unreadable`, `source_defect` | That disposition |
-| `use:ATTEMPT` | Another completed attempt's text, named by its attempt ID from the report |
+| `use:ATTEMPT` | Another completed attempt's text, named by its attempt ID from the report's record or `review-decisions.txt` |
 | `correct:FILE` | The text in FILE, as `reviewed_text` with a [correction](#correct-the-text) |
 
 A blank decision, or a deleted row, leaves the page unreviewed; the note becomes
@@ -1205,16 +1207,22 @@ pageledger review jobs/book --out review-text/ --images none
 ```
 
 `review --out` verifies the job, as `export` does, then writes a new folder:
-`index.html`, a blank `review.csv` with its `review.csv.binding.json` (the same
-files `review --sheet` writes), and with `--images all` (the default) or `held`, a
-JPEG of each page, or only of the pages that need a person, in `images/`.
-Open `index.html` in a browser; it needs no server and loads nothing from the
-network. It lists the pages, those that need a person first, with their state,
-what holds them and how far the engines agree. Under each page are its image
-beside the selected text, the source page and any image a model was sent, the
-warnings recorded on each reading (each code with its meaning in plain words,
-from the same table the report uses), and the other readings, each shown in full
-and compared word by word with the selected text. On a contested page, the open
+`index.html`, a blank `review.csv` with its `review.csv.binding.json` and
+`review-decisions.txt` (the same files `review --sheet` writes), and with
+`--images all` (the default) or `held`, a JPEG of each page, or only of the pages
+that need a person, in `images/`. Open `index.html` in a browser; it needs no
+server and loads nothing from the network. It lists the pages, those that need a
+person first, with why each needs a person in plain words (a page with text is
+not also called blank when another reason holds it) and its review. Each reading
+is named by what made it, as in the report: "the PDF's own text", "Tesseract OCR
+(rus)", "a person's correction". Under each page are why it needs a person, its
+selected text, how far the engines agree, its review and the warnings on each
+reading, in words; then, under "From the record", the page's state and hold
+codes and each reading's attempt ID, outcome and warning codes. Then its image
+beside the selected text, the source page and any image a model was sent, and the
+other readings, each shown in full and compared word by word with the selected
+text; a reading with no letters or digits is listed as empty and not shown. On a
+contested page, the open
 spans are marked in the reading they were found in and listed with what each
 engine read. Transcripts are shown exactly, with their line breaks and spacing;
 characters a reader cannot see appear as marked symbols: control characters as
@@ -1225,9 +1233,15 @@ readings whose word counts multiply to more than 25,000,000 (about 5,000 words
 each) are not compared word by word; the view says so and shows both in full.
 
 Under each page a reviewer can choose one of the decisions in the table above
-and add a note, or correct the text. The text box starts from the selected
-text, or from another reading chosen under "Start from" (choosing
-`use:ATTEMPT` first starts it from that reading); editing it chooses
+and add a note, or correct the text. The list groups them as a person decides:
+"The text is right" (`accept`), "Use another reading" (`use:ATTEMPT`, one
+choice per other reading, named by what made it), "I corrected the text"
+(`correct`), "This page has no text to transcribe" (`blank`, `illustration`,
+`handwriting`) and "The page cannot be read" (`unreadable`, `source_defect`);
+"What each decision records", above the pages, says what each one records. An
+empty reading is not offered, to use or to start a correction from. The text
+box starts from the selected text, or from another reading chosen under "Start
+from" (choosing another reading first starts it from that reading); editing it chooses
 `correct`, and the changes are marked below it, struck words the reading's and
 underlined words the reviewer's. A reading that a browser text box cannot hold
 exactly is not offered for editing; correct it with `correct:FILE`. A note cannot start with `=`, `+`,
@@ -1255,12 +1269,14 @@ pageledger review jobs/book --apply review/review.json --reviewer "A. Reader" --
 pageledger review jobs/book --apply review/review.json --reviewer "A. Reader"
 ```
 
-`review.json` is the [decisions file](#correct-the-text): it carries its own
-bindings, so it can be saved anywhere. Without corrections, "Download
+`review.json` is the [decisions file](#correct-the-text), and the view's one
+download button, "Download my decisions (review.json)": it carries its own
+bindings, so it can be saved anywhere. The spreadsheet route is folded under
+"Working in a spreadsheet instead": there, without corrections, "Download
 review.csv" still writes the review sheet; save it in the folder in place of
-the blank `review.csv`, so that the binding is beside it, or download the
-binding too and keep the two together. The sheet download refuses while any
-page is corrected, because a sheet cannot carry the text. `review --apply`
+the blank `review.csv`, so that the binding is beside it, or download
+`review.csv.binding.json` too and keep the two together. The sheet download
+refuses while any page is corrected, because a sheet cannot carry the text. `review --apply`
 checks either file as it checks any review sheet, and refuses it if the job has
 changed since the view was written. Like `report.md`, the view is a
 rendering: it is not evidence, and writing it changes nothing in the job. Page

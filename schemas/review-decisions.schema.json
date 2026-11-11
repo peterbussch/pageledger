@@ -13,7 +13,7 @@
         "type": "object",
         "properties": {
           "row_id": {"type": "string", "pattern": "^p[0-9]{4,}$"},
-          "page_number": {"type": "string", "pattern": "^[1-9][0-9]*$"},
+          "page_number": {"description": "The page number as text, as the review view writes it; since 0.9 also as an integer. The pattern applies to text only.", "type": ["string", "integer"], "pattern": "^[1-9][0-9]*$"},
           "decision": {
             "description": "A review sheet decision (accept, blank, illustration, handwriting, unreadable, source_defect, use:ATTEMPT, correct:FILE), or correct with the corrected text in text.",
             "type": "string"
