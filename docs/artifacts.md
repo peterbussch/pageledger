@@ -1,12 +1,12 @@
-# Run and document-job artifacts
+# Run and job artifacts
 
-Runs and document jobs are directories of plain files that you can inspect
+Runs and jobs are directories of plain files that you can inspect
 with a text editor or command-line tools. JSON/JSONL artifacts validate
 against schemas in [`schemas/`](../schemas/); YAML artifacts use documented
 field contracts, also tested in CI. The [glossary](glossary.md) defines the
 terms used here.
 
-## Document jobs
+## Jobs
 
 `process` creates a job directory containing its attempts and combined report:
 

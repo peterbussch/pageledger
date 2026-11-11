@@ -1,6 +1,6 @@
 # CLI reference
 
-Use `process` to manage a document job, or `run` for an extraction run with one
+Use `process` to manage a job, or `run` for an extraction run with one
 adapter. `verify` and `inspect` take either a job or a run. `rerun` extracts
 flagged pages into a new run; `resume` recovers pending work in place.
 `classify` prepares routes, and `align` revises structured records from
@@ -78,7 +78,7 @@ a usage error (exit 2).
 
 With `--config`, use the [processing guide](processing-spec.md) to write the
 config, or start from `init`.
-Document jobs retain checkpoints automatically. Stages use `processing`
+Jobs retain checkpoints automatically. Stages use `processing`
 profiles; `run.adapter_order` is reserved for explicit rerun generations and
 is rejected here. So are `run` budget, pricing, grading, rerun and retry
 settings, which a job would otherwise ignore; set limits under
@@ -192,7 +192,7 @@ image with `malformed_image`. The `text` adapter refuses page images; `pdf_text`
 reads no text from them (`no_text_layer`). See
 [a folder of page scans](process-a-collection.md#page-images).
 
-To process a collection as separate document jobs, run once per file. This
+To process a collection as separate jobs, run once per file. This
 shell loop uses direct child files and skips hidden names:
 
 ```bash
@@ -255,17 +255,17 @@ pageledger inspect runs/book/
 pageledger verify runs/book/
 ```
 
-Continues an individual run created with `run --resumable`, or a document job
-created with `process`, in its existing directory. For document-job recovery
+Continues an individual run created with `run --resumable`, or a job
+created with `process`, in its existing directory. For job recovery
 and processing limits, see [document processing](processing-spec.md). For
 individual-run recovery rules, see the [checkpoint contract](checkpoint-spec.md).
 `--adapter-path DIR` adds a trusted adapter import directory; `--json` emits a
 machine-readable result. `--raise-limit LIMIT=VALUE` applies only to a paused
-document job; see [one budget for the job](processing-spec.md#one-budget-for-the-job).
+job; see [one budget for the job](processing-spec.md#one-budget-for-the-job).
 If a source file has moved, list its new path in a
 [source index](checkpoint-spec.md#moved-source-files) (`PAGELEDGER_SOURCE_INDEX`
 or `~/.config/pageledger/source-index.tsv`); resume finds it by SHA-256 and
-keeps the recorded path in its records. A document job resumes only in the
+keeps the recorded path in its records. A job resumes only in the
 directory it was written in; on a moved or copied job, `resume` stops and
 names that directory.
 
@@ -408,7 +408,7 @@ pageledger verify runs/run-001/
 pageledger verify runs/run-001/ --json
 ```
 
-Checks a document job or a run, whichever `DIR` is. A folder holding
+Checks a job or a run, whichever `DIR` is. A folder holding
 `job.json` is a job, written by `process`; a folder holding `manifest.json` or
 `checkpoint.json` is a run, written by `run`, or one stage of a job under its
 `attempts/` folder (`verify jobs/book/attempts/local_ocr` checks that stage's
@@ -470,7 +470,7 @@ paths; replay evidence records the exact `bundle.json` index hash. The output
 directory must not already exist; no archive is created.
 
 `bundle` accepts a run that was not itself a rerun. Bundle the original run;
-reruns cannot be replayed yet. A document job is not a run and is shared as its
+reruns cannot be replayed yet. A job is not a run and is shared as its
 folder; see [Deposit a job](share-and-cite.md#deposit-a-job).
 
 The only accepted flags are `--out DIR` (required) and `--json`. There are no
@@ -536,7 +536,7 @@ pageledger inspect runs/run-001/
 pageledger inspect runs/run-001/ --csv > pages.csv
 ```
 
-Shows a document job or a run, recognized as [verify](#verify) recognizes
+Shows a job or a run, recognized as [verify](#verify) recognizes
 them. For a job, `inspect` displays `report.md`, which opens with the job's
 status, the pages that need a person and why, and the next command (the lines
 `process` prints when it ends), or `document.json` with `--json`; `--csv` is for runs and is refused for a job (exit 1).

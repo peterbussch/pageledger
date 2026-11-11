@@ -66,7 +66,7 @@ how many pages need a person and why. Then:
   as plain text, Markdown, JSON lines or TEI, each page marked with whether a
   person has checked it.
 
-The [first document job](https://github.com/peterbussch/pageledger/blob/main/docs/document-first-run.md)
+The [first job](https://github.com/peterbussch/pageledger/blob/main/docs/document-first-run.md)
 tutorial goes through these steps on a small example that needs no OCR engine.
 
 ## What a source can be

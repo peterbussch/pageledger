@@ -7,7 +7,7 @@ for inspection.
 
 ## Start with local text and OCR
 
-Document jobs require POSIX advisory locks, available on macOS and Linux.
+Jobs require POSIX advisory locks, available on macOS and Linux.
 Install `"pageledger[pdf]"`, Poppler, and Tesseract for a PDF job. The
 simplest job needs no config file:
 
@@ -79,7 +79,7 @@ refused with a message that says what a source can be. Without `--config`,
 `process` chooses OCR (`pdf_ocr`) for PDFs and page images and no OCR for text.
 A [IIIF snapshot](iiif.md#process-the-snapshot) is a folder of page images.
 
-A document job reads only the `processing` section. Budget, pricing, grading
+A job reads only the `processing` section. Budget, pricing, grading
 and rerun settings under `run` would be ignored, so `process` rejects them and
 names the replacement (for budgets, `processing.limits`). A leftover
 `run.adapter` or `taxonomy` section is harmless and produces a warning.
@@ -128,7 +128,7 @@ or `review --apply` to record them afterward. All job commands accept `--json`.
 ## Policy and configuration
 
 `processing` is separate from `run.adapter_order`. The latter still chooses an
-adapter by explicit rerun generation; `process` rejects it. A document job has
+adapter by explicit rerun generation; `process` rejects it. A job has
 ordered stages `local_text`, `local_ocr`, `image`, and optional `second_opinion`,
 and two optional stages between local OCR and the image stage, `second_ocr` and
 `local_image` (see [the ladder](#the-ladder-a-second-ocr-engine-and-a-local-model)).

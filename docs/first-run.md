@@ -140,7 +140,7 @@ test -f review/decisions.csv
 ```
 
 
-For document jobs, use [`review --apply`](processing-spec.md#reports-and-review) to
+For jobs, use [`review --apply`](processing-spec.md#reports-and-review) to
 record source-bound human decisions. The CSV above is for ordinary runs.
 
 Do not edit `audit.md`, `audit.json`, or raw files inside a verified run to keep

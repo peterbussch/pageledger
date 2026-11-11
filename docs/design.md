@@ -21,7 +21,7 @@ flowchart TD
     Evidence --> Bundle[Verified run bundle and replay]
 ```
 
-The report and human-receipt paths belong to document jobs. Explicit reruns and
+The report and human-receipt paths belong to jobs. Explicit reruns and
 portable bundles operate on individual runs. Image-evidence runs cannot be
 bundled in this version.
 
@@ -226,7 +226,7 @@ boundary](capabilities-and-limits.md#verified-replay-boundary) covers the
 authenticity, declared-material, side-effect, mutation, zero-byte, and
 editable-install limits.
 
-## Document jobs
+## Jobs
 
 `process` owns the ordered stages and their shared budget. Each stage produces
 ordinary resumable child runs. The job records which

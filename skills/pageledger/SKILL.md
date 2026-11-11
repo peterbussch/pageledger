@@ -21,7 +21,7 @@ page lists supported workflows and limits; the
 | Task | Command |
 |---|---|
 | Process a document with staged attempts | `pageledger process book.pdf --out jobs/book` (Tesseract, English; `--lang`, `--engine`) or `--config processing.yml` |
-| Write a document-job config to edit | `pageledger init --out processing.yml` |
+| Write a job config to edit | `pageledger init --out processing.yml` |
 | Read or verify a document report | `pageledger inspect jobs/book`; `pageledger verify jobs/book` |
 | Show held pages beside their images | `pageledger review jobs/book --out review/` (or `--sheet review.csv` for a spreadsheet) |
 | Record human review | `pageledger review jobs/book --apply reviewed-pages.json` |
@@ -105,7 +105,7 @@ zero-byte evidence, and editable-install hooks.
 8. The project chooses which parent and rerun outputs belong in its corpus.
    Present the `compare` results rather than deciding silently.
 
-## Document jobs and recovery
+## Jobs and recovery
 
 Use `process` when one document needs local text, OCR for defective pages, and
 optional image stages under a shared budget. The `processing` section defines
@@ -183,14 +183,14 @@ domain types belong in a hook.
   do not compare grades across adapters or drop the basis label.
 - Still out of scope: classification invoked implicitly inside `run`, region-
   level routing, same-run adapter fallback, environment installation, adapter
-  or model bundling, signatures, and cloud identity. Document jobs provide
+  or model bundling, signatures, and cloud identity. Jobs provide
   explicit staged attempts; rerun chains retain their generation semantics.
 
 ## Where to read more
 
 | Need | Read |
 |---|---|
-| Document jobs and review | `docs/processing-spec.md`, `docs/document-report-spec.md` |
+| Jobs and review | `docs/processing-spec.md`, `docs/document-report-spec.md` |
 | Recovery and image input evidence | `docs/checkpoint-spec.md`, `docs/image-evidence-spec.md` |
 | Exact scope of this version | `docs/capabilities-and-limits.md` |
 | Classifier signals, hooks, and evidence | `docs/classifier.md` |

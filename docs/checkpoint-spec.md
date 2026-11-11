@@ -2,7 +2,7 @@
 
 `pageledger run --resumable` retains per-page recovery records for an original
 run, not a rerun. `pageledger resume RUN_DIR` continues that run in
-place. Document jobs created with `process` retain checkpoints automatically.
+place. Jobs created with `process` retain checkpoints automatically.
 Both were added in 0.5.0 and use artifact schema version 0.1.
 
 ## Get started
@@ -29,7 +29,7 @@ no response was saved, it records `outcome_unknown` and stops. Investigate that
 request with the adapter or provider before starting any new work; resume does
 not automatically retry an uncertain call.
 
-For document jobs, use `pageledger resume jobs/book` followed by
+For jobs, use `pageledger resume jobs/book` followed by
 `pageledger inspect jobs/book` and `pageledger verify jobs/book`. See
 [document processing](processing-spec.md) for job-level status and review.
 
@@ -108,7 +108,7 @@ adapter/package changes, altered output, missing records or incompatible
 lineage stop recovery. Sources are hashed again after processing, before final
 publication. Full source page counts remain distinct from selected-page
 counts. Recovery is in place: moving a run directory is outside this
-contract. A document job's stage runs are the exception for reading: the job
+contract. A job's stage runs are the exception for reading: the job
 checks that each stage's `root` is the job's recorded `root` plus the stage's
 `attempts/` path, wherever the job is now (see
 [moved and copied jobs](processing-spec.md#moved-and-copied-jobs)). A source file that has moved can be found by its hash through a
@@ -116,7 +116,7 @@ checks that each stage's `root` is the job's recorded `root` plus the stage's
 
 ## Moved source files
 
-Recovery records, run manifests and document jobs name each source by absolute
+Recovery records, run manifests and jobs name each source by absolute
 path and SHA-256, and moving the original does not rewrite them. A source index
 tells PageLedger where the same bytes are now. It is a UTF-8 text file with one
 tab-separated `sha256` and absolute `path` per line:
@@ -147,7 +147,7 @@ used only when its images hash to it again.
 | Command | With a moved source and a matching index entry |
 | --- | --- |
 | `resume RUN_DIR` | Verifies and reads the indexed file. `checkpoint.json`, provenance and the final manifest keep the recorded path. |
-| `resume JOB_DIR`, `verify JOB_DIR` | Same for document jobs: `job.json` keeps the recorded path. A stage first started after the move records the path it read; the job binds stages to its source by SHA-256. `verify` reports `source_relocated`, or `source_missing` when neither path holds the bytes. |
+| `resume JOB_DIR`, `verify JOB_DIR` | Same for jobs: `job.json` keeps the recorded path. A stage first started after the move records the path it read; the job binds stages to its source by SHA-256. `verify` reports `source_relocated`, or `source_missing` when neither path holds the bytes. |
 | `verify RUN_DIR` | Reports warning `source_relocated`, with the recorded `source` and the `located` file, instead of `source_missing`. |
 | `rerun`, `bundle` | Use the indexed file when the recorded path is missing. A rerun records the path it read; a bundle copies the bytes as usual. |
 

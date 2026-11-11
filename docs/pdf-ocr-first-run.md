@@ -194,7 +194,7 @@ pageledger run scans/ --config pageledger-ocr.yml --out runs/scans-ocr --json
 [Page images](process-a-collection.md#page-images) explains what the folder may
 hold, how pages are numbered and what is recorded.
 
-## Document jobs
+## Jobs
 
 To read a whole document with its own text first and OCR only where that text
 is missing or looks wrong, use [`process`](processing-spec.md) instead: it

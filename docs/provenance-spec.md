@@ -73,7 +73,7 @@ An adapter that returns a layout (where on the page it found the text; see the
 `layout_sha256`, the SHA-256 of the layout's canonical JSON (keys sorted,
 separators `,` and `:`, UTF-8). The layout itself is kept in the run's recovery
 record (`.checkpoint/pages/{page_id}.json`), which must still hash to this
-value; a document job plans tiles from it. Records of adapters without a
+value; a job plans tiles from it. Records of adapters without a
 layout omit the field.
 
 Normalized output is linked at file level, not per record. Each
@@ -232,7 +232,7 @@ Meanings and suggested next steps for warnings are in the
 | `fragmented_text` | `mean_token_length < 3.0` AND `alpha_token_count >= 20`. Catches OCR fragment noise; does not catch word-level misrecognition. |
 | `joined_text` | `mean_token_length >= 10`, `max_token_length >= 80`, `alpha_token_count >= 20`, `whitespace_character_ratio <= 0.03`, and `latin_letter_ratio >= 0.8`. Catches collapsed Latin word boundaries; it is review evidence, not proof of corruption. |
 | `suspicious_embedded_text_delta` | PDF embedded text character ratio < 0.5 or > 1.8, when embedded text is available and adapter does not report `embedded_text` capability. |
-| `multi_column_rows` | RapidOCR in `reading_order: rows` has at least four detected lines in more than half of the visual rows (three or more ` \| ` joins). This reflects the adapter's row assembly; column order and rows with two or three lines do not trigger it. It is a quality warning, not a document-job hold. |
+| `multi_column_rows` | RapidOCR in `reading_order: rows` has at least four detected lines in more than half of the visual rows (three or more ` \| ` joins). This reflects the adapter's row assembly; column order and rows with two or three lines do not trigger it. It is a quality warning, not a job hold. |
 | `historical_orthography` | `prereform_letter_count >= 2`, OR `terminal_hard_sign_count >= 2` at a density of ≥1 per 100 alphabetic tokens over ≥20 tokens. The page is pre-1918 Russian orthography and an OCR model trained on modern text is probably mismatched. Measured on an 1850 gubernia review: 21 terminal ъ per 100 tokens vs 0.00 in modern text. |
 | `low_confidence` | `confidence_detail.below_60_ratio >= 0.25` over ≥10 words. A quarter of the words under engine confidence 60 marks the page for review; a mean can hide one illegible paragraph on an otherwise clean page. |
 | `instruction_echo` | Output contains one of the high-specificity chat-template markers `<think>`, `</think>`, `<|channel`, `<|im_start|>`, `<|im_end|>`, `[INST]`, or `[/INST]`. Generic words such as “instructions” or “channel” do not trigger it. |

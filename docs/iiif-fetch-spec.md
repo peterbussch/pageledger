@@ -81,7 +81,7 @@ as the optional `iiif` object: `sha256` of `iiif-fetch.json` as read,
 `requested_url`, `status`, and `canvases`, one `{name, canvas_index, canvas_id}`
 per page in page order (see the
 [run manifest](run-manifest-spec.md#page-image-sources) and
-[document job](processing-spec.md#durable-job-and-attempts) specifications).
+[job](processing-spec.md#durable-job-and-attempts) specifications).
 `verify` adds `iiif_snapshot_incomplete` and `iiif_record_changed` warnings
 when the images still match; images a later resume added are reported, as for
 any folder, as `source_changed` naming each one.

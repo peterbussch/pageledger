@@ -48,7 +48,7 @@ conversion of dots.ocr was the strongest model that runs on the Mac: median
 character error 0.061 against Claude Haiku 5.5's 0.032, at a median of 31
 seconds a page on an M4 Pro. It looped until `max_tokens` on 6 of the 20 pages
 (both handwriting pages, both newspaper pages, both pages of a tilted
-typescript), 70 to 86 seconds each. In a document job that is a failed
+typescript), 70 to 86 seconds each. In a job that is a failed
 `local_image` attempt and the page goes on to the next stage. PaddleOCR-VL 1.6
 read whole pages badly (it repeated lines and invented headlines) and is not
 recommended as a page reader.
@@ -75,7 +75,7 @@ taxonomy:
       prompt: Extract the text content from this image.
 ```
 
-In a document job it fits as `local_image`, with its own
+In a job it fits as `local_image`, with its own
 `max_local_image_pages`. dots.ocr is MIT-licensed.
 
 ## GGUF vision model through llama.cpp (macOS and Linux)
@@ -220,7 +220,7 @@ empty. The adapter counts those as unread, so such a page is held as
 
 Indra is a literal engine, but when it is unsure of a line it rescores the
 candidates with a character language model, which can prefer a common spelling
-to the printed one. In a document job it can be the first OCR (`local_ocr`),
+to the printed one. In a job it can be the first OCR (`local_ocr`),
 with Tesseract or RapidOCR as `second_ocr`, a literal witness from another
 engine.
 
@@ -234,7 +234,7 @@ ships them; read the licence before commercial use.
 ALTO is the XML format libraries use to publish the OCR they ran on their own
 scans: each word of a page with its text, its position on the page image and
 usually the engine's confidence. The built-in `alto` adapter reads one such file
-per page, so the library's OCR enters a run or a document job as one more
+per page, so the library's OCR enters a run or a job as one more
 reading, with the file and its digest in the page's provenance.
 
 The Library of Congress offers an ALTO file beside each page image of many
@@ -301,7 +301,7 @@ at a line end keeps its hyphen (`HYP`) and the library's suggested whole word
 sure) or else from `CC` (one digit a character, 0 sure, 9 unsure), and feeds
 `low_confidence` like RapidOCR's.
 
-Every reading with text carries `ocr_text_layer`, so in a document job the
+Every reading with text carries `ocr_text_layer`, so in a job the
 rules for an inherited OCR layer apply and the page climbs to local OCR. In a
 job written by 0.8 the ALTO reading is then set aside: its agreement still
 confirms the OCR while its disagreement does not count against it. In a job

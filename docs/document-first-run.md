@@ -1,6 +1,6 @@
-# First document job: process, inspect, verify, recover, and review
+# First job: process, inspect, verify, recover, and review
 
-This tutorial is a small, offline document job. It uses PageLedger's built-in
+This tutorial is a small, offline job. It uses PageLedger's built-in
 `text` adapter and a three-page synthetic text fixture, so it needs no OCR
 engine, network access, provider credential, or extra package. The optional
 recovery helper records adapter calls in JSONL and reports unknown cost. JSONL
@@ -56,7 +56,7 @@ configuration and the command that writes it out.
 `process` writes the job and its child run to disk, then says how many pages
 need a person and what to run next. `inspect` reads the document report,
 while `verify` checks the source fingerprint (a SHA-256 hash of the file),
-saved attempts, selected output, and report consistency.
+saved readings, selected text, and report consistency.
 
 ```bash pageledger-tutorial
 pageledger process sample-document.txt --out jobs/complete
@@ -65,7 +65,7 @@ pageledger verify jobs/complete
 ```
 
 The report opens with what happened: the job's status, how many pages need a
-person and why, and the one command to run next. Hashes, attempts and custody
+person and why, and the one command to run next. Hashes, readings and custody
 come last, for the record. It shows unknown cost because the local adapter
 supplies no charge.
 Unknown cost is different from a known zero. The selected text remains subject

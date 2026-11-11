@@ -283,7 +283,7 @@ Additions that do NOT require a schema-version bump:
 
 PageLedger is designed to produce inspectable artifacts even when a run fails.
 The behavior below describes ordinary `run` and `rerun` execution. Resumable
-runs and document jobs retain separate request/response checkpoints; see the
+runs and jobs retain separate request/response checkpoints; see the
 [checkpoint specification](checkpoint-spec.md) for their failure states.
 
 ### Artifact write order
@@ -361,7 +361,7 @@ canonical signal that PageLedger finished writing every artifact it points to;
 
 ### Common errors and user action
 
-For quality warnings and document-job dispositions, see the
+For quality warnings and job dispositions, see the
 [warnings reference](warnings.md).
 
 | Error | Likely cause | Action |

@@ -36,7 +36,7 @@ sequenceDiagram
     end
 ```
 
-Ordinary runs retry only when configured. Resumable runs and document jobs
+Ordinary runs retry only when configured. Resumable runs and jobs
 require zero automatic retries and stop after a failed or uncertain request.
 See [checkpoint recovery](checkpoint-spec.md) and
 [image input evidence](image-evidence-spec.md) for durable response handling.
@@ -193,7 +193,7 @@ not invent their own prompt hashes.
 
 ### Resumable execution
 
-Resumable runs and document jobs use the same adapter protocol. Resume reuses
+Resumable runs and jobs use the same adapter protocol. Resume reuses
 saved responses without calling `extract()` again, but it still constructs
 the adapter and checks its metadata, so constructors and page-count hooks must
 not make extraction requests. Resumable execution needs zero automatic retries
@@ -209,7 +209,7 @@ partial_result=None)` for a typed terminal failure. Codes are
 `MODEL_CONTENT_FILTERED`, `MODEL_RECITATION`,
 `MODEL_UNAVAILABLE`, `IMAGE_RENDER_ERROR`, and `IMAGE_EVIDENCE_INVALID`.
 `http_status` is an integer 100–599 or null. `partial_result` is an
-`ExtractionResult` or null. Resumable runs and document jobs validate a
+`ExtractionResult` or null. Resumable runs and jobs validate a
 partial result and keep it, with its usage, in the failure record; they never
 complete or retry that page. A malformed partial result is discarded and the
 failure is reported as `IMAGE_EVIDENCE_INVALID`. An ordinary run keeps no
@@ -554,7 +554,7 @@ Adapters should return `ExtractionResult` instances with:
 | `layout` | object or null | Optional boxes of the page's lines or words on a 1,000,000-step grid (see above); hashed into provenance as `layout_sha256`. |
 
 An adapter whose output a model generates, and so can contain text that is
-not on the page, should declare `generative` in `capabilities`. Document jobs
+not on the page, should declare `generative` in `capabilities`. Jobs
 keep such a reading in review until another engine agrees with it; see
 [Compare engines on a page](processing-spec.md#compare-engines-on-a-page).
 PageLedger never infers the capability from an adapter's name.

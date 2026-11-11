@@ -8,7 +8,7 @@ how each page was read, so that the text can be checked and cited. The
 
 | If you want to | Read |
 |---|---|
-| See a whole document job on a small example that needs no OCR engine | [First document job](document-first-run.md) |
+| See a whole job on a small example that needs no OCR engine | [First job](document-first-run.md) |
 | See the run commands, which build and test pipelines, on the same terms | [First run](first-run.md) |
 
 ## By task

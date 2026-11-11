@@ -44,15 +44,15 @@ as if it represents a volume with damaged, faint, tabular or historical pages.
 
 ## Set spending and work limits
 
-For document jobs, `processing.limits.max_attempt_pages` counts extraction
-attempts, not unique pages. Every page read at each stage counts again. Set it
+For jobs, `processing.limits.max_attempt_pages` counts readings, not
+unique pages. Every page read at each stage counts again. Set it
 from the number of selected pages and expected passes. A 300-page book with
-text extraction followed by OCR on every page can require 600 attempts.
+text extraction followed by OCR on every page can require 600 readings.
 At process start, PageLedger prints a notice when the configured stages could
-exceed the limit. Reaching the limit pauses the job; completed attempts remain available
+exceed the limit. Reaching the limit pauses the job; completed readings remain available
 and `resume --raise-limit max_attempt_pages=N` continues with a higher cap.
 
-`max_image_pages` bounds image and second-opinion attempts. `max_tokens` and
+`max_image_pages` bounds the readings of the image and second-opinion stages. `max_tokens` and
 `max_cost_usd` use reported usage and charges. Unknown paid usage stops further
 image work when the corresponding limit is set. A request already in progress
 can cross a token or cost threshold, and the first reported charge can be

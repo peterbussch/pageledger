@@ -9,7 +9,7 @@ A vision model writes its reading rather than reading it off the page. It can
 invent, drop or modernize text, so PageLedger marks every `vision` attempt as
 generative and holds its pages for review as `unconfirmed_model_output`. A
 plain `run` holds every such page in the review queue of `audit.json`; a
-document job holds it until a clean reading from another engine agrees with it
+job holds it until a clean reading from another engine agrees with it
 or a person confirms it. After a plain run, `pageledger rerun` with another
 engine reads the held pages again, and `compare` compares the two runs
 page by page.
@@ -114,7 +114,7 @@ taxonomy:
 ```
 
 Each page's provenance records the prompt's hash, so readings made with
-different prompts stay distinguishable. In a document job, the stage's
+different prompts stay distinguishable. In a job, the stage's
 `prompt` does the same.
 
 ## Models that reason before answering
@@ -153,7 +153,7 @@ needed at most about 3,000 output tokens, so a lower `max_tokens`, such as
 | `max_image_side` | 2048 | Longest side of the page image in pixels, from 256 to 4096. |
 | `reasoning_effort` | not sent | `none`, `minimal`, `low`, `medium` or `high`, sent as the request's `reasoning_effort` for models that reason before answering. |
 
-A document job can have the adapter read a page in tiles
+A job can have the adapter read a page in tiles
 ([Read dense pages in tiles](processing-spec.md#read-dense-pages-in-tiles)):
 processing then passes a `tiles` option, the page's tile plan, as it passes
 `evidence_dir`; a configuration may not set it. The adapter declares the
@@ -166,12 +166,12 @@ evidence is one `page_tiles` record of every tile image sent.
 
 ## What it records
 
-In a plain `run`, and in the local stages of a document job, each page's
+In a plain `run`, and in the local stages of a job, each page's
 `model` in provenance names the requested model, the model the server reported
 when that differs, the renderer and the image size, for example
 `qwen3.5-9b (served as Qwen3.5-9B-4bit); pdftoppm version 25.01.0; scale-to=2048`.
 
-In a document job's image and second-opinion stages, the adapter also keeps
+In a job's image and second-opinion stages, the adapter also keeps
 the exact JPEG it sent, described by an
 [image evidence record](image-evidence-spec.md): the image's hash and size,
 the renderer and its arguments, the requested model, the model and provider the
@@ -190,7 +190,7 @@ environment are ignored, so neither can carry a key elsewhere.
 
 | What happened | Failure code |
 |---|---|
-| The model stopped at `max_tokens` | `MODEL_OUTPUT_TRUNCATED`; resumable runs and document jobs keep the partial text |
+| The model stopped at `max_tokens` | `MODEL_OUTPUT_TRUNCATED`; resumable runs and jobs keep the partial text |
 | The provider filtered the content | `MODEL_CONTENT_FILTERED` |
 | The provider declined to recite a source | `MODEL_RECITATION` |
 | The reading was empty | `MODEL_EMPTY_RESPONSE` |
@@ -209,7 +209,7 @@ without retrying early. HTTP 402, timeouts, network errors and other HTTP errors
 are not retried by the adapter. No key or provider response body enters failure records.
 
 Every failed request keeps the image it sent, with an empty reading, as the
-failure's partial result. In a document job that counts as reading nothing: a
+failure's partial result. In a job that counts as reading nothing: a
 page that times out or meets a network, HTTP or availability error is requested
 once more by the job, and held if that fails too (see
 [Failed remote reads](processing-spec.md#failed-remote-reads)). A page read in

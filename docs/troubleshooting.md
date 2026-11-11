@@ -40,7 +40,7 @@ selected output and hashes.
 ## `bundle` refuses a directory
 
 `bundle` accepts a run that was not itself a rerun. Bundle the original run;
-reruns cannot be replayed yet. A document job is shared as its folder, not as
+reruns cannot be replayed yet. A job is shared as its folder, not as
 a replay bundle; follow [Deposit a job](share-and-cite.md#deposit-a-job).
 
 ## `compare` shows incomparable grades
@@ -87,7 +87,7 @@ These PDF diagnostics mean the file needs a password or unsupported encryption,
 AES support is unavailable, or pypdf could not parse the file. Install the
 optional PDF support with `pip install 'pageledger[pdf]'` for the AES support,
 or use an unprotected, valid copy. PageLedger does not accept passwords or
-repair damaged PDFs. In a document job, `source_container_invalid:<code>` is a
+repair damaged PDFs. In a job, `source_container_invalid:<code>` is a
 halted source-container failure; check the `job.json` failure details and
 replace the source only if you can establish it is a valid, authorized copy.
 

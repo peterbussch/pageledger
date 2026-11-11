@@ -1,7 +1,7 @@
 # Export document text
 
-`pageledger export` writes the selected text of a document job page by page,
-with each page's review state and the attempt that produced its text. It
+`pageledger export` writes the selected text of a job page by page,
+with each page's review state and the reading that produced its text. It
 verifies the job first and refuses one that does not verify.
 
 ```bash
@@ -24,7 +24,7 @@ never contains an absolute path such as your home folder.
 
 A heading names the source file, its SHA-256 and the job. Each page then
 states its disposition, its review (reviewer, time and reason, or "none"), the
-attempt and engine that produced the text, and the text's SHA-256, followed by
+reading and engine that produced the text, and the text's SHA-256, followed by
 the text exactly as the engine returned it. A page whose text a person
 corrected says so in a `Correction` line, naming the corrected text's file, the
 reading it was corrected from and how many words changed, with the corrected

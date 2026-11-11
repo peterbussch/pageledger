@@ -26,7 +26,7 @@ accuracy or speed. The listed custom integrations are not bundled adapters.
 A collection may need PDF text extraction for some pages, Tesseract for scans,
 and an image model for a few difficult pages. PageLedger gives those attempts
 consistent page identities and records the settings, output, usage, and review
-reasons for each one. Its document jobs also retain selected text and human
+reasons for each one. Its jobs also retain selected text and human
 review receipts without discarding earlier attempts.
 
 For a single conversion, the extractor's own CLI may be enough. For an existing
