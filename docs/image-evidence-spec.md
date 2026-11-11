@@ -8,7 +8,7 @@ the [image evidence schema](../schemas/image-evidence.schema.json).
 | Field | Meaning |
 |---|---|
 | `schema_version`, `kind` | Exactly `0.1`, `page_image` |
-| `source_sha256`, `page_number` | Source document hash and one-based source page |
+| `source_sha256`, `page_number` | Hash of the file the image was rendered from, and one-based source page. For a PDF this is the source document's hash. For page images it is the hash of the run's carrier PDF (the manifest input's `carrier.sha256`), or of the page's own image when the adapter reads images itself. |
 | `artifact` | Relative JPEG path below the child run's `evidence/` directory |
 | `sha256`, `bytes` | Hash and byte count of the exact transmitted JPEG |
 | `media_type`, `color_space` | Exactly `image/jpeg`, `RGB` |

@@ -182,6 +182,42 @@ than a rerun.
   entries. See [failure recovery and partial-run
   guarantees](run-manifest-spec.md#failure-recovery-and-partial-run-guarantees) for the full failure scenario table and common error actions.
 
+## 9. A folder of page scans
+
+Archives often deliver a book or a reel as one image file per page rather than
+as a PDF. You do not need to wrap them in a PDF first: give PageLedger the
+folder, and it reads the images as one document.
+
+```bash
+ls scans/
+# page-1.jpg  page-2.jpg  ...  page-10.jpg
+pageledger run scans/ --config pageledger-ocr.yml --out runs/scans-ocr --json
+```
+
+The pages follow the file names in natural order, so `page-2.jpg` comes before
+`page-10.jpg`. Number your files so that this order is the page order. The
+folder must hold only JPEG (`.jpg`, `.jpeg`) or PNG (`.png`) files; PageLedger
+skips hidden files such as `.DS_Store` and stops, before reading any page, at
+anything else, so a stray note or a subfolder of thumbnails is never read as a
+page. Convert TIFF or JPEG 2000 masters to PNG first; PNG keeps every pixel,
+and the error message names a command that does it.
+
+What PageLedger records is the images themselves. Each image is hashed, and
+the source's identity is a hash over the list of file names, hashes and pixel
+sizes. `pageledger verify-run runs/scans-ocr` later tells you if any image
+changed, went missing or was added, and names it. Each page's provenance line
+names its own image.
+
+The OCR engines read PDF pages, so for them PageLedger writes a temporary PDF
+that carries the images' own bytes. It is a working copy, not the record: the
+run keeps its hash and deletes it. Its page size comes from the density the
+image declares (many cameras and scanners write one); an image that declares
+none is taken as 300 pixels per inch. If an engine then renders a page at much
+more than the image's own pixels, the page gets the warning `render_upsampled`:
+a small image read at high resolution does not hold more detail, and a better
+scan is the fix. The same folder works with `pageledger process`; its local
+text stage finds no text layer (`no_text_layer`) and the page goes on to OCR.
+
 ## Document jobs
 
 For a document that needs both text-layer extraction and OCR, use

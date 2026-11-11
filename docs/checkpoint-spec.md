@@ -89,7 +89,7 @@ All of these `checkpoint.json.payload` fields are required:
 | `root` | Absolute original output directory. |
 | `config_sha256`, `config_source_path` | Exact retained config digest and original config reference. |
 | `identity` | Adapter `name`, `version`, `code_sha256`, PageLedger `package_sha256`, optional `profile`, and declared `metadata`. Adapter/profile values may be null for route-only work. |
-| `inputs` | Ordered source objects with `path`, `sha256`, full `page_count`, and optional `pages` selection expression. |
+| `inputs` | Ordered source objects with `path`, `sha256`, full `page_count`, and optional `pages` selection expression. A source of page images adds `kind`, `images` and, when an engine reads a carrier, `carrier`, as in the [run manifest](run-manifest-spec.md#page-image-sources); resume rebuilds the carrier and refuses to continue if its hash differs. |
 | `documents` | Ordered source objects with `source`, `source_sha256`, `page_count` and planned `pages`; each page retains its route fields. |
 | `imported_routes` | Retained imported route-map object, or null. |
 | `route_warnings` | List of routing warnings. |
@@ -138,6 +138,11 @@ The recorded path is always tried first. When it is missing or no longer holds
 the recorded bytes, PageLedger uses the first indexed file with the recorded
 SHA-256. A file whose digest differs is never read, so a wrong or stale index
 entry fails the same way a missing source does.
+
+A source of page images is identified by the hash of its page manifest, which
+is the `sha256` of its entry in the run manifest or the job. Its index line
+pairs that hash with the folder's (or the image file's) path, and the folder is
+used only when its images hash to it again.
 
 | Command | With a moved source and a matching index entry |
 | --- | --- |

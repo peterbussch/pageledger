@@ -114,8 +114,18 @@ For `sample.txt`, containing one or more form-feed-separated pages, run
 prove extraction correctness. Add tests for supported actions, page numbering,
 input handling, and failures. An image adapter follows the same one-call,
 one-page contract: declare `input_types = ("image",)` and return
-`usage={"pages": 1}` for each image file. A directory of image files is a set
-of inputs, not one multi-page source.
+`usage={"pages": 1}` for each page.
+
+A folder of page images is one multi-page source. An adapter whose
+`input_types` include `"image"` but not `"pdf"` receives each page's own image
+file as `source`, with `page_number` the page's place in the document (1 for a
+single image file). Every other adapter receives a PDF carrier PageLedger wrote
+for the run, in which page `page_number` holds that page's image; it is deleted
+when the run ends, so do not keep its path. An adapter that renders pages can
+call `pageledger.adapters.render_warnings(source, page_number, pixels=(width,
+height))` with the size of its render; it returns `["render_upsampled"]` when
+the render has more than 1.5 times the source image's pixels along the long
+side, and works on carriers and scanned PDFs alike.
 
 ## Python protocol reference
 

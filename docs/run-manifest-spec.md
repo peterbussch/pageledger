@@ -146,6 +146,37 @@ intentionally defer one or more pages through a `review` route. `completed`
 means every routed extraction/skip decision finished without a review-only gap;
 it does not claim extraction accuracy.
 
+## Page-image sources
+
+An input that is an image file or a folder of page images adds three optional
+fields to its `inputs` entry. Its `path` is the folder or the file, and its
+`sha256` is the hash of the page manifest, not of any one file.
+
+| Field | Type | Meaning |
+|---|---|---|
+| `kind` | string | `page_images`. |
+| `images` | array | The page manifest, one entry per page in page order: `name` (the file name), `sha256` (of the file), `bytes`, `width` and `height` (pixels, from the image header). |
+| `carrier` | object | Present when an engine read the pages through a PDF carrier: its `sha256`, `derived: true`, and `pages`, the pages whose images it holds. Absent for a dry run and for an adapter that reads the images themselves. |
+
+The identity is the SHA-256 of the UTF-8 JSON text of
+`{"kind": "page_images", "pages": <images>}`, written with keys sorted and no
+spaces (Python's `json.dumps(..., sort_keys=True, separators=(",", ":"),
+ensure_ascii=False)`). A changed, missing, added or reordered image changes it.
+Pages follow the natural order of their file names: runs of digits compare as
+numbers and letters without regard to case.
+
+The carrier is a PDF PageLedger writes for the run and deletes afterwards. Each
+page it reads holds that page's image: a JPEG's bytes unchanged, a PNG's
+compressed data unchanged (an image with an alpha channel is decoded and split
+into an image and a soft mask, both uncompressed), with the page size the
+image's density gives (JFIF, then EXIF, for a JPEG; `pHYs` for a PNG; 300 pixels
+per inch when none is declared or the declared density is below 20 or above
+4,800) and EXIF rotation as the page's rotation. Pages the run does not read
+are empty pages of the same size, and so is every page for the built-in
+`pdf_text`, which reads text layers and renders nothing. The same images and pages always give the
+same bytes, so `verify-run` can rebuild the carrier and compare its hash. The
+carrier is never the record of custody: the images are.
+
 ## Adapter escalation
 
 `run.adapter_order` is a generation-indexed escalation chain. Generation D

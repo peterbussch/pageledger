@@ -38,6 +38,8 @@ state. A document job can finish while pages remain unresolved; see
 | `script_mismatch` | When a script is configured, fewer than half of the page's letters match it. The wrong language/model or a mixed-script page may be involved. | Check the declared `language.script` and page content. Correct the configuration or review the mixed-script source; PageLedger does not guess a language. |
 | `historical_letters_lost` | With `orthography: prereform`, a large Cyrillic output lacks expected historical letters and word-final hard signs. OCR may have modernized the spelling. | Compare against the page and use a model suited to pre-reform spelling. Do not restore letters automatically. |
 | `render_dpi_capped` | PDF OCR rendered below the requested DPI to fit the configured pixel limit. | Inspect the rendered output. If it is not legible, increase `max_render_pixels` within available memory or use a different source. |
+| `render_upsampled` | An engine rendered the page at more than 1.5 times the pixels of its source image along the long side: a small scan, such as a 1,600-pixel JPEG, read as if it were large. The extra pixels hold no extra detail. Not a hold; in a plain run it puts the page in the review queue like any warning. | Judge the reading by the source image, not by the render. Look for a higher-resolution copy of the page (an archive's master, a IIIF image at full size) and read that. If the image declares a wrong, low density (some write 72 pixels per inch), `pdf_ocr` renders it larger than it is; a lower `dpi` avoids that. |
+| `no_text_layer` | The source is page images, which have no text layer, so `pdf_text` read nothing. In a document job the page goes on to OCR. | Nothing; read the page with OCR. |
 | `coverage_defect`, `clipped_text`, `truncated_text`, `output_truncated`, `missing_content` | Adapter or reviewer evidence indicates omitted, clipped, or truncated content. | Compare the full page and output. Use another extraction stage or source; a clean later result does not erase the concern. |
 | `missing_required_columns` | A required table column was not found in aligned output. | Check the schema aliases and source table. Correct the schema only when the header correspondence is clear; otherwise review the table. |
 | `numeric_column_conflict`, `column_conflict` | Numeric values or their column associations conflict. | Compare named columns and row identities with the source. Do not resolve by matching totals alone. |
@@ -51,8 +53,9 @@ state. A document job can finish while pages remain unresolved; see
 Adapter-specific warnings may also appear in the page's `warnings` list. Their
 meaning depends on the adapter; consult that adapter's documentation and inspect
 the source evidence. The built-in PDF OCR reports `render_dpi_capped` when it
-lowers resolution to fit its pixel limit, and the `alto` adapter reports
-`alto_missing`, `alto_invalid` and `alto_geometry_mismatch`.
+lowers resolution to fit its pixel limit, the `alto` adapter reports
+`alto_missing`, `alto_invalid` and `alto_geometry_mismatch`, and the rendering
+engines report `render_upsampled` when they render beyond the source image's pixels.
 
 ## Document-job dispositions
 

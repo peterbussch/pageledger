@@ -70,7 +70,8 @@ All schema of TEI P5 4.12.0:
 
 - `sourceDesc` names the source file and its SHA-256; `encodingDesc` lists the
   engines behind the exported text and how many pages a person reviewed.
-- Each page starts with `<pb n="12" facs="../scans/book.pdf#page=12"/>`,
+- Each page starts with `<pb n="12" facs="../scans/book.pdf#page=12"/>` (for
+  a folder of page images, `facs="../scans/page-12.jpg"`),
   followed by `<div type="page" subtype="reviewed">` or
   `subtype="unreviewed"`.
 - The text is in `<ab>`, with `<lb/>` between lines. A page without text

@@ -12,6 +12,7 @@ The links point to the main page describing each term.
 | Authority | The file or record used as the source of truth for a particular decision. | [Artifacts](artifacts.md#what-each-file-answers) |
 | Bundle | A directory containing a verified run, copies of its source files, and an inventory. | [Bundle](cli.md#bundle) |
 | Canonical | The designated record to consult for a fact. It does not mean the record is guaranteed correct. | [Artifacts](artifacts.md#what-each-file-answers) |
+| Carrier | The PDF PageLedger writes for a run from page images, holding each image's own bytes, so the engines that read PDFs can read them. It is derived and deleted after the run; the images are the record. | [Page-image sources](run-manifest-spec.md#page-image-sources) |
 | Child run | An ordinary run created by a document job for a stage or attempt. | [Document jobs](processing-spec.md#durable-job-and-attempts) |
 | Disposition | The job's current summary of a page, such as pending, selected text, or a review condition. | [Document report](document-report-spec.md) |
 | Dogfooding | Using a tool or workflow on the team's own work; it is not a broad accuracy study. | [Classifier limits](capabilities-and-limits.md#known-limits) |
@@ -20,12 +21,14 @@ The links point to the main page describing each term.
 | Evidence | A retained record that supports a stated identity, result, or decision. It does not by itself prove accuracy. | [Artifacts](artifacts.md) |
 | Export | The selected text of a verified job, written as plain text, Markdown, JSONL or TEI. | [Export](export.md) |
 | Fail closed | Refuse an operation when a required safety or integrity check cannot be satisfied. | [Verification](artifacts.md#verification) |
+| Folder of page images | A folder of JPEG or PNG files, one per page, read as one document in natural order of file name. | [A folder of page scans](pdf-ocr-first-run.md#9-a-folder-of-page-scans) |
 | Generation | A run's place in a rerun sequence: the original is generation zero, followed by explicit reruns. | [Reruns](cli.md#rerun) |
 | Generative | Output a model writes rather than reads off the page, which can contain text that is not there. PageLedger holds such readings for review. | [Vision adapter](vision-adapter.md) |
 | Grade basis | The kind of information behind a grade: text signals or schema checks. These bases are not interchangeable. | [Comparison](cli.md#compare-runs) |
 | Hold | A recorded reason a page or attempt remains unresolved or needs a person. | [Warnings and holds](warnings.md) |
 | Job | A document-level record of staged attempts, selected text, review state, and report. | [Processing](processing-spec.md) |
 | Legacy | An artifact or value written by an earlier version. It may remain readable, but can lack evidence added later. | [Compatibility](run-manifest-spec.md#compatibility-policy) |
+| Native pixels | The pixel width and height of the image that is a page: a page image, or a scanned PDF page's image. | [Page images and native pixels](provenance-spec.md#page-images-and-native-pixels) |
 | Non-hermetic | Not isolated from external software, credentials, services, or machine state. Replay is not hermetic. | [Replay boundary](capabilities-and-limits.md#verified-replay-boundary) |
 | Outcome unknown | The request started, but no durable response was saved; the provider may have processed it. | [Recovery](checkpoint-spec.md) |
 | Quarantine | A policy outcome that keeps a page out of the executable rerun list. | [Artifacts](artifacts.md#what-each-file-answers) |

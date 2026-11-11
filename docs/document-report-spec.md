@@ -20,7 +20,7 @@ reviewed as text or blank. For meanings and suggested actions, see the
 | `schema_version` | `"0.1"` |
 | `report_format` | `"0.6"`: the source is named by its path relative to the job directory. `"0.5.1"`: by its absolute path. Absent on 0.5.0 reports, which use the legacy renderer. |
 | `job_id`, `created_at` | Job identity and creation timestamp |
-| `source` | Original `path`, exact byte `sha256`, `page_count`, and annotation inventory |
+| `source` | Original `path`, exact byte `sha256`, `page_count`, and annotation inventory; for page images also `kind` and the page manifest `images`, and `sha256` is the manifest's hash |
 | `selected_pages` | Unique, one-based source page numbers requested for this job |
 | `status` | `processing`, `completed`, or `halted`; completion does not mean human review |
 | `pages` | The selected-page inventory, including pages without attempts or selected text |
@@ -85,7 +85,9 @@ embeds the resulting string without Unicode normalization, whitespace trimming,
 newline conversion, or JSON/table reformatting. The transcript adds page headings,
 source links, selected-attempt links, and page separators around those strings.
 Source paths are percent-encoded before adding the `#page=N` fragment, so
-filename characters such as `#`, `?`, and `%` remain part of the path.
+filename characters such as `#`, `?`, and `%` remain part of the path. For page
+images the link goes to the page's own image instead, `folder/page-12.jpg`,
+with no fragment.
 It also lists pages without selected text. The transcript hash covers that whole
 Markdown serialization, including the added material and final newlines.
 

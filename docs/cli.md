@@ -54,7 +54,9 @@ pageledger process book.pdf --config processing.yml --pages "1-10" --out jobs/bo
 ```
 
 Processes one source document through local text, OCR, and optional image
-stages. `--out` is required, and the output directory must be new.
+stages. The source is a PDF, a text file, an image file or a folder of page
+images (see [run](#run) for how a folder is read). `--out` is required, and
+the output directory must be new.
 
 Without `--config`, the job runs with exactly the configuration
 `init-config --processing` writes for the same `--engine`, `--lang` and
@@ -172,6 +174,16 @@ explicitly named hidden file is still read. Document numbers follow the sorted
 expanded input set, so skipped hidden files do not shift numbering. `--out`
 must not already exist.
 
+A folder that holds JPEG or PNG files is different: it is one document of page
+images, its pages in natural order of file name (`page-2.jpg` before
+`page-10.jpg`). Every other entry in it, a text file, a TIFF or a subfolder,
+stops the run before any page is read; hidden files are skipped as above. A
+single `.jpg`, `.jpeg` or `.png` file is a one-page document. TIFF and JPEG 2000
+are refused with `unsupported_image` and the conversion to make, a damaged
+image with `malformed_image`. The `text` adapter refuses page images; `pdf_text`
+reads no text from them (`no_text_layer`). See
+[a folder of page scans](pdf-ocr-first-run.md#9-a-folder-of-page-scans).
+
 To process a collection as separate document jobs, run once per file. This
 shell loop uses direct child files and skips hidden names:
 
@@ -273,6 +285,10 @@ Exactly one input mode is allowed:
   extraction again. The parent must be a complete, executed, original run;
   dry runs, reruns, and `--pages` samples are rejected. It cannot be combined
   with positional inputs or `--adapter`.
+
+Page images have no text layer to probe, so `classify` refuses a folder of
+them or an image file; read them with an OCR engine first, then classify that
+run with `--from-run`.
 
 Flags:
 
@@ -388,6 +404,14 @@ as `source_relocated`; malformed or inconsistent ledger artifacts are errors
 and produce exit code 1. Verification
 checks coherence, not extraction accuracy, and is not a replacement for the
 JSON Schema test suite.
+
+For page images, verification also checks that the recorded page list hashes
+to the source identity and that each page's provenance names the image listed
+at its place. When the folder has changed, the `source_changed` warning names
+each image that changed, went missing or was added. When the images still
+match, the carrier PDF is rebuilt and compared with its recorded hash; a
+difference is the warning `carrier_not_reproduced`, which means another
+PageLedger version wrote it.
 
 ## bundle
 

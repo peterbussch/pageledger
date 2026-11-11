@@ -115,6 +115,56 @@ and, from 1.0, [stability](docs/stability.md).
   used to place tiles. hOCR, PAGE XML, ALTO as the contest witness and ALTO found through IIIF manifests
   are not supported.
 
+## 0.9.0 - unreleased
+
+### Added
+
+- Page images as a source. `run` and `process` read a single JPEG or PNG file as a one-page document, and a
+  folder of them as one document, pages in natural order of file name (`page-2` before `page-10`). The folder
+  is not searched below its top level; hidden files are skipped and reported; any other file or subfolder in
+  it stops the command before anything runs. TIFF, JPEG 2000 and other formats are refused with
+  `unsupported_image` and the lossless conversion to make; a damaged image with `malformed_image`. See
+  [a folder of page scans](docs/pdf-ocr-first-run.md#9-a-folder-of-page-scans).
+- Custody stays with the images. Every image is hashed, and the source's identity is the hash of a page
+  manifest (each page's file name, SHA-256, size and pixel dimensions). The run manifest, checkpoint and
+  document job record that manifest; provenance names each page's own image; `verify-run` names an image that
+  changed, went missing or was added, and `verify-job` refuses the job with the same detail.
+- The built-in engines read page images through a carrier: a PDF PageLedger writes for the run, holding each
+  JPEG's bytes as they are and each PNG's compressed data unchanged (a PNG with an alpha channel is split into
+  an image and a soft mask). Its page size comes from the image's declared density (JFIF, EXIF or `pHYs`), or
+  300 ppi when it declares none; EXIF rotation is honoured. Pages a run does not read are left empty. The
+  carrier is derived and reproducible; the run records its hash, and image evidence binds to it. An adapter
+  that declares `image` and not `pdf` among its input types gets each page's image file instead.
+- `render_upsampled`, a quality warning for a page an engine rendered at more than 1.5 times its source image's
+  pixels along the long side: a small scan read at high resolution. The built-in engines add it for page
+  images and for PDF pages whose largest image has the page's proportions; `adapters.render_warnings` lets a
+  custom adapter do the same. Provenance records the page's `native_pixels` when they are known. It holds no
+  page in a document job.
+- `no_text_layer`, the `pdf_text` warning for a page of page images. In a document job the local text stage
+  records an empty reading and the page goes on to OCR.
+
+### Changed
+
+- A folder that holds JPEG or PNG files is one document, not a set of one-page documents, and every file in
+  it must be a page image. A folder without images is read as before.
+- An adapter that reads images itself (`input_types` with `image` and not `pdf`) now gets each page's image file
+  from a folder, and only JPEG and PNG: a TIFF, JPEG 2000 or WebP file it used to receive is refused.
+- `render_upsampled` reaches PDF runs too. `pdf_ocr` renders at 300 DPI or more, so a new `pdf_ocr` run of a
+  scan whose page images are under 200 pixels per inch now warns on every page, and in a plain run each such
+  page enters the review queue and its signals grade drops, as any warning does.
+- `pdf_ocr` may render a page image below 72 DPI to stay within `max_render_pixels`, down to half the image's
+  own density, instead of stopping with `render_limit`.
+
+### Fixed
+
+- A resumable run (and so every document job) of a folder holding hidden files such as `.DS_Store` no longer
+  fails its own checkpoint validation; the skipped names are kept, as the schema already allowed.
+
+### Not supported yet
+
+- `classify` refuses page images, which have no text layer; `classify --from-run` works on a run of them.
+  `bundle`, and so `replay`, refuse runs of page images.
+
 ## 0.8.0 - 2026-10-19
 
 ### Added

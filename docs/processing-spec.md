@@ -61,6 +61,15 @@ For text files, set `processing.local_ocr` to `null`, as
 `init-config --processing --engine none` does. Form-feed characters separate
 pages.
 
+The source can also be an image file or a folder of page images, read as one
+document (see [a folder of page scans](pdf-ocr-first-run.md#9-a-folder-of-page-scans)).
+The same configuration works: `pdf_text` and `pdf_ocr` are the defaults, as for
+a PDF. Page images have no text layer, so the local text stage records an empty
+reading with the warning `no_text_layer` for each page, without needing the
+`pdf` extra; the empty reading holds the page as a blank candidate, the page
+climbs to OCR, and a clean OCR reading settles the hold. The empty reading stays
+in the ledger as the record that there was nothing to read.
+
 A document job reads only the `processing` section. Budget, pricing, grading
 and rerun settings under `run` would be ignored, so `process` rejects them and
 names the replacement (for budgets, `processing.limits`). A leftover
@@ -703,7 +712,12 @@ An interruption before a child's durable plan exists produces an explicit
 The incomplete directory is retained for inspection rather than overwritten.
 
 Source bytes are hashed before work and rechecked before each publication and
-resume. PDF page-tree counts must match the actual inventory. Container failure
+resume. For page images the job's `source` also records `kind: page_images`
+and the page manifest as `images`, its `sha256` is the manifest's hash (see
+[page-image sources](run-manifest-spec.md#page-image-sources)), and each page
+records `source_image_sha256`, the hash of its own image; `verify-job` fails,
+naming each image that changed, went missing or was added. PDF page-tree counts
+must match the actual inventory. Container failure
 produces a halted report with an unknown page count and no invented pages.
 Its `halt_reason` names the cause, such as
 `source_container_invalid:unsupported_encryption` for a PDF that needs a

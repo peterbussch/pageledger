@@ -80,7 +80,7 @@ individual records do not carry provenance identifiers. See the
 | `schema_version` | string | Provenance schema version. |
 | `run_id` | string | Run identifier from `manifest.json`. |
 | `page_id` | string | Stable page or region id. |
-| `source` | object | Source path, page number, and source checksum. |
+| `source` | object | Source path, page number, and source checksum. For page images, also `image` and `native_pixels` (below). |
 | `route` | object | Page type, action, and route confidence. |
 | `extractor` | object | Adapter, adapter version, model, prompt hash, determinism flag, and adapter capability metadata. |
 | `result` | object | Output format, confidence, warnings, raw artifact path, and (for current writers) the exact raw artifact SHA-256. |
@@ -89,6 +89,25 @@ individual records do not carry provenance identifiers. See the
 | `cost` | object | Optional PageLedger-resolved per-page cost: `usd` plus `basis` (`adapter_reported`, `configured_rate`, or null). |
 | `extraction_seconds` | number or null | Wall-clock seconds for the successful extraction attempt, measured by the runner (independent of adapter-reported `compute_seconds`). |
 | `timestamp` | ISO timestamp | Extraction time in UTC. |
+
+### Page images and native pixels
+
+For a source of page images, `source.sha256` is the source's identity, the hash
+of its page manifest (see [page-image sources](run-manifest-spec.md#page-image-sources)),
+and `source.image` names the page's own image: `name`, `sha256`, `bytes`,
+`width` and `height`, which equal the manifest's entry for this page, then
+`media_type` (`image/jpeg` or `image/png`), `ppi` (pixels per inch across and
+down, as the page was sized), `ppi_basis` (`jfif`, `exif`, `png_phys`, or
+`default` when the image declared no usable density) and `rotation` (0, 90,
+180 or 270 degrees, from EXIF). `verify-run` fails a line whose image differs
+from the manifest's.
+
+`source.native_pixels` holds the `width` and `height` in pixels of the image
+that is the page, when PageLedger knows it: always for page images, and for a
+scanned PDF page read by an engine that renders it, when the page's largest
+embedded image has the page's proportions (within 3%) and the `pdf` extra is
+installed. A page whose largest image has other proportions, such as a
+born-digital page with a figure, gets no `native_pixels`; nothing is claimed.
 
 ## Design notes
 
@@ -217,6 +236,8 @@ Meanings and suggested next steps for warnings are in the
 | `repeated_page_text` | The page's whole text, under 200 characters after whitespace is collapsed, is identical on at least three pages of the run. A stamp-only text layer repeats a scanner's or website's mark on every page and none of the content. |
 | `repetition_loop` | A line other than dot leaders or rules occurs at least 20 times and makes up at least 30% of the page's non-empty lines; or the text ends in one unit of up to 200 characters repeated at least 20 times; or one letter repeats at least 40 times in a row. These are the shapes of a model stuck in a loop; a table that repeats a label on some of its rows stays below them. |
 | `script_mismatch` | Only when the config declares `language.script`: the page has at least 200 letters and fewer than half are in that script. |
+| `render_upsampled` | Added by an engine that renders pages (`pdf_ocr`, `rapidocr`, `vision`, `indra`) when the rendered page's long side has more than 1.5 times the pixels of the long side of the page's source image (`native_pixels`). Not raised when the native pixels are unknown. |
+| `no_text_layer` | Added by `pdf_text` to every page of a page-image source, which has no text layer. |
 | `historical_letters_lost` | Only when the config declares `language.orthography: prereform`: at least 300 Cyrillic letters, none of ѣ, ѳ or ѵ, and a word-final ъ on at most 1% of words (or on one word). і is not counted, because modern Ukrainian and Belarusian use it. |
 
 `digits_only_text`, `mixed_script_tokens`, `private_use_characters` and
@@ -248,6 +269,9 @@ Adapter-native warnings appear in the same `warnings` list. The built-in
 `alto` adapter adds `alto_missing`, `alto_invalid` or `alto_geometry_mismatch`
 (see [warnings](warnings.md)) and names the ALTO file, its SHA-256 and its
 declared software in the `model` string. The built-in
+rendering engines add `render_upsampled` as defined above; a custom adapter can
+call `pageledger.adapters.render_warnings(source, page_number, pixels=(width,
+height))` for the same check. The built-in
 `pdf_ocr` adapter adds `render_dpi_capped` when it rendered a page below the
 requested DPI to stay within `run.adapter_options.max_render_pixels`; the
 page's `model` string then records both values, for example

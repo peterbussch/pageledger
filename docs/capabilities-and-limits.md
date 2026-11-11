@@ -22,6 +22,7 @@ used across the reference.
 | Supported | What to rely on | Limit |
 |---|---|---|
 | `run` with `text`, `pdf_text`, `pdf_ocr`, `rapidocr` or `vision`; custom adapters follow the adapter protocol. | Page-level attempts and recorded source, extractor, quality and cost details. `--pages` preserves source page numbers. | `pdf_text` reads a text layer; `pdf_ocr` needs locally installed Poppler and Tesseract. Quality signals do not establish accuracy. See [PDF first run](pdf-ocr-first-run.md) and [quality warnings](provenance-spec.md#warning-taxonomy). |
+| Page images: a JPEG or PNG file is a one-page document, and a folder of them one document in natural order of file name. | Each image is hashed and the source's identity is a hash of the page list, so `verify-run` and `verify-job` name an image that changed, went missing or was added. The engines read a PDF carrier that holds the images' own bytes. | JPEG and PNG only; TIFF and JPEG 2000 must be converted first. See [a folder of page scans](pdf-ocr-first-run.md#9-a-folder-of-page-scans). |
 | Built-in adapter defaults, `adapter_options`, `--adapter-path`, and dry-run planning. | Defaults are recorded; dry runs do not call extractors. | Only explicitly supplied configuration is read. See [CLI](cli.md), [adapter protocol](adapter-protocol.md), and [OCR options](ocr-options.md). |
 | Page budgets, retries and optional continue-on-error. | Page, token and dollar limits; failed or unattempted pages can enter rerun work. | Cost may be unknown or estimated, not provider-billed spend. See [plan time and cost](plan-time-and-cost.md) and [warnings](warnings.md). |
 | `alto`: a library's ALTO OCR, one file per page, as a page's text layer. | Text from word boxes in column order, word confidences, and the file's name, SHA-256 and declared software in the provenance. In a document job it is an inherited OCR layer: the page is read again by local OCR. A missing or unusable file gives an empty reading with `alto_missing` or `alto_invalid`; boxes that do not fit the page give `alto_geometry_mismatch`. | Only boxes that misfit the page's shape or edges are caught, not a box placed wrongly inside it. Verification does not re-read the ALTO file. One page per file; no hOCR or PAGE XML; not used as the contest witness; not found from IIIF manifests; word boxes not yet attached to the reading. See [the recipe](engine-recipes.md#alto-from-a-library-any-platform-no-engine). |
@@ -182,6 +183,35 @@ the commands.
 - A custom classification probe and the later run adapter may count pages
   differently. `run --routes` fails its complete-coverage check in that case;
   PageLedger does not renumber or reconcile the map silently.
+
+### Page images
+
+- Only JPEG and PNG are read. TIFF, JPEG 2000, GIF, BMP, WebP and HEIC are
+  refused with `unsupported_image`; convert them losslessly to PNG, and the
+  converted files become the recorded source. So are a 12-bit, lossless or
+  arithmetic-coded JPEG, an interlaced PNG, a palette PNG with partial
+  transparency and an image stored mirrored (EXIF orientations 2, 4, 5 and 7).
+- A folder is read at its top level only, as one document. Pages follow the
+  file names, so the names must sort into page order; PageLedger does not read
+  page numbers from the images or from any metadata file.
+- Page size comes from the density an image declares. An image that declares a
+  wrong density is sized wrongly, and `pdf_ocr`, which renders at a DPI, renders
+  it at the wrong scale; the engines that render to a pixel size are not
+  affected. An image that declares none is taken as 300 pixels per inch.
+- ICC colour profiles and PNG gamma are not carried into the carrier, so
+  colours may render slightly differently from a colour-managed viewer. A PNG
+  with an alpha channel is decoded in Python, which is slow for very large
+  images.
+- `classify` refuses page images, which have no text layer to probe; run an
+  OCR engine and classify that run with `--from-run`. `bundle`, and so
+  `replay`, refuse runs of page images.
+- The [source index](checkpoint-spec.md#moved-source-files) finds a moved folder
+  by its source identity, the manifest hash in the run manifest, not by the
+  hash of any one file.
+- `render_upsampled` compares a render with the page's source image. For a PDF
+  page PageLedger knows that image only when the page's largest image has the
+  page's proportions and the `pdf` extra is installed; otherwise it records
+  nothing and raises no warning.
 
 ### Extraction quality and review
 

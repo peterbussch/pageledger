@@ -73,6 +73,13 @@ often declare page sizes that have little to do with the paper.
 Born-digital pages, pages without images, and installations without pypdf keep
 the requested DPI.
 
+A page image (see [a folder of page scans](pdf-ocr-first-run.md#9-a-folder-of-page-scans))
+is sized by the density it declares, so `pdf_ocr` renders it at the higher of
+`dpi` and that density, without needing pypdf. To fit `max_render_pixels` it
+may go below 72 DPI, down to half the image's own density, before it stops
+with `render_limit`. Rendering well above the image's own pixels adds the
+warning `render_upsampled`.
+
 ### Docling: standard first, VLM selectively
 
 Install the heavy Docling stack as a machine tool, not in PageLedger core:
