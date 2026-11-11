@@ -48,10 +48,14 @@ selected output and hashes.
 
 ## A review is refused
 
-- `Invalid document review identity or envelope`: the review file names a
-  different source (its `source_sha256`), page or output than the job holds,
-  usually because it was written for another job or before the job changed.
-  Write a new sheet or view from the job as it is now.
+- `Invalid document review identity or envelope`: a JSON review receipt
+  names a different source (its `source_sha256`) than the job holds, usually
+  because it was written for another job, or it is not a receipt at all (its
+  top-level fields must be exactly `schema_version`, `source_sha256` and
+  `decisions`). See the [receipt contract](document-report-spec.md#human-review-receipt).
+- `Page N carries text corrected by ...; a JSON receipt cannot replace it`:
+  decide a corrected page in a review sheet or the review view, which show the
+  correction.
 - `The correction for page N is empty`: a correction cannot be empty. If the
   page has no text, record it as `blank`.
 - `The correction for page N is identical to the reading it started from`:

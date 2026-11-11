@@ -246,8 +246,8 @@ the commands.
   with their hashes. Its record is context: the job keeps the record's hash, URL,
   status and each page's canvas, but the source's identity is the images alone.
   Images a later `fetch --resume` adds leave the job verifiable and
-  exportable, with a warning, but it cannot be resumed or reviewed on the grown
-  folder; start a new job.
+  exportable, reviewable and adjudicable, with a warning, but it cannot be
+  resumed on the grown folder; start a new job for the added pages.
 
 ### Extraction quality and review
 
