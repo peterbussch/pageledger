@@ -62,6 +62,27 @@
           "reviewed_at": {
             "type": "string",
             "format": "date-time"
+          },
+          "correction": {
+            "description": "Present when a person corrected the page's text. The corrected text is kept at artifact; from_sha256 is the hash of the text the correction started from: the output named by selected_attempt and output_sha256, or an earlier correction of the same page. words counts the whitespace-separated words it changed, added and removed. Only on reviewed_text.",
+            "type": "object",
+            "properties": {
+              "artifact": {"type": "string", "pattern": "^corrections/[^/]+-[0-9a-f]{64}\\.txt$"},
+              "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+              "from_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+              "words": {
+                "type": "object",
+                "properties": {
+                  "changed": {"type": "integer", "minimum": 0},
+                  "added": {"type": "integer", "minimum": 0},
+                  "removed": {"type": "integer", "minimum": 0}
+                },
+                "required": ["changed", "added", "removed"],
+                "additionalProperties": false
+              }
+            },
+            "required": ["artifact", "sha256", "from_sha256", "words"],
+            "additionalProperties": false
           }
         },
         "required": [

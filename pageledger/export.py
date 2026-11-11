@@ -10,6 +10,7 @@ from urllib.parse import quote
 
 from ._version import __version__
 from .checkpoint import Checkpoint, atomic_bytes, read_record
+from .corrections import describe
 from .document_report import (
     _disposition_label,
     _escape,
@@ -22,6 +23,7 @@ from .processing import verify_job
 
 FORMATS = ("txt", "md", "jsonl", "tei")
 TEI = "http://www.tei-c.org/ns/1.0"
+_XML_ID = "{http://www.w3.org/XML/1998/namespace}id"
 # Characters XML 1.0 cannot carry; OCR engines emit some of them.
 _NOT_XML = re.compile("[\x00-\x08\x0b\x0c\x0e-\x1f\ufffe\uffff]")
 
@@ -82,11 +84,23 @@ def _pages(root: Path, recorded_root: Path, report: dict, reviewed_only: bool) -
                 "output_sha256": chosen["raw_sha256"],
             }
         edition = page.get("edition") if selected is not None else None
+        correction = (selected or {}).get("correction")
         pages.append(
             {
                 **(
                     {"edition": {"path": edition["artifact"], "sha256": edition["sha256"]}}
                     if edition
+                    else {}
+                ),
+                **(
+                    {
+                        "correction": {
+                            "path": selected["path"],
+                            "sha256": selected["sha256"],
+                            **correction,
+                        }
+                    }
+                    if correction
                     else {}
                 ),
                 "job_id": report["job_id"],
@@ -128,6 +142,16 @@ def _facts(page: dict) -> list[tuple[str, str]]:
             ("Edition", f"{page['edition']['path']}, the attempt with adjudicated changes")
         )
         facts.append(("Edition SHA-256", page["edition"]["sha256"]))
+    if "correction" in page:
+        correction = page["correction"]
+        facts.append(
+            (
+                "Correction",
+                f"{correction['path']}, the text as a person corrected it from "
+                f"{correction['from_path']} ({describe(correction['words'])})",
+            )
+        )
+        facts.append(("Correction SHA-256", correction["sha256"]))
     return facts
 
 
@@ -187,6 +211,18 @@ def _tei(report: dict, pages: list[dict], source: str) -> str:
         f"{reviewed} of {len(pages)} pages were reviewed by a person; each page division "
         "says which. Control characters, which XML cannot carry, are omitted."
     )
+    corrected = [page for page in pages if "correction" in page]
+    if corrected:
+        revisions = ET.SubElement(header, "revisionDesc")
+        for page in corrected:
+            review, correction = page["review"], page["correction"]
+            change = ET.SubElement(revisions, "change", when=review["reviewed_at"])
+            change.set(_XML_ID, f"correction-{page['page_number']}")
+            change.text = _NOT_XML.sub(
+                "",
+                f"Page {page['page_number']}: text corrected by {review['reviewer']} from "
+                f"{correction['from_path']} ({describe(correction['words'])}): {review['reason']}",
+            )
     body = ET.SubElement(ET.SubElement(tei, "text"), "body")
     for page in pages:
         number = page["page_number"]
@@ -195,6 +231,8 @@ def _tei(report: dict, pages: list[dict], source: str) -> str:
         ET.SubElement(body, "pb", n=str(number), facs=facs)
         status = "reviewed" if page["review"] is not None else "unreviewed"
         div = ET.SubElement(body, "div", type="page", subtype=status)
+        if "correction" in page:
+            div.set("change", f"#correction-{number}")
         if page["text"] is None:
             ET.SubElement(div, "gap", reason=page["disposition"])
             continue

@@ -17,6 +17,7 @@ from decimal import Decimal, InvalidOperation
 from itertools import combinations
 from typing import Any
 
+from . import corrections
 from .processing_config import CORE_STAGES, READER_STAGES
 
 REVIEW_DISPOSITIONS = frozenset(
@@ -175,7 +176,7 @@ def validate_review(
         "reviewed_at",
     }
     if (
-        set(decision) != required
+        set(decision) - {"correction"} != required
         or decision["page_number"] != page.get("page_number")
         or type(decision["page_number"]) is not int
         or not isinstance(decision["disposition"], str)
@@ -192,6 +193,11 @@ def validate_review(
             raise ValueError("review timestamp must include timezone")
     except ValueError as exc:
         raise ValueError("Review timestamp is invalid") from exc
+    if "correction" in decision:
+        # A person's corrected text, bound to the reading below like any reviewed text.
+        corrections.validate(decision["correction"], decision["page_id"])
+        if decision["disposition"] != "reviewed_text":
+            raise ValueError("Only reviewed text can carry a correction")
     selected = decision["selected_attempt"]
     if selected is None:
         if decision["output_sha256"] is not None or decision["disposition"] == "reviewed_text":

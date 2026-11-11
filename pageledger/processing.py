@@ -18,7 +18,7 @@ from uuid import uuid4
 
 import yaml
 
-from . import adjudication, processing_policy, runner
+from . import adjudication, corrections, processing_policy, runner
 from .adapters import PageLedgerDiagnostic
 from .checkpoint import (
     Checkpoint,
@@ -51,7 +51,7 @@ from .processing_policy import (
 )
 from .processing_source import TEXT, inspect_source, source_kind
 from .replay import _package_code_sha256
-from .review_sheet import read_review_sheet, write_review_sheet
+from .review_sheet import read_review_decisions, read_review_sheet, write_review_sheet
 from .source_index import SourceUnavailable, resolve_source
 from .tiling import centres_inside, check_edges, plan_sha256, plan_tiles, project_witness
 from .verify import verify_run
@@ -190,6 +190,7 @@ def _load(root: Path) -> dict:
             raise ValueError("Active review differs from retained review history")
         for receipt in history:
             validate_review(receipt, page)
+        _check_corrections(root, page)
         if not isinstance(page.get("adjudications", []), list):
             raise ValueError("Document job adjudications are invalid")
         for receipt in page.get("adjudications", []):
@@ -210,6 +211,19 @@ def _load(root: Path) -> dict:
             raise ValueError("Document job attempt configuration changed")
         _safe(root, stage["run_path"])
     return job
+
+
+def _check_corrections(root: Path, page: dict, pending: frozenset[str] = frozenset()) -> None:
+    """Refuse a corrected text that changed, is missing, or starts from nothing recorded.
+
+    ``pending`` are the hashes of corrections checked before they are written.
+    """
+    for _, correction in corrections.chain(page.get("review_history", []), page["page_id"]):
+        path = _safe(root, correction["artifact"])
+        if correction["sha256"] in pending and not path.exists():
+            continue
+        if not path.is_file() or file_digest(path) != correction["sha256"]:
+            raise ValueError(f"Corrected text changed or is missing: {correction['artifact']}")
 
 
 def _relocated(job: dict, root: Path) -> bool:
@@ -1674,7 +1688,8 @@ def resume_job(
 def review_job(
     job_dir: Path, review_path: Path, *, reviewer: str | None = None, dry_run: bool = False
 ) -> dict:
-    """Record human decisions from a JSON receipt or a filled-in review sheet (.csv).
+    """Record human decisions from a filled-in review sheet (.csv), a decisions file
+    (JSON with the sheet's bindings, which the review view downloads) or a JSON receipt.
 
     With dry_run, every decision is checked and counted but nothing is recorded.
     """
@@ -1682,22 +1697,49 @@ def review_job(
     with writer_lock(root):
         job = _load(root)
         _refresh(job, root)
+        corrected: list[dict] = []
         if review_path.suffix.lower() == ".csv":
-            review = read_review_sheet(job, review_path, reviewer)
-        elif reviewer:
-            raise ValueError("--reviewer is for review sheets; a JSON receipt names its reviewers")
+            review, corrected = read_review_sheet(job, review_path, reviewer, root)
         else:
             review = json.loads(review_path.read_text(encoding="utf-8"))
+            if isinstance(review, dict) and "bindings" in review:
+                review, corrected = read_review_decisions(job, review_path, review, reviewer, root)
+            elif reviewer:
+                raise ValueError(
+                    "--reviewer is for review sheets and decisions files; "
+                    "a JSON receipt names its reviewers"
+                )
+        pending = frozenset(item["sha256"] for item in corrected)
+
+        def record(target: dict) -> None:
+            _review_decisions(target, review)
+            for page in target["pages"]:
+                _check_corrections(root, page, pending)
+
+        record(copy.deepcopy(job))
+        counts: dict[str, Any] = {"decisions": _decision_counts(review)}
+        if corrected:
+            counts["corrections"] = [
+                {key: item[key] for key in ("page_number", "from", "words", "large")}
+                for item in corrected
+            ]
         if dry_run:
-            _review_decisions(copy.deepcopy(job), review)
             return {
                 "job_id": job["job_id"],
                 "out_dir": str(root),
                 "status": "checked",
-                "decisions": _decision_counts(review),
+                **counts,
                 "warnings": _blank_over_text(job, review),
             }
-        _review_decisions(job, review)
+        for item in corrected:
+            target = _safe(root, corrections.artifact_path(item["page_id"], item["sha256"]))
+            target.parent.mkdir(exist_ok=True)
+            encoded = item["text"].encode("utf-8")
+            if not target.exists():
+                atomic_bytes(target, encoded)
+            elif target.read_bytes() != encoded:
+                raise ValueError(f"A different corrected text is already kept at {target}")
+        record(job)
         warnings = _blank_over_text(job, review)
         _note_relocation(job, root, "review-job")
         _refresh(job, root)
@@ -1709,7 +1751,7 @@ def review_job(
             )
         elif job["status"] == "completed":
             job["next_action"] = _review_next_action(job)
-        return {**_publish(job, root), "decisions": _decision_counts(review), "warnings": warnings}
+        return {**_publish(job, root), **counts, "warnings": warnings}
 
 
 # A page a person calls blank whose selected reading has this many words may be

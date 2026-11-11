@@ -80,6 +80,28 @@
       "required": ["path", "sha256"],
       "additionalProperties": false
     },
+    "correction": {
+      "description": "Present when the text is a person's correction: its file and hash, the text it was made from (the attempt's output, an edition, or an earlier correction), and the words it changed, added and removed. The review names who made it.",
+      "type": "object",
+      "properties": {
+        "path": {"type": "string", "pattern": "^corrections/"},
+        "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "from_path": {"type": "string", "minLength": 1},
+        "from_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "words": {
+          "type": "object",
+          "properties": {
+            "changed": {"type": "integer", "minimum": 0},
+            "added": {"type": "integer", "minimum": 0},
+            "removed": {"type": "integer", "minimum": 0}
+          },
+          "required": ["changed", "added", "removed"],
+          "additionalProperties": false
+        }
+      },
+      "required": ["path", "sha256", "from_path", "from_sha256", "words"],
+      "additionalProperties": false
+    },
     "review": {
       "description": "This page's decision from its human review receipt (see job-review.schema.json); null when the page was not reviewed.",
       "type": [

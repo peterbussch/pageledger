@@ -10,6 +10,7 @@ from collections import Counter
 from pathlib import Path
 from urllib.parse import quote
 
+from . import corrections
 from .checkpoint import atomic_bytes
 from .image_source import page_target
 from .processing_policy import (
@@ -171,6 +172,8 @@ def render_transcript(report: dict) -> str:
             label = (
                 f"Edition of attempt {selected['attempt_id']}"
                 if selected.get("edition")
+                else f"Correction by a person of attempt {selected['attempt_id']}"
+                if selected.get("correction")
                 else f"Selected attempt {selected['attempt_id']}"
             )
             chunks.append(_link(label, selected["path"]) + "\n\n")
@@ -226,7 +229,20 @@ def _current_output(page: dict) -> str:
     if attempt is None:
         raise ValueError("selected output attempt is missing from document report")
     label = f"{_stage_label(attempt['stage'])} attempt {selected['attempt_id']}"
-    return _link(label, selected["path"])
+    correction = selected.get("correction")
+    if correction is None:
+        return _link(label, selected["path"])
+    shown = _link(f"Correction by a person of {label}", selected["path"])
+    revised = ""
+    if correction["from_path"].startswith("corrections/"):
+        earlier = next(
+            decision
+            for decision, item in corrections.chain(page["review_history"], page["page_id"])
+            if item["artifact"] == correction["from_path"]
+        )
+        who = f"the correction by {earlier['reviewer']} at {earlier['reviewed_at']}"
+        revised = f", revising {_link(who, correction['from_path'])}"
+    return f"{shown} ({corrections.describe(correction['words'])}{revised})"
 
 
 def _agreement(page: dict, holds_for: dict[str, str], layer_witness: bool = False) -> str:
@@ -456,6 +472,11 @@ def render_document_report(report: dict) -> str:
         "",
         f"Pages processed: {counts['processed_pages']}; selected for this job: {counts['selected_pages']}; full source: {source_count}.",
         f"Selected outputs: {counts['selected_outputs']}; unresolved pages: {counts['unresolved_pages']}.",
+        *(
+            [f"Pages whose text a person corrected: {counts['corrected_pages']}."]
+            if "corrected_pages" in counts
+            else []
+        ),
         "",
         f"Annotations: {annotations['status']} ({annotation_count}). This inventory does not establish body extraction or citation completeness.",
         "",
@@ -574,6 +595,40 @@ def render_document_report(report: dict) -> str:
     return "\n".join(lines)
 
 
+def _apply_correction(root: Path, page: dict) -> None:
+    """A person's corrected text becomes the selected text; the reading it started from is named."""
+    if page.get("review") is None:
+        return
+    decision = _decision(page)
+    correction = decision.get("correction")
+    if correction is None:
+        return
+    selected = page["selected_output"]
+    start = selected["path"]
+    if correction["from_sha256"] != decision["output_sha256"]:
+        start = next(
+            earlier["artifact"]
+            for _, earlier in corrections.chain(page.get("review_history", []), page["page_id"])
+            if earlier["sha256"] == correction["from_sha256"]
+        )
+    content = _artifact_bytes(root, correction["artifact"], correction["sha256"])
+    selected.pop("edition", None)
+    selected.update(
+        path=correction["artifact"],
+        sha256=correction["sha256"],
+        text=content.decode("utf-8"),
+        correction={
+            "from_path": start,
+            "from_sha256": correction["from_sha256"],
+            "words": dict(correction["words"]),
+        },
+    )
+
+
+def _decision(page: dict) -> dict:
+    return next(item for item in page["review"]["decisions"] if item["page_id"] == page["page_id"])
+
+
 def build_document_report(
     job: dict,
     root: Path,
@@ -681,6 +736,7 @@ def build_document_report(
                     text=content.decode("utf-8"),
                     edition=True,
                 )
+            _apply_correction(root, page)
         path, fragment = page_target(job["source"], page["page_number"])
         page["source_link"] = quoted_source + quote(path) + fragment
         pages.append(page)
@@ -698,6 +754,9 @@ def build_document_report(
         report["counts"]["adjudicated_pages"] = sum(
             page["disposition"] == "adjudicated_text" for page in pages
         )
+    corrected = sum("correction" in (page["selected_output"] or {}) for page in pages)
+    if corrected:
+        report["counts"]["corrected_pages"] = corrected
     transcript = render_transcript(report).encode("utf-8")
     report["transcript"] = {
         "path": "transcript.md",

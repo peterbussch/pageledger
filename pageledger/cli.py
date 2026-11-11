@@ -20,6 +20,7 @@ from .adapters import _LANG_PATTERN, PageLedgerDiagnostic, capture_pypdf_repairs
 from .aligner import align_run
 from .classifier import classify
 from .compare import compare_runs, render_comparison
+from .corrections import describe
 from .doctor import build_doctor_report
 from .export import FORMATS, export_job
 from .grading import GRADES, grade_basis_label
@@ -528,7 +529,8 @@ def build_parser() -> argparse.ArgumentParser:
         "--apply",
         type=Path,
         metavar="FILE",
-        help="Record the decisions in this filled-in review sheet (or a JSON review file)",
+        help="Record the decisions in this filled-in review sheet, the review.json the page "
+        "view downloads, or a JSON receipt",
     )
     review_parser.add_argument(
         "--images",
@@ -1437,6 +1439,14 @@ def _cmd_job(args: argparse.Namespace) -> int:
         if "decisions" in result:
             counts = sorted(result["decisions"].items())
             print("Decisions: " + (", ".join(f"{name} {n}" for name, n in counts) or "none"))
+        for item in result.get("corrections", []):
+            page, start = item["page_number"], item["from"]
+            print(f"Correction of page {page}, from {start}: {describe(item['words'])}")
+            if item["large"]:
+                print(
+                    f"Warning: the correction of page {page} changes more than half the words "
+                    f"of {start}. Check that it is this page's text."
+                )
         if "packets" in result:
             print(f"Packets: {result['packets']} pages in {result['out']}")
             print(f"Open spans: {result['open_spans']}; in packets: {result['spans']}")
