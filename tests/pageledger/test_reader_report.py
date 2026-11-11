@@ -36,7 +36,33 @@ TEI = "{http://www.tei-c.org/ns/1.0}"
 
 
 def _report(setup) -> str:  # noqa: F811
-    return (setup[2] / "report.md").read_text(encoding="utf-8")
+    """A job's report.md, checked against its document.json for what must agree."""
+    report = (setup[2] / "report.md").read_text(encoding="utf-8")
+    document = _document(setup)
+    reasons = {reason for page in document["pages"] for reason in page["review_reasons"]}
+    # A comparison is said to count as a disagreement only on a page held for one.
+    if "engine_disagreement" not in reasons:
+        assert "counted as disagreement" not in report
+    # Every hold on a job's page names its evidence.
+    assert "no single reading carries it" not in report
+    for page in document["pages"]:
+        entry = _entry(report, page["page_number"])
+        for reason in page["review_reasons"]:
+            assert f"(`{reason}`)" in entry, (page["page_number"], reason)
+        if page["selected_output"] is not None:
+            assert page["selected_output"]["attempt_id"] in entry
+    return report
+
+
+def _entry(report: str, number: int) -> str:
+    """What the report says about one page: its section, its table row or its line."""
+    body = report.split("\n## For the record", 1)[0]
+    section = re.search(rf"\n### Page \[{number}\b.*?(?=\n### |\n## )", body, re.S)
+    if section:
+        return section.group()
+    line = re.search(rf"\n(?:\| |- Page )\[{number}\b[^\n]*", body)
+    assert line, f"page {number} is not in the report"
+    return line.group()
 
 
 def _document(setup) -> dict:  # noqa: F811
@@ -357,6 +383,7 @@ def test_the_docs_repeat_the_wording_table_exactly():
     holds, rest = section.split("### Review decisions", 1)
     decisions, warnings = rest.split("### Warnings", 1)
     assert {k: v[0] for k, v in _table(holds).items()} == wording.HOLDS
+    assert " ".join(wording.BLANK_WITH_TEXT.split()) in " ".join(holds.split())
     assert {k: v[0] for k, v in _table(decisions).items()} == wording.REVIEWED
     table = _table(warnings)
     assert {k: v[0] for k, v in table.items()} == wording.WARNINGS
@@ -416,3 +443,99 @@ def test_the_new_format_keeps_every_link_hash_and_fact_of_the_old(tmp_path):
         "42%",
     ):
         assert fact in old and fact in new, fact
+
+
+# ---------------------------------------------------------------------------
+# What the job weighed, and the review view of older reports
+# ---------------------------------------------------------------------------
+
+
+def test_a_layer_outvoted_by_two_engines_is_not_shown_as_a_disagreement(setup):  # noqa: F811
+    data = yaml.safe_load(setup[1].read_text())
+    data["processing"]["second_ocr"] = {"adapter": "second_ocr"}
+    setup[1].write_text(yaml.safe_dump(data))
+    layer = "Unrelated layer words that the scan never printed anywhere at all. " * 8
+    setup[3].update(
+        defective=set(), texts={"local_text": layer}, warn={"local_text": ["ocr_text_layer"]}
+    )
+    assert launch(setup, pages="1")["status"] == "completed"
+    page = _document(setup)["pages"][0]
+    assert page["review_reasons"] == []
+    assert min(c["agreement_ratio"] for c in page["comparisons"]) < 0.6
+    report = _report(setup)
+    row = _entry(report, 1)
+    assert "| 100% of words agree | nothing |" in row
+    assert "below" not in row
+
+
+def test_the_review_view_of_an_older_report_sets_held_readings_aside(tmp_path):
+    from pageledger.document_report import _short_comparison
+
+    job = job_fixture(tmp_path)
+    page = job["pages"][0]
+    _compared(page, 0.46)
+    for attempt in page["attempts"]:
+        attempt["warnings"] = ["low_confidence"]
+    page.update(disposition="low_confidence", review_reasons=["low_confidence"])
+    job["hold_policy"] = "0.8"
+    report = build_document_report(job, tmp_path, report_format="0.6")
+    assert "hold_causes" not in report["pages"][0]
+    assert _short_comparison(report["pages"][0], report) == "none counted"
+
+
+def test_a_reviewed_page_keeps_the_holds_its_review_settled(setup, tmp_path):  # noqa: F811
+    from pageledger.processing import review_job
+
+    setup[3].update(defective={2})
+    launch(setup, pages="1-2")
+    page = _document(setup)["pages"][1]
+    receipt = tmp_path / "review.json"
+    receipt.write_text(
+        json.dumps(
+            {
+                "schema_version": "0.1",
+                "source_sha256": page["source_sha256"],
+                "decisions": [
+                    {
+                        "page_id": page["page_id"],
+                        "page_number": 2,
+                        "disposition": "reviewed_text",
+                        "selected_attempt": page["selected_output"]["attempt_id"],
+                        "output_sha256": page["selected_output"]["sha256"],
+                        "reason": "checked against the scan",
+                        "reviewer": "A. Reader",
+                        "reviewed_at": "2026-11-10T12:00:00Z",
+                    }
+                ],
+            }
+        )
+    )
+    review_job(setup[2], receipt)
+    report = _report(setup)
+    row = _entry(report, 2)
+    assert "Text may be missing or damaged in the reading (`coverage_defect`)" in row
+    assert "A person checked the text against the page (`reviewed_text`), by A. Reader" in row
+    assert "- A person checked the text against the page (`reviewed_text`): 1 page (2)." in report
+    assert "Check the pages against the source, those that need a person first" in report
+    assert verify_job(setup[2])["status"] == "pass"
+
+
+def test_pages_left_by_a_paused_job_show_their_text_so_far(setup):  # noqa: F811
+    data = yaml.safe_load(setup[1].read_text())
+    data["processing"]["limits"]["max_image_pages"] = 1
+    setup[1].write_text(yaml.safe_dump(data))
+    launch(setup)
+    entry = _entry(_report(setup), 3)
+    assert "Text so far: the Local text reading" in entry
+    assert "Held so far for: Text may be missing or damaged" in entry
+    assert "What is shown for these pages is provisional" in _report(setup)
+
+
+def test_a_blank_candidate_with_text_is_grouped_and_worded_apart(tmp_path):
+    job = job_fixture(tmp_path)
+    page = job["pages"][0]
+    page["attempts"][0]["warnings"] = ["empty_text", "low_confidence"]
+    page.update(disposition="blank_candidate", review_reasons=["blank_candidate"])
+    rendered = render_document_report(build_document_report(job, tmp_path))
+    assert f"  - {wording.BLANK_WITH_TEXT} (`blank_candidate`): 1 page (1)." in rendered
+    assert "the page may be blank" not in rendered

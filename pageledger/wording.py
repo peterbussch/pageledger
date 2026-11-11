@@ -33,6 +33,14 @@ HOLDS = {
     ),
 }
 
+# A blank candidate whose selected reading has text: an empty reading raised the hold, as
+# a scanned PDF page without a text layer does, and no reading without a hold of its own
+# has confirmed the text.
+BLANK_WITH_TEXT = (
+    "An earlier reading was empty, as on a scan with no text layer, and no reading "
+    "without a hold of its own confirms the page's text"
+)
+
 # A person's review decision.
 REVIEWED = {
     "reviewed_text": "A person checked the text against the page",

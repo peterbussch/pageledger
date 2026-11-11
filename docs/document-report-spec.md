@@ -315,18 +315,22 @@ sections, in order:
    itself (from `hold_causes`), or the latest failed attempt. Then the selected
    text, and every comparison the job recorded on the page: which two readings,
    the share of words that agree, how many numbers differ, and whether the job
-   counted it (a comparison with a reading that is held itself, or with an
-   earlier OCR layer that the job's hold policy sets aside, is not counted).
-   On a held page the comparisons are introduced as not clearing the holds.
+   counted it, by the rules the job's hold policy used: a comparison with a
+   reading that is held itself is not counted, nor one with an earlier OCR
+   layer that the policy sets aside or that two of the job's own engines
+   outvote. A comparison below 60% is called a disagreement only on a page held
+   for one. On a held page the comparisons are introduced as not clearing the
+   holds.
 3. **Pages not finished.** In a job that has not finished, the pages still
-   waiting for a configured stage, and the stages that have read them so far.
+   waiting for a configured stage, the stages that have read them so far, and
+   their selected text and holds so far, marked as provisional.
 4. **Worth knowing.** Each warning that holds no page, once, with the pages it
    is on, its meaning and what to do about it (for `historical_orthography`:
    that stock modern-Russian models cannot write ѣ, і, ѳ or ѵ, and where the
    engine recipes are).
 5. **Other pages.** A table of the pages that need no one now: selected text,
-   the lowest counted word agreement, and any review with its reviewer, time
-   and reason.
+   the lowest word agreement the job weighed, the holds a review settled (or
+   `nothing`), and any review with its reviewer, time and reason.
 6. **Usage and cost.** Readings made, image-model calls (and image requests in
    tiled jobs), local image-model readings, tokens and cost. A cost or token
    count that not every engine reported is unknown, with the reported part

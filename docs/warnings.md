@@ -132,6 +132,10 @@ test keeps this section equal to it.
 | `unreviewed_text` | Text selected and nothing held the page; no person has checked it |
 | `adjudicated_text` | Every difference between the model's and the OCR's readings is settled; no person has read the page |
 
+On a page whose selected reading has text, `blank_candidate` reads instead:
+An earlier reading was empty, as on a scan with no text layer, and no reading without a hold of its own confirms the page's text. A scanned PDF page with no text layer gives such an
+empty first reading.
+
 ### Review decisions
 
 | Code | Words |

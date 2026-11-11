@@ -20,6 +20,7 @@ from .processing_policy import (
     _HOLD_ORDER,
     BLANK_REFUTING_POLICIES,
     ENGINE_AGREEMENT_THRESHOLD,
+    HOLD_POLICIES,
     LADDER_POLICIES,
     WITNESS_POLICIES,
     _attempt_holds,
@@ -29,7 +30,7 @@ from .processing_policy import (
     validate_review,
     warning_holds,
 )
-from .wording import ADVICE, warning_code
+from .wording import ADVICE, BLANK_WITH_TEXT, warning_code
 from .wording import hold as hold_words
 from .wording import reviewed as reviewed_words
 from .wording import warning as warning_words
@@ -463,6 +464,8 @@ def _image_name(report: dict, page: dict) -> str:
 # Stands for the job's folder in commands the report suggests; the terminal shows the path.
 JOB_DIR = "JOB_DIR"
 _COSTLESS = "nothing, since no page was read"
+# Holds the policy places on a reading, rather than the reading's own record.
+_PLACED_BY_POLICY = {"layer_outvoted", "reader_short", "letters_lost"}
 
 
 def is_pending(page: dict, report: dict) -> bool:
@@ -515,6 +518,14 @@ def _held_for(page: dict) -> list[str]:
     return list(dict.fromkeys(page.get("review_reasons") or [page["disposition"]]))
 
 
+def _group_keys(page: dict) -> list[str]:
+    """A page's hold reasons, with a blank candidate that has text grouped on its own."""
+    return [
+        f"{reason}:text" if reason == "blank_candidate" and _has_text(page) else reason
+        for reason in _held_for(page)
+    ]
+
+
 def _decision_of(page: dict) -> dict:
     return next(item for item in page["review"]["decisions"] if item["page_id"] == page["page_id"])
 
@@ -553,13 +564,16 @@ def summary_lines(report: dict, job: str = JOB_DIR) -> list[str]:
         "",
     ]
     if held:
-        groups = _grouped(held, _held_for)
+        groups = _grouped(held, _group_keys)
         several = sum(len(items) for _, items in groups) > len(held)
         lines.append(
             f"- Need a person: {_pages(held)}"
             + (", for these reasons (a page can have more than one):" if several else ":")
         )
-        lines += [f"  - {hold_words(code)}: {_pages(items)}." for code, items in groups]
+        lines += [
+            f"  - {_hold_label(items[0], code.split(':')[0])}: {_pages(items)}."
+            for code, items in groups
+        ]
     for code, items in _grouped(clean, lambda page: [page["disposition"]]):
         lines.append(f"- {hold_words(code)}: {_pages(items)}.")
     for code, items in _grouped(reviewed, lambda page: [_decision_of(page)["disposition"]]):
@@ -630,21 +644,49 @@ def _causes(page: dict, report: dict) -> list[dict]:
     return [item for item in page.get("hold_causes", []) if item["attempt_id"] not in aside]
 
 
+def _held_readings(page: dict, report: dict, *, derived: bool = True) -> set[str]:
+    """Readings with a hold of their own. Without ``derived``, only the holds a reading's
+    own record files, which is what jobs before hold policy 0.9 compared against."""
+    if "hold_causes" not in page and report.get("report_format") != _CURRENT_REPORT_FORMAT:
+        # Reports in older formats record no causes: their warnings still say.
+        holds = warning_holds(report)
+        return {item["attempt_id"] for item in page["attempts"] if _attempt_holds(item, holds)}
+    return {
+        item["attempt_id"]
+        for item in page.get("hold_causes", [])
+        if derived or item["cause"] not in _PLACED_BY_POLICY
+    }
+
+
 def _counted(page: dict, report: dict) -> list[dict]:
-    """Comparisons of the selected reading with a reading that has no hold of its own."""
+    """The comparisons of the selected reading that the job weighed, as ``assess_page`` does."""
     selected = page.get("selected_attempt")
-    if selected is None:
+    if selected is None or page.get("contested") or report.get("hold_policy") not in HOLD_POLICIES:
         return []
     witness = report.get("hold_policy") in WITNESS_POLICIES
-    held = {item["attempt_id"] for item in page.get("hold_causes", [])}
-    aside = set() if witness else inherited_layers(page["attempts"])
+    layers = inherited_layers(page["attempts"])
+    held = _held_readings(page, report, derived=witness)
+    unusable = {
+        item["attempt_id"]
+        for item in page["attempts"]
+        if item.get("outcome") != "completed" or not item.get("raw_artifact")
+    }
     counted = []
     for item in page.get("comparisons", []):
         pair = (item["left_attempt"], item["right_attempt"])
         if selected in pair:
             other = pair[1] if pair[0] == selected else pair[0]
-            if other not in held and other not in aside:
+            if other not in held | unusable and (witness or other not in layers):
                 counted.append(item)
+    if witness and any(
+        item["agreement_ratio"] >= ENGINE_AGREEMENT_THRESHOLD
+        for item in counted
+        if not {item["left_attempt"], item["right_attempt"]} & layers
+    ):
+        # Two of the job's own engines agree: the layer that disagrees with them is outvoted.
+        counted = [
+            item for item in counted if not {item["left_attempt"], item["right_attempt"]} & layers
+        ]
     return counted
 
 
@@ -739,9 +781,10 @@ def _blank_evidence(page: dict, attempt_id: str, report: dict) -> str:
 def _comparisons(page: dict, report: dict) -> list[str]:
     """Every comparison the job recorded on the page, with what it made of it."""
     counted = [id(item) for item in _counted(page, report)]
-    held = {item["attempt_id"] for item in page.get("hold_causes", [])}
     witness = report.get("hold_policy") in WITNESS_POLICIES
-    aside = set() if witness else inherited_layers(page["attempts"])
+    held = _held_readings(page, report, derived=witness)
+    layers = inherited_layers(page["attempts"])
+    reasons = page.get("review_reasons") or []
     selected = page.get("selected_attempt")
     lines = []
     for item in page.get("comparisons", []):
@@ -757,16 +800,24 @@ def _comparisons(page: dict, report: dict) -> list[str]:
                 "counted as agreement"
                 if ratio >= ENGINE_AGREEMENT_THRESHOLD
                 else "counted as disagreement"
+                if "engine_disagreement" in reasons
+                else "below 60%, but the page is not held for it"
             )
         elif selected not in pair:
             verdict = "neither is the selected reading"
+        elif page.get("contested"):
+            verdict = "not counted: the contested spans compare these readings word by word"
+        elif report.get("hold_policy") not in HOLD_POLICIES:
+            verdict = "not counted: this job was written before comparisons could hold a page"
         elif other in held:
             verdict = f"not counted, because {_reading(page, other, link=False)} is held itself"
-        elif other in aside:
+        elif other in layers and not witness:
             verdict = (
                 "not counted: this job's hold policy sets an earlier OCR in the PDF aside "
                 "once the job's own OCR has read the page"
             )
+        elif other in layers or selected in layers:
+            verdict = "not counted: two of the job's own engines agree, which outweighs the layer"
         else:
             verdict = "not counted"
         lines.append(
@@ -781,9 +832,8 @@ def _short_comparison(page: dict, report: dict) -> str:
     if not counted:
         return "none counted" if page.get("comparisons") else "none recorded"
     ratio = min(item["agreement_ratio"] for item in counted)
-    return f"{ratio:.0%} of words agree" + (
-        "" if ratio >= ENGINE_AGREEMENT_THRESHOLD else " (below the job's 60%)"
-    )
+    below = ratio < ENGINE_AGREEMENT_THRESHOLD
+    return f"{ratio:.0%} of words agree" + (" (below the job's 60%)" if below else "")
 
 
 def _selected_words(page: dict) -> str:
@@ -798,6 +848,21 @@ def _selected_words(page: dict) -> str:
     if selected.get("edition"):
         return f"{reading}, with its settled differences applied ({_link('edition', selected['path'])})"
     return reading
+
+
+def _held_words(page: dict) -> str:
+    return "; ".join(_hold_label(page, reason) for reason in _held_for(page))
+
+
+def _has_text(page: dict) -> bool:
+    return bool(((page.get("selected_output") or {}).get("text") or "").split())
+
+
+def _hold_label(page: dict, reason: str) -> str:
+    """A hold in plain words; a blank candidate whose selected reading has text says so."""
+    if reason == "blank_candidate" and _has_text(page):
+        return f"{BLANK_WITH_TEXT} (`blank_candidate`)"
+    return hold_words(reason)
 
 
 def _review_words(page: dict) -> str:
@@ -816,7 +881,7 @@ def _held_page(page: dict, report: dict) -> list[str]:
         "",
     ]
     for reason in _held_for(page):
-        lines.append(f"- {hold_words(reason)}.")
+        lines.append(f"- {_hold_label(page, reason)}.")
         lines += [f"  - {line}" for line in _hold_evidence(page, reason, report)]
     lines.append(f"- Selected text: {_selected_words(page)}.")
     comparisons = _comparisons(page, report)
@@ -1015,11 +1080,21 @@ def _render_for_reader(report: dict) -> str:
                 if page.get("next_action") in _STAGE_LABELS
                 else "not read yet"
             )
-            lines.append(
+            line = (
                 f"- Page {_link(str(page['page_number']) + _image_name(report, page), page['source_link'])}: "
                 f"{waiting}; {read}."
             )
-        lines.append("")
+            if page.get("selected_output") is not None:
+                line += f" Text so far: {_selected_words(page)}."
+            if page.get("review_reasons"):
+                line += f" Held so far for: {_held_words(page)}."
+            lines.append(line)
+        lines += [
+            "",
+            "What is shown for these pages is provisional: the stages still to run may "
+            "select another reading, and add or settle holds.",
+            "",
+        ]
     notes = _notes(report)
     if notes:
         lines += [
@@ -1034,13 +1109,18 @@ def _render_for_reader(report: dict) -> str:
         lines += [
             "## Other pages",
             "",
-            "| Page | Selected text | Engine comparison | Review |",
-            "| --- | --- | --- | --- |",
+            "Pages that nothing holds, and pages a person has reviewed, with any holds the "
+            "review settled. Agreement between engines is evidence, not proof: engines can "
+            "share a mistake.",
+            "",
+            "| Page | Selected text | Engine comparison | Held for | Review |",
+            "| --- | --- | --- | --- | --- |",
         ]
         for page in others:
             lines.append(
                 f"| {_link(str(page['page_number']) + _image_name(report, page), page['source_link'])} | "
                 f"{_selected_words(page)} | {_short_comparison(page, report)} | "
+                f"{_held_words(page) if page.get('review_reasons') else 'nothing'} | "
                 f"{_review_words(page)} |"
             )
         lines.append("")

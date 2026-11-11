@@ -1657,9 +1657,11 @@ def _review_next_action(job: dict) -> str:
         p for p in job["pages"] if p["disposition"] not in {"reviewed_text", "reviewed_blank"}
     ]
     return (
-        "Inspect unresolved source pages and record identity-bound review decisions."
+        "Check the pages against the source, those that need a person first, and record "
+        "decisions with pageledger review."
         if unresolved
-        else "Review source preservation and publication requirements outside this job."
+        else "Every page has a person's decision. PageLedger does not preserve or publish "
+        "the source; keep it with this job."
     )
 
 

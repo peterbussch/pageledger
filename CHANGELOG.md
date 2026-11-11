@@ -223,6 +223,11 @@ and, from 1.0, [stability](docs/stability.md).
 - `verify` on a job that did not finish (still `processing`) fails with `"reason": "unfinished"` and says to
   run `resume`, instead of "Job selections disagree with retained evidence". The status stays `fail`, so a
   script that checks for `pass` reads it as before. Finished jobs are checked as before.
+- A completed job's recorded next action is plain: "Check the pages against the source, those that need a
+  person first, and record decisions with pageledger review." (or, once every page has a decision, that
+  PageLedger does not preserve or publish the source). Jobs written earlier keep the text they recorded.
+- A page held as a blank candidate whose selected reading has text, as on a scanned PDF page with no text
+  layer, is described as such rather than as a page that may be blank.
 - The review view words hold reasons, states and warnings from the shared table, shows a reviewed page's
   decision as a person's, and shows the engine comparison by the report's rules.
 - Commands have single-word names, and `pageledger --help` lists them in two groups: the document
