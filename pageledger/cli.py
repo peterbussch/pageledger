@@ -1751,7 +1751,7 @@ _DECISION_WORDS = {
 
 def _print_review_result(job: Path, result: dict, *, dry_run: bool) -> None:
     """What review --apply recorded, what is left, and the next step, in plain words."""
-    from .document_report import needs_person
+    from .document_report import export_command, needs_person
 
     decisions = dict(result.get("decisions", {}))
     corrected = len(result.get("corrections", []))
@@ -1790,8 +1790,7 @@ def _print_review_result(job: Path, result: dict, *, dry_run: bool) -> None:
         print(f"Next: pageledger review {shown}")
     else:
         print("No page needs a person now.")
-        name = shlex.quote(f"{job.expanduser().resolve().name}.txt")
-        print(f"Next: pageledger export {shown} --out {name}")
+        print(f"Next: {export_command(job)}")
 
 
 def _print_language_advice(job: Path, args: argparse.Namespace) -> None:

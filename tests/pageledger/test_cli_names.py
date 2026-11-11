@@ -226,7 +226,7 @@ def test_review_apply_says_what_was_recorded_and_what_comes_next(
     assert stdout.splitlines() == [
         "Recorded: 2 pages: 1 accepted, 1 blank.",
         "No page needs a person now.",
-        f"Next: pageledger export {job} --out job.txt",
+        f"Next: pageledger export {job} --out job.md",
     ]
 
 
