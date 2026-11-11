@@ -157,6 +157,69 @@ def test_process_without_config_records_what_the_written_config_would(
     assert verify_job(implicit)["status"] == "pass"
 
 
+def test_process_without_config_follows_the_kind_of_source(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from pageledger.cli import _engine, build_parser
+
+    notes = tmp_path / "notes.md"
+    notes.write_text("# Notes\n\nA page of notes in Markdown.\fA second page.", encoding="utf-8")
+    out = tmp_path / "jobs" / "notes"
+    assert main(["process", str(notes), "--out", str(out)]) == 0
+    assert "--engine none" in capsys.readouterr().err
+    job = json.loads((out / "job.json").read_text(encoding="utf-8"))["payload"]
+    assert job["config"]["processing"]["local_ocr"] is None
+    assert job["status"] == "completed"
+
+    scans = tmp_path / "scans"
+    scans.mkdir()
+    fixture = Path(__file__).parents[1] / "fixtures" / "images" / "page-gray.jpg"
+    (scans / "0001.jpg").write_bytes(fixture.read_bytes())
+
+    def engine(source: Path) -> str:
+        return _engine(build_parser().parse_args(["process", str(source), "--out", "j"]))
+
+    assert engine(scans) == "pdf_ocr"
+    assert engine(scans / "0001.jpg") == "pdf_ocr"
+    assert engine(notes) == "none"
+
+
+@pytest.mark.parametrize(
+    "name,content,message",
+    [
+        (
+            "letter.docx",
+            b"PK\x03\x04\x14\x00\x06\x00\xff\xfe",
+            "is not a PDF, a page image or UTF-8 text",
+        ),
+        ("empty-folder", None, "is a folder with no page images"),
+        ("nowhere.txt", "", "Source does not exist"),
+    ],
+)
+def test_a_source_that_is_neither_pdf_images_nor_text_is_refused_before_the_job_exists(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], name: str, content: object, message: str
+) -> None:
+    from pageledger.processing import process
+
+    source = tmp_path / name
+    if content is None:
+        source.mkdir()
+    elif isinstance(content, bytes):
+        source.write_bytes(content)
+    out = tmp_path / "jobs" / "x"
+    with pytest.raises(SystemExit) as exit_info:
+        main(["process", str(source), "--out", str(out)])
+    assert exit_info.value.code == 2
+    err = capsys.readouterr().err
+    assert message in err
+    if name != "nowhere.txt":
+        assert "A source is a PDF, a UTF-8 text file" in err
+    config = _write_config(tmp_path, "--engine", "none")
+    with pytest.raises(ValueError, match=message):
+        process(source=source, config_path=config, out_dir=out)
+    assert not out.exists()
+
+
 def test_process_without_config_reads_no_file_from_the_working_directory(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

@@ -141,6 +141,63 @@
               "kind": {
                 "const": "page_images"
               },
+              "iiif": {
+                "type": "object",
+                "description": "Present when the folder is a snapshot fetch-iiif wrote: its fetch record when the source was read. Context, not identity: the source sha256 does not cover it.",
+                "properties": {
+                  "sha256": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{64}$",
+                    "description": "SHA-256 of iiif-fetch.json when the source was read."
+                  },
+                  "requested_url": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "status": {
+                    "enum": [
+                      "complete",
+                      "incomplete"
+                    ]
+                  },
+                  "canvases": {
+                    "type": "array",
+                    "description": "One entry per page, in page order: the canvas each image came from.",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "name": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "canvas_index": {
+                          "type": "integer",
+                          "minimum": 1
+                        },
+                        "canvas_id": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "name",
+                        "canvas_index",
+                        "canvas_id"
+                      ],
+                      "additionalProperties": false
+                    }
+                  }
+                },
+                "required": [
+                  "sha256",
+                  "requested_url",
+                  "status",
+                  "canvases"
+                ],
+                "additionalProperties": false
+              },
               "images": {
                 "type": "array",
                 "items": {

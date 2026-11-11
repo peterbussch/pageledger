@@ -22,6 +22,7 @@ from .image_source import (
     manifest_sha256,
     read_image_source,
     read_sha256,
+    snapshot_warnings,
 )
 from .replay import ReplayError, _validate_reproducibility_profile
 from .source_index import find_indexed
@@ -2157,6 +2158,7 @@ def _check_external_images(
             changes=changes,
         )
         return
+    warnings.extend(snapshot_warnings(entry, path))
     recorded = entry.get("carrier")
     if (
         isinstance(recorded, dict)

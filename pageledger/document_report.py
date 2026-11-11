@@ -160,7 +160,9 @@ def render_transcript(report: dict) -> str:
     ]
     for page in report["pages"]:
         chunks.append(f"## Page {page['page_number']}\n\n")
-        chunks.append(_link("Source page", page["source_link"]) + "\n\n")
+        chunks.append(
+            _link("Source page" + _image_name(report, page), page["source_link"]) + "\n\n"
+        )
         selected = page["selected_output"]
         if selected is None:
             chunks.append(f"[No selected text: {page['disposition']}.]\n\n")
@@ -402,6 +404,29 @@ def _relocation_lines(report: dict) -> list[str]:
     ]
 
 
+def _snapshot_lines(source: dict) -> list[str]:
+    snapshot = source.get("iiif")
+    if not snapshot:
+        return []
+    status = (
+        "complete"
+        if snapshot["status"] == "complete"
+        else "incomplete: canvases that were never fetched are not in this job"
+    )
+    return [
+        f"IIIF snapshot of {_escape(snapshot['requested_url'])}, {status}.",
+        f"Fetch record SHA-256: `{snapshot['sha256']}`",
+    ]
+
+
+def _image_name(report: dict, page: dict) -> str:
+    """For page images, the file a page was read from, after its number."""
+    source = report["source"]
+    if source.get("kind") != "page_images" or not source.get("images"):
+        return ""
+    return f" ({source['images'][page['page_number'] - 1]['name']})"
+
+
 def render_document_report(report: dict) -> str:
     """Render a report, retaining the 0.5.0 format when its marker is absent."""
     current = "report_format" in report
@@ -424,6 +449,7 @@ def render_document_report(report: dict) -> str:
         "",
         f"Source: {_link(source['path'], quote(source['path'], safe='/'))}",
         f"Source SHA-256: `{source['sha256']}`",
+        *_snapshot_lines(source),
         "",
         f"Pages processed: {counts['processed_pages']}; selected for this job: {counts['selected_pages']}; full source: {source_count}.",
         f"Selected outputs: {counts['selected_outputs']}; unresolved pages: {counts['unresolved_pages']}.",
@@ -460,13 +486,13 @@ def render_document_report(report: dict) -> str:
     for page in pages:
         if format_06:
             row = (
-                f"| {_link(str(page['page_number']), page['source_link'])} | "
+                f"| {_link(str(page['page_number']) + _image_name(report, page), page['source_link'])} | "
                 f"{_selected_text(page)} | {_agreement(page, holds)} | "
                 f"{_human_review(page)} | {_recorded_concerns(page, holds)} |"
             )
         elif current:
             row = (
-                f"| {_link(str(page['page_number']), page['source_link'])} | "
+                f"| {_link(str(page['page_number']) + _image_name(report, page), page['source_link'])} | "
                 f"{_current_output(page)} | {_review_status(page)} | "
                 f"{_recorded_concerns(page, warning_holds(report))} |"
             )
@@ -482,7 +508,7 @@ def render_document_report(report: dict) -> str:
                 )
                 reasons += f"; reviewed by {decision['reviewer']} at {decision['reviewed_at']}: {decision['reason']}"
             row = (
-                f"| {_link(str(page['page_number']), page['source_link'])} | {page['disposition']} | "
+                f"| {_link(str(page['page_number']) + _image_name(report, page), page['source_link'])} | {page['disposition']} | "
                 f"{selected_link} | {_escape(reasons)} |"
             )
         lines.append(row)

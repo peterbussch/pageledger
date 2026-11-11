@@ -1,5 +1,62 @@
 {
   "$defs": {
+    "iiif_snapshot": {
+      "additionalProperties": false,
+      "description": "Present when the folder is a snapshot fetch-iiif wrote: its fetch record when the source was read. Context, not identity: the source sha256 does not cover it.",
+      "properties": {
+        "canvases": {
+          "description": "One entry per page, in page order: the canvas each image came from.",
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "canvas_id": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "canvas_index": {
+                "minimum": 1,
+                "type": "integer"
+              },
+              "name": {
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "required": [
+              "name",
+              "canvas_index",
+              "canvas_id"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "requested_url": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "sha256": {
+          "description": "SHA-256 of iiif-fetch.json when the source was read.",
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "complete",
+            "incomplete"
+          ]
+        }
+      },
+      "required": [
+        "sha256",
+        "requested_url",
+        "status",
+        "canvases"
+      ],
+      "type": "object"
+    },
     "page_image": {
       "additionalProperties": false,
       "properties": {
@@ -439,6 +496,9 @@
               "pages"
             ],
             "type": "object"
+          },
+          "iiif": {
+            "$ref": "#/$defs/iiif_snapshot"
           },
           "images": {
             "description": "The canonical page manifest: one entry per page, in page order. Its hash is sha256.",

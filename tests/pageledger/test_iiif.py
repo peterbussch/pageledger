@@ -727,6 +727,12 @@ def test_an_interrupted_fetch_leaves_an_incomplete_record(tmp_path: Path) -> Non
         "sha256": hashlib.sha256((out / iiif.RECORD_NAME).read_bytes()).hexdigest(),
         "requested_url": MANIFEST_URL,
         "status": "incomplete",
+        "canvases": {
+            "0001.jpg": {
+                "canvas_index": 1,
+                "canvas_id": "https://iiif.example.org/item/canvas/1",
+            }
+        },
     }
 
 
@@ -774,12 +780,27 @@ def test_jpeg_frame_reads_large_grayscale_masters_without_changing_jpeg_dimensio
     with pytest.raises(ValueError):
         jpeg_dimensions(master)
     assert jpeg_dimensions(jpeg(4096, 300)) == (4096, 300)
-    with pytest.raises(ValueError, match="start-of-image"):
+    with pytest.raises(ValueError, match="no JPEG start marker"):
         iiif.jpeg_frame(b"GIF89a")
     with pytest.raises(ValueError, match="one or three"):
         iiif.jpeg_frame(jpeg(10, 10, components=4))
-    with pytest.raises(ValueError, match="ends before"):
+    with pytest.raises(ValueError, match="no frame header"):
         iiif.jpeg_frame(jpeg(10, 10)[:4])
+    with pytest.raises(ValueError, match="ends before"):
+        iiif.jpeg_frame(jpeg(10, 10)[: -(64 + 2 + 10)])
+
+
+def test_fetch_keeps_only_jpegs_a_folder_of_page_images_can_read() -> None:
+    """One header reader serves fetch-iiif and the folder reader, so they agree."""
+    mirrored = b"MM\x00\x2a\x00\x00\x00\x08\x00\x01\x01\x12\x00\x03\x00\x00\x00\x01\x00\x02\x00\x00"
+    app1 = b"Exif\x00\x00" + mirrored + b"\x00\x00\x00\x00"
+    segment = b"\xff\xe1" + (len(app1) + 2).to_bytes(2, "big") + app1
+    image = jpeg(10, 10)
+    with pytest.raises(ValueError, match="mirrored"):
+        iiif.jpeg_frame(image[:2] + segment + image[2:])
+    sof = b"\xff\xc0\x00\x0b\x08\x00\x0a\x00\x0a\x01\x01\x11\x00"
+    with pytest.raises(ValueError, match="more than one frame header"):
+        iiif.jpeg_frame(image[:2] + sof + image[2:])
 
 
 def test_retry_wait_reads_seconds_and_dates() -> None:

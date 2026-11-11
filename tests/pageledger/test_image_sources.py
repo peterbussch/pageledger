@@ -1014,3 +1014,38 @@ def test_review_resume_and_export_work_on_a_job_of_page_images(scans, stub, tmp_
     assert verify_job(root)["status"] == "pass"
     export_job(root, tmp_path / "book.md", format="md")
     assert "(<scans/page-2.png>)" in (tmp_path / "book.md").read_text()
+
+
+# -- The review view --------------------------------------------------------------------
+
+
+@pytest.mark.skipif(shutil.which("pdftoppm") is None, reason="needs Poppler")
+def test_the_review_view_shows_each_pages_own_image_also_from_a_moved_job(scans, stub, tmp_path):
+    from pageledger.review_html import write_review_html
+
+    _job(scans, stub, tmp_path)
+    for root, view in ((tmp_path / "job", "view"), (tmp_path / "deposit" / "job", "moved")):
+        if not root.exists():
+            shutil.copytree(tmp_path / "job", root)
+        result = write_review_html(root, tmp_path / view)
+        assert result["images"] == 3
+        for row in ("p0001", "p0002", "p0003"):
+            image = (tmp_path / view / "images" / f"{row}.jpg").read_bytes()
+            assert image[:2] == b"\xff\xd8"
+        page = (tmp_path / view / "index.html").read_text(encoding="utf-8")
+        assert '<h2 id="p0003-title">Page 3 (page-10.png)</h2>' in page
+        assert 'href="../scans/page-10.png">Page 3 (page-10.png) in the source</a>' in page
+    assert write_review_html(tmp_path / "job", tmp_path / "none", images="none")["images"] == 0
+
+
+def test_without_poppler_the_review_view_links_each_page_image(scans, stub, tmp_path, monkeypatch):
+    from pageledger import review_html
+
+    _job(scans, stub, tmp_path)
+    monkeypatch.setattr(review_html.shutil, "which", lambda name: None)
+    result = review_html.write_review_html(tmp_path / "job", tmp_path / "view")
+    assert result["images"] == 0
+    assert not (tmp_path / "view" / "images").exists()
+    page = (tmp_path / "view" / "index.html").read_text(encoding="utf-8")
+    assert "No page image in this view." in page
+    assert 'href="../scans/page-2.png">Page 2 (page-2.png) in the source</a>' in page

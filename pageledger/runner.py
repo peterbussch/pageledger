@@ -641,6 +641,8 @@ def _run_pages(
             }
             if source in images:
                 input_entry.update(kind=KIND, images=images[source].manifest())
+                if images[source].fetch is not None:
+                    input_entry["iiif"] = images[source].fetch
             if selected_page_numbers is not None:
                 input_entry["pages"] = pages
             elif selection_by_source is not None:

@@ -9,9 +9,9 @@ document job as a witness with its own provenance.
 Configure with ``adapter_options``: ``dir``, the folder that holds the ALTO files,
 and ``name``, a template for one page's file name inside it (default
 ``{page:04d}.xml``; ``{page}`` is the 1-based page number, with an optional
-zero-padded width such as ``{page:04d}``). No other field is filled in; ``{stem}``
-is reserved for the page image's file name and refused until image sources pass
-it on.
+zero-padded width such as ``{page:04d}``). For a page-image source ``{stem}`` is
+the page image's file name without its extension, so ``{stem}.xml`` finds
+``0081.xml`` for ``0081.jpg``; a PDF's pages have no names, so it is refused there.
 
 The text is built from words, never from ``TextLine`` grouping, because ALTO lines
 can run across columns. Words are kept as printed (``CONTENT``, never
@@ -46,6 +46,11 @@ MEASUREMENT_UNITS = ("pixel", "mm10", "inch1200")
 ASPECT_TOLERANCE = 0.02
 DEFAULT_NAME = "{page:04d}.xml"
 _FIELDS = ("page", "stem")
+_NO_STEM = (
+    "alto name uses {{stem}}, the page image's file name, but {source} is not a page image "
+    "or a folder of page images; a PDF's pages have no file names of their own, so use "
+    "{{page}} for a PDF"
+)
 _PAGE_SPEC = re.compile(r"(0?[1-9])?d?\Z")
 _CC = re.compile(r"[0-9](\s*[0-9])*\Z")
 
@@ -437,23 +442,35 @@ class AltoAdapter:
         if type(dir) is not str or not dir:
             raise ValueError("alto dir must name the folder that holds the ALTO files")
         parts = _template_parts(name)
-        if any(field == "stem" for _, field, _ in parts):
-            raise ValueError(
-                "alto name uses {stem}, the page image's file name, which PageLedger does "
-                "not pass to adapters yet; use {page}"
-            )
         if not Path(dir).expanduser().is_dir():
             raise ValueError(f"alto dir is not a folder: {dir}")
         self.directory = Path(dir).expanduser()
         self.template = name
+        self.uses_stem = any(field == "stem" for _, field, _ in parts)
 
     def supports(self, action: str) -> bool:
         return action == "transcribe_text"
 
     def preflight(self, sources: list[Path]) -> None:
-        _ = sources
+        if self.uses_stem:
+            from .image_source import is_image_source
+
+            for source in sources:
+                if not is_image_source(source):
+                    raise ValueError(_NO_STEM.format(source=source))
         if shutil.which("pdfinfo") is None:
             raise ValueError("pdfinfo is required to check ALTO geometry; install Poppler")
+
+    def _stem(self, source: Path, page_number: int) -> str | None:
+        """The page image's file name without its extension, when the template asks for it."""
+        if not self.uses_stem:
+            return None
+        from .image_source import carrier_page
+
+        image = carrier_page(source, page_number)
+        if image is None:
+            raise ValueError(_NO_STEM.format(source=source))
+        return Path(image.name).stem
 
     def page_count(self, source: Path) -> int:
         if source.suffix.lower() != ".pdf":
@@ -472,9 +489,10 @@ class AltoAdapter:
         if not self.supports(action):
             raise ValueError(f"{self.name} does not support action: {action}")
         _ = page_id, prompt
-        file = alto_name(self.template, page_number)
+        stem = self._stem(source, page_number)
+        file = alto_name(self.template, page_number, stem)
         try:
-            path = alto_path(self.directory, self.template, page_number)
+            path = alto_path(self.directory, self.template, page_number, stem)
         except ValueError:
             # Only a symbolic link can lead out of dir: the template was checked.
             return self._empty(f"alto; file {file} outside dir", "alto_invalid")

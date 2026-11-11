@@ -2,9 +2,46 @@
 
 from __future__ import annotations
 
+import codecs
 from pathlib import Path
 
 from .adapters import _reading_pdf
+from .image_source import KIND, is_image_source
+
+PDF = "pdf"
+TEXT = "text"
+_SOURCES = (
+    "A source is a PDF, a UTF-8 text file (pages separated by form feeds), "
+    "one JPEG or PNG page image, or a folder of them."
+)
+
+
+def source_kind(source: Path) -> str:
+    """What a document job reads: ``pdf``, ``page_images`` or ``text``; anything else is refused.
+
+    A PDF is known by its suffix, so a damaged one still becomes a job that
+    records why it cannot be read. Text is any file that decodes as UTF-8.
+    """
+    if not source.exists():
+        raise ValueError(f"Source does not exist: {source}")
+    if is_image_source(source):
+        return KIND
+    if source.is_dir():
+        raise ValueError(f"{source} is a folder with no page images in it. {_SOURCES}")
+    if source.suffix.lower() == ".pdf":
+        return PDF
+    decoder = codecs.getincrementaldecoder("utf-8")()
+    try:
+        with source.open("rb") as stream:
+            for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                decoder.decode(chunk)
+            decoder.decode(b"", final=True)
+    except UnicodeDecodeError:
+        raise ValueError(
+            f"{source} is not a PDF, a page image or UTF-8 text, so PageLedger cannot "
+            f"process it. {_SOURCES}"
+        ) from None
+    return TEXT
 
 
 def inspect_source(source: Path) -> tuple[int, dict]:

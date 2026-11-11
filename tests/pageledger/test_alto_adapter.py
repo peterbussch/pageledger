@@ -6,7 +6,9 @@ import hashlib
 import json
 import os
 import shutil
+import struct
 import sys
+import zlib
 
 import pytest
 import yaml
@@ -343,8 +345,9 @@ def test_a_symlink_out_of_dir_is_refused(tmp_path):
 def test_constructor_checks_options(tmp_path):
     with pytest.raises(ValueError, match="not a folder"):
         AltoAdapter(dir=str(tmp_path / "nowhere"))
-    with pytest.raises(ValueError, match="stem"):
-        AltoAdapter(dir=str(tmp_path), name="{stem}.xml")
+    assert AltoAdapter(dir=str(tmp_path), name="{stem}.xml").uses_stem
+    with pytest.raises(ValueError, match="without a format"):
+        AltoAdapter(dir=str(tmp_path), name="{stem:4}.xml")
     with pytest.raises(ValueError, match="inside dir"):
         AltoAdapter(dir=str(tmp_path), name="../{page}.xml")
     with pytest.raises(ValueError, match="does not accept"):
@@ -586,3 +589,106 @@ def test_a_plain_run_completes_and_queues_a_page_without_alto(reel, tmp_path):
         (1, "quality_warning"),
         (2, "quality_warning"),
     ]
+
+
+# -- {stem}: ALTO files named after the page images -------------------------------
+
+
+def _png(width, height):
+    def chunk(kind, body):
+        crc = struct.pack(">I", zlib.crc32(kind + body))
+        return struct.pack(">I", len(body)) + kind + body + crc
+
+    rows = b"".join(b"\x00" + b"\xff" * width for _ in range(height))
+    header = struct.pack(">IIBBBBB", width, height, 8, 0, 0, 0, 0)
+    return (
+        b"\x89PNG\r\n\x1a\n"
+        + chunk(b"IHDR", header)
+        + chunk(b"IDAT", zlib.compress(rows))
+        + chunk(b"IEND", b"")
+    )
+
+
+@pytest.fixture
+def scans(tmp_path):
+    """Two page images that keep their reel numbers, and ALTO for the first in its own folder.
+
+    The ALTO files cannot sit beside the images: a folder of page images holds
+    nothing else.
+    """
+    folder = tmp_path / "scans"
+    folder.mkdir()
+    for name in ("0081.png", "0082.png"):
+        (folder / name).write_bytes(_png(100, 140))
+    library = tmp_path / "library-alto"
+    library.mkdir()
+    (library / "0081.xml").write_bytes(directory_page(low="0.9"))
+    (library / "0001.xml").write_bytes(alto([[_string("Wrong", 10, 10, 50, 20)]]))
+    return folder, library
+
+
+@needs_pdfinfo
+def test_stem_reads_the_alto_file_named_after_each_page_image_in_a_job(reel, scans, tmp_path):
+    folder, library = scans
+    _, config, _, stub = reel
+    stub.TEXTS.update({1: COLUMNS_TEXT, 2: OCR_PAGE_2})
+    stub.SECOND.update({1: COLUMNS_TEXT, 2: OCR_PAGE_2})
+    data = yaml.safe_load(config.read_text(encoding="utf-8"))
+    data["processing"]["local_text"]["adapter_options"] = {
+        "dir": str(library),
+        "name": "{stem}.xml",
+    }
+    config.write_text(yaml.safe_dump(data), encoding="utf-8")
+    out = tmp_path / "job"
+    assert process(source=folder, config_path=config, out_dir=out)["status"] == "completed"
+    assert verify_job(out)["status"] == "pass"
+    pages = {page["page_number"]: page for page in read_record(out / "job.json")["pages"]}
+    # Page 1 of the job is 0081.png, so it reads 0081.xml and never 0001.xml.
+    first, second = pages[1]["attempts"][0], pages[2]["attempts"][0]
+    assert first["stage"] == "local_text" and first["warnings"] == ["ocr_text_layer"]
+    assert pages[1]["comparisons"][0]["agreement_ratio"] == 1.0
+    assert second["warnings"] == ["alto_missing", "empty_text"]
+    models = [
+        json.loads(line)["extractor"]["model"]
+        for path in out.glob("attempts/*/provenance.jsonl")
+        for line in path.read_text(encoding="utf-8").splitlines()
+    ]
+    assert any("file 0081.xml sha256:" in model for model in models)
+    assert "alto; file 0082.xml missing" in models
+
+
+@needs_pdfinfo
+def test_stem_in_a_plain_run_of_page_images(scans, tmp_path):
+    folder, library = scans
+    config = tmp_path / "run.yml"
+    options = {"dir": str(library), "name": "{stem}.xml"}
+    config.write_text(
+        yaml.safe_dump(
+            {
+                "schema_version": "0.1",
+                "taxonomy": {"page_types": {"prose": {"default_action": "transcribe_text"}}},
+                "run": {"adapter": "alto", "adapter_options": options},
+            }
+        )
+    )
+    out = tmp_path / "run"
+    run(inputs=[folder], config_path=config, out_dir=out, dry_run=False)
+    assert verify_run(out)["status"] == "pass"
+    lines = [json.loads(line) for line in (out / "quality.jsonl").read_text().splitlines()]
+    assert lines[0]["warnings"] == ["ocr_text_layer"]
+    assert "alto_missing" in lines[1]["warnings"]
+
+
+def test_stem_on_a_pdf_is_refused_with_its_reason(reel, tmp_path):
+    source, config, folder, _ = reel
+    data = yaml.safe_load(config.read_text(encoding="utf-8"))
+    data["processing"]["local_text"]["adapter_options"]["name"] = "{stem}.xml"
+    config.write_text(yaml.safe_dump(data), encoding="utf-8")
+    with pytest.raises(ValueError, match=r"^processing.local_text: alto name uses \{stem\}"):
+        process(source=source, config_path=config, out_dir=tmp_path / "job")
+    assert not (tmp_path / "job").exists()
+    adapter = AltoAdapter(dir=str(folder), name="{stem}.xml")
+    with pytest.raises(ValueError, match="a PDF's pages have no file names of their own"):
+        adapter.preflight([source])
+    with pytest.raises(ValueError, match=r"use \{page\} for a PDF"):
+        adapter.extract(source, page_id="p0001", page_number=1, action="transcribe_text")

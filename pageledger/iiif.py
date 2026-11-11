@@ -245,44 +245,23 @@ class Client:
 def jpeg_frame(data: bytes) -> tuple[int, int, int]:
     """Width, height and component count from a JPEG header, at any size.
 
-    Unlike ``image_evidence.jpeg_dimensions`` this has no pixel cap and accepts
+    The header is read by the same reader as a folder of page images, so a
+    fetched image is one ``process`` can read. Unlike
+    ``image_evidence.jpeg_dimensions`` this has no pixel cap and accepts
     grayscale; it reads only the header and leaves decoding to the renderer.
     """
-    if not data.startswith(b"\xff\xd8\xff"):
-        raise ValueError("not a JPEG: missing start-of-image marker")
-    offset = 2
-    frame = None
-    while offset + 4 <= len(data):
-        if data[offset] != 0xFF:
-            raise ValueError("JPEG marker expected")
-        while offset < len(data) and data[offset] == 0xFF:
-            offset += 1
-        if offset + 3 > len(data):
-            break
-        marker = data[offset]
-        length = int.from_bytes(data[offset + 1 : offset + 3], "big")
-        start = offset + 1
-        if length < 2 or start + length > len(data):
-            raise ValueError("JPEG segment length")
-        if marker in {0xC0, 0xC1, 0xC2}:
-            if length < 8:
-                raise ValueError("JPEG frame header too short")
-            components = data[start + 7]
-            if data[start + 2] != 8 or components not in {1, 3} or length != 8 + 3 * components:
-                raise ValueError("JPEG must have one or three 8-bit components")
-            if frame is not None:
-                raise ValueError("JPEG has more than one frame header")
-            height = int.from_bytes(data[start + 3 : start + 5], "big")
-            width = int.from_bytes(data[start + 5 : start + 7], "big")
-            if width < 1 or height < 1:
-                raise ValueError("JPEG frame header has no size")
-            frame = (width, height, components)
-        if marker == 0xDA:
-            if frame is None:
-                raise ValueError("JPEG has no baseline or progressive frame header")
-            return frame
-        offset = start + length
-    raise ValueError("JPEG header ends before the image data")
+    from .adapters import PageLedgerDiagnostic
+    from .image_source import jpeg_header
+
+    try:
+        frame = jpeg_header(data, "the image")
+    except PageLedgerDiagnostic as error:
+        raise ValueError(error.message) from error
+    if frame["components"] not in {1, 3}:
+        raise ValueError("JPEG must have one or three 8-bit components")
+    if not frame["scan"]:
+        raise ValueError("JPEG header ends before the image data")
+    return frame["width"], frame["height"], frame["components"]
 
 
 def _id(value: Mapping[str, Any]) -> str | None:
@@ -886,7 +865,7 @@ def _summary(out: Path, record: Mapping[str, Any], *, fetched_now: int) -> dict[
 
 def read_fetch_record(
     folder: Path, image_hashes: Mapping[str, str] | None = None
-) -> dict[str, str] | None:
+) -> dict[str, Any] | None:
     """Check a folder's IIIF fetch record against its images, for annotating a job's source.
 
     ``image_hashes`` maps each top-level image file name to its SHA-256, as a
@@ -894,7 +873,8 @@ def read_fetch_record(
     ``.jpg``, ``.jpeg``, ``.png``, ``.tif`` and ``.tiff`` files (not dotfiles)
     are hashed here. Returns None when the folder has no record, raises
     ValueError when the images and the record disagree in any way, and
-    otherwise returns the record's own hash, requested URL and status.
+    otherwise returns the record's own hash, requested URL and status, and
+    ``canvases``: each image's canvas position and id, by file name.
     """
     if not (folder / RECORD_NAME).exists() and not (folder / RECORD_NAME).is_symlink():
         return None
@@ -918,4 +898,13 @@ def read_fetch_record(
         "sha256": _sha256(data),
         "requested_url": str(record["requested_url"]),
         "status": str(record["status"]),
+        "canvases": {
+            entry["file"]: {
+                "canvas_index": entry["canvas_index"],
+                "canvas_id": entry["canvas_id"]
+                if isinstance(entry.get("canvas_id"), str)
+                else None,
+            }
+            for entry in record["images"]
+        },
     }

@@ -30,10 +30,12 @@ from .document_report import (
     _STAGE_LABELS,
     _agreement,
     _artifact_bytes,
+    _image_name,
     _needs_person,
     relative_path,
     verify_document_report,
 )
+from .image_source import KIND, ImageSource, _read_page, carrier, page_target, snapshot_growth
 from .processing import _check_source, _load, _refresh, verify_job
 from .processing_policy import warning_holds
 from .review_sheet import DECISIONS, FIELDS, _row_id, binding_path, write_review_sheet
@@ -84,6 +86,22 @@ def render_page_image(source: Path, page_number: int, target: Path) -> bool:
     return True
 
 
+def render_own_image(source: Path, image: dict, target: Path) -> bool:
+    """Write a size-capped JPEG of one recorded page image, rendered through its own carrier.
+
+    The image is read by its recorded name and hash, not by its place in the
+    folder; False when Poppler is absent, so the view links to the image instead.
+    """
+    if shutil.which("pdftoppm") is None:
+        return False
+    path = source / image["name"] if source.is_dir() else source
+    page = _read_page(path)
+    if page.sha256 != image["sha256"]:
+        raise ValueError(f"Page image changed since the job was verified: {path}")
+    with carrier(ImageSource(path, (page,)), [1]) as (pdf, _sha256):
+        return render_page_image(pdf, 1, target)
+
+
 def write_review_html(job_dir: Path, out: Path, *, images: str = "all") -> dict:
     """Verify the job, then write the view, page images and a blank review sheet to `out`."""
     if images not in IMAGE_CHOICES:
@@ -98,7 +116,13 @@ def write_review_html(job_dir: Path, out: Path, *, images: str = "all") -> dict:
     with writer_lock(root):
         job = _load(root)
         _refresh(job, root, materialize=False)
-        source = _check_source(job)
+        try:
+            source = _check_source(job)
+        except ValueError:
+            # Images a later fetch-iiif --resume added; each page is read by its own name.
+            if snapshot_growth(job["source"]) is None:
+                raise
+            source = Path(job["source"]["path"]).expanduser()
         if images != "none" and source.suffix.lower() == ".pdf" and not shutil.which("pdftoppm"):
             raise ValueError(_NO_POPPLER)
         out.mkdir(parents=True)
@@ -123,12 +147,18 @@ def _write_view(root: Path, out: Path, job: dict, source: Path, written: dict, i
     binding = binding_path(sheet).read_text(encoding="utf-8")
     rendered = 0
     pictures: dict[str, str] = {}
+    recorded = job["source"]["images"] if job["source"].get("kind") == KIND else None
     for page in report["pages"]:
         if images == "none" or (images == "held" and not _needs_person(page)):
             continue
         name = f"images/{_row_id(page)}.jpg"
         (out / "images").mkdir(exist_ok=True)
-        if not render_page_image(source, page["page_number"], out / name):
+        drawn = (
+            render_own_image(source, recorded[page["page_number"] - 1], out / name)
+            if recorded is not None
+            else render_page_image(source, page["page_number"], out / name)
+        )
+        if not drawn:
             (out / "images").rmdir()
             break
         pictures[page["page_id"]] = name
@@ -334,7 +364,8 @@ class _View:
         row_id = _row_id(page)
         reasons = ", ".join(_label(r) for r in page["review_reasons"]) or "nothing"
         return (
-            f'<tr><th scope="row"><a href="#{row_id}">{page["page_number"]}</a></th>'
+            f'<tr><th scope="row"><a href="#{row_id}">{page["page_number"]}'
+            f"{_e(_image_name(self.report, page))}</a></th>"
             f"<td>{_e(_label(page['disposition']))}</td><td>{_e(reasons)}</td>"
             f"<td>{_e(_agreement(page, self.holds))}</td><td>{_e(_review(page))}</td>"
             f'<td class="chosen" data-row="{row_id}"></td></tr>'
@@ -343,7 +374,8 @@ class _View:
     def _page(self, page: dict) -> str:
         row_id, number = _row_id(page), page["page_number"]
         selected = page["selected_output"]
-        source_link = relative_path(str(self.source), self.out) + f"#page={number}"
+        path, fragment = page_target(self.report["source"], number)
+        source_link = relative_path(str(self.source), self.out) + path + fragment
         facts = [
             ("State", _e(_label(page["disposition"]))),
             ("Held for", self._holds(page)),
@@ -386,7 +418,7 @@ class _View:
         others = self._others(page, marked)
         parts = [
             f'<section class="page" id="{row_id}" aria-labelledby="{row_id}-title">',
-            f'<h2 id="{row_id}-title">Page {number}</h2>',
+            f'<h2 id="{row_id}-title">Page {number}{_e(_image_name(self.report, page))}</h2>',
             '<p class="nav"><a href="#pages">Back to the page list</a></p>',
             "<dl>",
             *(f"<dt>{label}</dt><dd>{value}</dd>" for label, value in facts),
@@ -410,7 +442,8 @@ class _View:
         return "; ".join(items) + f" ({link})"
 
     def _figure(self, page: dict, source_link: str) -> str:
-        links = [f'<a href="{_e(_href(source_link))}">Page {page["page_number"]} in the source</a>']
+        label = f"Page {page['page_number']}{_image_name(self.report, page)} in the source"
+        links = [f'<a href="{_e(_href(source_link))}">{_e(label)}</a>']
         for attempt in page["attempts"]:
             evidence = attempt.get("input_evidence")
             if not evidence:

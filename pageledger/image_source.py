@@ -105,6 +105,8 @@ class ImageSource:
     path: Path
     pages: tuple[ImagePage, ...]
     skipped: tuple[str, ...] = ()
+    # The IIIF fetch record of a folder fetch-iiif wrote: context, not identity.
+    fetch: dict[str, Any] | None = None
 
     @property
     def sha256(self) -> str:
@@ -148,13 +150,25 @@ def _natural_key(name: str) -> tuple[list[Any], str]:
 
 
 def read_image_source(path: Path) -> ImageSource:
-    """Hash and measure every page image; refuse anything that is not one."""
+    """Hash and measure every page image; refuse anything that is not one.
+
+    A folder ``fetch-iiif`` wrote also holds ``iiif-fetch.json`` and ``iiif/``.
+    They are read only when the record lists exactly the folder's images with
+    their hashes, and the record is kept as context beside the images.
+    """
+    from .iiif import RECORD_DIR, RECORD_NAME
+
     if path.is_dir():
         files: list[Path] = []
         skipped: list[str] = []
+        record = folder = False
         for child in path.iterdir():
             if child.name.startswith("."):
                 skipped.append(child.name)
+            elif child.name == RECORD_NAME and child.is_file() and not child.is_symlink():
+                record = True
+            elif child.name == RECORD_DIR and child.is_dir() and not child.is_symlink():
+                folder = True
             elif not child.is_file():
                 raise ValueError(
                     f"{path} is a folder of page images, so PageLedger reads only the images "
@@ -162,11 +176,39 @@ def read_image_source(path: Path) -> ImageSource:
                 )
             else:
                 files.append(child)
+        if folder and not record:
+            raise ValueError(
+                f"{path} is a folder of page images, so PageLedger reads only the images "
+                f"directly inside it; '{RECORD_DIR}' is not one, and without {RECORD_NAME} "
+                "the folder is not a IIIF snapshot. Move it out of the folder."
+            )
         if not files:
             raise ValueError(f"No page images in {path}")
         files.sort(key=lambda item: _natural_key(item.name))
-        return ImageSource(path, tuple(_read_page(item) for item in files), tuple(sorted(skipped)))
+        pages = tuple(_read_page(item) for item in files)
+        fetch = _fetch_annotation(path, pages) if record else None
+        return ImageSource(path, pages, tuple(sorted(skipped)), fetch)
     return ImageSource(path, (_read_page(path),))
+
+
+def _fetch_annotation(path: Path, pages: tuple[ImagePage, ...]) -> dict[str, Any]:
+    from .iiif import RECORD_NAME, read_fetch_record
+
+    try:
+        fetched = read_fetch_record(path, {page.name: page.sha256 for page in pages})
+    except ValueError as exc:
+        raise ValueError(
+            f"{exc}. A folder holding {RECORD_NAME} is read as the IIIF snapshot it records, "
+            "so its images must be exactly the ones fetch-iiif fetched."
+        ) from exc
+    assert fetched is not None
+    canvases = fetched["canvases"]
+    return {
+        "sha256": fetched["sha256"],
+        "requested_url": fetched["requested_url"],
+        "status": fetched["status"],
+        "canvases": [{"name": page.name, **canvases[page.name]} for page in pages],
+    }
 
 
 def _read_page(path: Path) -> ImagePage:
@@ -228,6 +270,88 @@ def manifest_changes(recorded: list[dict[str, Any]], current: list[dict[str, Any
     return changes
 
 
+def snapshot_warnings(source: dict[str, Any], located: Path) -> list[dict[str, Any]]:
+    """What verification says about the IIIF snapshot a source was read from.
+
+    ``located`` holds the recorded images, so the fetch record there has already
+    been checked against them; only its own bytes can differ.
+    """
+    recorded = source.get("iiif")
+    if not isinstance(recorded, dict):
+        return []
+    from .iiif import RECORD_NAME
+
+    warnings = []
+    if recorded.get("status") == "incomplete":
+        warnings.append(_incomplete(source, recorded))
+    record = located / RECORD_NAME
+    current = hashlib.sha256(record.read_bytes()).hexdigest() if record.is_file() else None
+    if current != recorded.get("sha256"):
+        warnings.append(
+            {
+                "code": "iiif_record_changed",
+                "message": (
+                    f"The IIIF fetch record in {located} "
+                    + ("is gone" if current is None else "changed")
+                    + " since this was written; the page images it read are unchanged"
+                ),
+                "source": source["path"],
+            }
+        )
+    return warnings
+
+
+def snapshot_growth(source: dict[str, Any]) -> list[dict[str, Any]] | None:
+    """Warnings for a IIIF snapshot that ``fetch-iiif --resume`` added images to, or None.
+
+    The snapshot has grown when its folder is still a valid snapshot of the same
+    URL and every recorded image is there unchanged. The recorded pages keep
+    their numbers; the folder read anew would number them differently.
+    """
+    recorded = source.get("iiif")
+    images = source.get("images")
+    if source.get("kind") != KIND or not isinstance(recorded, dict) or not images:
+        return None
+    try:
+        current = read_image_source(Path(source["path"]).expanduser())
+    except (OSError, ValueError, RuntimeError):
+        return None
+    if current.fetch is None or current.fetch["requested_url"] != recorded.get("requested_url"):
+        return None
+    now = {entry["name"]: entry for entry in current.manifest()}
+    if any(now.get(entry.get("name")) != entry for entry in images):
+        return None
+    names = {entry["name"] for entry in images}
+    added = [name for name in now if name not in names]
+    if not added:
+        return None
+    warnings = [_incomplete(source, recorded)] if recorded.get("status") == "incomplete" else []
+    warnings.append(
+        {
+            "code": "iiif_snapshot_grown",
+            "message": (
+                f"fetch-iiif --resume added {len(added)} image(s) to {source['path']} after this "
+                f"was written ({', '.join(added)}); every image it read is unchanged and keeps "
+                "its page number here. A new job on the folder would number pages differently."
+            ),
+            "source": source["path"],
+            "added": added,
+        }
+    )
+    return warnings
+
+
+def _incomplete(source: dict[str, Any], recorded: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "code": "iiif_snapshot_incomplete",
+        "message": (
+            f"{source['path']} was an incomplete IIIF snapshot of {recorded.get('requested_url')} "
+            "when this was written: canvases that were never fetched are not in it"
+        ),
+        "source": source["path"],
+    }
+
+
 def _malformed(name: str, what: str) -> Exception:
     return _diagnostic(
         "malformed_image",
@@ -287,12 +411,18 @@ _SOF = {0xC0, 0xC1, 0xC2}
 _SOF_OTHER = {0xC3, 0xC5, 0xC6, 0xC7, 0xC9, 0xCA, 0xCB, 0xCD, 0xCE, 0xCF}
 
 
-def _jpeg_frame(data: bytes, name: str) -> dict[str, Any]:
+def jpeg_header(data: bytes, name: str) -> dict[str, Any]:
+    """Frame, density and orientation from a JPEG's header, up to its first scan.
+
+    Everything PageLedger cannot carry to a PDF renderer is refused here, so
+    ``fetch-iiif`` keeps only JPEGs a folder of page images can read. ``scan``
+    says whether the header reached the image data.
+    """
     if data[:2] != b"\xff\xd8":
         raise _malformed(name, "no JPEG start marker")
     position, frame = 2, None
     jfif = exif = None
-    adobe = False
+    adobe = scan = False
     while position + 4 <= len(data):
         if data[position] != 0xFF:
             raise _malformed(name, "broken marker sequence")
@@ -304,6 +434,7 @@ def _jpeg_frame(data: bytes, name: str) -> dict[str, Any]:
             position += 2
             continue
         if marker in (0xD9, 0xDA):
+            scan = marker == 0xDA
             break
         length = int.from_bytes(data[position + 2 : position + 4], "big")
         body = data[position + 4 : position + 2 + length]
@@ -323,8 +454,10 @@ def _jpeg_frame(data: bytes, name: str) -> dict[str, Any]:
                 f"'{name}' is a lossless, hierarchical or arithmetic-coded JPEG, which PDF "
                 "renderers do not read. Convert it losslessly to PNG first.",
             )
-        elif marker in _SOF and frame is None:
-            if len(body) < 6:
+        elif marker in _SOF:
+            if frame is not None:
+                raise _malformed(name, "more than one frame header")
+            if len(body) < 6 or len(body) != 6 + 3 * body[5]:
                 raise _malformed(name, "short frame header")
             frame = {
                 "precision": body[0],
@@ -349,18 +482,19 @@ def _jpeg_frame(data: bytes, name: str) -> dict[str, Any]:
         if density is None:
             density, basis = exif[0], "exif"
         orientation = exif[1]
-    return {**frame, "density": density, "basis": basis, "orientation": orientation, "adobe": adobe}
+    return {
+        **frame,
+        "density": density,
+        "basis": basis,
+        "rotation": _rotation(orientation, name),
+        "adobe": adobe,
+        "scan": scan,
+    }
 
 
 def _jpeg(data: bytes, name: str) -> tuple[int, int, tuple[float, float] | None, str, int]:
-    frame = _jpeg_frame(data, name)
-    return (
-        frame["width"],
-        frame["height"],
-        frame["density"],
-        frame["basis"],
-        _rotation(frame["orientation"], name),
-    )
+    frame = jpeg_header(data, name)
+    return frame["width"], frame["height"], frame["density"], frame["basis"], frame["rotation"]
 
 
 _PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
@@ -517,7 +651,7 @@ def _image_objects(page: ImagePage) -> list[tuple[dict[bytes, bytes], bytes]]:
         raise ValueError(f"Page image changed since it was hashed: {page.path}")
     size = {b"/Width": str(page.width).encode(), b"/Height": str(page.height).encode()}
     if page.media_type == "image/jpeg":
-        frame = _jpeg_frame(data, page.name)
+        frame = jpeg_header(data, page.name)
         spaces = {1: b"/DeviceGray", 3: b"/DeviceRGB", 4: b"/DeviceCMYK"}
         entries = {
             **size,

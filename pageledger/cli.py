@@ -209,7 +209,14 @@ def _engine(args: argparse.Namespace) -> str:
     if args.engine is not None:
         return args.engine
     source = getattr(args, "source", None)
-    return "none" if source is not None and source.suffix.lower() == ".txt" else "pdf_ocr"
+    if source is None:
+        return "pdf_ocr"
+    from .processing_source import source_kind
+
+    try:
+        return "none" if source_kind(source) == "text" else "pdf_ocr"
+    except (OSError, ValueError) as exc:
+        raise _UsageError(str(exc)) from exc
 
 
 def _processing_command(engine: str, lang: str | None, model_dir: str | None) -> str:

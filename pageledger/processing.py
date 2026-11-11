@@ -33,7 +33,13 @@ from .classifier import classify_signals, merge_classify_thresholds, structural_
 from .comparison import compare_texts
 from .config import load_config
 from .contest import contest as contest_spans
-from .image_source import KIND, is_image_source, manifest_changes, read_image_source
+from .image_source import (
+    KIND,
+    manifest_changes,
+    read_image_source,
+    snapshot_growth,
+    snapshot_warnings,
+)
 from .lexicon import load_lexicon, roughness
 from .processing_config import ladder, processing_config
 from .processing_policy import (
@@ -41,7 +47,7 @@ from .processing_policy import (
     HOLD_POLICY,
     warning_holds,
 )
-from .processing_source import inspect_source
+from .processing_source import TEXT, inspect_source, source_kind
 from .replay import _package_code_sha256
 from .review_sheet import read_review_sheet, write_review_sheet
 from .source_index import SourceUnavailable, resolve_source
@@ -253,6 +259,9 @@ def _location_warnings(job: dict, root: Path) -> list[dict]:
     try:
         located = _check_source(job)
     except ValueError:
+        grown = snapshot_growth(job["source"])
+        if grown is not None:
+            return warnings + grown
         if Path(recorded).expanduser().exists():
             raise
         warnings.append(
@@ -272,6 +281,7 @@ def _location_warnings(job: dict, root: Path) -> list[dict]:
                     "located": str(located),
                 }
             )
+        warnings.extend(snapshot_warnings(job["source"], located))
     return warnings
 
 
@@ -398,10 +408,9 @@ def _process(
         )
     if config.max_retries or config.on_page_error != "stop":
         raise ValueError("process requires zero retries and on_page_error: stop")
-    images = read_image_source(source) if is_image_source(source) else None
-    policy = processing_config(
-        config.data, pdf=images is not None or source.suffix.lower() == ".pdf"
-    )
+    kind = source_kind(source)
+    images = read_image_source(source) if kind == KIND else None
+    policy = processing_config(config.data, pdf=kind != TEXT)
     if images is not None and any(
         policy[name] is not None and policy[name]["adapter"] == "text" for name in ladder(policy)
     ):
@@ -415,7 +424,12 @@ def _process(
     for name in ladder(policy):
         if policy[name] is not None:
             try:
-                runner.load_adapter(policy[name]["adapter"], policy[name]["adapter_options"])
+                adapter = runner.load_adapter(
+                    policy[name]["adapter"], policy[name]["adapter_options"]
+                )
+                # alto's {stem} names files after page images, which only they have.
+                if images is None and getattr(adapter, "uses_stem", False):
+                    adapter.preflight([source])
             except ValueError as exc:
                 raise ValueError(f"processing.{name}: {exc}") from exc
     # A missing or unreadable word list fails here, before the job exists.
@@ -485,6 +499,7 @@ def _process(
             "page_count": count,
             "annotations": annotations,
             **({"kind": KIND, "images": images.manifest()} if images else {}),
+            **({"iiif": images.fetch} if images and images.fetch else {}),
         },
         "config": config.data,
         "config_sha256": digest(config.data),
