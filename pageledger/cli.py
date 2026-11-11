@@ -417,7 +417,10 @@ def build_parser() -> argparse.ArgumentParser:
 
     process_parser = _command(subparsers, "process")
     process_parser.add_argument(
-        "source", type=Path, metavar="SOURCE", help="The document: a PDF or a text file"
+        "source",
+        type=Path,
+        metavar="SOURCE",
+        help="The document: a PDF, a text file, an image or a folder of page images",
     )
     process_parser.add_argument(
         "--config",

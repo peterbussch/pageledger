@@ -715,7 +715,7 @@ Source bytes are hashed before work and rechecked before each publication and
 resume. For page images the job's `source` also records `kind: page_images`
 and the page manifest as `images`, its `sha256` is the manifest's hash (see
 [page-image sources](run-manifest-spec.md#page-image-sources)), and each page
-records `source_image_sha256`, the hash of its own image; `verify-job` fails,
+records `source_image_sha256`, the hash of its own image; `verify` fails,
 naming each image that changed, went missing or was added. PDF page-tree counts
 must match the actual inventory. Container failure
 produces a halted report with an unknown page count and no invented pages.

@@ -204,7 +204,7 @@ and the error message names a command that does it.
 
 What PageLedger records is the images themselves. Each image is hashed, and
 the source's identity is a hash over the list of file names, hashes and pixel
-sizes. `pageledger verify-run runs/scans-ocr` later tells you if any image
+sizes. `pageledger verify runs/scans-ocr` later tells you if any image
 changed, went missing or was added, and names it. Each page's provenance line
 names its own image.
 

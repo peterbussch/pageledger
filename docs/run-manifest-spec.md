@@ -174,7 +174,7 @@ per inch when none is declared or the declared density is below 20 or above
 4,800) and EXIF rotation as the page's rotation. Pages the run does not read
 are empty pages of the same size, and so is every page for the built-in
 `pdf_text`, which reads text layers and renders nothing. The same images and pages always give the
-same bytes, so `verify-run` can rebuild the carrier and compare its hash. The
+same bytes, so `verify` can rebuild the carrier and compare its hash. The
 carrier is never the record of custody: the images are.
 
 ## Adapter escalation

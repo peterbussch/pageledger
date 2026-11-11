@@ -99,7 +99,7 @@ and `source.image` names the page's own image: `name`, `sha256`, `bytes`,
 `media_type` (`image/jpeg` or `image/png`), `ppi` (pixels per inch across and
 down, as the page was sized), `ppi_basis` (`jfif`, `exif`, `png_phys`, or
 `default` when the image declared no usable density) and `rotation` (0, 90,
-180 or 270 degrees, from EXIF). `verify-run` fails a line whose image differs
+180 or 270 degrees, from EXIF). `verify` fails a line whose image differs
 from the manifest's.
 
 `source.native_pixels` holds the `width` and `height` in pixels of the image
