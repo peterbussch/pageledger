@@ -121,7 +121,7 @@ def test_a_failing_verification_keeps_its_exit_code_and_report(
         assert _cli(capsys, "verify", str(folder), "--json") == before
 
 
-@pytest.mark.parametrize("command", ["verify", "inspect"])
+@pytest.mark.parametrize("command", ["verify", "inspect", "resume"])
 @pytest.mark.parametrize(
     ("make", "message"),
     [

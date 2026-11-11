@@ -1370,7 +1370,7 @@ def _parse_limit_raises(items: list[str]) -> dict[str, int | float]:
 
 def _cmd_resume(args: argparse.Namespace) -> int:
     raised = _parse_limit_raises(args.raise_limit)
-    if (args.run_dir / "job.json").exists():
+    if _directory_kind(args.run_dir) == "job":
         from .processing import resume_job
 
         result = resume_job(args.run_dir, adapter_path=args.adapter_path, raise_limits=raised)
