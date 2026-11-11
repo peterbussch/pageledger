@@ -483,8 +483,9 @@ letters and digits removed, so spaces, punctuation and hyphens at line ends do n
 count; difflib's ratio over the characters) was 0.263, 0.890 and 0.938 on the three
 wrong pages and 0.990, 0.992 and 0.969 on the book's pages; the highest, 0.992, is
 the page with the misread terms, so no threshold separates right from wrong.
-Requiring the numbers to agree as well would hold that page only because one of its
-six misreadings happened to be digits. On the 0.8 dogfood's 135 pages the rule
+Requiring the runs of digits in the two texts to agree as well releases only the
+page with three slips, and holds the page with the misread terms only because one
+of its six misreadings happened to be digits ("622"). On the 0.8 dogfood's 135 pages the rule
 decides no page: its 10 right pages held under 0.9 are held for other reasons.
 
 What a person can do: add a `second_ocr` stage, so that a second engine's clean
