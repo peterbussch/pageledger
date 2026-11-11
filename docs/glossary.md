@@ -52,7 +52,7 @@ The links point to the main page describing each term.
 | Stage | One named part of a job, such as `local_text`, `local_ocr`, or `image`. | [Processing](processing-spec.md) |
 | Taxonomy | The config mapping from page types to actions and optional prompts or review flags. | [Configuration](cli.md#configuration) |
 | Text layer | The text a PDF carries on its pages, as a born-digital PDF does. A scan has none, or one an earlier OCR added. | [Start with local text and OCR](processing-spec.md#start-with-local-text-and-ocr) |
-| Tile | A part of a dense page, cut along the white space between its lines, that a vision model reads as its own image. | [Read dense pages in tiles](processing-spec.md#read-dense-pages-in-tiles) |
+| Tile | A part of a dense page, cut along the white space in its layout (between columns or lines), that a vision model reads as its own image. | [Read dense pages in tiles](processing-spec.md#read-dense-pages-in-tiles) |
 | Warning | A quality signal recorded for a page, such as `low_confidence` or `repetition_loop`. In a job, many warnings become holds. | [Warnings and holds](warnings.md) |
 
 For core commands, see the [CLI reference](cli.md). For supported scope, see

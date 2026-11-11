@@ -360,7 +360,7 @@ PageLedger has been exercised locally on:
   orthography). Walkthrough: [`multilingual-ocr.md`](multilingual-ocr.md).
 - A 72-page born-digital PDF via `pageledger[pdf]`.
 - 74 pages of 20 research PDFs (historical Russian print, directories,
-  gazettes, scholarship), classed by hand against their scans, which set
+  gazettes, scholarship), each classed against its scan, which set
   [hold policy 0.9](processing-spec.md#measured-on-the-74-dogfood-pages):
   pages left wrong and not held fell from 28 under 0.8 to 8, and no right page
   was held. The 12 right pages are all born-digital, so no right OCR page was

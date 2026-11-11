@@ -52,7 +52,9 @@ Sources
   largest the server allows (`iiif_below_native`), into a snapshot folder with
   the manifest as served and a fetch record, `iiif-fetch.json`, binding each
   image's hash to its URLs ([spec](docs/iiif-fetch-spec.md)). It is polite to
-  the server, and `--resume` fetches only what is missing. A snapshot is a
+  the server, and `--resume` fetches only what is missing. It refuses a JPEG
+  that a folder of page images could not read (stored mirrored, or with two
+  frame headers). A snapshot is a
   source: the job records the fetch record and each page's canvas, so a page
   can be cited by its canvas. See [fetch page images from a IIIF server](docs/iiif.md).
 - An `alto` adapter reads the OCR a library published with its scans as ALTO
@@ -67,8 +69,9 @@ Reading
 - Tiled reads: with `processing.tiling`, the `image` stage's `vision` model
   reads a dense page in tiles cut along the white space of the OCR's or the
   ALTO file's layout, one request per tile, bounded by the new limit
-  `max_image_requests`. Every tile sent is kept as evidence and checked by
-  `verify`. New warnings: `tile_failed` and `tile_edge_cut` (held),
+  `max_image_requests` (counted in `usage.image_requests`). Every tile sent is
+  kept as evidence and checked by `verify`, and adjudication packets carry each
+  span's tile image. New warnings: `tile_failed` and `tile_edge_cut` (held),
   `tile_text_small`, `tile_layout_missing` and `alto_layout_rejected`. See
   [read dense pages in tiles](docs/processing-spec.md#read-dense-pages-in-tiles).
 - Adapters can return the boxes of the lines or words they found
@@ -90,7 +93,8 @@ Reading
   `adapters.render_warnings`), `no_text_layer` (`pdf_text` on page images) and
   `multi_column_rows` (RapidOCR read columns side by side). See [warnings](docs/warnings.md).
 - `rapidocr` reads a recognizer's dictionary from its `inference.yml` and
-  records the dictionary's hash.
+  records the dictionary's hash. See
+  [the RapidOCR recipe](docs/engine-recipes.md#rapidocr-with-pp-ocrv5-english-macos-and-linux-cpu).
 
 Reviewing and exporting
 
@@ -99,13 +103,16 @@ Reviewing and exporting
   page is held, the pages that need a person first. Decisions download as
   `review.json` ([schema](schemas/review-decisions.schema.json)) or, without
   corrections, as a review sheet, and are recorded only by `review --apply`.
-  `--images held` or `none` renders fewer images. See
+  Page images of PDFs and of image folders are rendered with Poppler;
+  `--images held` renders only held pages, and `--images none` needs no
+  Poppler (a view of page images then links to each image). See
   [review beside the page image](docs/processing-spec.md#review-beside-the-page-image).
 - A reviewer can correct a page's text, in the view or with `correct:FILE` in a
   sheet. The correction is a new file; the engine's reading is never edited.
-  The receipt names what it started from and the words changed, `verify`
-  checks it, and the report, transcript and exports mark the text as a
-  person's. See [correct the text](docs/processing-spec.md#correct-the-text).
+  The receipt names what it started from and the words changed (`--dry-run`
+  prints them first), `verify` checks it, and the report, transcript and
+  exports mark the text as a person's. A plain JSON receipt cannot replace a
+  corrected page's text. See [correct the text](docs/processing-spec.md#correct-the-text).
 - A moved or copied job can be verified, exported and reviewed where it is.
   `verify` reports `job_relocated`, and a review or adjudication made on a copy
   is recorded (`relocations`) and reported as `job_changed_elsewhere`. See
@@ -116,7 +123,8 @@ Reviewing and exporting
 - JSONL exports give each page's `state`, `review_reasons` and `warnings`;
   TEI marks each page's state, holds and warnings. See [export](docs/export.md).
 - `review --apply` warns (`blank_with_text`) when a page recorded as blank has
-  a reading of 50 or more words.
+  a reading of 50 or more words. See
+  [troubleshooting](docs/troubleshooting.md#a-review-is-refused).
 
 The contract
 
@@ -135,45 +143,58 @@ The contract
   `--help` no longer lists them. See [earlier command names](docs/cli.md#earlier-command-names).
 - **A folder of JPEG or PNG files is one document,** not a set of one-page
   documents, and every file in it must be a page image. An adapter that reads
-  images itself gets JPEG and PNG only; TIFF, JPEG 2000 and WebP are refused.
+  images itself gets JPEG and PNG only; TIFF, JPEG 2000 and WebP are refused. See
+  [page images](docs/process-a-collection.md#page-images).
 - **`process` refuses an unsupported source before the job exists.** A source
   is a PDF, page images, or text that reads as UTF-8; anything else, such as a
   `.docx` or a folder without page images, is a usage error and no job folder
-  is written, where 0.8 wrote a halted job. A `.md` source no longer gets OCR.
+  is written, where 0.8 wrote a halted job. A `.md` source no longer gets OCR. See
+  [troubleshooting](docs/troubleshooting.md#is-not-a-pdf-a-page-image-or-utf-8-text).
 - **New jobs record hold policy 0.9.** An earlier OCR in a PDF's text layer is
   recognised in any font and kept as a witness beside the job's own OCR: its
   disagreement holds the page, and two of the job's engines that agree outvote
   it. A reading that lost the pre-reform ѣ another reading kept is held. When
-  every reading is held, the best supported one is shown. Jobs written under
-  earlier policies rebuild unchanged. See [hold policy 0.9](docs/processing-spec.md#hold-policy-09).
+  every reading is held, the best supported one is shown. A reading that never
+  finished raises no hold, `suspicious_embedded_text_delta` measured against an
+  earlier OCR layer holds neither reading, and no climb is recorded toward a
+  stage the job does not have. Jobs written under earlier policies rebuild
+  unchanged. See [hold policy 0.9](docs/processing-spec.md#hold-policy-09).
   `pdf_text` marks these layers `ocr_text_layer` in plain runs too, so more of
   their pages enter the review queue.
 - **New jobs write report format 0.9:** `report.md` opens with what happened
   and what to do, gives each page that needs a person with the evidence for
   its holds, and keeps hashes and custody for the end. `document.json` gains
   `hold_causes`. `process`, `inspect`, the review view and the exports now
-  count pages that need a person the same way. Reports of older jobs render
-  as before. See [report format 0.9](docs/document-report-spec.md#report-format-09).
+  count pages that need a person the same way, and a page still waiting for a
+  stage of an unfinished job is shown as not finished. A finished job's
+  recorded next action is now plain, and a blank candidate whose selected
+  reading has text is described as such. Reports of older jobs render as
+  before. See [report format 0.9](docs/document-report-spec.md#report-format-09).
 - **`verify` reports more and needs less.** It no longer needs the source: a
   missing one is the warning `source_missing`, one found through the source
   index `source_relocated`. Its result has a `warnings` list, which can also
   hold `job_relocated`, `job_changed_elsewhere`, `carrier_not_reproduced`,
   `iiif_snapshot_incomplete`, `iiif_record_changed` and `iiif_snapshot_grown`;
   the status stays `pass`. A job that did not finish fails with
-  `"reason": "unfinished"` and says to run `resume`. Missing empty `raw/`,
-  `partials/` or `normalized/` folders are read as empty. See
+  `"reason": "unfinished"` and says to run `resume`. A `raw/`, `partials/` or
+  (without a schema) `normalized/` folder that Git or an archive tool dropped
+  because it was empty is read as empty. See
   [troubleshooting](docs/troubleshooting.md#verify-reports-a-problem).
 - `review --apply` and `adjudicate --decisions` work on a moved job and without
   its source. `resume` refuses a job that is not in the folder it was written
-  in.
+  in. See
+  [moved and copied jobs](docs/processing-spec.md#moved-and-copied-jobs).
 - **`export` writes no machine text for a page a person reviewed as blank, an
   illustration, handwriting, unreadable or a source defect** (null `text` in
-  JSONL, a `<gap/>` in TEI). See [export](docs/export.md).
+  JSONL, a `<gap/>` in TEI). Before, `--reviewed-only` exported such text as if
+  checked: a page reviewed as blank was exported with 1,295 words of OCR. See
+  [export](docs/export.md).
 - `render_upsampled` applies to PDF runs too: a new `pdf_ocr` run of a scan
   under 200 pixels per inch warns on every page, which in a plain run puts
   each page in the review queue and lowers its grade. `pdf_ocr` may now render
   a page image below 72 DPI, down to half its own density, instead of stopping
-  with `render_limit`.
+  with `render_limit`. See
+  [page size and rendering](docs/ocr-options.md#page-size-and-rendering).
 - The README leads with `process`, and [the documentation](docs/README.md) is
   arranged by task; "Choose OCR settings" is folded into
   [non-English and historical OCR](docs/multilingual-ocr.md) and
@@ -187,37 +208,44 @@ The contract
   [failed remote reads](docs/processing-spec.md#failed-remote-reads).
 - An image page that failed just as `max_image_pages` was reached lost its
   retry; it now gets it after `resume --raise-limit`. A page a person reviewed
-  while the job was paused is not read again.
-- `export --reviewed-only` exported the machine text of pages reviewed as not
-  text as if checked: a page reviewed as blank was exported with 1,295 words of
-  OCR.
-- A plain JSON receipt could replace a person's corrected text; it is refused.
+  while the job was paused is not read again. See
+  [failed remote reads](docs/processing-spec.md#failed-remote-reads).
 - `review --apply` also refuses a sheet note starting with a tab or carriage
-  return, which a spreadsheet can read as a formula.
+  return, which a spreadsheet can read as a formula. See
+  [review in a spreadsheet](docs/processing-spec.md#review-in-a-spreadsheet).
 - A resumable run, and so every job, of a folder holding `.DS_Store` or other
-  hidden files failed its own checkpoint check.
-- `resume` tells a job from a run as `verify` and `inspect` do.
+  hidden files failed its own checkpoint check. See
+  [page images](docs/process-a-collection.md#page-images).
+- `resume` tells a job from a run as `verify` and `inspect` do. See
+  [resume](docs/cli.md#resume).
 - Clearer messages for a missing source, an existing output folder, a page
   range past the end, a missing Tesseract language (with close installed
   codes), and what `bundle` and `compare` refuse; a renamed review sheet finds
-  its binding when only one matches; pypdf's repair notices are summarized.
+  its binding when only one matches; pypdf's repair notices are summarized. See
+  [troubleshooting](docs/troubleshooting.md).
 
 ### Compatibility
 
 - New fields are optional and new files are additions: among them `iiif`,
   `relocations`, `hold_causes`, `layout_sha256`, `native_pixels`, `page_tiles`,
   a receipt's `correction`, a packet's `terms`, and the schemas `iiif-fetch`
-  and `review-decisions`.
+  and `review-decisions`. See
+  [the schemas](schemas/).
 - Jobs and runs written by 0.5.2 to 0.8 verify, rebuild and render as before,
   under the hold policy and report format they recorded, including after a
-  move. New jobs record hold policy `0.9` and report format `0.9`.
-- Earlier command names work through 1.x. `process --json` output and exit
-  codes are unchanged, and scripts that test `verify` for `pass` behave as
-  before.
+  move. New jobs record hold policy `0.9` and report format `0.9`. See
+  [older runs and jobs](docs/stability.md#older-runs-and-jobs).
+- Earlier command names work through 1.x, and `process --json` output and
+  exit codes are unchanged. `verify` can now pass where 0.8 failed: on a job
+  or run whose source is missing (`source_missing`) and on a moved job
+  (`job_relocated`). A script that needs the source present must check the
+  `warnings` list, not only `pass`. An unfinished job still fails. See
+  [verify](docs/cli.md#verify).
 - `fetch` lets only the host of the URL you name be a loopback, private or
   link-local address, and under an `https` URL fetches nothing over `http`
   (an `http://` image service is asked for over `https`; the record keeps the
-  declared id). A service or redirect that breaks either rule fails its canvas.
+  declared id). A service or redirect that breaks either rule fails its canvas. See
+  [IIIF limits](docs/iiif.md#limits).
 - A new required adapter attribute, or a change to the `extract()` call, now
   waits for a major release. See [the adapter protocol](docs/adapter-protocol.md).
 
@@ -226,23 +254,29 @@ The contract
 - One OCR engine's unconfirmed reading of an image-only scan passes unless it
   carries a warning of its own, as do two-page spreads read across the gutter
   and books re-typeset from OCR without their scans; confidence is judged per
-  page, not per word.
+  page, not per word. See
+  [hold policy 0.9](docs/processing-spec.md#hold-policy-09).
 - A born-digital page whose text lies under an opaque page-sized image, or one
-  made in an OCR program's editor, is taken for an earlier OCR layer.
+  made in an OCR program's editor, is taken for an earlier OCR layer. See
+  [hold policy 0.9](docs/processing-spec.md#hold-policy-09).
 - `alto` reads one page per file; `verify` does not read the ALTO file again;
   its boxes are checked against the job's OCR only when tiles are planned from
   them. hOCR, PAGE XML, ALTO as the contest witness and ALTO found through a
-  IIIF manifest are not supported.
+  IIIF manifest are not supported. See
+  [capabilities and limits](docs/capabilities-and-limits.md#extract-pages).
 - A job on a IIIF snapshot that a later `fetch --resume` grew cannot be
-  resumed.
+  resumed. See
+  [process the snapshot](docs/iiif.md#process-the-snapshot).
 - `render_upsampled` judges a PDF page's largest image by its proportions, not
   its drawn size, so a small picture with the page's shape on a born-digital
-  page is warned about.
+  page is warned about. See
+  [page images](docs/capabilities-and-limits.md#page-images).
 - Tiles follow a layout, never a blind grid; only the `image` stage and the
   `vision` adapter read tiles; column order assumes left-to-right print. See
   [capabilities and limits](docs/capabilities-and-limits.md#process-a-document).
 - `classify`, `bundle` and `replay` refuse page images or runs of them
-  (`classify --from-run` works on such a run).
+  (`classify --from-run` works on such a run). See
+  [page images](docs/capabilities-and-limits.md#page-images).
 
 ### Measured
 
@@ -257,9 +291,11 @@ Measurements on the pages named, not accuracy figures:
 - `latin-print-0.1` settled 81 of 1,118 spans on the 54 directory tiles its
   letter pairs were chosen on (not an independent test); the 8 settlements
   checked were right. On 20 crops of later directories it settled 1 of
-  720.
+  720. See
+  [contest](docs/processing-spec.md#contest-a-models-reading).
 - On those tiles a general English word list knew 56 to 58% of the words in
-  good and bad readings alike, so `rough` does not help on directories.
+  good and bad readings alike, so `rough` does not help on directories. See
+  [a word list as the lexicon](docs/processing-spec.md#a-word-list-as-the-lexicon).
 
 ## 0.8.0 - 2026-10-19
 
