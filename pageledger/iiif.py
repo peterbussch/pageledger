@@ -234,6 +234,12 @@ class Client:
         self.requests = 0
         self.home = urllib.parse.urlsplit(home) if home is not None else None
 
+    def secure_form(self, url: str) -> str:
+        """``url`` over https when the URL the user named is https; it is never fetched over http."""
+        if self.home is not None and self.home.scheme == "https" and url.startswith("http://"):
+            return "https://" + url[len("http://") :]
+        return url
+
     def _check_destination(self, url: str) -> None:
         check_url(url)
         if self.home is None:
@@ -623,14 +629,24 @@ def _fetch_canvas(
 ) -> dict[str, Any]:
     assert canvas.service_id is not None
     what = f"canvas {canvas.index}"
-    info_fetched = client.get(
-        f"{canvas.service_id}/info.json", accept=_JSON_ACCEPT, limit=MAX_INFO_BYTES, what=what
-    )
+    base = client.secure_form(canvas.service_id)
+    try:
+        info_fetched = client.get(
+            f"{base}/info.json", accept=_JSON_ACCEPT, limit=MAX_INFO_BYTES, what=what
+        )
+    except IIIFError as error:
+        if base == canvas.service_id:
+            raise
+        # Servers behind a proxy often declare http ids for services they offer over https.
+        raise type(error)(
+            f"{what}: the service is declared as {canvas.service_id}, and its https form "
+            f"did not answer: {error}"
+        ) from error
     try:
         info = parse_info(_parse_json(info_fetched.body))
     except FetchError as error:
         raise FetchError(f"{what}: {info_fetched.final_url}: {error}") from error
-    request_url = image_request(canvas.service_id, info)
+    request_url = image_request(base, info)
     image = client.get(request_url, accept="image/jpeg", limit=max_image_bytes, what=what)
     media_type = image.content_type.split(";")[0].strip().lower()
     if media_type != "image/jpeg":

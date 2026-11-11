@@ -39,7 +39,8 @@ and, from 1.0, [stability](docs/stability.md).
   only allows a smaller image the record marks it `below_native` and the command warns. One request at a
   time with a delay, retries that honour `Retry-After`, a byte cap on every response, and `--resume` that
   checks what was fetched and fetches only what is missing. Only the host of the URL you named may be a
-  loopback, private or link-local address, and under an `https` URL nothing is fetched over `http`; a
+  loopback, private or link-local address, and under an `https` URL nothing is fetched over `http`: an
+  `http://` image service id is fetched in its `https://` form, and the record keeps the declared id. A
   service or redirect that breaks either rule fails its canvas. See [the how-to](docs/iiif.md).
 - `pageledger review JOB --out DIR` writes a static review view of a verified document job: one
   `index.html` to open in a browser, with no server, network or external scripts. It lists the pages, those

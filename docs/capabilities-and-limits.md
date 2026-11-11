@@ -104,7 +104,7 @@ as `outcome_unknown`. See [checkpoint specification](checkpoint-spec.md).
 
 | Supported | What to rely on | Limit |
 |---|---|---|
-| `fetch` for Presentation API 2 and 3 manifests and Image API 2 and 3 services. | A snapshot folder of page JPEGs at native size or the largest the server allows, with a record binding each file's hash to its URLs; `--resume` checks what is there and fetches only what is missing. `run` and `process` read the snapshot as a folder of page images, and the job records the fetch record's hash, URL, status and each page's canvas. | No authentication, JPEG only, whole images only (no regions), no ALTO or other OCR discovered from the manifest. Only the host you name may be on your own network; a service on another local host is refused. The snapshot must be kept for its record to mean anything. See [the IIIF how-to](iiif.md#limits). |
+| `fetch` for Presentation API 2 and 3 manifests and Image API 2 and 3 services. | A snapshot folder of page JPEGs at native size or the largest the server allows, with a record binding each file's hash to its URLs; `--resume` checks what is there and fetches only what is missing. `run` and `process` read the snapshot as a folder of page images, and the job records the fetch record's hash, URL, status and each page's canvas. | No authentication, JPEG only, whole images only (no regions), no ALTO or other OCR discovered from the manifest. Only the host you name may be on your own network; a service on another local host is refused. Under an https URL, `http://` services are fetched over https. The snapshot must be kept for its record to mean anything. See [the IIIF how-to](iiif.md#limits). |
 
 ## Adapter-supported, user-supplied
 

@@ -28,7 +28,7 @@ An `images` entry:
 | `sha256`, `bytes` | Hash and size of the JPEG as received |
 | `canvas_index` | One-based position of the canvas in the manifest |
 | `canvas_id`, `label` | The canvas identifier and label as the manifest gives them (any JSON value for the label), or null |
-| `service_id` | The image service base URL |
+| `service_id` | The image service base URL as the manifest declares it. Under an `https` requested URL, an `http://` id is fetched in its `https://` form, so `info.url` and `request_url` then start with `https://` while `service_id` keeps `http://` |
 | `image_api` | Image API version of the service, `2` or `3` |
 | `info` | The image information document: `url`, `final_url`, `artifact` (`iiif/0007.info.json`) and `sha256` |
 | `native_width`, `native_height` | Size declared in `info.json` |

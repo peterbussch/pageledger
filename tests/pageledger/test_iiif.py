@@ -1117,6 +1117,52 @@ def test_only_the_host_named_may_be_local_and_https_stays_https(
             client.get(target, accept="*/*", limit=10, what="x")
 
 
+def test_an_http_service_under_an_https_manifest_is_fetched_over_https(tmp_path: Path) -> None:
+    declared, secure = "http://images.example.org/iiif/p", "https://images.example.org/iiif/p"
+    server = FakeServer(
+        {
+            MANIFEST_URL: manifest_v3([declared]),
+            f"{secure}/info.json": info_v3(declared, 40, 60),
+            f"{secure}/full/max/0/default.jpg": jpeg(40, 60),
+        }
+    )
+    out = tmp_path / "snap"
+    assert iiif.fetch_iiif(MANIFEST_URL, out, opener=server, sleep=lambda _s: None)["fetched"] == 1
+    assert not any(url.startswith("http:") for url in server.urls())
+    entry = load(out)["images"][0]
+    validate(load(out))
+    # The record keeps the id as declared beside the https URLs actually fetched.
+    assert entry["service_id"] == declared
+    assert entry["info"]["url"] == f"{secure}/info.json"
+    assert entry["request_url"] == f"{secure}/full/max/0/default.jpg"
+
+
+def test_an_http_service_whose_https_form_does_not_answer_fails_its_canvas(
+    tmp_path: Path,
+) -> None:
+    declared = "http://images.example.org/iiif/p"
+    server = FakeServer({MANIFEST_URL: manifest_v3([declared])})
+    summary = iiif.fetch_iiif(MANIFEST_URL, tmp_path / "snap", opener=server, sleep=lambda _s: None)
+    error = summary["missing"][0]["error"]
+    assert f"declared as {declared}" in error and "https form did not answer" in error
+    assert not any(url.startswith("http:") for url in server.urls())
+
+
+def test_an_http_manifest_fetches_its_http_services_as_declared(tmp_path: Path) -> None:
+    home, service = "http://iiif.example.org/m", "http://images.example.org/iiif/p"
+    server = FakeServer(
+        {
+            home: manifest_v3([service]),
+            f"{service}/info.json": info_v3(service, 40, 60),
+            f"{service}/full/max/0/default.jpg": jpeg(40, 60),
+        }
+    )
+    assert (
+        iiif.fetch_iiif(home, tmp_path / "snap", opener=server, sleep=lambda _s: None)["fetched"]
+        == 1
+    )
+
+
 def test_a_redirect_to_a_local_address_is_refused_at_its_hop(tmp_path: Path) -> None:
     home, service = "http://iiif.example.org/m", "http://images.example.org/iiif/p"
     hop = FakeResponse(302, headers={"Location": "http://169.254.169.254/latest/meta-data"})
