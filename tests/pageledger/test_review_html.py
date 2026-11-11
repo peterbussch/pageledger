@@ -19,9 +19,11 @@ from test_processing import TEXT, StageAdapter, _contesting, launch, setup  # no
 from pageledger import review_html, runner
 from pageledger.checkpoint import read_record
 from pageledger.cli import main
+from pageledger.corrections import word_changes
 from pageledger.processing import create_review_sheet, review_job, verify_job
 from pageledger.review_html import (
     CSV_JS,
+    DECISIONS_JS,
     decisions_csv,
     diff_html,
     render_page_image,
@@ -100,7 +102,8 @@ def test_the_view_shows_each_page_and_changes_nothing_in_the_job(job, tmp_path):
     assert document.index('href="#p0002"') < document.index('href="#p0001"')
     assert "Possible missing or incomplete content (coverage_defect)" in document
     assert "warnings.md#document-job-dispositions" in document
-    assert "Nothing you choose here is recorded in the job." in document
+    assert "recorded in the job until the downloaded file is applied." in document
+    assert "review.json" in document
     assert "pageledger review " in document and "--apply" in document
     assert "--reviewer" in document
     assert "No page image in this view." in document
@@ -209,6 +212,7 @@ def test_the_decision_choices_are_review_jobs_own(job, tmp_path):
         "",
         "accept",
         *others,
+        "correct",
         "blank",
         "illustration",
         "handwriting",
@@ -315,3 +319,114 @@ def test_open_contested_spans_are_marked_in_the_text(setup, monkeypatch, tmp_pat
     assert 'href="#p0001-sp_' in document
     marked = document[document.index("<h3>Selected text</h3>") :]
     assert marked.index('<mark class="open"') < marked.index("</pre>")
+
+
+def _node(program: str, payload: object) -> bytes:
+    return subprocess.run(
+        ["node", "-e", CSV_JS + DECISIONS_JS + program],
+        input=json.dumps(payload).encode(),
+        capture_output=True,
+        check=True,
+    ).stdout
+
+
+def test_the_view_embeds_each_reading_a_correction_can_start_from(job, tmp_path):
+    write_review_html(job, tmp_path / "view", images="none")
+    document = (tmp_path / "view" / "index.html").read_text(encoding="utf-8")
+    data = _embedded(document)
+    page = read_record(job / "job.json")["pages"][1]
+    ocr = next(a for a in page["attempts"] if a["stage"] == "local_ocr")
+    # The selected text, exactly, and the other completed reading by its attempt ID.
+    assert page["selected_attempt"] != ocr["attempt_id"]
+    assert data["texts"]["p0002"] == {"": TEXT, ocr["attempt_id"]: HOSTILE}
+    assert set(data["texts"]["p0001"]) == {""}
+    assert 'name="text"' in document and 'name="from"' in document
+    assert "Correct the text" in document
+    # Job text reaches the page only as escaped markup, JSON and textarea values.
+    assert "innerHTML" not in review_html._SCRIPT
+    assert document.count("</script>") == 2
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
+def test_a_correction_downloaded_from_the_page_is_recorded_exactly(job, tmp_path):
+    write_review_html(job, tmp_path / "view", images="none")
+    data = _embedded((tmp_path / "view" / "index.html").read_text(encoding="utf-8"))
+    # ѣ, a combining accent, a tab, trailing spaces and Windows line endings.
+    typed = TEXT.replace("synthetic", "синтетическій ѣ е́\t", 1) + "  \r\nlast line  \r\n"
+    page2 = read_record(job / "job.json")["pages"][1]
+    ocr = next(a for a in page2["attempts"] if a["stage"] == "local_ocr")
+    decisions = {
+        "p0001": {"decision": "correct", "note": "typed", "from": "", "text": typed},
+        "p0002": {
+            "decision": "correct",
+            "note": "",
+            "from": ocr["attempt_id"],
+            "text": HOSTILE + "\nadded",
+        },
+    }
+    built = _node(
+        "const input = JSON.parse(require('fs').readFileSync(0, 'utf8'));"
+        "process.stdout.write(buildDecisions(input.binding, input.rows, input.decisions));",
+        {**data, "decisions": decisions},
+    )
+    path = tmp_path / "view" / "review.json"
+    path.write_bytes(built)
+
+    result = review_job(job, path, reviewer="A. Reader")
+
+    assert result["decisions"] == {"reviewed_text": 2}
+    first, second = read_record(job / "job.json")["pages"]
+    stored = job / first["review"]["decisions"][0]["correction"]["artifact"]
+    assert stored.read_bytes() == typed.replace("\r\n", "\n").encode("utf-8")
+    assert first["review"]["decisions"][0]["reason"] == "typed"
+    assert second["selected_attempt"] == ocr["attempt_id"]
+    assert second["review"]["decisions"][0]["correction"]["words"] == {
+        "changed": 0,
+        "added": 1,
+        "removed": 0,
+    }
+    assert verify_job(job)["status"] == "pass"
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
+def test_the_pages_word_diff_marks_changes_as_review_apply_counts_them():
+    pairs = [
+        ["a b c d", "a x c d"],
+        ["Тула стоит", "Туза  стоит\nна реке"],
+        ["one two three", "one three"],
+        ["хлѣб", "хлеб"],
+    ]
+    out = json.loads(
+        _node(
+            "const pairs = JSON.parse(require('fs').readFileSync(0, 'utf8'));"
+            "process.stdout.write(JSON.stringify(pairs.map(p => wordDiff(p[0], p[1]))));",
+            pairs,
+        )
+    )
+    for (before, after), diff in zip(pairs, out, strict=True):
+        assert diff["counts"] == word_changes(before, after)
+        kept = "".join(part["text"] for part in diff["parts"] if part["kind"] != "del")
+        assert kept.split() == after.split()
+    assert {"kind": "del", "text": "b"} in out[0]["parts"]
+    assert {"kind": "ins", "text": "x"} in out[0]["parts"]
+
+
+def test_a_corrected_page_shows_the_correction_and_the_reading_beneath(job, tmp_path):
+    sheet = tmp_path / "sheet" / "review.csv"
+    create_review_sheet(job, sheet)
+    (sheet.parent / "p1.txt").write_text(TEXT.replace("prose", "verse"), encoding="utf-8")
+    with sheet.open(encoding="utf-8-sig", newline="") as stream:
+        rows = list(csv.DictReader(stream))
+    sheet.write_bytes(decisions_csv(rows, {"p0001": {"decision": "correct:p1.txt"}}))
+    review_job(job, sheet, reviewer="A. Reader")
+
+    write_review_html(job, tmp_path / "view", images="none")
+    document = (tmp_path / "view" / "index.html").read_text(encoding="utf-8")
+    data = _embedded(document)
+    page = read_record(job / "job.json")["pages"][0]
+    assert "a person&#x27;s correction of" in document
+    assert "text corrected, by A. Reader" in document
+    assert data["texts"]["p0001"] == {
+        "": TEXT.replace("prose", "verse"),
+        page["selected_attempt"]: TEXT,
+    }

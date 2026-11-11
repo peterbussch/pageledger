@@ -1,8 +1,10 @@
 """A static review view: each page's image beside its text, in one HTML file.
 
 The view is a rendering of a verified job, like report.md. It writes nothing into
-the job. Decisions made in it leave the browser as the same CSV and binding that
-`review --sheet` writes, and count only once `review --apply` applies them.
+the job. Decisions and corrected texts made in it leave the browser as a decisions
+file (review.json, the sheet's bindings with the decided rows) or, without
+corrections, as the same CSV and binding that `review --sheet` writes. They count
+only once `review --apply` applies them.
 """
 
 from __future__ import annotations
@@ -25,6 +27,7 @@ from ._version import __version__
 from .adapters import _run_ocr_command
 from .adjudication import settle
 from .checkpoint import atomic_bytes, file_digest, writer_lock
+from .corrections import describe
 from .document_report import (
     _DISPOSITION_LABELS,
     _STAGE_LABELS,
@@ -42,6 +45,7 @@ from .review_sheet import DECISIONS, FIELDS, _row_id, binding_path, write_review
 
 IMAGE_CHOICES = ("all", "held", "none")
 SHEET = "review.csv"
+DECISIONS_FILE = "review.json"
 DOCS = f"https://github.com/peterbussch/pageledger/blob/v{__version__}/docs/"
 _RENDER_SIDE = 1600
 _RENDER_TIMEOUT_SECONDS = 120
@@ -301,7 +305,13 @@ class _View:
             report["pages"], key=lambda page: (not _needs_person(page), page["page_number"])
         )
         key = f"pageledger-review:{report['job_id']}:{hashlib.sha256(binding.encode()).hexdigest()[:16]}"
-        data = {"key": key, "fields": list(FIELDS), "rows": rows, "binding": binding}
+        data = {
+            "key": key,
+            "fields": list(FIELDS),
+            "rows": rows,
+            "binding": binding,
+            "texts": {_row_id(page): self._starts(page) for page in report["pages"]},
+        }
         embedded = (
             json.dumps(data, ensure_ascii=False)
             .replace("<", "\\u003c")
@@ -313,7 +323,7 @@ class _View:
         needing = sum(_needs_person(page) for page in report["pages"])
         command = (
             f"pageledger review {shlex.quote(str(self.root))} "
-            f'--apply {shlex.quote(str(self.out / SHEET))} --reviewer "YOUR NAME"'
+            f'--apply {shlex.quote(str(self.out / DECISIONS_FILE))} --reviewer "YOUR NAME"'
         )
         body = [
             '<a class="skip" href="#pages">Skip to the page list</a>',
@@ -327,23 +337,32 @@ class _View:
             "</header>",
             '<section class="decisions" aria-labelledby="decisions-title">',
             '<h2 id="decisions-title">Recording decisions</h2>',
-            "<p><strong>Nothing you choose here is recorded in the job.</strong> This page is "
-            "a reading copy of the job, written by <code>pageledger review</code>. "
-            "Choose a decision under any page, then download the review sheet, save it in "
-            f"this folder in place of the blank <code>{SHEET}</code> (its binding, "
-            f"<code>{SHEET}.binding.json</code>, is already here), and apply it:</p>",
+            "<p><strong>Nothing you choose or type here is recorded in the job until the "
+            "downloaded file is applied.</strong> This page is a reading copy of the job, "
+            "written by <code>pageledger review</code>. Choose a decision under any page, or "
+            "correct its text, then download your decisions as "
+            f"<code>{DECISIONS_FILE}</code>, save it in this folder and apply it:</p>",
             f'<pre class="command">{_e(command)}</pre>',
-            "<p>Add <code>--dry-run</code> first to check every decision without recording "
-            "any. <code>review --apply</code> refuses the sheet if the job has changed since "
-            "this view was written.</p>",
+            "<p>Add <code>--dry-run</code> first to check every decision, and see how many "
+            "words each correction changes, without recording any. <code>review --apply</code> "
+            "refuses the file if the job has changed since this view was written. "
+            "A corrected text is recorded as a new reading beside the machine readings, "
+            "which stay as they are.</p>",
+            "<p>Without corrections, the review sheet works too: download it, save it in "
+            f"place of the blank <code>{SHEET}</code> (its binding, "
+            f"<code>{SHEET}.binding.json</code>, is already here) and apply it the same way. "
+            "A sheet cannot carry corrected text.</p>",
             "<noscript><p>Choosing decisions here needs JavaScript. Without it, fill in "
             f"<code>{SHEET}</code> in a spreadsheet instead.</p></noscript>",
             '<p class="controls">'
+            '<button type="button" id="download-decisions" disabled>'
+            f"Download {DECISIONS_FILE}</button> "
             '<button type="button" id="download-sheet" disabled>Download review.csv</button> '
             '<button type="button" id="download-binding" disabled>'
             "Download its binding</button> "
             '<button type="button" id="forget" disabled>Forget decisions in this browser</button>'
             "</p>",
+            '<p id="download-problem" class="problem" role="alert"></p>',
             '<p id="storage" role="status"></p>',
             "</section>",
             '<section id="pages" aria-labelledby="pages-title">',
@@ -397,9 +416,13 @@ class _View:
                 )
             )
         if selected is not None:
+            correction = selected.get("correction")
             what = (
                 f"edition of attempt {selected['attempt_id']}, with settled spans applied"
                 if selected.get("edition")
+                else f"a person's correction of {correction['from_path']}, "
+                f"attempt {selected['attempt_id']} ({describe(correction['words'])})"
+                if correction
                 else f"attempt {selected['attempt_id']}"
             )
             facts.append(("Selected text", f"{_e(what)} (<code>{_e(selected['path'])}</code>)"))
@@ -410,7 +433,8 @@ class _View:
                 f"<p>No text is selected for this page ({_e(_label(page['disposition']))}).</p>"
             )
         else:
-            shown = marked.get(selected["attempt_id"]) if not selected.get("edition") else None
+            own = not (selected.get("edition") or selected.get("correction"))
+            shown = marked.get(selected["attempt_id"]) if own else None
             reading = (
                 f'<h3>Selected text</h3><pre class="text" dir="auto"{self.lang}>\n'
                 f"{shown or text_html(selected['text'])}</pre>"
@@ -518,6 +542,30 @@ class _View:
         )
         return listing, marked
 
+    def _starts(self, page: dict) -> dict[str, str]:
+        """The readings a correction can start from, the selected text first under "".
+
+        Then each completed attempt's own text by its ID, unless it is the selected
+        text; a reading that is not UTF-8 is left out.
+        """
+        selected = page["selected_output"]
+        starts = {} if selected is None else {"": selected["text"]}
+        for attempt in page["attempts"]:
+            if attempt["outcome"] != "completed" or attempt["raw_artifact"] is None:
+                continue
+            if (
+                selected is not None
+                and attempt["attempt_id"] == selected["attempt_id"]
+                and not (selected.get("edition") or selected.get("correction"))
+            ):
+                continue
+            content = _artifact_bytes(self.root, attempt["raw_artifact"], attempt["raw_sha256"])
+            try:
+                starts[attempt["attempt_id"]] = content.decode("utf-8")
+            except UnicodeError:
+                continue
+        return starts
+
     def _reading(self, attempt: dict) -> str | None:
         if attempt["raw_artifact"] is None:
             return None
@@ -529,7 +577,7 @@ class _View:
         blocks = []
         for attempt in page["attempts"]:
             if selected is not None and attempt["attempt_id"] == selected["attempt_id"]:
-                if not selected.get("edition"):
+                if not (selected.get("edition") or selected.get("correction")):
                     continue
             text = self._reading(attempt)
             stage = _STAGE_LABELS.get(attempt["stage"], attempt["stage"])
@@ -570,6 +618,9 @@ class _View:
             ):
                 token = f"use:{attempt['attempt_id']}"
                 choices.append((token, f"{token}: use this reading instead"))
+        starts = self._starts(page)
+        if starts:
+            choices.append(("correct", "correct: the text as I corrected it below"))
         choices += [(token, _DECISION_LABELS[token]) for token in DECISIONS if token != "accept"]
         options = "".join(f'<option value="{_e(v)}">{_e(label)}</option>' for v, label in choices)
         return (
@@ -579,7 +630,28 @@ class _View:
             f'<select id="{row_id}-decision" name="decision" disabled>{options}</select>'
             f'<label for="{row_id}-note">Note (becomes the reason in the receipt)</label>'
             f'<textarea id="{row_id}-note" name="note" rows="2" disabled></textarea>'
+            f"{self._correct(page, starts) if starts else ''}"
             f'<p class="problem" role="alert"></p></form>'
+        )
+
+    def _correct(self, page: dict, starts: dict[str, str]) -> str:
+        row_id = _row_id(page)
+        names = [("", "the selected text")] if "" in starts else []
+        names += [(key, f"attempt {key}") for key in starts if key]
+        options = "".join(f'<option value="{_e(v)}">{_e(label)}</option>' for v, label in names)
+        return (
+            f'<h4 id="{row_id}-correct">Correct the text</h4>'
+            "<p>Edit the text to match the page. What you type is recorded exactly, "
+            "spaces and all; only line endings are made uniform. The reading you start "
+            "from stays in the job as it is.</p>"
+            f'<label for="{row_id}-from">Start from</label>'
+            f'<select id="{row_id}-from" name="from" disabled>{options}</select>'
+            f'<label for="{row_id}-text">Corrected text</label>'
+            f'<textarea id="{row_id}-text" name="text" rows="14" spellcheck="false" '
+            f'dir="auto"{self.lang} disabled></textarea>'
+            '<p class="changes" role="status"></p>'
+            f'<pre class="text marked" dir="auto"{self.lang} '
+            f'aria-label="Your changes to page {page["page_number"]}"></pre>'
         )
 
 
@@ -592,8 +664,9 @@ def _review(page: dict) -> str:
     if review is None:
         return "not reviewed"
     decision = next(item for item in review["decisions"] if item["page_id"] == page["page_id"])
+    corrected = ", text corrected" if "correction" in decision else ""
     return (
-        f"{_label(decision['disposition'])}, by {decision['reviewer']} at "
+        f"{_label(decision['disposition'])}{corrected}, by {decision['reviewer']} at "
         f"{decision['reviewed_at']}: {decision['reason']}"
     )
 
@@ -674,6 +747,10 @@ summary { cursor: pointer; }
 select, textarea { width: 100%; font-size: .95rem; color: inherit; background: var(--paper);
   border: 1px solid var(--muted); padding: .3rem; }
 button { font-size: .95rem; padding: .3rem .7rem; }
+.decision h4 { margin-bottom: .3rem; }
+textarea[name="text"] { tab-size: 4; white-space: pre-wrap; }
+.changes { color: var(--muted); font-size: .9rem; }
+pre.marked:empty { display: none; }
 .problem { color: #b3261e; }
 @media (prefers-color-scheme: dark) { .problem { color: #f2b8b5; } }
 """
@@ -694,8 +771,76 @@ function buildCsv(fields, rows, decisions) {
 }
 """
 
+# Pure functions too: tests run them with node. buildDecisions writes the decisions
+# file review --apply reads; wordDiff marks a correction for the reviewer, while the
+# counts recorded in the receipt are review --apply's own.
+DECISIONS_JS = r"""
+function normalizeLines(text) { return text.replace(/\r\n?/g, "\n"); }
+function buildDecisions(binding, rows, decisions) {
+  var list = [];
+  rows.forEach(function (row) {
+    var chosen = decisions[row.row_id];
+    if (!chosen || !chosen.decision) { return; }
+    var item = {row_id: row.row_id, page_number: row.page_number,
+                decision: chosen.decision, note: chosen.note || ""};
+    if (chosen.decision === "correct") {
+      item.text = chosen.text;
+      if (chosen.from) { item.from = chosen.from; }
+    }
+    list.push(item);
+  });
+  var envelope = {schema_version: "0.1", bindings: JSON.parse(binding).bindings, rows: list};
+  return JSON.stringify(envelope, null, 2) + "\n";
+}
+function wordDiff(before, after) {
+  var old = before.split(/\s+/).filter(function (word) { return word !== ""; });
+  var pieces = after.match(/\s+|\S+/g) || [];
+  var words = [], space = {}, lead = "";
+  pieces.forEach(function (piece) {
+    if (/^\s/.test(piece)) {
+      if (words.length) { space[words.length - 1] = piece; } else { lead = piece; }
+    } else { words.push(piece); }
+  });
+  var n = old.length, m = words.length;
+  if ((n + 1) * (m + 1) > 4000000) { return null; }
+  var width = m + 1, table = new Uint32Array((n + 1) * width);
+  for (var i = n - 1; i >= 0; i--) {
+    for (var j = m - 1; j >= 0; j--) {
+      table[i * width + j] = old[i] === words[j] ? table[(i + 1) * width + j + 1] + 1
+        : Math.max(table[(i + 1) * width + j], table[i * width + j + 1]);
+    }
+  }
+  var parts = lead ? [{kind: "same", text: lead}] : [];
+  var counts = {changed: 0, added: 0, removed: 0}, gone = 0, come = 0;
+  function settle() {
+    var paired = Math.min(gone, come);
+    counts.changed += paired; counts.removed += gone - paired; counts.added += come - paired;
+    gone = 0; come = 0;
+  }
+  i = 0; j = 0;
+  while (i < n || j < m) {
+    if (i < n && j < m && old[i] === words[j]) {
+      settle();
+      parts.push({kind: "same", text: words[j] + (space[j] || "")});
+      i++; j++;
+    } else if (j >= m || (i < n && table[(i + 1) * width + j] >= table[i * width + j + 1])) {
+      parts.push({kind: "del", text: old[i]});
+      parts.push({kind: "same", text: " "});
+      gone++; i++;
+    } else {
+      parts.push({kind: "ins", text: words[j]});
+      parts.push({kind: "same", text: space[j] || ""});
+      come++; j++;
+    }
+  }
+  settle();
+  return {counts: counts, parts: parts};
+}
+"""
+
 _SCRIPT = (
     CSV_JS
+    + DECISIONS_JS
     + """
 (function () {
   var data = JSON.parse(document.getElementById("review-data").textContent);
@@ -721,7 +866,7 @@ _SCRIPT = (
     var count = Object.keys(decisions).length;
     status.textContent = count + " page decision" + (count === 1 ? "" : "s") + " chosen. " +
       (kept ? "This browser keeps them for this job until you choose Forget."
-            : "This browser is not keeping them: download the sheet before you close the page.");
+            : "This browser is not keeping them: download them before you close the page.");
     document.querySelectorAll("td.chosen").forEach(function (cell) {
       var chosen = decisions[cell.getAttribute("data-row")];
       cell.textContent = chosen ? chosen.decision : "";
@@ -737,19 +882,72 @@ _SCRIPT = (
     link.remove();
     setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
   }
+  var resets = [];
+  var own = function (object, key) { return Object.prototype.hasOwnProperty.call(object, key); };
   document.querySelectorAll("form.decision").forEach(function (form) {
     var row = form.getAttribute("data-row");
     var select = form.elements.decision;
     var note = form.elements.note;
+    var area = form.elements.text || null;
+    var from = form.elements.from || null;
+    var changes = form.querySelector(".changes");
+    var marked = form.querySelector(".marked");
     var problem = form.querySelector(".problem");
+    var starts = data.texts[row] || {};
+    var origin = "";
     var chosen = decisions[row];
-    if (chosen && Array.prototype.some.call(select.options, function (option) {
+    var valid = Boolean(chosen) && Array.prototype.some.call(select.options, function (option) {
       return option.value === chosen.decision;
-    })) {
+    });
+    if (valid && chosen.decision === "correct") {
+      valid = area !== null && own(starts, chosen.from || "") && typeof chosen.text === "string";
+    }
+    if (valid) {
       select.value = chosen.decision;
       note.value = chosen.note || "";
     } else if (chosen) {
       delete decisions[row];
+    }
+    function start() { return normalizeLines(starts[origin]); }
+    function edited() {
+      return area !== null && !area.disabled && normalizeLines(area.value) !== start();
+    }
+    function load() {
+      area.value = start();
+      area.disabled = area.value !== start();
+      if (area.disabled) {
+        changes.textContent = "A browser text box cannot hold this reading exactly. " +
+          "Correct it in a text file instead, with correct:FILE in a review sheet.";
+      }
+    }
+    function mark() {
+      while (marked.firstChild) { marked.removeChild(marked.firstChild); }
+      if (area.disabled) { return; }
+      var now = normalizeLines(area.value);
+      if (now === start()) {
+        changes.textContent = "No change from the reading you started from.";
+        return;
+      }
+      var diff = wordDiff(start(), now);
+      if (diff === null) {
+        changes.textContent = "Changed. The page is too long to mark the changes here; " +
+          "review --apply --dry-run counts them.";
+        return;
+      }
+      var counts = diff.counts;
+      changes.textContent = "Changed here: " + counts.changed + " word" +
+        (counts.changed === 1 ? "" : "s") + " changed, " + counts.added + " added, " +
+        counts.removed + " removed. Struck words are the reading's, underlined words yours. " +
+        "review --apply counts the change again and records its own count.";
+      diff.parts.forEach(function (part) {
+        if (part.kind === "same") {
+          marked.appendChild(document.createTextNode(part.text));
+          return;
+        }
+        var element = document.createElement(part.kind);
+        element.textContent = part.text;
+        marked.appendChild(element);
+      });
     }
     function update() {
       if (FORMULA.test(note.value)) {
@@ -758,35 +956,99 @@ _SCRIPT = (
         return;
       }
       problem.textContent = "";
-      if (select.value) {
+      if (select.value === "correct" && !edited()) {
+        problem.textContent = "Edit the text below to record a correction. " +
+          "If the text is right as it is, choose accept.";
+        delete decisions[row];
+      } else if (select.value === "correct") {
+        decisions[row] = {decision: "correct", note: note.value, from: origin, text: area.value};
+      } else if (select.value) {
         decisions[row] = {decision: select.value, note: note.value};
       } else {
         delete decisions[row];
       }
       store();
     }
+    if (area !== null) {
+      origin = valid && chosen.decision === "correct" ? chosen.from || "" : "";
+      from.value = origin;
+      load();
+      if (valid && chosen.decision === "correct" && !area.disabled) { area.value = chosen.text; }
+      mark();
+      area.addEventListener("input", function () {
+        if (edited()) {
+          select.value = "correct";
+        } else if (select.value === "correct") {
+          select.value = "";
+        }
+        mark();
+        update();
+      });
+      from.addEventListener("change", function () {
+        if (edited() && !window.confirm("Replace your corrected text with this reading?")) {
+          from.value = origin;
+          return;
+        }
+        origin = from.value;
+        load();
+        mark();
+        if (select.value === "correct") { select.value = ""; }
+        update();
+      });
+      from.disabled = false;
+    }
     form.addEventListener("submit", function (event) { event.preventDefault(); });
-    select.addEventListener("change", update);
+    select.addEventListener("change", function () {
+      var other = select.value.slice(4);
+      if (area !== null && select.value.indexOf("use:") === 0 && !edited() && own(starts, other)) {
+        origin = other;
+        from.value = other;
+        load();
+        mark();
+      }
+      update();
+    });
     note.addEventListener("input", update);
     select.disabled = false;
     note.disabled = false;
+    resets.push(function () {
+      select.value = "";
+      note.value = "";
+      problem.textContent = "";
+      if (area !== null) {
+        origin = "";
+        from.value = "";
+        load();
+        mark();
+      }
+    });
+  });
+  var downloadProblem = document.getElementById("download-problem");
+  document.getElementById("download-decisions").addEventListener("click", function () {
+    downloadProblem.textContent = "";
+    save("review.json", buildDecisions(data.binding, data.rows, decisions), "application/json");
   });
   document.getElementById("download-sheet").addEventListener("click", function () {
+    if (Object.keys(decisions).some(function (row) { return decisions[row].decision === "correct"; })) {
+      downloadProblem.textContent = "A review sheet cannot carry corrected text. Download " +
+        "review.json instead: it holds every decision, corrections included.";
+      return;
+    }
+    downloadProblem.textContent = "";
     save("review.csv", buildCsv(data.fields, data.rows, decisions), "text/csv;charset=utf-8");
   });
   document.getElementById("download-binding").addEventListener("click", function () {
     save("review.csv.binding.json", data.binding, "application/json");
   });
   document.getElementById("forget").addEventListener("click", function () {
-    if (!window.confirm("Forget every decision chosen in this browser for this job?")) { return; }
+    if (!window.confirm("Forget every decision and correction made in this browser for this job?")) {
+      return;
+    }
     decisions = {};
-    document.querySelectorAll("form.decision").forEach(function (form) {
-      form.elements.decision.value = "";
-      form.elements.note.value = "";
-    });
+    resets.forEach(function (reset) { reset(); });
     store();
   });
-  ["download-sheet", "download-binding", "forget"].forEach(function (id) {
+  ["download-decisions", "download-sheet", "download-binding", "forget"].forEach(function (id) {
     document.getElementById(id).disabled = false;
   });
   show();
