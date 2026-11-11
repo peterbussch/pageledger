@@ -124,7 +124,8 @@ Reviewing and exporting
   "This page has no text to transcribe", "The page cannot be read"), with what
   each records. One download, `review.json`
   ([schema](schemas/review-decisions.schema.json)), carries decisions and
-  corrections, and is recorded only by `review --apply`; the review sheet
+  corrections (a file written by hand may give `page_number` as a number), and
+  is recorded only by `review --apply`; the review sheet
   route is folded under "Working in a spreadsheet instead". Page images of PDFs
   and of image folders are rendered with Poppler; `--images held` renders only
   held pages, and `--images none` needs no Poppler (a view of page images then
