@@ -256,6 +256,7 @@ def _location_warnings(job: dict, root: Path) -> list[dict]:
             }
         )
     recorded = job["source"]["path"]
+    located: Path | None = None
     try:
         located = _check_source(job)
     except ValueError:
@@ -281,8 +282,7 @@ def _location_warnings(job: dict, root: Path) -> list[dict]:
                     "located": str(located),
                 }
             )
-        warnings.extend(snapshot_warnings(job["source"], located))
-    return warnings
+    return warnings + snapshot_warnings(job["source"], located)
 
 
 def _stage_checkpoint(job: dict, root: Path, stage: dict) -> Checkpoint:

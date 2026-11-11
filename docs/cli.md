@@ -413,7 +413,9 @@ report, in whatever directory the job is now. It reports warnings:
 `job_relocated` when the job is not in the directory it was written in,
 `job_changed_elsewhere` for a review or adjudication recorded on such a copy,
 and `source_missing` or `source_relocated` as for a run; other bytes at the
-source's recorded path fail. See
+source's recorded path fail. For a IIIF snapshot it also reports
+`iiif_snapshot_incomplete`, `iiif_record_changed` and `iiif_snapshot_grown` (see
+[durable job and attempts](processing-spec.md#durable-job-and-attempts)). See
 [deposit a job](share-and-cite.md#deposit-a-job).
 
 For a run, it checks that the files in the run directory agree with one another: manifest
@@ -434,7 +436,10 @@ at its place. When the folder has changed, the `source_changed` warning names
 each image that changed, went missing or was added. When the images still
 match, the carrier PDF is rebuilt and compared with its recorded hash; a
 difference is the warning `carrier_not_reproduced`, which means another
-PageLedger version wrote it.
+PageLedger version wrote it. For a IIIF snapshot, `iiif_snapshot_incomplete`
+says the snapshot was incomplete when the run read it, and
+`iiif_record_changed` that its `iiif-fetch.json` differs now while the images
+match.
 
 ## bundle
 

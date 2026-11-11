@@ -2070,7 +2070,8 @@ def _check_external_sources(
         expected = entry.get("sha256")
         kind = entry.get("kind")
         if kind == KIND:
-            _check_external_images(path, entry, warnings)
+            located = _check_external_images(path, entry, warnings)
+            warnings.extend(snapshot_warnings(entry, located))
             continue
         present = path.is_file()
         if present and not isinstance(expected, str):
@@ -2112,8 +2113,11 @@ def _check_external_sources(
 
 def _check_external_images(
     path: Path, entry: dict[str, Any], warnings: list[dict[str, Any]]
-) -> None:
-    """Name each image that changed, went missing, was added or moved; rebuild the carrier."""
+) -> Path | None:
+    """Name each image that changed, went missing, was added or moved; rebuild the carrier.
+
+    Returns where the recorded images are, if anywhere.
+    """
     expected = entry.get("sha256")
     if not path.exists():
         relocated = find_indexed(expected, KIND) if isinstance(expected, str) else None
@@ -2125,9 +2129,9 @@ def _check_external_images(
                 source=str(path),
                 located=str(relocated),
             )
-            return
+            return relocated
         _add(warnings, "source_missing", f"External source is missing: {path}", source=str(path))
-        return
+        return None
     try:
         current = read_image_source(path)
     except (OSError, ValueError, RuntimeError) as exc:
@@ -2137,7 +2141,7 @@ def _check_external_images(
             f"External page images no longer match the manifest: {path}: {exc}",
             source=str(path),
         )
-        return
+        return None
     if current.sha256 != expected:
         relocated = find_indexed(expected, KIND) if isinstance(expected, str) else None
         if relocated is not None:
@@ -2148,7 +2152,7 @@ def _check_external_images(
                 source=str(path),
                 located=str(relocated),
             )
-            return
+            return relocated
         changes = manifest_changes(entry.get("images") or [], current.manifest())
         _add(
             warnings,
@@ -2157,8 +2161,7 @@ def _check_external_images(
             source=str(path),
             changes=changes,
         )
-        return
-    warnings.extend(snapshot_warnings(entry, path))
+        return None
     recorded = entry.get("carrier")
     if (
         isinstance(recorded, dict)
@@ -2172,6 +2175,7 @@ def _check_external_images(
             "the images match, so the PageLedger version that wrote it differs",
             source=str(path),
         )
+    return path
 
 
 def _sha256(path: Path) -> str:

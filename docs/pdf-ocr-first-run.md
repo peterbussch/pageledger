@@ -225,7 +225,8 @@ its file name: if the folder starts at `0081.jpg`, that image is page 1. The
 report, the transcript and the [review view](processing-spec.md#review-beside-the-page-image)
 show both, as `1 (0081.jpg)`, and the review view shows each page's own image.
 A snapshot written by [`fetch-iiif`](iiif.md#process-the-snapshot) is such a
-folder; its fetch record is the one other file it may hold.
+folder; its fetch record, `iiif-fetch.json`, and the `iiif/` folder beside it
+are the only other things it may hold.
 
 ## Document jobs
 

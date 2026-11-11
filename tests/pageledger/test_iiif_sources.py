@@ -176,6 +176,32 @@ def test_fetch_process_verify_and_move_a_snapshot(stub, tmp_path, monkeypatch): 
     assert verify_job(root)["status"] == "fail"
 
 
+def test_an_incomplete_snapshot_is_reported_when_the_folder_is_gone_or_its_record_deleted(
+    stub,  # noqa: F811
+    tmp_path,
+):
+    snap = tmp_path / "snap"
+    fetch(snap, missing_third=True)
+    root = tmp_path / "job"
+    process(source=snap, config_path=config(tmp_path), out_dir=root)
+    run_dir = next((root / "attempts").iterdir())
+
+    away = tmp_path / "elsewhere"
+    snap.rename(away)
+    assert codes(verify_job(root)) == ["source_missing", "iiif_snapshot_incomplete"]
+    assert codes(verify_run(run_dir)) == ["source_missing", "iiif_snapshot_incomplete"]
+    away.rename(snap)
+
+    # Without its record and iiif/ the folder is a plain folder of the same images.
+    (snap / iiif.RECORD_NAME).unlink()
+    shutil.rmtree(snap / iiif.RECORD_DIR)
+    result = verify_job(root)
+    assert result["status"] == "pass"
+    assert codes(result) == ["iiif_snapshot_incomplete", "iiif_record_changed"]
+    assert "is gone" in result["warnings"][1]["message"]
+    assert codes(verify_run(run_dir))[-2:] == ["iiif_snapshot_incomplete", "iiif_record_changed"]
+
+
 def _restore(record: dict) -> bytes:
     """The record as fetch-iiif writes it, so a resume can continue it."""
     return iiif._dump(record)

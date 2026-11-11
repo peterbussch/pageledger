@@ -270,11 +270,12 @@ def manifest_changes(recorded: list[dict[str, Any]], current: list[dict[str, Any
     return changes
 
 
-def snapshot_warnings(source: dict[str, Any], located: Path) -> list[dict[str, Any]]:
+def snapshot_warnings(source: dict[str, Any], located: Path | None) -> list[dict[str, Any]]:
     """What verification says about the IIIF snapshot a source was read from.
 
     ``located`` holds the recorded images, so the fetch record there has already
-    been checked against them; only its own bytes can differ.
+    been checked against them; only its own bytes can differ. Without it only
+    the recorded status can be reported.
     """
     recorded = source.get("iiif")
     if not isinstance(recorded, dict):
@@ -284,6 +285,8 @@ def snapshot_warnings(source: dict[str, Any], located: Path) -> list[dict[str, A
     warnings = []
     if recorded.get("status") == "incomplete":
         warnings.append(_incomplete(source, recorded))
+    if located is None:
+        return warnings
     record = located / RECORD_NAME
     current = hashlib.sha256(record.read_bytes()).hexdigest() if record.is_file() else None
     if current != recorded.get("sha256"):

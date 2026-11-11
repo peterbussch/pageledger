@@ -256,7 +256,8 @@ def jpeg_frame(data: bytes) -> tuple[int, int, int]:
     try:
         frame = jpeg_header(data, "the image")
     except PageLedgerDiagnostic as error:
-        raise ValueError(error.message) from error
+        # The reason only: advice on converting local files does not fit a server's response.
+        raise ValueError(error.message.split(". ")[0]) from error
     if frame["components"] not in {1, 3}:
         raise ValueError("JPEG must have one or three 8-bit components")
     if not frame["scan"]:

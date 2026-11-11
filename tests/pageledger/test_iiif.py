@@ -796,8 +796,9 @@ def test_fetch_keeps_only_jpegs_a_folder_of_page_images_can_read() -> None:
     app1 = b"Exif\x00\x00" + mirrored + b"\x00\x00\x00\x00"
     segment = b"\xff\xe1" + (len(app1) + 2).to_bytes(2, "big") + app1
     image = jpeg(10, 10)
-    with pytest.raises(ValueError, match="mirrored"):
+    with pytest.raises(ValueError, match="mirrored") as refused:
         iiif.jpeg_frame(image[:2] + segment + image[2:])
+    assert "magick" not in str(refused.value)
     sof = b"\xff\xc0\x00\x0b\x08\x00\x0a\x00\x0a\x01\x01\x11\x00"
     with pytest.raises(ValueError, match="more than one frame header"):
         iiif.jpeg_frame(image[:2] + sof + image[2:])
