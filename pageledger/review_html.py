@@ -19,6 +19,7 @@ import re
 import shlex
 import shutil
 import tempfile
+import unicodedata
 from difflib import SequenceMatcher
 from pathlib import Path
 from urllib.parse import quote
@@ -49,8 +50,13 @@ DECISIONS_FILE = "review.json"
 DOCS = f"https://github.com/peterbussch/pageledger/blob/v{__version__}/docs/"
 _RENDER_SIDE = 1600
 _RENDER_TIMEOUT_SECONDS = 120
-# Characters HTML cannot show as themselves; each is drawn as its Unicode control picture.
-_CONTROL = re.compile("[\x00-\x08\x0b-\x1f\x7f]")
+# Characters a reader cannot see: controls and format characters (bidi overrides,
+# zero-width spaces, soft hyphens, tags). Zero-width joiners shape Arabic, Persian
+# and Indic script, so they are left as written. The editor's test is the same.
+_SHOWN_AS_IS = "\t\n\u200c\u200d"
+_INVISIBLE_JS = r"/(?![\t\n\u200c\u200d])[\p{Cc}\p{Cf}]/u"
+# Comparing word by word costs up to the product of the two readings' word counts.
+MAX_DIFF_CELLS = 25_000_000
 _PIECES = re.compile(r"\s+|\S+")
 _NO_POPPLER = (
     "Page images need pdftoppm on PATH; install Poppler, "
@@ -152,21 +158,25 @@ def _write_view(root: Path, out: Path, job: dict, source: Path, written: dict, i
     rendered = 0
     pictures: dict[str, str] = {}
     recorded = job["source"]["images"] if job["source"].get("kind") == KIND else None
-    for page in report["pages"]:
-        if images == "none" or (images == "held" and not needs_person(page, report)):
-            continue
-        name = f"images/{_row_id(page)}.jpg"
-        (out / "images").mkdir(exist_ok=True)
-        drawn = (
-            render_own_image(source, recorded[page["page_number"] - 1], out / name)
-            if recorded is not None
-            else render_page_image(source, page["page_number"], out / name)
-        )
-        if not drawn:
-            (out / "images").rmdir()
-            break
-        pictures[page["page_id"]] = name
-        rendered += 1
+    with tempfile.TemporaryDirectory(prefix="pageledger-review-") as scratch:
+        pdf = source
+        if recorded is None and images != "none" and source.suffix.lower() == ".pdf":
+            pdf = _verified_copy(source, job["source"]["sha256"], Path(scratch) / "source.pdf")
+        for page in report["pages"]:
+            if images == "none" or (images == "held" and not needs_person(page, report)):
+                continue
+            name = f"images/{_row_id(page)}.jpg"
+            (out / "images").mkdir(exist_ok=True)
+            drawn = (
+                render_own_image(source, recorded[page["page_number"] - 1], out / name)
+                if recorded is not None
+                else render_page_image(pdf, page["page_number"], out / name)
+            )
+            if not drawn:
+                (out / "images").rmdir()
+                break
+            pictures[page["page_id"]] = name
+            rendered += 1
     view = _View(root, out, report, source, pictures)
     document = view.render(rows, binding, language=_language(job))
     atomic_bytes(out / "index.html", document.encode("utf-8"))
@@ -178,6 +188,18 @@ def _write_view(root: Path, out: Path, job: dict, source: Path, written: dict, i
         "pages": len(report["pages"]),
         "images": rendered,
     }
+
+
+def _verified_copy(source: Path, sha256: str, target: Path) -> Path:
+    """Copy the source and check the copy is the recorded bytes, so Poppler renders them."""
+    digest = hashlib.sha256()
+    with source.open("rb") as reading, target.open("wb") as writing:
+        for chunk in iter(lambda: reading.read(1024 * 1024), b""):
+            digest.update(chunk)
+            writing.write(chunk)
+    if digest.hexdigest() != sha256:
+        raise ValueError(f"Document job source changed since the job was verified: {source}")
+    return target
 
 
 def decisions_csv(rows: list[dict], decisions: dict[str, dict]) -> bytes:
@@ -203,28 +225,41 @@ def _e(value: object) -> str:
     return html.escape(str(value), quote=True)
 
 
+def _invisible(character: str) -> bool:
+    return unicodedata.category(character) in {"Cc", "Cf"} and character not in _SHOWN_AS_IS
+
+
 def text_html(text: str) -> str:
-    """Escape transcript text; control characters are drawn as visible symbols."""
+    """Escape transcript text; characters a reader cannot see are drawn as marked symbols."""
     parts, last = [], 0
-    for match in _CONTROL.finditer(text):
-        parts.append(_e(text[last : match.start()]))
-        code = ord(match.group())
-        symbol = chr(0x2421 if code == 0x7F else 0x2400 + code)
-        parts.append(f'<span class="ctl" title="U+{code:04X}">{symbol}</span>')
-        last = match.end()
+    for index, character in enumerate(text):
+        if not _invisible(character):
+            continue
+        parts.append(_e(text[last:index]))
+        code = ord(character)
+        if code < 0x20 or code == 0x7F:
+            symbol = chr(0x2421 if code == 0x7F else 0x2400 + code)
+        else:
+            symbol = f"U+{code:04X}"
+        title = f"U+{code:04X} {unicodedata.name(character, '')}".rstrip()
+        parts.append(f'<span class="ctl" title="{_e(title)}">{symbol}</span>')
+        last = index + 1
     parts.append(_e(text[last:]))
     return "".join(parts)
 
 
-def diff_html(selected: str, other: str) -> str:
+def diff_html(selected: str, other: str) -> str | None:
     """The selected text, every character in place, with the other reading's words marked.
 
     Words only the selected reading has are in <del>; the other reading's words
-    are inserted in <ins> after the words they replace.
+    are inserted in <ins> after the words they replace. None when the readings
+    are too long to compare word by word.
     """
     pieces = _PIECES.findall(selected)
     words = [index for index, piece in enumerate(pieces) if not piece.isspace()]
     theirs = [match for match in _PIECES.finditer(other) if not match.group().isspace()]
+    if (len(words) + 1) * (len(theirs) + 1) > MAX_DIFF_CELLS:
+        return None
     matcher = SequenceMatcher(
         None, [pieces[i] for i in words], [m.group() for m in theirs], autojunk=False
     )
@@ -393,7 +428,7 @@ class _View:
         row_id, number = _row_id(page), page["page_number"]
         selected = page["selected_output"]
         path, fragment = page_target(self.report["source"], number)
-        source_link = relative_path(str(self.source), self.out) + path + fragment
+        source_link = (relative_path(str(self.source), self.out) + path, fragment)
         facts = [
             ("State", _e(_state(page))),
             ("Held for", self._holds(page)),
@@ -465,9 +500,9 @@ class _View:
         link = _doc("warnings.md", "document-job-dispositions", "what they mean")
         return "; ".join(items) + f" ({link})"
 
-    def _figure(self, page: dict, source_link: str) -> str:
+    def _figure(self, page: dict, source_link: tuple[str, str]) -> str:
         label = f"Page {page['page_number']}{_image_name(self.report, page)} in the source"
-        links = [f'<a href="{_e(_href(source_link))}">{_e(label)}</a>']
+        links = [f'<a href="{_e(_href(*source_link))}">{_e(label)}</a>']
         for attempt in page["attempts"]:
             evidence = attempt.get("input_evidence")
             if not evidence:
@@ -586,13 +621,20 @@ class _View:
                 blocks.append(f"<p>{_e(summary)}; no text was kept.</p>")
                 continue
             parts = [f"<details><summary>{_e(summary)}</summary>"]
-            if selected is not None and text != selected["text"]:
+            differs = selected is not None and text != selected["text"]
+            diff = diff_html(selected["text"], text) if selected is not None and differs else None
+            if differs and diff is None:
+                parts.append(
+                    "<h4>Compared with the selected text</h4>"
+                    "<p>Not compared word by word: the two readings are too long for this "
+                    "view. Both are shown in full.</p>"
+                )
+            elif differs:
                 parts.append(
                     "<h4>Compared with the selected text</h4>"
                     '<p class="legend">The selected text with <del>its own words struck</del> '
                     "and <ins>this reading's words</ins> after them.</p>"
-                    f'<pre class="text diff" dir="auto"{self.lang}>\n'
-                    f"{diff_html(selected['text'], text)}</pre>"
+                    f'<pre class="text diff" dir="auto"{self.lang}>\n{diff}</pre>'
                 )
             elif selected is not None:
                 parts.append("<p>Identical to the selected text.</p>")
@@ -677,8 +719,8 @@ def _review(page: dict) -> str:
     )
 
 
-def _href(path: str) -> str:
-    return quote(path, safe="/#=")
+def _href(path: str, fragment: str = "") -> str:
+    return quote(path, safe="/") + fragment
 
 
 def _hash(text: str) -> str:
@@ -850,7 +892,10 @@ _SCRIPT = (
     + """
 (function () {
   var data = JSON.parse(document.getElementById("review-data").textContent);
-  var FORMULA = /^[=+@]/;
+  var INVISIBLE = """
+    + _INVISIBLE_JS
+    + """;
+  var FORMULA = /^[=+@\\t\\r]/;
   var status = document.getElementById("storage");
   var decisions = {};
   var kept = true;
@@ -922,9 +967,12 @@ _SCRIPT = (
     }
     function load() {
       area.value = start();
-      area.disabled = area.value !== start();
+      var hidden = INVISIBLE.test(start());
+      area.disabled = hidden || area.value !== start();
       if (area.disabled) {
-        changes.textContent = "A browser text box cannot hold this reading exactly. " +
+        changes.textContent = (hidden
+          ? "This reading holds characters a text box would hide (they are marked in it above). "
+          : "A browser text box cannot hold this reading exactly. ") +
           "Correct it in a text file instead, with correct:FILE in a review sheet.";
       }
     }
@@ -959,8 +1007,8 @@ _SCRIPT = (
     }
     function update() {
       if (FORMULA.test(note.value)) {
-        problem.textContent = "A note cannot start with =, + or @: review --apply refuses it " +
-          "as a spreadsheet formula. This change is not kept.";
+        problem.textContent = "A note cannot start with =, +, @ or a tab: review --apply " +
+          "refuses it as a spreadsheet formula. This change is not kept.";
         return;
       }
       problem.textContent = "";

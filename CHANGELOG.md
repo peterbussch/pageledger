@@ -49,7 +49,9 @@ and, from 1.0, [stability](docs/stability.md).
   spans marked in the text. A reviewer chooses decisions from `review --apply`'s own vocabulary and downloads
   them as the `review.csv` that `review --sheet` writes, bound to the job by the same binding file;
   nothing is recorded until `review --apply` applies it. `--images held` renders only the pages that need a person
-  and `--images none` needs no Poppler. The view is a rendering and writes nothing into the job. See
+  and `--images none` needs no Poppler. The view is a rendering and writes nothing into the job. Characters
+  a reader cannot see (controls, text-direction overrides, zero-width spaces, soft hyphens) are drawn as
+  marked symbols, and a reading holding them is corrected through a file rather than in the page. See
   [review beside the page image](docs/processing-spec.md#review-beside-the-page-image).
 - `pageledger process SOURCE --out DIR` runs without `--config`. The job uses exactly the configuration
   `init` writes for the same options and records it as it would record that file, so
@@ -281,6 +283,8 @@ and, from 1.0, [stability](docs/stability.md).
 
 ### Fixed
 
+- `review --apply` also refuses a review sheet whose note starts with a tab or a carriage return, which a
+  spreadsheet program can read as a formula, as it refuses `=`, `+` and `@`.
 - One timeout of the built-in `vision` adapter no longer halts a document job. 0.8's changelog promised
   that a remote reader's page that times out or meets a network, HTTP or availability error is requested
   once more and, if that fails too, held as `provider_failure` while the job goes on. With `vision` that

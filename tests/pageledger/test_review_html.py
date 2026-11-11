@@ -141,6 +141,56 @@ def test_job_text_is_escaped_and_shown_exactly(job, tmp_path):
     assert html.unescape(re.sub(r"<span class=\"ctl\"[^>]*>␍</span>", "\r", shown)) == HOSTILE
 
 
+@pytest.mark.parametrize(
+    "character",
+    ["‮", "⁦", "‏", "​", "­", "﻿", "\x85", "\U000e0041"],
+    ids=["rlo", "lri", "rlm", "zwsp", "soft-hyphen", "bom", "c1-nel", "tag"],
+)
+def test_characters_a_reader_cannot_see_are_drawn(character):
+    text = f"pay {character}01$ now"
+    shown = text_html(text)
+    code = f"U+{ord(character):04X}"
+    assert character not in shown
+    assert f'<span class="ctl" title="{code}' in shown and f">{code}</span>" in shown
+    restored = re.sub(r'<span class="ctl" title="U\+([0-9A-F]+)[^"]*">[^<]*</span>', "", shown)
+    assert html.unescape(restored) == text.replace(character, "")
+
+
+def test_joiners_that_shape_a_script_are_left_as_written():
+    persian = "می‌خواهم क्‍ष"
+    assert text_html(persian) == persian
+
+
+def test_a_link_to_a_page_image_keeps_a_hash_in_its_name():
+    assert review_html._href("../scans/scan#2.jpg") == "../scans/scan%232.jpg"
+    assert review_html._href("../a b.pdf", "#page=3") == "../a%20b.pdf#page=3"
+    assert review_html._href("javascript:alert(1)").startswith("javascript%3A")
+
+
+def test_readings_too_long_to_compare_are_shown_without_a_diff(job, tmp_path, monkeypatch):
+    assert diff_html("a b c", "a x c") is not None
+    monkeypatch.setattr(review_html, "MAX_DIFF_CELLS", 16)
+    assert diff_html("a b c", "a x c") is not None
+    assert diff_html("a b c d", "a x c d") is None
+    monkeypatch.setattr(review_html, "MAX_DIFF_CELLS", 4)
+    write_review_html(job, tmp_path / "view", images="none")
+    page = (tmp_path / "view" / "index.html").read_text(encoding="utf-8")
+    page = page[page.index('id="p0002"') :]
+    assert "Not compared word by word" in page and "<del>" not in page
+    assert text_html(HOSTILE) in page
+
+
+def test_the_source_rendered_is_a_copy_of_the_verified_bytes(tmp_path):
+    source = tmp_path / "source.pdf"
+    source.write_bytes(b"%PDF-1.4 recorded")
+    recorded = hashlib.sha256(source.read_bytes()).hexdigest()
+    copy = review_html._verified_copy(source, recorded, tmp_path / "copy.pdf")
+    assert copy.read_bytes() == source.read_bytes()
+    source.write_bytes(b"%PDF-1.4 swapped")
+    with pytest.raises(ValueError, match="changed since the job was verified"):
+        review_html._verified_copy(source, recorded, tmp_path / "again.pdf")
+
+
 def test_embedded_rows_and_binding_are_what_review_sheet_writes(job, tmp_path):
     write_review_html(job, tmp_path / "view", images="none")
     data = _embedded((tmp_path / "view" / "index.html").read_text(encoding="utf-8"))
@@ -564,3 +614,38 @@ process.stdout.write(JSON.stringify(report));
     page = read_record(job / "job.json")["pages"][0]
     stored = job / page["review"]["decisions"][0]["correction"]["artifact"]
     assert stored.read_text(encoding="utf-8") == TEXT + "\tadded  "
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
+def test_the_editor_declines_a_reading_with_hidden_characters_and_notes_like_formulas(
+    job, tmp_path
+):
+    write_review_html(job, tmp_path / "view", images="none")
+    document = (tmp_path / "view" / "index.html").read_text(encoding="utf-8")
+    data = _embedded(document)
+    data["texts"]["p0001"] = {"": "pay ‮01$‬ now"}
+    persian = "می‌خواهم"
+    data["texts"]["p0002"] = {key: persian for key in data["texts"]["p0002"]}
+    program = (
+        _STUB_DOM
+        + r"""
+const page = load({});
+const first = page.forms.p0001, second = page.forms.p0002;
+const report = {hidden: first.elements.text.disabled,
+                why: first.querySelector(".changes").textContent,
+                shaped: second.elements.text.disabled, problems: []};
+for (const note of ["=1", "\t=1", "+1", "@x", "-1 word illegible"]) {
+  second.elements.note.value = note;
+  second.elements.note.fire("input");
+  report.problems.push(second.querySelector(".problem").textContent);
+}
+process.stdout.write(JSON.stringify(report));
+"""
+    )
+    report = json.loads(
+        _node(program, {"data": data, "forms": _forms(document), "script": review_html._SCRIPT})
+    )
+    assert report["hidden"] is True and "would hide" in report["why"]
+    assert report["shaped"] is False
+    assert all("spreadsheet formula" in problem for problem in report["problems"][:4])
+    assert report["problems"][4] == ""

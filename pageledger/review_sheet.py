@@ -38,8 +38,9 @@ DECISIONS = {
 # A row of a decisions file, the JSON form of the sheet. `text` is a corrected
 # text and `from` the attempt it starts from, when not the selected text.
 DECISION_FIELDS = frozenset({"row_id", "page_number", "decision", "note", "text", "from"})
-# A cell starting with one of these was a spreadsheet formula.
-_FORMULA_PREFIXES = ("=", "+", "@")
+# A cell starting with one of these can be read as a spreadsheet formula. A dash
+# is allowed: notes such as "-1 word illegible" are ordinary.
+_FORMULA_PREFIXES = ("=", "+", "@", "\t", "\r")
 
 
 def binding_path(sheet: Path) -> Path:

@@ -1171,7 +1171,12 @@ from the same table the report uses), and the other readings, each shown in full
 and compared word by word with the selected text. On a contested page, the open
 spans are marked in the reading they were found in and listed with what each
 engine read. Transcripts are shown exactly, with their line breaks and spacing;
-control characters, which a browser cannot show, appear as symbols such as ␍.
+characters a reader cannot see appear as marked symbols: control characters as
+symbols such as ␍, and format characters (text-direction overrides, zero-width
+spaces, soft hyphens and the like) as their code, such as `U+202E`. Zero-width
+joiners, which shape Arabic, Persian and Indic script, are left as written. Two
+readings whose word counts multiply to more than 25,000,000 (about 5,000 words
+each) are not compared word by word; the view says so and shows both in full.
 
 Under each page a reviewer can choose one of the decisions in the table above
 and add a note, or correct the text. The text box starts from the selected
@@ -1179,7 +1184,13 @@ text, or from another reading chosen under "Start from" (choosing
 `use:ATTEMPT` first starts it from that reading); editing it chooses
 `correct`, and the changes are marked below it, struck words the reading's and
 underlined words the reviewer's. A reading that a browser text box cannot hold
-exactly is not offered for editing; correct it with `correct:FILE`. The
+exactly, or that holds characters a text box would hide, is not offered for
+editing; correct it with `correct:FILE`. A note cannot start with `=`, `+`,
+`@`, a tab or a carriage return, which a spreadsheet program could run as a
+formula: the view says so and `review --apply` refuses such a sheet. A note may
+start with a dash. For a PDF source, the view renders a copy of the source
+checked against its recorded hash, so a file changed while the view is written
+stops the command instead of showing another page. The
 browser keeps the choices and the edited texts for that job, if it allows the
 view to store them, until "Forget decisions in this browser" clears them.
 Nothing is recorded in the job until the downloaded file is applied:

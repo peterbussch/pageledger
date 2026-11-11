@@ -166,6 +166,7 @@ def test_deleted_rows_and_notes_that_start_with_a_dash_are_accepted(job, tmp_pat
         (lambda rows: rows[1].update(row_id="p9999"), "Unknown review row: p9999"),
         (lambda rows: rows[1].update(row_id="p0001"), "Duplicate review row: p0001"),
         (lambda rows: rows[1].update(decision="accept", note="=SUM(A1:A2)"), "formula in note"),
+        (lambda rows: rows[1].update(decision="accept", note="\t=1+1"), "formula in note"),
         (lambda rows: rows[1].update(decision="approve"), "unknown decision 'approve'"),
         (lambda rows: rows[1].update(decision="use:local_ocr:nothing"), "no completed attempt"),
     ],
