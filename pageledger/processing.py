@@ -52,6 +52,7 @@ from .processing_policy import (
 )
 from .processing_source import TEXT, inspect_source, source_kind
 from .replay import _package_code_sha256
+from .review_sheet import _corrected as review_sheet_corrected
 from .review_sheet import read_review_decisions, read_review_sheet, write_review_sheet
 from .source_index import SourceUnavailable, resolve_source
 from .tiling import centres_inside, check_edges, plan_sha256, plan_tiles, project_witness
@@ -1713,6 +1714,8 @@ def review_job(
                     "--reviewer is for review sheets and decisions files; "
                     "a JSON receipt names its reviewers"
                 )
+            else:
+                _keep_corrections(job, review)
         pending = frozenset(item["sha256"] for item in corrected)
 
         def record(target: dict) -> None:
@@ -1756,6 +1759,25 @@ def review_job(
         elif job["status"] == "completed":
             job["next_action"] = _review_next_action(job)
         return {**_publish(job, root), **counts, "warnings": warnings}
+
+
+def _keep_corrections(job: dict, review: Any) -> None:
+    """A plain receipt carries no binding, so it may not replace a person's corrected text."""
+    pages = {page["page_id"]: page for page in job["pages"]}
+    decisions = review.get("decisions") if isinstance(review, dict) else None
+    for decision in decisions if isinstance(decisions, list) else []:
+        page_id = decision.get("page_id") if isinstance(decision, dict) else None
+        page = pages.get(page_id) if isinstance(page_id, str) else None
+        if page is None:
+            # The receipt's own checks name what is wrong with this decision.
+            continue
+        active = review_sheet_corrected(page)
+        if active is not None and decision.get("correction") != active["correction"]:
+            raise ValueError(
+                f"Page {page['page_number']} carries text corrected by {active['reviewer']}; "
+                "a JSON receipt cannot replace it. Decide the page in a review sheet or "
+                "the review view, which show the correction."
+            )
 
 
 # A page a person calls blank whose selected reading has this many words may be

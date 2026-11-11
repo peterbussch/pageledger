@@ -340,6 +340,51 @@ def test_correcting_a_correction_is_recorded_as_a_chain(job, tmp_path):
     assert verify_job(job)["status"] == "pass"
 
 
+def test_a_plain_receipt_cannot_replace_a_correction(job, tmp_path):
+    page = _pages(job)[0]
+    attempt = next(a for a in page["attempts"] if a["attempt_id"] == page["selected_attempt"])
+    decision = {
+        "page_id": page["page_id"],
+        "page_number": 1,
+        "disposition": "reviewed_text",
+        "selected_attempt": attempt["attempt_id"],
+        "output_sha256": attempt["raw_sha256"],
+        "reason": "looks fine",
+        "reviewer": "B. Old",
+        "reviewed_at": "2026-01-01T00:00:00Z",
+    }
+    stale = tmp_path / "stale.json"
+    stale.write_text(
+        json.dumps(
+            {
+                "schema_version": "0.1",
+                "source_sha256": page["source_sha256"],
+                "decisions": [decision],
+            }
+        )
+    )
+    review_job(
+        job,
+        _decisions(job, tmp_path / "view", [_row(1, decision="correct", text=TEXT)]),
+        reviewer="A. Reader",
+    )
+    before = (job / "job.json").read_bytes()
+
+    for dry_run in (True, False):
+        with pytest.raises(ValueError, match="Page 1 carries text corrected by A. Reader"):
+            review_job(job, stale, dry_run=dry_run)
+    assert (job / "job.json").read_bytes() == before
+
+    # A receipt that carries the correction keeps it, and is still accepted.
+    kept = tmp_path / "kept.json"
+    kept.write_text(json.dumps(_pages(job)[0]["review"]))
+    review_job(job, kept)
+    out = tmp_path / "book.txt"
+    export_job(job, out, format="txt")
+    assert TEXT in out.read_text().split("Page 2")[0]
+    assert verify_job(job)["status"] == "pass"
+
+
 def test_a_correction_of_an_edition_starts_from_the_edition(setup, monkeypatch, tmp_path):  # noqa: F811
     page = _adjudicated(setup, monkeypatch, tmp_path)
     edition = (setup[2] / page["edition"]["artifact"]).read_text(encoding="utf-8")

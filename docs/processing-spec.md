@@ -1140,7 +1140,11 @@ from, which usually means another page's text was pasted.
 A page can be corrected again. The new correction starts from the earlier one
 and the report links the correction it revised; both stay in
 `review_history`. Accepting a corrected page keeps its correction; to go back
-to a machine reading, decide `use:ATTEMPT`. A job that was moved or copied
+to a machine reading, decide `use:ATTEMPT`. A plain JSON receipt carries no
+binding, so it cannot show that its author saw the correction: `review --apply`
+refuses one that decides a corrected page unless its decision carries that same
+`correction`. Decide such a page in a review sheet or the review view, which
+show the corrected text. A job that was moved or copied
 accepts corrections where it is now, like other reviews, and records the
 change in `relocations`. `verify` checks every correction's file against its
 hash and refuses a correction that does not start from a recorded text.
