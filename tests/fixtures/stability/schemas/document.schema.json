@@ -614,6 +614,39 @@
             ],
             "type": "object"
           },
+          "hold_causes": {
+            "description": "Report format 0.9: every hold on each of the page's readings and what caused it, as the job's hold policy derived them. Absent when no reading is held.",
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "attempt_id": {
+                  "type": "string"
+                },
+                "cause": {
+                  "description": "The warning or classification code that files the hold; empty_reading (a reading with no text), alignment (the table check); or a hold the policy places itself: layer_outvoted, reader_short, letters_lost.",
+                  "type": "string"
+                },
+                "hold": {
+                  "type": "string"
+                },
+                "most_yat_words": {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "yat_words": {
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "attempt_id",
+                "hold",
+                "cause"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
           "next_action": {
             "minLength": 1,
             "type": "string"
@@ -1200,10 +1233,11 @@
       "type": "array"
     },
     "report_format": {
-      "description": "0.5.1 uses the historical absolute source links; 0.6 uses paths relative to the job directory. Reports without this marker use the 0.5.0 renderer.",
+      "description": "0.5.1 uses the historical absolute source links; 0.6 uses paths relative to the job directory; 0.9 keeps the 0.6 paths, renders report.md for a reader (what happened and what to do first, the record last) and records hold_causes. Reports without this marker use the 0.5.0 renderer.",
       "enum": [
         "0.5.1",
-        "0.6"
+        "0.6",
+        "0.9"
       ]
     },
     "schema_version": {

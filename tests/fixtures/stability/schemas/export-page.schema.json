@@ -153,15 +153,38 @@
         "null"
       ]
     },
+    "review_reasons": {
+      "description": "Since 0.9. The page's hold reasons, as in document.json.",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
     "source_sha256": {
       "pattern": "^[0-9a-f]{64}$",
       "type": "string"
+    },
+    "state": {
+      "description": "Since 0.9. needs_person: the job holds the page (the report's definition); pending: the job has not finished reading it; unreviewed: nothing held it and no person checked it; reviewed: a person recorded a decision.",
+      "enum": [
+        "needs_person",
+        "pending",
+        "unreviewed",
+        "reviewed"
+      ]
     },
     "text": {
       "type": [
         "string",
         "null"
       ]
+    },
+    "warnings": {
+      "description": "Since 0.9. The warning codes on the reading the page's text comes from; empty when no text is exported.",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
     }
   },
   "required": [

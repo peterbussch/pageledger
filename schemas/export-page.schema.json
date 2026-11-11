@@ -25,6 +25,20 @@
       "type": "string",
       "minLength": 1
     },
+    "state": {
+      "enum": ["needs_person", "pending", "unreviewed", "reviewed"],
+      "description": "Since 0.9. needs_person: the job holds the page (the report's definition); pending: the job has not finished reading it; unreviewed: nothing held it and no person checked it; reviewed: a person recorded a decision."
+    },
+    "review_reasons": {
+      "type": "array",
+      "items": {"type": "string"},
+      "description": "Since 0.9. The page's hold reasons, as in document.json."
+    },
+    "warnings": {
+      "type": "array",
+      "items": {"type": "string"},
+      "description": "Since 0.9. The warning codes on the reading the page's text comes from; empty when no text is exported."
+    },
     "attempt": {
       "description": "The attempt whose output is the page's text; null when the page has none.",
       "type": [

@@ -526,7 +526,7 @@ def _status_line(report: dict, job: str) -> str:
         return "Status: finished. Every stage this job is configured to run has run."
     if status == "processing":
         return (
-            "Status: not finished. The job stopped before its stages had run, because it "
+            "Status: not finished. The job stopped before all its stages had run, because it "
             "was interrupted or is still running."
         )
     if status == "paused_budget":
@@ -1008,7 +1008,8 @@ def _render_for_reader(report: dict) -> str:
     if pending:
         lines += ["## Pages not finished", ""]
         for page in pending:
-            read = ", ".join(_stage_label(a["stage"]) for a in page["attempts"]) or "no stage"
+            stages = ", ".join(_stage_label(a["stage"]) for a in page["attempts"])
+            read = f"read so far by {stages}" if stages else "not read by any stage yet"
             waiting = (
                 f"waiting for the {_stage_label(page['next_action'])} stage"
                 if page.get("next_action") in _STAGE_LABELS
@@ -1016,7 +1017,7 @@ def _render_for_reader(report: dict) -> str:
             )
             lines.append(
                 f"- Page {_link(str(page['page_number']) + _image_name(report, page), page['source_link'])}: "
-                f"{waiting}; read so far by {read}."
+                f"{waiting}; {read}."
             )
         lines.append("")
     notes = _notes(report)

@@ -15,13 +15,23 @@ from .document_report import (
     _disposition_label,
     _escape,
     _link,
+    is_pending,
+    needs_person,
     relative_path,
     verify_document_report,
 )
 from .image_source import page_target
 from .processing import verify_job
+from .wording import HOLDS, REVIEWED, warning, warning_code
 
 FORMATS = ("txt", "md", "jsonl", "tei")
+# Where a page stands, in the JSONL `state` and the TEI `@ana` categories.
+STATES = {
+    "needs_person": "The job holds this page for a person; its holds are given in notes.",
+    "pending": "The job has not finished reading this page.",
+    "unreviewed": "Nothing held this page, and no person has checked it.",
+    "reviewed": "A person reviewed this page.",
+}
 TEI = "http://www.tei-c.org/ns/1.0"
 _XML_ID = "{http://www.w3.org/XML/1998/namespace}id"
 # Characters XML 1.0 cannot carry; OCR engines emit some of them.
@@ -84,6 +94,7 @@ def _pages(root: Path, recorded_root: Path, report: dict, reviewed_only: bool) -
                 "output_sha256": chosen["raw_sha256"],
             }
         edition = page.get("edition") if selected is not None else None
+        chosen_warnings = [] if attempt is None else _warnings(page, attempt["attempt_id"])
         correction = (selected or {}).get("correction")
         pages.append(
             {
@@ -108,6 +119,9 @@ def _pages(root: Path, recorded_root: Path, report: dict, reviewed_only: bool) -
                 "page_number": page["page_number"],
                 "page_id": page["page_id"],
                 "disposition": page["disposition"],
+                "state": _state(page, report),
+                "review_reasons": list(page["review_reasons"]),
+                "warnings": chosen_warnings,
                 "attempt": attempt,
                 "text": None if selected is None else selected["text"],
                 "review": None
@@ -116,6 +130,21 @@ def _pages(root: Path, recorded_root: Path, report: dict, reviewed_only: bool) -
             }
         )
     return pages
+
+
+def _state(page: dict, report: dict) -> str:
+    if page.get("review") is not None:
+        return "reviewed"
+    if is_pending(page, report):
+        return "pending"
+    return "needs_person" if needs_person(page, report) else "unreviewed"
+
+
+def _warnings(page: dict, attempt_id: str) -> list[str]:
+    """The warning codes on the reading a page's text comes from."""
+    attempt = next(item for item in page["attempts"] if item["attempt_id"] == attempt_id)
+    codes = (warning_code(item) for item in attempt.get("warnings") or [])
+    return list(dict.fromkeys(code for code in codes if code))
 
 
 def _engine(attempt: dict) -> str:
@@ -212,6 +241,12 @@ def _tei(report: dict, pages: list[dict], source: str) -> str:
         f"{reviewed} of {len(pages)} pages were reviewed by a person; each page division "
         "says which. Control characters, which XML cannot carry, are omitted."
     )
+    taxonomy = ET.SubElement(ET.SubElement(encoding, "classDecl"), "taxonomy")
+    taxonomy.set(_XML_ID, "pageledger-state")
+    for state, meaning in STATES.items():
+        category = ET.SubElement(taxonomy, "category")
+        category.set(_XML_ID, f"pageledger-{state.replace('_', '-')}")
+        ET.SubElement(category, "catDesc").text = meaning
     corrected = [page for page in pages if "correction" in page]
     if corrected:
         revisions = ET.SubElement(header, "revisionDesc")
@@ -233,8 +268,15 @@ def _tei(report: dict, pages: list[dict], source: str) -> str:
         ET.SubElement(body, "pb", n=str(number), facs=facs)
         status = "reviewed" if page["review"] is not None else "unreviewed"
         div = ET.SubElement(body, "div", type="page", subtype=status)
+        div.set("ana", f"#pageledger-{page['state'].replace('_', '-')}")
         if "correction" in page:
             div.set("change", f"#correction-{number}")
+        if page["state"] == "needs_person":
+            for reason in page["review_reasons"] or [page["disposition"]]:
+                note = ET.SubElement(div, "note", type="hold", n=reason)
+                note.text = f"{HOLDS.get(reason) or REVIEWED.get(reason) or reason}."
+        for code in page["warnings"]:
+            ET.SubElement(div, "note", type="warning", n=code).text = warning(code)
         if page["text"] is None:
             ET.SubElement(div, "gap", reason=page["disposition"])
             continue

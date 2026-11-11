@@ -306,7 +306,8 @@
     ],
     "document_report_formats": [
       "0.5.1",
-      "0.6"
+      "0.6",
+      "0.9"
     ],
     "escalation_triggers": [
       "hold",
