@@ -288,6 +288,15 @@ the commands.
   photographed with a phone, read at confidence 0.85 to 0.94 with line ends
   cut and, on one page, the two pages' lines interleaved. A `second_ocr` stage
   has such a reading checked by a second engine. Spreads are not detected.
+- When a scan's earlier OCR layer carries a warning of its own (words run
+  together or split apart, labels without values), a job written by 0.9 holds
+  the page until a second clean reading agrees with the selected one, even when
+  the selected OCR carries no warning. With one OCR engine nothing settles it:
+  three of four sampled pages of an 1877 English book scanned by the Internet
+  Archive were held this way. Compared with their images, the hold was earned
+  on two (the OCR had misread dates or terms the layer had right); the third
+  had three slips in 411 words. Add a `second_ocr` stage, or accept the pages in
+  review; see [hold policy 0.9](processing-spec.md#hold-policy-09).
 - The pre-reform letter rule of [hold policy 0.9](processing-spec.md#hold-policy-09)
   needs a reading that kept ѣ to compare with; a scan read once by a model
   that cannot write ѣ is caught only when it writes a capital Ъ or Ь inside

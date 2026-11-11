@@ -462,6 +462,35 @@ aside once local OCR had read the page. Under 0.9:
   where the layer won because the two good readings carried the warning), the
   OCR is selected and the page held for their disagreement.
 
+**What holding for the layer's warnings costs.** When the inherited layer carries a
+warning of its own and the job has one OCR engine, the page is held although the
+selected reading carries none, and nothing in the job can settle it. In the 2026-11
+re-walk, an 1877 English book scanned by the Internet Archive (a LuraDocument layer
+that runs words together, `joined_text`; Tesseract `eng`) had three of four sampled
+pages held this way. Compared with the page images, the hold was earned on two of
+them: on one the OCR misread six of the page's eight italic words, the terms the
+page explains ("Nazis" for "Kazis"; "Bits", "622", "bzis", "bi" and "bis" for
+"Biis", "bii" and "biis"), on another four dates ("1878" for "1873", "1782" for
+"1732"); the layer had those right. On the third the OCR had three slips in 411 words ("must" for "most") and
+the hold cost a person a look.
+
+The rule is kept because without it three wrong pages of the 74 (two directory pages
+of 1939 whose layer splits its words, and a table spread of 1880 whose layer kept
+only the row labels) go unheld: wrong and not held rises from 8 to 11. A rule that
+lets a damaged layer confirm the OCR by its letters was measured and rejected.
+Letter agreement (both texts NFKC-normalised and case-folded, everything but
+letters and digits removed, so spaces, punctuation and hyphens at line ends do not
+count; difflib's ratio over the characters) was 0.263, 0.890 and 0.938 on the three
+wrong pages and 0.990, 0.992 and 0.969 on the book's pages; the highest, 0.992, is
+the page with the misread terms, so no threshold separates right from wrong.
+Requiring the numbers to agree as well would hold that page only because one of its
+six misreadings happened to be digits. On the 0.8 dogfood's 135 pages the rule
+decides no page: its 10 right pages held under 0.9 are held for other reasons.
+
+What a person can do: add a `second_ocr` stage, so that a second engine's clean
+reading that agrees with the first (60% of words or more) settles the page; or
+accept the selected reading in review after comparing it with the image.
+
 **A typeset layer held only for a few stray characters stays the page's text.**
 A text layer that is not an earlier OCR is the most exact reading a page can
 have. When its only holds come from `foreign_script_characters` or
