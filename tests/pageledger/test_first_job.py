@@ -411,6 +411,28 @@ def test_language_advice_without_a_sure_script_and_for_pre_reform_spelling(
     assert "engine-recipes.md#tesseract-with-the-community-orus-model" in text
 
 
+def test_a_missing_language_leads_with_the_sentence_and_ends_with_its_code(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    def missing(self, sources):
+        raise adapters.PageLedgerDiagnostic("missing_language_pack", "No orus model here.")
+
+    monkeypatch.setattr(adapters.PdfOcrAdapter, "preflight", missing)
+    source = _hello_pdf(tmp_path)
+    argv = ["process", str(source), "--lang", "orus", "--out", str(tmp_path / "j")]
+    assert main(argv) == 1
+    assert capsys.readouterr().err == (
+        "pageledger: error: No orus model here. (missing_language_pack)\n"
+    )
+    # The JSON error object and the exit code are as they were.
+    assert main([*argv, "--json"]) == 1
+    assert json.loads(capsys.readouterr().out) == {
+        "status": "error",
+        "error": "missing_language_pack: No orus model here.",
+        "code": "missing_language_pack",
+    }
+
+
 def test_language_advice_never_fails_the_job(tmp_path: Path, monkeypatch, capsys) -> None:
     from pageledger import language_hint
 

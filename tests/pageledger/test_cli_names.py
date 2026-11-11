@@ -192,10 +192,37 @@ def test_review_with_no_option_writes_the_view_beside_the_job(
     assert code == 0 and (view / "index.html").is_file()
     assert stdout.startswith(f"Review view: {view / 'index.html'} ")
     assert "Open that file in a web browser" in stdout
+    assert "fill in review.csv beside it, as review-decisions.txt there explains." in stdout
+    assert "Blank" not in stdout
 
+    # Asked again, with nothing changed: the view there is the job's.
+    code, stdout, err = _cli(capsys, "review", str(job))
+    assert code == 0 and err == ""
+    assert stdout.splitlines() == [
+        f"The review view in {view} is up to date with the job.",
+        f"Open {view / 'index.html'} in a web browser to see the pages.",
+    ]
+
+    # Accepting a page changes no binding, but the view no longer shows the job.
+    sheet = view / "review.csv"
+    with sheet.open(encoding="utf-8-sig", newline="") as stream:
+        rows = list(csv.DictReader(stream))
+    rows[0]["decision"] = "accept"
+    with sheet.open("w", encoding="utf-8-sig", newline="") as stream:
+        writer = csv.DictWriter(stream, fieldnames=list(rows[0]))
+        writer.writeheader()
+        writer.writerows(rows)
+    assert main(["review", str(job), "--apply", str(sheet), "--reviewer", "A"]) == 0
+    capsys.readouterr()
     code, stdout, err = _cli(capsys, "review", str(job))
     assert code == 1 and stdout == ""
-    assert f"{view} already exists" in err and "--out DIR" in err
+    assert f"{view} shows the job as it was before its last change" in err
+    assert "--out DIR" in err
+
+    # A folder that is not a review view of the job is left alone.
+    (view / "index.html").unlink()
+    code, stdout, err = _cli(capsys, "review", str(job))
+    assert code == 1 and f"{view} already exists" in err and "--out DIR" in err
 
 
 def test_review_of_the_current_folder_writes_beside_it(
@@ -541,7 +568,13 @@ def test_doctor_text_opens_with_the_summary_and_json_is_unchanged(
 ) -> None:
     code, out, _ = _cli(capsys, "doctor")
     assert code == 0 and out.startswith("What process can do on this machine:\n")
-    assert "\n\nDetails:\nPageLedger " in out
+    assert out.endswith(
+        "\n\n`pageledger doctor --all` shows every package, command, language and key.\n"
+    )
+    assert "Details:" not in out and "listed below" not in out
+    code, every, _ = _cli(capsys, "doctor", "--all")
+    assert code == 0 and every.startswith("What process can do on this machine:\n")
+    assert "\n\nDetails:\nPageLedger " in every and "--all" not in every
     code, out, _ = _cli(capsys, "doctor", "--json")
     assert "What process" not in out and json.loads(out)["optional_packages"]
 

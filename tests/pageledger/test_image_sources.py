@@ -1274,3 +1274,17 @@ def test_a_file_name_with_text_direction_controls_is_drawn_marked(stub, tmp_path
     heading = page[page.index('<h2 id="p0002-title">') :]
     heading = heading[: heading.index("</h2>")]
     assert "‮" not in heading and ">U+202E</span>" in heading
+
+
+def test_the_view_does_not_list_the_page_image_s_own_text(scans, stub, tmp_path):
+    from pageledger.review_html import write_review_html
+
+    _job(scans, stub, tmp_path)
+    write_review_html(tmp_path / "job", tmp_path / "view", images="none")
+    page = (tmp_path / "view" / "index.html").read_text(encoding="utf-8")
+    shown = page.split('class="record"', 1)[0] + "".join(
+        part.split("</details>", 1)[-1] for part in page.split('class="record"')[1:]
+    )
+    assert "The page image&#x27;s own text" not in shown
+    # The record keeps it.
+    assert "The page image&#x27;s own text: <code>local_text:" in page

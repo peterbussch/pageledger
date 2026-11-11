@@ -50,6 +50,8 @@ from .wording import warning as warning_words
 IMAGE_CHOICES = ("all", "held", "none")
 SHEET = "review.csv"
 DECISIONS_FILE = "review.json"
+# Stands for the downloaded decisions file in the command the view shows.
+DOWNLOADED = "DOWNLOADED_FILE"
 DOCS = f"https://github.com/peterbussch/pageledger/blob/v{__version__}/docs/"
 _RENDER_SIDE = 1600
 _RENDER_TIMEOUT_SECONDS = 120
@@ -148,6 +150,42 @@ def write_review_html(job_dir: Path, out: Path, *, images: str = "all") -> dict:
         # A half-written folder would only be refused next time.
         shutil.rmtree(out, ignore_errors=True)
         raise
+
+
+def view_state(job_dir: Path, out: Path) -> str:
+    """Whether a folder holds a review view of the job as it is now: "current", "stale"
+    (written for the job before it last changed), or "other" (not a review view of it).
+
+    The view is current when the sheet `review` would write now has the same rows,
+    but for the reviewer's columns and the source's path from the folder, and the
+    same bindings.
+    """
+    out = Path(out).expanduser()
+    sheet, binding = out / SHEET, binding_path(out / SHEET)
+    if not all(path.is_file() for path in (out / "index.html", sheet, binding)):
+        return "other"
+    root = Path(job_dir).expanduser().resolve()
+    with writer_lock(root):
+        job = _load(root)
+        _refresh(job, root, materialize=False)
+    try:
+        written = json.loads(binding.read_text(encoding="utf-8"))
+        ids = {item.get("job_id") for item in written["bindings"].values()}
+    except (OSError, ValueError, KeyError, AttributeError):
+        return "other"
+    if ids != {job["job_id"]}:
+        return "other"
+    with tempfile.TemporaryDirectory(prefix="pageledger-review-") as scratch:
+        fresh = Path(write_review_sheet(job, Path(scratch) / SHEET, root)["out"])
+        same = binding_path(fresh).read_bytes() == binding.read_bytes()
+        same = same and _rows(fresh) == _rows(sheet)
+    return "current" if same else "stale"
+
+
+def _rows(sheet: Path) -> list[dict]:
+    with sheet.open(encoding="utf-8-sig", newline="") as stream:
+        kept = ("source_page", "decision", "note")
+        return [{k: v for k, v in row.items() if k not in kept} for row in csv.DictReader(stream)]
 
 
 def _write_view(root: Path, out: Path, job: dict, source: Path, written: dict, images: str) -> dict:
@@ -358,7 +396,7 @@ class _View:
         needing = sum(needs_person(page, report) for page in report["pages"])
         command = (
             f"pageledger review {shlex.quote(str(self.root))} "
-            f'--apply {shlex.quote(str(self.out / DECISIONS_FILE))} --reviewer "YOUR NAME"'
+            f'--apply {DOWNLOADED} --reviewer "YOUR NAME"'
         )
         body = [
             '<a class="skip" href="#pages">Skip to the page list</a>',
@@ -373,7 +411,10 @@ class _View:
             "<p><strong>Nothing you choose or type here is recorded in the job until the "
             "downloaded file is applied.</strong> Choose a decision under each page, or correct "
             "its text. This browser keeps your choices until you download them as "
-            f"<code>{DECISIONS_FILE}</code>; save that file in this folder and run:</p>",
+            f"<code>{DECISIONS_FILE}</code>. Then run this, with the path of the file your "
+            f"browser downloaded in place of <code>{DOWNLOADED}</code> (browsers save to "
+            "your Downloads folder, and may name the file "
+            f"<code>review (1).json</code>):</p>",
             f'<pre class="command">{_e(command)}</pre>',
             "<p>Add <code>--dry-run</code> to check the file first without recording anything. "
             f"{_doc(HOW_TO, 'review-and-correct', 'How to review and correct')} explains "
@@ -392,7 +433,7 @@ class _View:
             "decision records</em>, or <code>use:</code> with a reading's ID, which each page "
             "lists under "
             "<em>From the record</em>), and apply the sheet with the same command, "
-            f"naming <code>{SHEET}</code>. <code>review-decisions.txt</code> beside it lists "
+            f"naming <code>{SHEET}</code> in this folder. <code>review-decisions.txt</code> beside it lists "
             "the decisions. A sheet cannot carry corrected text in a cell: save the text in a "
             "file beside the sheet and write <code>correct:</code> and its name. Keep "
             f"<code>{SHEET}.binding.json</code> beside the sheet: it ties each row to the "
@@ -448,7 +489,7 @@ class _View:
             f"{_e(sentence(self._name(attempt)))}: "
             + " ".join(_e(warning_words(code)) for code in _codes(attempt))
             for attempt in page["attempts"]
-            if _codes(attempt)
+            if _codes(attempt) and not _imageless(attempt)
         ]
         if warnings:
             facts.append(("Warnings", "<br>".join(warnings)))
@@ -646,6 +687,8 @@ class _View:
             if selected is not None and attempt["attempt_id"] == selected["attempt_id"]:
                 if not (selected.get("edition") or selected.get("correction")):
                     continue
+            if _imageless(attempt):
+                continue
             text = self._reading(attempt)
             summary = sentence(self._name(attempt))
             if attempt["outcome"] != "completed":
@@ -760,6 +803,11 @@ def _usable(attempt: dict) -> bool:
         and attempt["raw_artifact"] is not None
         and not empty_reading(attempt)
     )
+
+
+def _imageless(attempt: dict) -> bool:
+    """A page image's own text, which is always empty: the record lists it, the page does not."""
+    return "no_text_layer" in _codes(attempt) and empty_reading(attempt)
 
 
 def _why(page: dict, report: dict, *, every: bool = False) -> str:

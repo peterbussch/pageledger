@@ -180,6 +180,11 @@
     "doctor": {
       "exclusive": [],
       "options": {
+        "--all": {
+          "choices": null,
+          "required": false,
+          "takes_value": false
+        },
         "--config": {
           "choices": null,
           "required": false,

@@ -780,6 +780,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="Also report the environment variables this config's adapters name by env_key",
     )
     doctor_parser.add_argument(
+        "--all",
+        action="store_true",
+        dest="show_all",
+        help="Print every package, command, language and key checked, after the summary",
+    )
+    doctor_parser.add_argument(
         "--json", action="store_true", dest="json_output", help="Print the result as JSON"
     )
 
@@ -1024,7 +1030,11 @@ def main(argv: list[str] | None = None) -> int:
             if isinstance(code, str) and code:
                 result["code"] = code
             print(json.dumps(result, ensure_ascii=False))
-        print(f"pageledger: error: {exc}", file=sys.stderr)
+        message = str(exc)
+        if args.command == "process" and isinstance(exc, PageLedgerDiagnostic):
+            # The sentence first; the code, for looking up, last.
+            message = f"{message.removeprefix(exc.code + ': ')} ({exc.code})"
+        print(f"pageledger: error: {message}", file=sys.stderr)
         return 1
 
 
@@ -1956,13 +1966,27 @@ def _cmd_review(args: argparse.Namespace) -> int:
     if args.sheet is not None:
         args.command, args.out = "review-sheet", args.sheet
         return _cmd_job(args)
-    from .review_html import write_review_html
+    from .review_html import view_state, write_review_html
 
     out = args.out
     if out is None:
         job = args.job_dir if args.job_dir.name not in {"", ".."} else args.job_dir.resolve()
         out = job.with_name(f"{job.name}-review")
         if out.exists() or out.is_symlink():
+            state = "other" if out.is_symlink() else view_state(args.job_dir, out)
+            if state == "current":
+                page = out / "index.html"
+                if args.json_output:
+                    print(json.dumps({"status": "current", "out": str(page)}, sort_keys=True))
+                else:
+                    print(f"The review view in {out} is up to date with the job.")
+                    print(f"Open {page} in a web browser to see the pages.")
+                return 0
+            if state == "stale":
+                raise ValueError(
+                    f"{out} shows the job as it was before its last change. Write the view "
+                    f"of the job as it is now elsewhere with --out DIR, or remove {out} first."
+                )
             raise ValueError(
                 f"{out} already exists, perhaps from an earlier review. Open its index.html, "
                 "or write a new review view elsewhere with --out DIR."
@@ -1972,8 +1996,11 @@ def _cmd_review(args: argparse.Namespace) -> int:
         print(json.dumps(result, ensure_ascii=False, sort_keys=True))
     else:
         print(f"Review view: {result['out']} ({result['pages']} pages, {result['images']} images)")
-        print("Open that file in a web browser to see the pages and record your decisions.")
-        print(f"Blank review sheet: {result['sheet']}")
+        print(
+            "Open that file in a web browser to see the pages and record your decisions; "
+            f"to use a spreadsheet instead, fill in {Path(result['sheet']).name} beside it, "
+            "as review-decisions.txt there explains."
+        )
     return 0
 
 
@@ -2049,7 +2076,7 @@ def _print_persisted_budget_alerts(out_dir: Path) -> None:
 _COMMON_LANGUAGES = ("eng", "rus", "ukr", "bel", "pol", "deu", "fra", "ita", "spa", "lat", "heb")
 
 
-def _doctor_summary(report: dict) -> list[str]:
+def _doctor_summary(report: dict, *, details: bool = True) -> list[str]:
     """What `process` can do on this machine, in the few lines a person acts on."""
     packages, commands = report["optional_packages"], report["external_commands"]
     tesseract, pdftoppm = commands["tesseract"], commands["pdftoppm"]
@@ -2073,7 +2100,11 @@ def _doctor_summary(report: dict) -> list[str]:
             lines.append(
                 f"  Languages for --lang ({len(installed)} installed): "
                 + ", ".join(common)
-                + (", and more, listed below." if len(installed) > len(common) else ".")
+                + (
+                    (", and more, listed below." if details else ", and more.")
+                    if len(installed) > len(common)
+                    else "."
+                )
             )
     else:
         lines.append(
@@ -2102,7 +2133,12 @@ def _cmd_doctor(args: argparse.Namespace) -> int:
     if args.json_output:
         print(json.dumps(report, ensure_ascii=False, sort_keys=True))
     else:
-        print("\n".join(_doctor_summary(report)) + "\n\nDetails:")
+        details = args.show_all or args.config is not None
+        print("\n".join(_doctor_summary(report, details=details)))
+        if not details:
+            print("\n`pageledger doctor --all` shows every package, command, language and key.")
+            return 0
+        print("\nDetails:")
         print(f"PageLedger {report['pageledger_version']}")
         print(f"Python: {report['python']['executable']}")
         for name, info in report["optional_packages"].items():

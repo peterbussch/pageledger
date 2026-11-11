@@ -1120,7 +1120,11 @@ def _cause_record(report: dict, page: dict, item: dict) -> str:
 def _page_record(report: dict, page: dict) -> list[str]:
     """One page's record: its state, then one line for each hold's cause, reading,
     selected text and comparison, so that no line runs on."""
-    line = f"- Page {_escape(str(page['page_number']) + _image_name(report, page))}: "
+    number = _escape(str(page["page_number"]) + _image_name(report, page))
+    if report["source"].get("kind") == "page_images":
+        # Each page is a file of its own, which the source's one link does not reach.
+        number = _link(str(page["page_number"]) + _image_name(report, page), page["source_link"])
+    line = f"- Page {number}: "
     line += f"`{page['disposition']}`"
     if page.get("review_reasons"):
         line += "; held for " + ", ".join(f"`{reason}`" for reason in page["review_reasons"])
