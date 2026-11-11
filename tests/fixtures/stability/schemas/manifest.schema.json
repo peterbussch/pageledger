@@ -1,4 +1,39 @@
 {
+  "$defs": {
+    "page_image": {
+      "additionalProperties": false,
+      "properties": {
+        "bytes": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "height": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "name": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "width": {
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "name",
+        "sha256",
+        "bytes",
+        "width",
+        "height"
+      ],
+      "type": "object"
+    }
+  },
   "$id": "https://github.com/peterbussch/pageledger/schemas/manifest.json",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
@@ -378,6 +413,44 @@
       "items": {
         "additionalProperties": false,
         "properties": {
+          "carrier": {
+            "additionalProperties": false,
+            "description": "The PDF PageLedger derived from the page images for the engines to render. Never the custody record.",
+            "properties": {
+              "derived": {
+                "const": true
+              },
+              "pages": {
+                "description": "The pages whose images the carrier holds; every other page is an empty page of the same size.",
+                "items": {
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                "type": "array"
+              },
+              "sha256": {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              }
+            },
+            "required": [
+              "sha256",
+              "derived",
+              "pages"
+            ],
+            "type": "object"
+          },
+          "images": {
+            "description": "The canonical page manifest: one entry per page, in page order. Its hash is sha256.",
+            "items": {
+              "$ref": "#/$defs/page_image"
+            },
+            "type": "array"
+          },
+          "kind": {
+            "const": "page_images",
+            "description": "Present when the source is an image file or a folder of page images."
+          },
           "page_count": {
             "minimum": 1,
             "type": "integer"
@@ -390,7 +463,7 @@
             "type": "string"
           },
           "sha256": {
-            "description": "SHA-256 hex digest of the source file.",
+            "description": "SHA-256 hex digest of the source file; for page images, of the canonical page manifest.",
             "type": "string"
           }
         },

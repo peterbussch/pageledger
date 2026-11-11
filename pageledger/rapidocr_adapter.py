@@ -189,11 +189,8 @@ class RapidOCRAdapter:
                 }
             )
         content = assemble(lines, reading_order=self.reading_order)
-        warnings = (
-            ["multi_column_rows"]
-            if self.reading_order == "rows" and _multi_column_rows(lines)
-            else []
-        )
+        if self.reading_order == "rows" and _multi_column_rows(lines):
+            warnings = [*warnings, "multi_column_rows"]
         scores = [line["score"] * 100 for line in lines]
         detail = (
             None

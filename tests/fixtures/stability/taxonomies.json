@@ -290,12 +290,14 @@
     ],
     "diagnostic_codes": [
       "engine_timeout",
+      "malformed_image",
       "malformed_pdf",
       "missing_binary",
       "missing_crypto_dependency",
       "missing_language_pack",
       "render_limit",
-      "unsupported_encryption"
+      "unsupported_encryption",
+      "unsupported_image"
     ],
     "document_report_formats": [
       "0.5.1",
@@ -396,6 +398,7 @@
       "mixed_script_tokens",
       "model_commentary",
       "multi_column_rows",
+      "no_text_layer",
       "numeric_column_conflict",
       "numeric_disagreement",
       "ocr_text_layer",
@@ -404,6 +407,7 @@
       "partial_transcription",
       "private_use_characters",
       "render_dpi_capped",
+      "render_upsampled",
       "repeated_page_text",
       "repetition_loop",
       "replacement_characters",

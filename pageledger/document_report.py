@@ -35,7 +35,7 @@ _STAGE_LABELS = {
 }
 
 # Warnings that hold nothing and would otherwise go unseen in the report.
-_NOTED_WARNINGS = ("multi_column_rows",)
+_NOTED_WARNINGS = ("multi_column_rows", "render_upsampled")
 
 
 def _stage_accounting(job: dict, pages: list[dict]) -> list[dict]:

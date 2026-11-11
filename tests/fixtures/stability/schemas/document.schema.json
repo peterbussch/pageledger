@@ -873,6 +873,10 @@
               }
             ]
           },
+          "source_image_sha256": {
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          },
           "source_link": {
             "minLength": 1,
             "type": "string"
@@ -998,6 +1002,45 @@
             "count"
           ],
           "type": "object"
+        },
+        "images": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "bytes": {
+                "minimum": 1,
+                "type": "integer"
+              },
+              "height": {
+                "minimum": 1,
+                "type": "integer"
+              },
+              "name": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "sha256": {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              "width": {
+                "minimum": 1,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "name",
+              "sha256",
+              "bytes",
+              "width",
+              "height"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "kind": {
+          "const": "page_images"
         },
         "page_count": {
           "minimum": 0,

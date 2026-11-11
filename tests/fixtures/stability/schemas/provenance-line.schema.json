@@ -208,6 +208,94 @@
     "source": {
       "additionalProperties": false,
       "properties": {
+        "image": {
+          "additionalProperties": false,
+          "description": "The page's own image, for a source of page images. The first five fields equal the manifest's entry for this page.",
+          "properties": {
+            "bytes": {
+              "minimum": 1,
+              "type": "integer"
+            },
+            "height": {
+              "minimum": 1,
+              "type": "integer"
+            },
+            "media_type": {
+              "enum": [
+                "image/jpeg",
+                "image/png"
+              ]
+            },
+            "name": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "ppi": {
+              "items": {
+                "exclusiveMinimum": 0,
+                "type": "number"
+              },
+              "maxItems": 2,
+              "minItems": 2,
+              "type": "array"
+            },
+            "ppi_basis": {
+              "enum": [
+                "jfif",
+                "exif",
+                "png_phys",
+                "default"
+              ]
+            },
+            "rotation": {
+              "enum": [
+                0,
+                90,
+                180,
+                270
+              ]
+            },
+            "sha256": {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            "width": {
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "name",
+            "sha256",
+            "bytes",
+            "width",
+            "height",
+            "media_type",
+            "ppi",
+            "ppi_basis",
+            "rotation"
+          ],
+          "type": "object"
+        },
+        "native_pixels": {
+          "additionalProperties": false,
+          "description": "Pixel size of the image that is the page, when known: a page image, or a scanned PDF page's image.",
+          "properties": {
+            "height": {
+              "minimum": 1,
+              "type": "integer"
+            },
+            "width": {
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "width",
+            "height"
+          ],
+          "type": "object"
+        },
         "page_number": {
           "minimum": 1,
           "type": "integer"
