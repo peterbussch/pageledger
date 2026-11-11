@@ -897,7 +897,7 @@ def _refresh(job: dict, root: Path, *, materialize: bool = True) -> None:
                 reader_coverage=ladder_policy,
                 ocr_layer_climbs=ladder_policy,
                 corroborate=ladder_policy,
-                witnesses=job.get("hold_policy") == processing_policy.HOLD_POLICY,
+                witnesses=job.get("hold_policy") in processing_policy.WITNESS_POLICIES,
                 configured=tuple(n for n in ladder(job["policy"]) if job["policy"][n] is not None),
                 escalate_on=escalate_on,
                 roughness=roughness_of,

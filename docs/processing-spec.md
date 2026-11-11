@@ -408,20 +408,24 @@ policy rule: any job, plain runs included, gets the warning from 0.9 on. Layers
 from ABBYY FineReader 11 and ABBYY Recognition Server (an 1859 gazetteer, a 1788
 geographic dictionary), LuraDocument (an 1847 address calendar, an 1880
 gazetteer) and Ghostscript's invisible text (a 1939 directory) were read as
-typeset text and never sent to OCR. A born-digital page with a background
-picture under visible text raises none of the signals; nor does an OCR-converted
+typeset text: a page went to OCR only when the layer carried a warning of its own.
+A born-digital page with a background picture under visible text raises none of
+the signals unless its Producer names OCR software; nor does an OCR-converted
 book re-typeset in ordinary fonts with no scan behind it.
 
 **The layer and the job's own OCR are two witnesses.** Under 0.8 the layer was set
 aside once local OCR had read the page. Under 0.9:
 
 - The job's own reading is still preferred when both are clean, but the layer is
-  compared with it: a clean layer that agrees on under 60% of words, or reads a
-  number differently, holds the page (`engine_disagreement`,
-  `numeric_disagreement`), unless another of our engines' clean readings agrees
-  with the selected one: two engines that agree outvote the layer. Its objection
-  holds the page for a person but is not a `disagreement` trigger, so it never
-  buys a paid reading.
+  compared with it: a clean layer that agrees on under 60% of words holds the
+  page (`engine_disagreement`), unless another of our engines' clean readings
+  agrees with the selected one: two engines that agree outvote the layer. Its
+  objection holds the page for a person but is not a `disagreement` trigger, so
+  it never buys a paid reading. The layer's numbers are not compared: rebuilt
+  under 0.9 with them, all 14 pages of a 1914 book in the 0.8 dogfood, where the
+  Internet Archive layer agreed with the OCR, were held because the layer read
+  a number differently somewhere on each, including the four with reference
+  transcriptions, which the OCR had read with under 4% error.
 - When our readings are held and the layer is not, the layer is selected.
 - The layer's own warnings hold the page until another clean reading agrees with
   the selected one. A layer that failed on the page says the page is hard to read,
@@ -502,6 +506,14 @@ confidence 0.85 to 0.94 with line ends cut and, on one page, the two pages'
 lines interleaved), and three pages of a book re-typeset from OCR in ordinary
 fonts, with a few slips per page. A `second_ocr` stage sends a page of the first
 kind to another engine; nothing in 0.9 recognises the second kind.
+
+The rules were also checked against the 0.8 dogfood's jobs (10 documents, 135
+pages, 40 of them with reference transcriptions, read with Indra, Tesseract,
+dots.ocr and a paid model), rebuilt under 0.9 from their retained readings. That
+evidence has right OCR pages, which this sample lacks: the 5 right pages that
+passed under 0.8 still pass, no page held under 0.8 is released, and 105 pages
+are held under either policy. Those jobs were not read again, so the new layer
+detector is not part of that check.
 
 The reading warnings and the detector were also run on three random pages each of
 80 PDFs from the same research library: after two fixes (a stressed textbook word

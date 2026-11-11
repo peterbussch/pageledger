@@ -549,7 +549,7 @@ Adapters should return `ExtractionResult` instances with:
 | `model` | string or null | Model or OCR engine identifier. |
 | `warnings` | array | Non-fatal quality issues (empty list if none). Preserved in provenance and copied into `quality.jsonl`, so they affect grades and audit routing. |
 | `usage` | object | **`pages` must be 1**; `tokens`, `compute_seconds`, `cost_usd` optional/nullable. |
-| `confidence_detail` | object or null | Optional engine-native confidence data, adapter-defined shape; recorded into `quality.jsonl` verbatim. `pdf_ocr` fills Tesseract per-word statistics (`scale`, `word_count`, `mean`, `min`, `below_60_count`, `below_60_ratio`). |
+| `confidence_detail` | object or null | Optional engine-native confidence data, adapter-defined shape; recorded into `quality.jsonl` verbatim. `pdf_ocr` fills Tesseract per-word statistics (`scale`, `word_count`, `mean`, `min`, `below_60_count`, `below_60_ratio`); `pdf_text` records why it judged a layer an earlier OCR (`ocr_text_layer`: the signals that fired, and the producer when it is one). |
 | `input_evidence` | object or null | Optional exact page image descriptor; shape, file containment, hashes and dimensions follow [the image evidence contract](image-evidence-spec.md). |
 | `layout` | object or null | Optional boxes of the page's lines or words on a 1,000,000-step grid (see above); hashed into provenance as `layout_sha256`. |
 

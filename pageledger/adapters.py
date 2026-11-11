@@ -1125,10 +1125,12 @@ def _pdf_page_reading(source: Path, page_number: int) -> tuple[str, dict | None]
 
 
 def _ocr_producer(reader: Any) -> str | None:
+    from pypdf.errors import PyPdfError
+
     try:
         meta = reader.metadata or {}
         names = [str(meta.get(key) or "").strip() for key in ("/Producer", "/Creator")]
-    except (AttributeError, KeyError, TypeError, ValueError):
+    except (PyPdfError, AttributeError, KeyError, TypeError, ValueError):
         return None
     return next((name for name in names if _OCR_PRODUCERS.search(name)), None)
 
@@ -1140,6 +1142,7 @@ def _text_and_scan(page: Any) -> dict[str, bool]:
     scan when, as placed, it covers the page; it hides text when it is opaque (no soft
     mask, mask or stencil) and painted after that text.
     """
+    from pypdf.errors import PyPdfError
     from pypdf.generic import ContentStream
 
     width, height = float(page.cropbox.width), float(page.cropbox.height)
@@ -1195,7 +1198,16 @@ def _text_and_scan(page: Any) -> dict[str, bool]:
         contents = page.get_contents()
         if contents is not None:
             walk(contents, page.get("/Resources"), [1, 0, 0, 1, 0, 0], 0, 0)
-    except (AttributeError, KeyError, TypeError, ValueError, IndexError):
+    except (
+        PyPdfError,
+        RecursionError,
+        AttributeError,
+        KeyError,
+        TypeError,
+        ValueError,
+        IndexError,
+    ):
+        # A drawing the walk cannot follow gives no signal; the page's text is still read.
         return {"scan": False, "invisible": False, "under_image": False}
     total = shown["all"]
     return {

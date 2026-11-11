@@ -152,8 +152,8 @@ and, from 1.0, [stability](docs/stability.md).
   [Read dense pages in tiles](docs/processing-spec.md#read-dense-pages-in-tiles).
 - Hold policy `0.9`, recorded by new jobs (jobs written under `0.6`, `0.6.1` and `0.8` rebuild and verify
   as before). An inherited OCR layer and the job's own OCR are two witnesses: the layer is compared with
-  our reading instead of set aside, its disagreement holds the page for a person without buying a paid
-  reading, it is selected when our readings are held and it is not, and its own warnings hold the page
+  our reading instead of set aside, its disagreement on words (not numbers) holds the page for a person
+  without buying a paid reading, two of our engines that agree outvote it, it is selected when our readings are held and it is not, and its own warnings hold the page
   until another clean reading confirms the selected one. `suspicious_embedded_text_delta` measured against
   an inherited OCR layer holds neither reading. A literal reading with under a quarter of the ѣ-words
   another literal reading of the page kept (ten or more) is held: stock Tesseract `rus` cannot write ѣ.

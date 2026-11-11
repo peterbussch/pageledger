@@ -15,7 +15,7 @@ from .image_source import page_target
 from .processing_policy import (
     _DISAGREEMENTS,
     ENGINE_AGREEMENT_THRESHOLD,
-    HOLD_POLICY,
+    WITNESS_POLICIES,
     _attempt_holds,
     selected_clean_comparisons,
     validate_review,
@@ -487,7 +487,7 @@ def render_document_report(report: dict) -> str:
     ]
     pages, holds = report["pages"], warning_holds(report)
     # Under hold policy 0.9 an inherited OCR layer is a witness, and its comparison is shown.
-    witness = report.get("hold_policy") == HOLD_POLICY
+    witness = report.get("hold_policy") in WITNESS_POLICIES
     if format_06:
         pages = sorted(pages, key=lambda page: (not _needs_person(page), page["page_number"]))
     for page in pages:

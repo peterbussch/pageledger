@@ -47,7 +47,7 @@
     "manifest.schema.json": "63928de985836fba0b224df3754c69b61e681d9f7433de6d645dc94b2d40502a",
     "normalized-page.schema.json": "7d0a89882a2347c86e1c03b1a7d4a27015bcf5aac91db408f0d75c7d9c6d9483",
     "provenance-line.schema.json": "46e9eece23e845ca2cecd04d470dcdb1bde42bebf9eedcfc09b50ffc6e18a0c8",
-    "quality-line.schema.json": "c02cc73b99fe174a122c6dcf2ec09223d6b17957e6fb8ec9a664cfc50016ef80",
+    "quality-line.schema.json": "10e00f5f595a0d5ea0d2458e942bbeb143f0719bd6092c36decbcc8b67412dfd",
     "run-log-line.schema.json": "8eb64137d57f4736ad54ad898103d3c6abbaa951d2c2f2bc22028d864bc56113"
   },
   "temp_output_cap_bytes": 2147483648,

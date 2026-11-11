@@ -196,6 +196,24 @@ def test_a_born_digital_page_is_not_an_ocr_layer(tmp_path, content, image):
     assert read.warnings == [] and read.confidence_detail is None
 
 
+def test_a_drawing_the_detector_cannot_follow_gives_no_signal_and_the_text_is_read(
+    tmp_path, monkeypatch
+):
+    pytest.importorskip("pypdf")
+    import pypdf.generic
+    from pypdf.errors import PdfReadError
+
+    path = _pdf(tmp_path / "lura.pdf", SCAN + b" 3 Tr " + TEXT, image={})
+
+    def broken(*args, **kwargs):
+        raise PdfReadError("Unexpected end of stream")
+
+    monkeypatch.setattr(pypdf.generic, "ContentStream", broken)
+    text, evidence = _pdf_page_reading(path, 1)
+    assert "Hello PageLedger" in text
+    assert evidence is None
+
+
 # ---------------------------------------------------------------------------
 # Readings with broken words, impossible capitals, or labels without values
 # ---------------------------------------------------------------------------
@@ -210,6 +228,10 @@ def test_a_layer_that_splits_off_the_last_letter_of_words_is_flagged():
     # A textbook marks stress with a combining accent, which does not split the word.
     stressed = " ".join(["е́хать я е́ду ты е́дешь он е́дет мы е́дем"] * 10)
     assert "split_words" not in _misread_warnings(stressed)
+    # Ukrainian and Belarusian have one-letter words Russian lacks.
+    ukrainian = " ".join(["Він і вона й діти з міста пішли у школу"] * 10)
+    belarusian = " ".join(["Ён і яна з дзецьмі пайшлі ў школу а потым"] * 10)
+    assert _misread_warnings(ukrainian) == [] and _misread_warnings(belarusian) == []
 
 
 def test_a_capital_hard_sign_inside_a_lower_case_word_is_flagged():
@@ -283,7 +305,9 @@ def test_a_layer_that_disagrees_holds_the_page_but_buys_no_reader():
         page, ocr_layer_climbs=True, witnesses=True, escalate_on=("hold", "disagreement")
     )
     assert result["selected_attempt"] == "a2"
-    assert {"engine_disagreement", "numeric_disagreement"} <= set(result["review_reasons"])
+    assert "engine_disagreement" in result["review_reasons"]
+    # The layer's numbers are not compared: it misread one on every right Internet Archive page.
+    assert "numeric_disagreement" not in result["review_reasons"]
     assert result["next_action"] == "review"
     # Under 0.8 the layer was set aside and the page passed unread by anyone else.
     before = assess_page(page, ocr_layer_climbs=True, escalate_on=("hold", "disagreement"))

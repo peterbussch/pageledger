@@ -109,7 +109,9 @@ HOLD_POLICY = "0.9"
 HOLD_POLICIES = frozenset({"0.6", "0.6.1", "0.8", HOLD_POLICY})
 BLANK_REFUTING_POLICIES = frozenset({"0.6.1", "0.8", HOLD_POLICY})
 # Policies that outvote a layer, hold short readers, reread OCR layers and corroborate.
-LADDER_POLICIES = frozenset({"0.8", HOLD_POLICY})
+LADDER_POLICIES = frozenset({"0.8", "0.9"})
+# Policies that keep an inherited OCR layer as a witness (the 0.9 rules).
+WITNESS_POLICIES = frozenset({"0.9"})
 _DELTA = "suspicious_embedded_text_delta"
 # A reader with fewer words than this share of the literal reading left text out.
 # Below the floor of literal words a page says too little to judge.
@@ -582,7 +584,11 @@ def assess_page(
         and not climbing
         and not _corroborated(page, selected["attempt_id"], holds_by_id)
     )
-    if any(item["number_differences"] for item in selected_comparisons):
+    # A layer's numbers are not compared: on 14 Internet Archive pages read right by our
+    # OCR (0.8 dogfood), the layer misread a number on every one.
+    if any(
+        item["number_differences"] for item in (climbing if witnesses else selected_comparisons)
+    ):
         reasons.append("numeric_disagreement")
     if witnesses and selected is not None:
         held_by_layer = _layer_holds(page, selected["attempt_id"], holds_by_id, set_aside)

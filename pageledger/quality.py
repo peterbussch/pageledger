@@ -507,12 +507,13 @@ def _text_quality_warnings(metrics: dict[str, Any]) -> list[str]:
     return warnings
 
 
-# Russian words of one letter; any other lone Cyrillic letter not closed by a full
-# stop (an abbreviation) is a piece of a broken word. The 2026-11 dogfood's split-word
-# layer ("Сырны й комбина т") had 14-19% such tokens; its 12 correct pages had at most 0.7%.
-_ONE_LETTER_WORDS = frozenset("абвжикосуяАБВЖИКОСУЯ")
+# Words of one letter in Russian, and in Ukrainian and Belarusian (і, й, з, ў); any
+# other lone Cyrillic letter not closed by a full stop (an abbreviation) is a piece of a
+# broken word. The 2026-11 dogfood's split-word layer ("Сырны й комбина т") had 11-16%
+# such tokens; its 12 correct pages had at most 0.7%.
+_ONE_LETTER_WORDS = frozenset("абвжикосуяійзўАБВЖИКОСУЯІЙЗЎ")
 # Letters with their combining marks, so a stressed "е́хать" stays one word.
-_LETTERS = re.compile(r"[^\W\d_](?:[^\W\d_]|[̀-ͯ])*")
+_LETTERS = re.compile(r"[^\W\d_](?:[^\W\d_]|[\u0300-\u036f])*")
 _SPLIT_MIN_TOKENS = 50
 _SPLIT_MIN_SHARE = 0.10
 # A lower-case letter then a capital Ъ or Ь: no word of either Russian orthography is
