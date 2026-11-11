@@ -149,7 +149,7 @@ it does not claim extraction accuracy.
 ## Page-image sources
 
 An input that is an image file or a folder of page images adds three optional
-fields to its `inputs` entry. Its `path` is the folder or the file, and its
+fields to its `inputs` entry, and a IIIF snapshot a fourth. Its `path` is the folder or the file, and its
 `sha256` is the hash of the page manifest, not of any one file.
 
 | Field | Type | Meaning |
@@ -157,6 +157,7 @@ fields to its `inputs` entry. Its `path` is the folder or the file, and its
 | `kind` | string | `page_images`. |
 | `images` | array | The page manifest, one entry per page in page order: `name` (the file name), `sha256` (of the file), `bytes`, `width` and `height` (pixels, from the image header). |
 | `carrier` | object | Present when an engine read the pages through a PDF carrier: its `sha256`, `derived: true`, and `pages`, the pages whose images it holds. Absent for a dry run and for an adapter that reads the images themselves. |
+| `iiif` | object | Present when the folder is a snapshot `fetch-iiif` wrote: `sha256` of its `iiif-fetch.json` as read, `requested_url`, `status` (`complete` or `incomplete`), and `canvases`, one `{name, canvas_index, canvas_id}` per page in page order. Context, not identity: `sha256` above does not cover it. See [reading a snapshot as a source](iiif-fetch-spec.md#reading-a-snapshot-as-a-source). |
 
 The identity is the SHA-256 of the UTF-8 JSON text of
 `{"kind": "page_images", "pages": <images>}`, written with keys sorted and no

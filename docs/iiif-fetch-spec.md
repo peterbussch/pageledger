@@ -55,7 +55,9 @@ before the fetch stopped.
 - An image is accepted only when the server says `image/jpeg`, the bytes start
   with a JPEG start-of-image marker, the header has a baseline or progressive
   frame with one or three 8-bit components, the bytes end with an end-of-image
-  marker, and the image is no larger than its native size. Images larger than
+  marker, and the image is no larger than its native size. The header is read
+  by the same reader as a folder of page images, so a JPEG that reader would
+  refuse, such as one stored mirrored, is refused here too. Images larger than
   `--max-image-bytes` are refused while they stream in. The manifest is
   limited to 64 MiB and each `info.json` to 1 MiB.
 - Every write replaces its file atomically. The record is written before the
@@ -66,3 +68,20 @@ before the fetch stopped.
   its hash stays stable.
 - `iiif_below_native` is reported by the command (in its output and `--json`
   summary) for each `below_native` image. It is not a page quality warning.
+
+## Reading a snapshot as a source
+
+`run` and `process` read a snapshot as a folder of page images. Besides the
+images, the folder may hold exactly `iiif-fetch.json` and the `iiif/` folder,
+and only when the record's `images` list every top-level image by name and
+SHA-256 and nothing else; a mismatch, or `iiif/` without a record, is refused
+with what is wrong. The source's identity is the page manifest's hash, as for
+any folder. The run manifest's input and the job's `source` record the record
+as the optional `iiif` object: `sha256` of `iiif-fetch.json` as read,
+`requested_url`, `status`, and `canvases`, one `{name, canvas_index, canvas_id}`
+per page in page order (see the
+[run manifest](run-manifest-spec.md#page-image-sources) and
+[document job](processing-spec.md#durable-job-and-attempts) specifications).
+`verify-run` adds `iiif_snapshot_incomplete` and `iiif_record_changed` warnings
+when the images still match; images a later resume added are reported, as for
+any folder, as `source_changed` naming each one.

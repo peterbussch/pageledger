@@ -256,15 +256,31 @@ processing:
     adapter_options: {rec_model_dir: models/en-rec, reading_order: columns}
 ```
 
-`name` is a template: `{page}` is the PDF's page number counted from 1, written
+`name` is a template: `{page}` is the page number counted from 1, written
 with an optional zero-padded width (`{page:04d}`); `{{` and `}}` are literal
 braces. The template must name a file inside `dir`, and a file that resolves
 outside it is refused: `..` in the template when the job starts, a symbolic
-link out of `dir` as an `alto_invalid` page. A source made from a
-folder of page images cannot yet be matched by image file name (`{stem}` is
-refused). The source is still the PDF of the page images: the adapter compares
-each ALTO page's shape with the PDF page and needs `pdfinfo` from Poppler for
+link out of `dir` as an `alto_invalid` page. The adapter compares each ALTO
+page's shape with the page as rendered and needs `pdfinfo` from Poppler for
 that.
+
+When the source is a [folder of page images](pdf-ocr-first-run.md#9-a-folder-of-page-scans),
+libraries usually name each ALTO file after its image: `0081.xml` for
+`0081.jpg`. Use `{stem}`, the page image's file name without its extension:
+
+```yaml
+    adapter_options:
+      dir: /data/reel04673/alto
+      name: "{stem}.xml"        # the page read from 0081.jpg reads 0081.xml
+```
+
+This matters when the images keep their numbers from a larger item, as a
+[IIIF snapshot](iiif.md) fetched with `--pages` does: there the ninth page of the
+job can be `0081.jpg`, and `{page:04d}.xml` would look for `0009.xml`. Keep the
+ALTO files in their own folder, not beside the images: a folder of page images
+holds nothing but page images. `{stem}` works in a plain `run` and in a job; a
+PDF's pages have no file names, so with a PDF source `{stem}` is refused before
+the job or run starts.
 
 The text is built from the words, not from ALTO's text lines, which can run
 across columns: words in one row that stand less than a word's height apart are

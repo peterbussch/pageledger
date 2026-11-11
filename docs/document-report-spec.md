@@ -20,7 +20,7 @@ reviewed as text or blank. For meanings and suggested actions, see the
 | `schema_version` | `"0.1"` |
 | `report_format` | `"0.6"`: the source is named by its path relative to the job directory. `"0.5.1"`: by its absolute path. Absent on 0.5.0 reports, which use the legacy renderer. |
 | `job_id`, `created_at` | Job identity and creation timestamp |
-| `source` | Original `path`, exact byte `sha256`, `page_count`, and annotation inventory; for page images also `kind` and the page manifest `images`, and `sha256` is the manifest's hash |
+| `source` | Original `path`, exact byte `sha256`, `page_count`, and annotation inventory; for page images also `kind` and the page manifest `images`, and `sha256` is the manifest's hash; for a IIIF snapshot also `iiif` (see [durable job and attempts](processing-spec.md#durable-job-and-attempts)) |
 | `selected_pages` | Unique, one-based source page numbers requested for this job |
 | `status` | `processing`, `completed`, or `halted`; completion does not mean human review |
 | `pages` | The selected-page inventory, including pages without attempts or selected text |
@@ -87,7 +87,13 @@ source links, selected-attempt links, and page separators around those strings.
 Source paths are percent-encoded before adding the `#page=N` fragment, so
 filename characters such as `#`, `?`, and `%` remain part of the path. For page
 images the link goes to the page's own image instead, `folder/page-12.jpg`,
-with no fragment.
+with no fragment, and the page's file name follows its number in the link text:
+`9 (0081.jpg)` in a `report.md` row and `Source page (0081.jpg)` in the
+transcript, because a folder numbers pages by position and the file name may
+carry another number. For a IIIF snapshot `report.md` adds, after the source
+hash, a line naming the requested URL and whether the snapshot was complete,
+and the fetch record's SHA-256. Both additions appear only for sources that
+record page images, so reports of other jobs render as before.
 It also lists pages without selected text. The transcript hash covers that whole
 Markdown serialization, including the added material and final newlines.
 

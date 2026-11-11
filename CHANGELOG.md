@@ -112,6 +112,23 @@ and, from 1.0, [stability](docs/stability.md).
   climbs to OCR) and `alto_geometry_mismatch` (the boxes do not fit the page; the text is kept). Files
   with a DOCTYPE or entity declaration, or over 32 MiB, are refused. See
   [the recipe](docs/engine-recipes.md#alto-from-a-library-any-platform-no-engine).
+- `alto` finds a page's file by the page image's own name with `name: "{stem}.xml"`, so `0081.xml` is read
+  for `0081.jpg` whatever the page's place in the folder, in a plain `run` and in a document job. With a PDF
+  source `{stem}` is refused before the run or job starts.
+- A IIIF snapshot is a source: `pageledger process sources/item --out jobs/item` reads the folder
+  `fetch-iiif` wrote as a folder of page images, provided its `iiif-fetch.json` lists exactly the folder's
+  images with their hashes (anything else, or a record that disagrees, is refused with what is wrong). The
+  run manifest, checkpoint, job and `document.json` record the record as the optional `iiif` field: its
+  SHA-256, the requested URL, `complete` or `incomplete`, and each page's canvas, so a page can be cited by its
+  IIIF canvas. The source's identity is still the images alone. `report.md` names the snapshot and whether
+  it was complete. `verify-job` and `verify-run` warn `iiif_snapshot_incomplete` and `iiif_record_changed`;
+  `verify-job` passes with `iiif_snapshot_grown`, naming the images, when a later `fetch-iiif --resume` added
+  images and every image the job read is unchanged. See [processing the snapshot](docs/iiif.md#process-the-snapshot).
+- For page images, `report.md`, `transcript.md` and the review view show each page's file name after its
+  number, as `9 (0081.jpg)`, because a folder numbers pages by position.
+- `review-html` shows a job's own page images: each image is found by its recorded name and hash and rendered
+  through a one-page carrier to a JPEG of at most 1,600 pixels, as PDF pages are. Without Poppler the view is
+  still written, and each page links to its image file.
 
 ### Changed
 
@@ -135,6 +152,13 @@ and, from 1.0, [stability](docs/stability.md).
   page enters the review queue and its signals grade drops, as any warning does.
 - `pdf_ocr` may render a page image below 72 DPI to stay within `max_render_pixels`, down to half the image's
   own density, instead of stopping with `render_limit`.
+- `process` decides what kind of source it has before the job exists: a PDF (by suffix), page images, or text
+  (any file that reads as UTF-8). Without `--config` it chooses OCR for PDFs and page images and none for any
+  text file, so a `.md` source no longer gets `pdf_ocr` and halts. A source that is none of these, such as a
+  `.docx` file or a folder without page images, is refused with what a source can be, where it used to become
+  a halted job (`source_container_invalid:UnicodeDecodeError`).
+- `fetch-iiif` reads each JPEG's header with the folder reader's own header reader, so it also refuses an
+  image stored mirrored and a JPEG with two frame headers, which a folder of page images could not read.
 - The README's "Process a document" and the document-job tutorial start with the one-command job and
   introduce the config file second, as the way to change it.
 - `docs/adapter-protocol.md`: a new required adapter attribute or a change to the `extract()` call
@@ -175,6 +199,11 @@ and, from 1.0, [stability](docs/stability.md).
   and its word boxes are checked against the page's shape and edges but not yet attached to the reading or
   used to place tiles. hOCR, PAGE XML, ALTO as the contest witness and ALTO found through IIIF manifests
   are not supported.
+- A job on a IIIF snapshot that a later `--resume` grew verifies and exports, but `resume`, `review-job` and
+  `adjudicate` refuse the grown folder as a changed source.
+- `render_upsampled` on a PDF page checks the page's largest image by its proportions, not by how large it
+  is drawn, so a born-digital page whose only image is small and happens to have the page's shape is warned
+  about as if it were a low-resolution scan.
 
 ### Not supported yet
 

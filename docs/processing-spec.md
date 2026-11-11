@@ -70,6 +70,15 @@ reading with the warning `no_text_layer` for each page, without needing the
 climbs to OCR, and a clean OCR reading settles the hold. The empty reading stays
 in the ledger as the record that there was nothing to read.
 
+So a source is one of three kinds, and `process` decides which before the job
+exists: a PDF (by its `.pdf` suffix, so a damaged PDF still becomes a job that
+records why it cannot be read), page images (an image file, or a folder holding
+them), or text (any other file that reads as UTF-8, such as `.txt` or `.md`).
+Anything else, such as a `.docx` file or a folder without page images, is
+refused with a message that says what a source can be. Without `--config`,
+`process` chooses OCR (`pdf_ocr`) for PDFs and page images and no OCR for text.
+A [IIIF snapshot](iiif.md#process-the-snapshot) is a folder of page images.
+
 A document job reads only the `processing` section. Budget, pricing, grading
 and rerun settings under `run` would be ignored, so `process` rejects them and
 names the replacement (for budgets, `processing.limits`). A leftover
@@ -716,7 +725,26 @@ resume. For page images the job's `source` also records `kind: page_images`
 and the page manifest as `images`, its `sha256` is the manifest's hash (see
 [page-image sources](run-manifest-spec.md#page-image-sources)), and each page
 records `source_image_sha256`, the hash of its own image; `verify` fails,
-naming each image that changed, went missing or was added. PDF page-tree counts
+naming each image that changed, went missing or was added. A page's number is
+its position in the folder; `source.images` lists each page's file name in page
+order, and the report shows both.
+
+When the folder is a IIIF snapshot, `source` also records `iiif`: `sha256`, the
+hash of `iiif-fetch.json` when the job was written; `requested_url`; `status`,
+`complete` or `incomplete`; and `canvases`, one entry per page in page order with
+the image's `name`, its `canvas_index` in the manifest and its `canvas_id` (null
+when the source was a single image service), so a page can be cited by its
+canvas. The record is context, not custody: `sha256` of the source is the image
+manifest's hash, as for any folder. `report.md` names the snapshot and its
+status. `verify` adds warnings, and still passes, for
+`iiif_snapshot_incomplete` (the snapshot was incomplete when the job was written),
+`iiif_record_changed` (the record's bytes differ now, while every image the job
+read is unchanged) and `iiif_snapshot_grown` (a later `fetch --resume` added
+the images listed in `added`, and every recorded image is still there unchanged).
+A grown folder numbers its pages differently, so `verify`, `export`,
+`review --sheet` and `review --out` work on the job, but `resume`, `review --apply` and
+`adjudicate`, which change it, refuse the grown folder as a changed source; start
+a new job for the added pages. A changed or missing image the job read still fails verification. PDF page-tree counts
 must match the actual inventory. Container failure
 produces a halted report with an unknown page count and no invented pages.
 Its `halt_reason` names the cause, such as
@@ -832,7 +860,16 @@ binding is beside it, or download the binding too and keep the two together.
 the job has changed since the view was written. Like `report.md`, the view is a
 rendering: it is not evidence, and writing it changes nothing in the job. Page
 images need Poppler's `pdftoppm`; `--images none` writes the view without
-them. A source that is not a PDF has no page images.
+them. For a PDF source, a missing `pdftoppm` stops the command. For a source of
+page images, each page's own image is found by its recorded name, checked
+against its recorded hash and rendered through a one-page carrier, so the view
+holds a JPEG of at most 1,600 pixels on its long side with the image's EXIF
+rotation applied, not a copy of the master; without `pdftoppm` the view is
+written without images and each page links to its image file instead. Pages are
+headed with their number in the job and their file name, as `Page 9
+(0081.jpg)`. The images are copies inside the view's folder, so a view keeps
+working when the job is moved; the links to the source are relative to where
+the view was written. A text source has no page images.
 
 ### Review at scale
 

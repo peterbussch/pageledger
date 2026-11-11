@@ -217,6 +217,15 @@ more than the image's own pixels, the page gets the warning `render_upsampled`:
 a small image read at high resolution does not hold more detail, and a better
 scan is the fix. The same folder works with `pageledger process`; its local
 text stage finds no text layer (`no_text_layer`) and the page goes on to OCR.
+Without `--config`, `process` reads a folder of page images with OCR, as it
+does a PDF.
+
+A page's number is its place in the folder, which need not be the number in
+its file name: if the folder starts at `0081.jpg`, that image is page 1. The
+report, the transcript and the [review view](processing-spec.md#review-beside-the-page-image)
+show both, as `1 (0081.jpg)`, and the review view shows each page's own image.
+A snapshot written by [`fetch-iiif`](iiif.md#process-the-snapshot) is such a
+folder; its fetch record is the one other file it may hold.
 
 ## Document jobs
 

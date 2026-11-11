@@ -64,8 +64,12 @@ Without `--config`, the job runs with exactly the configuration
 would record that file, so the job verifies, resumes and rebuilds like any
 other. No config file is read from the working directory and nothing is
 detected from the machine: the engine is `pdf_ocr` with `--lang eng` unless
-the options say otherwise, and `none` for a `.txt` source. Two lines on
-stderr name the configuration used and the `init` command that writes
+the options say otherwise, for a PDF and for page images, and `none` for a
+text source (any file that reads as UTF-8, such as `.txt` or `.md`). A source
+that is none of these, or does not exist, is refused with a message that says
+what a source can be: as a usage error (exit 2) when `process` would choose the
+engine, and otherwise (exit 1) before the job directory is created. Two lines on
+stderr name the configuration used and the `init --run` command that writes
 it out for editing. Before the job directory is created, the engine is loaded
 and its preflight run; a missing package or tool is an error naming what to
 install, and pointing to `pageledger doctor` where the engine's own message

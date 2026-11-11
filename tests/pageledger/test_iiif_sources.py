@@ -9,12 +9,13 @@ from pathlib import Path
 import pytest
 import yaml
 from test_iiif import SERVICE, FakeResponse, FakeServer, info_v3, jpeg, manifest_v3
-from test_image_sources import StubOCR, stub, validate  # noqa: F401 (stub is a fixture)
+from test_image_sources import stub, validate  # noqa: F401 (stub is a fixture)
 
 from pageledger import iiif, review_html
 from pageledger.checkpoint import read_record
+from pageledger.export import export_job
 from pageledger.image_source import read_image_source
-from pageledger.processing import process, verify_job
+from pageledger.processing import process, resume_job, verify_job
 from pageledger.review_html import write_review_html
 from pageledger.verify import verify_run
 
@@ -150,6 +151,9 @@ def test_fetch_process_verify_and_move_a_snapshot(stub, tmp_path, monkeypatch): 
     assert verify_job(moved)["status"] == "pass"
     run_dir = next((root / "attempts").iterdir())
     assert "source_changed" in codes(verify_run(run_dir))
+    export_job(root, tmp_path / "item.md", format="md")
+    with pytest.raises(ValueError, match="source changed or is missing: added: 0003.jpg"):
+        resume_job(root)
 
     # The review view still shows each page's own image by its recorded name.
     seen = []

@@ -72,6 +72,25 @@ fetches again: restore it or start a new snapshot. A page image the record
 does not list (which can happen if a fetch was killed while writing it) is
 also an error; delete that file and resume.
 
+## Process the snapshot
+
+```bash
+pageledger fetch-iiif https://example.org/iiif/item/manifest.json --pages "1-8,81" --out sources/item
+pageledger process sources/item --out jobs/item
+```
+
+A snapshot is a [folder of page images](pdf-ocr-first-run.md#9-a-folder-of-page-scans),
+and `process` (or `run`) reads it as one: the images are the source and their
+hashes its identity, while the fetch record is checked against them and kept
+in the job as context, with each page's canvas, so a page can be cited by its
+IIIF canvas. Pages are numbered by their place in the folder, so here
+`0081.jpg` is page 9 of the job; the report, the transcript and the review view
+show both, as `9 (0081.jpg)`. A folder whose images no longer match its record,
+or that holds anything else, is refused with what is wrong. An incomplete
+snapshot can be processed; the report says it is incomplete, and `verify-job`
+warns about it and, after a later `--resume` adds images, names them (see
+[durable job and attempts](processing-spec.md#durable-job-and-attempts)).
+
 ## Image size
 
 PageLedger asks for each whole image at its native size, the width and height

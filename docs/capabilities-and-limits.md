@@ -22,10 +22,10 @@ used across the reference.
 | Supported | What to rely on | Limit |
 |---|---|---|
 | `run` with `text`, `pdf_text`, `pdf_ocr`, `rapidocr` or `vision`; custom adapters follow the adapter protocol. | Page-level attempts and recorded source, extractor, quality and cost details. `--pages` preserves source page numbers. | `pdf_text` reads a text layer; `pdf_ocr` needs locally installed Poppler and Tesseract. Quality signals do not establish accuracy. See [PDF first run](pdf-ocr-first-run.md) and [quality warnings](provenance-spec.md#warning-taxonomy). |
-| Page images: a JPEG or PNG file is a one-page document, and a folder of them one document in natural order of file name. | Each image is hashed and the source's identity is a hash of the page list, so `verify` and `verify` name an image that changed, went missing or was added. The engines read a PDF carrier that holds the images' own bytes. | JPEG and PNG only; TIFF and JPEG 2000 must be converted first. See [a folder of page scans](pdf-ocr-first-run.md#9-a-folder-of-page-scans). |
+| Page images: a JPEG or PNG file is a one-page document, and a folder of them one document in natural order of file name. | Each image is hashed and the source's identity is a hash of the page list, so `verify` name an image that changed, went missing or was added. The engines read a PDF carrier that holds the images' own bytes. | JPEG and PNG only; TIFF and JPEG 2000 must be converted first. See [a folder of page scans](pdf-ocr-first-run.md#9-a-folder-of-page-scans). |
 | Built-in adapter defaults, `adapter_options`, `--adapter-path`, and dry-run planning. | Defaults are recorded; dry runs do not call extractors. | Only explicitly supplied configuration is read. See [CLI](cli.md), [adapter protocol](adapter-protocol.md), and [OCR options](ocr-options.md). |
 | Page budgets, retries and optional continue-on-error. | Page, token and dollar limits; failed or unattempted pages can enter rerun work. | Cost may be unknown or estimated, not provider-billed spend. See [plan time and cost](plan-time-and-cost.md) and [warnings](warnings.md). |
-| `alto`: a library's ALTO OCR, one file per page, as a page's text layer. | Text from word boxes in column order, word confidences, and the file's name, SHA-256 and declared software in the provenance. In a document job it is an inherited OCR layer: the page is read again by local OCR. A missing or unusable file gives an empty reading with `alto_missing` or `alto_invalid`; boxes that do not fit the page give `alto_geometry_mismatch`. | Only boxes that misfit the page's shape or edges are caught, not a box placed wrongly inside it. Verification does not re-read the ALTO file. One page per file; no hOCR or PAGE XML; not used as the contest witness; not found from IIIF manifests; word boxes not yet attached to the reading. See [the recipe](engine-recipes.md#alto-from-a-library-any-platform-no-engine). |
+| `alto`: a library's ALTO OCR, one file per page, as a page's text layer. | Text from word boxes in column order, word confidences, and the file's name, SHA-256 and declared software in the provenance. In a document job it is an inherited OCR layer: the page is read again by local OCR. A missing or unusable file gives an empty reading with `alto_missing` or `alto_invalid`; boxes that do not fit the page give `alto_geometry_mismatch`. Files are found by page number (`{page:04d}.xml`) or, for page images, by the image's own name (`{stem}.xml`). | Only boxes that misfit the page's shape or edges are caught, not a box placed wrongly inside it. Verification does not re-read the ALTO file. One page per file; no hOCR or PAGE XML; not used as the contest witness; not found from IIIF manifests; word boxes not yet attached to the reading. See [the recipe](engine-recipes.md#alto-from-a-library-any-platform-no-engine). |
 | Text-quality warnings, OCR confidence, historical-orthography signals and grades. | Diagnostics identify some risks and can guide review. RapidOCR warns when rows mode joins several page columns; choose `reading_order: columns` for such pages. | They are not calibrated accuracy measures. See [warnings](warnings.md) and [multilingual OCR](multilingual-ocr.md). |
 
 ### Route pages
@@ -66,7 +66,7 @@ come from another model family than the reader. See
 | Supported | What to rely on | Limit |
 |---|---|---|
 | Job reports, human review receipts, review sheets, `verify`, and verified `txt`, `md`, `jsonl`, or `tei` exports. | A receipt binds a human decision to the page and selected output; exports preserve page boundaries and review state. A job verifies, exports and can be reviewed after its directory is moved or copied, and records changes made away from where it was written. | A person makes the review decision. Verification and export do not certify transcription accuracy. See [review](processing-spec.md#review-in-a-spreadsheet), [report and receipt](document-report-spec.md), and [export](export.md). |
-| A static HTML review view (`review --out`): each page's image beside its selected text, other readings compared word by word, open contested spans marked, and decisions downloaded as a review sheet. | The view embeds the rows and binding `review --sheet` writes, so `review --apply` checks its decisions like any sheet's. | A rendering, not evidence: decisions count only once `review --apply` applies them. Page images come from PDFs through Poppler's `pdftoppm`. Decisions in progress stay in one browser's storage. See [review beside the page image](processing-spec.md#review-beside-the-page-image). |
+| A static HTML review view (`review --out`): each page's image beside its selected text, other readings compared word by word, open contested spans marked, and decisions downloaded as a review sheet. | The view embeds the rows and binding `review --sheet` writes, so `review --apply` checks its decisions like any sheet's. | A rendering, not evidence: decisions count only once `review --apply` applies them. Page images are rendered with Poppler's `pdftoppm`, for PDFs and for page images alike; without it, a view of page images links to each image instead. Decisions in progress stay in one browser's storage. See [review beside the page image](processing-spec.md#review-beside-the-page-image). |
 
 ### Align structured output
 
@@ -91,7 +91,7 @@ as `outcome_unknown`. See [checkpoint specification](checkpoint-spec.md).
 
 | Supported | What to rely on | Limit |
 |---|---|---|
-| `fetch` for Presentation API 2 and 3 manifests and Image API 2 and 3 services. | A snapshot folder of page JPEGs at native size or the largest the server allows, with a record binding each file's hash to its URLs; `--resume` checks what is there and fetches only what is missing. | No authentication, JPEG only, whole images only (no regions), no ALTO or other OCR discovered from the manifest. The snapshot must be kept for its record to mean anything. See [the IIIF how-to](iiif.md#limits). |
+| `fetch` for Presentation API 2 and 3 manifests and Image API 2 and 3 services. | A snapshot folder of page JPEGs at native size or the largest the server allows, with a record binding each file's hash to its URLs; `--resume` checks what is there and fetches only what is missing. `run` and `process` read the snapshot as a folder of page images, and the job records the fetch record's hash, URL, status and each page's canvas. | No authentication, JPEG only, whole images only (no regions), no ALTO or other OCR discovered from the manifest. The snapshot must be kept for its record to mean anything. See [the IIIF how-to](iiif.md#limits). |
 
 ## Adapter-supported, user-supplied
 
@@ -211,7 +211,21 @@ the commands.
 - `render_upsampled` compares a render with the page's source image. For a PDF
   page PageLedger knows that image only when the page's largest image has the
   page's proportions and the `pdf` extra is installed; otherwise it records
-  nothing and raises no warning.
+  nothing and raises no warning. It does not check how large the image is drawn,
+  so a born-digital page whose only image is small but happens to have the
+  page's proportions (an 85 by 110 pixel picture on a Letter page) is warned
+  about as if it were a low-resolution scan.
+- A folder is numbered by position, so a page's number in a job is not always
+  the number in its file name: after `fetch-iiif --pages "1-8,81"`, `0081.jpg`
+  is page 9. Reports, transcripts and the review view show both, as
+  `9 (0081.jpg)`.
+- A [IIIF snapshot](iiif.md#process-the-snapshot) is read as a folder of page
+  images only while its `iiif-fetch.json` lists exactly the folder's images
+  with their hashes. Its record is context: the job keeps the record's hash, URL,
+  status and each page's canvas, but the source's identity is the images alone.
+  Images a later `fetch --resume` adds leave the job verifiable and
+  exportable, with a warning, but it cannot be resumed or reviewed on the grown
+  folder; start a new job.
 
 ### Extraction quality and review
 

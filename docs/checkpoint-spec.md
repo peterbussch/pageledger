@@ -89,7 +89,7 @@ All of these `checkpoint.json.payload` fields are required:
 | `root` | Absolute original output directory. |
 | `config_sha256`, `config_source_path` | Exact retained config digest and original config reference. |
 | `identity` | Adapter `name`, `version`, `code_sha256`, PageLedger `package_sha256`, optional `profile`, and declared `metadata`. Adapter/profile values may be null for route-only work. |
-| `inputs` | Ordered source objects with `path`, `sha256`, full `page_count`, and optional `pages` selection expression. A source of page images adds `kind`, `images` and, when an engine reads a carrier, `carrier`, as in the [run manifest](run-manifest-spec.md#page-image-sources); resume rebuilds the carrier and refuses to continue if its hash differs. |
+| `inputs` | Ordered source objects with `path`, `sha256`, full `page_count`, and optional `pages` selection expression. A source of page images adds `kind`, `images`, `iiif` for a IIIF snapshot and, when an engine reads a carrier, `carrier`, as in the [run manifest](run-manifest-spec.md#page-image-sources); resume rebuilds the carrier and refuses to continue if its hash differs. |
 | `documents` | Ordered source objects with `source`, `source_sha256`, `page_count` and planned `pages`; each page retains its route fields. |
 | `imported_routes` | Retained imported route-map object, or null. |
 | `route_warnings` | List of routing warnings. |
