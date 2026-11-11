@@ -35,8 +35,11 @@ Starting a job
   their folders. See [process](docs/cli.md#process).
 - When most pages Tesseract read were held for low confidence, `process` says
   the language may be wrong and, when Tesseract's script detection is sure,
-  which language to try; on pre-1918 Russian read with `rus` it points to the
-  `orus` model. See [process](docs/cli.md#process).
+  which language to try, with the command to run: the same command with that
+  `--lang` and its `--pages` and other options, so a sample stays a sample; on
+  pre-1918 Russian read with `rus` it points to the `orus` model. A missing
+  language pack or tool is said as its sentence, with the code last. See
+  [process](docs/cli.md#process).
 - `--lang orus` without that model installed names its recipe instead of
   suggesting similar codes. See
   [the orus recipe](docs/engine-recipes.md#tesseract-with-the-community-orus-model-macos-and-linux).
@@ -44,7 +47,9 @@ Starting a job
   commented block; [`docs/examples/processing.yml`](docs/examples/processing.yml)
   is that file. See [init](docs/cli.md#init).
 - `process` ends with the opening of the job's report: status, pages read, how
-  many need a person and why, and the next command. It warns at the start when
+  many need a person and why (each cause on a line of its own, with its count
+  of pages), the next command, and `export JOB --out NAME.md`, the one export
+  command `review --apply` and the report suggest too. It warns at the start when
   the stages could read more pages than `max_attempt_pages` allows, and the
   report says why a configured stage read no pages. See [process](docs/cli.md#process).
 
@@ -125,22 +130,32 @@ Reviewing and exporting
   each records. One download, `review.json`
   ([schema](schemas/review-decisions.schema.json)), carries decisions and
   corrections (a file written by hand may give `page_number` as a number), and
-  is recorded only by `review --apply`; the review sheet
+  is recorded only by `review --apply`, given the path where the browser saved
+  it; the review sheet
   route is folded under "Working in a spreadsheet instead". Page images of PDFs
   and of image folders are rendered with Poppler; `--images held` renders only
   held pages, and `--images none` needs no Poppler (a view of page images then
-  links to each image). See [review and correct](docs/review-and-correct.md),
+  links to each image, and does not list the image's own, always empty, text).
+  `review` says what is in the folder for a person: the page to open, and the
+  sheet with its guide for a spreadsheet. Asked again, it says when the view
+  there is up to date, or that the job has changed since and a new `--out` is
+  needed. See [review and correct](docs/review-and-correct.md),
   a new how-to, and
   [review beside the page image](docs/processing-spec.md#review-beside-the-page-image).
 - Every review sheet, from `review --sheet` or in the review view's folder, has
   `review-decisions.txt` beside it: the command that applies it, the decisions
-  and what each records, and the readings each page can use. See
+  and what each records, and the readings each page can use. The sheet's
+  `disposition`, `attempt_summary` and `review_reasons` cells lead with words,
+  the code or reading ID last; applying a sheet does not read them, so 0.8's
+  sheets apply as before. See
   [review in a spreadsheet](docs/processing-spec.md#review-in-a-spreadsheet).
 - A reviewer can correct a page's text, in the view or with `correct:FILE` in a
   sheet. The correction is a new file; the engine's reading is never edited.
   The receipt names what it started from and the words changed (`--dry-run`
-  prints them first), `verify` checks it, and the report, transcript and
-  exports mark the text as a person's. A plain JSON receipt cannot replace a
+  prints them first, naming the reading by its engine), `verify` checks it,
+  and the report, transcript and exports mark the text as a person's: a
+  corrected page's export header says whose correction of which reading the
+  text is, and gives the corrected reading's ID and hash after it. A plain JSON receipt cannot replace a
   corrected page's text. See [correct the text](docs/processing-spec.md#correct-the-text).
 - A moved or copied job can be verified, exported and reviewed where it is.
   `verify` reports `job_relocated`, and a review or adjudication made on a copy
@@ -148,7 +163,13 @@ Reviewing and exporting
   [moved and copied jobs](docs/processing-spec.md#moved-and-copied-jobs).
 - One table of plain words for every hold, page state, review decision and
   warning, shared by the report, `process`, `inspect` and the review view, and
-  repeated in [warnings](docs/warnings.md#in-plain-words).
+  repeated in [warnings](docs/warnings.md#in-plain-words). Where the job
+  records a hold's cause, the hold is said by it: which reading, and what is
+  wrong with it ("Tesseract OCR (rus) wrote a capital Ъ or Ь inside words, as
+  OCR for modern Russian does with pre-1918 letters"); when the flawed reading
+  is an earlier OCR layer and not the selected text, that nothing confirms the
+  selected text, and what a person can do. See
+  [what is wrong with a reading](docs/warnings.md#what-is-wrong-with-a-reading).
 - JSONL exports give each page's `state`, `review_reasons` and `warnings`;
   TEI marks each page's state, holds and warnings. See [export](docs/export.md).
 - `review --apply` says what it recorded in plain words (accepted, corrected,
@@ -208,10 +229,11 @@ The contract
 - **New jobs write report format 0.9:** `report.md` is the record of how the
   text was made, with a summary on top. It opens with what happened, the pages
   that need a person and why in plain words, and one command that is right as
-  printed in the job's folder; then one table of the pages (what holds each,
-  its selected text, its review); then the record, one line per page with
-  every hold code, reading ID, outcome, warning and comparison, and hashes and
-  custody last. Readings are named by what made them, from `engines`, which
+  printed in the job's folder; the source by its file name, its path written
+  out once; then one table of the pages (what holds each, its selected text,
+  its review); then the record, a short list per page with every hold and its
+  cause, reading ID, outcome, warning and comparison, and hashes and custody
+  last. Readings are named by what made them, from `engines`, which
   `document.json` gains with `hold_causes`; a scan page that another reason
   holds is no longer also called blank, though the record keeps the reason. A
   25-page scan's report falls from about 300 lines to about 120. `transcript.md`
@@ -248,7 +270,8 @@ The contract
   [page size and rendering](docs/ocr-options.md#page-size-and-rendering).
 - `doctor` opens with what `process` can do on this machine (PDF text, which
   OCR engine, the common languages installed for `--lang`, optional engines
-  not installed), then the details as before; `--json` is unchanged. See
+  not installed) and stops there; `doctor --all` adds the details as before;
+  `--json` is unchanged. See
   [doctor](docs/cli.md#doctor).
 - A new job makes `partials/` only when it keeps a partial reading. See
   [artifacts](docs/artifacts.md).

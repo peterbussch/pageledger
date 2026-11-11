@@ -35,7 +35,7 @@ such as stage, route and disposition are defined in the
 | `adjudicate` | `adjudicate JOB_DIR (--packets DIR [--term TERM]... | --decisions DIR --reviewer NAME [--dry-run]) [--json]` | Packets written, or decisions checked or recorded. | Refused decisions, a halted job (decisions are still recorded), or runtime error. |
 | `init` | `init [--out FILE] [--engine ENGINE] [--lang LANGS] [--model-dir DIR] | init --run [--adapter text|pdf_text|pdf_ocr] [--out FILE]` | Config written or printed. | Runtime error. |
 | `fetch` | `fetch URL --out DIR [--pages RANGE] [--delay SECONDS] [--max-image-bytes N] [--resume] [--json]` | Every selected canvas fetched. | Some canvases missing (the snapshot is `incomplete`), or runtime error. |
-| `doctor` | `doctor [--config FILE] [--json]` | Diagnostics reported; findings do not change the exit code. | Runtime error. |
+| `doctor` | `doctor [--config FILE] [--all] [--json]` | Diagnostics reported; findings do not change the exit code. | Runtime error. |
 | `run` | `run INPUT... (--config FILE | --adapter text|pdf_text|pdf_ocr) --out DIR [--pages RANGE] [--routes FILE] [--resumable] [--dry-run] [--json] [--log-level LEVEL] [--adapter-path DIR]` | Run completed, including partial results without failed or unattempted pages. | Partial run with failed or unattempted pages, or runtime error. |
 | `resume` | `resume RUN_DIR [--adapter-path DIR] [--raise-limit LIMIT=VALUE] [--json]` | Work resumed, paused, or already finalized. | Halted/failed result or runtime error. |
 | `rerun` | `rerun PARENT_DIR --config FILE --out DIR [--dry-run] [--json] [--log-level LEVEL] [--adapter-path DIR]` | Rerun completed. | Any partial execution result or runtime error. |
@@ -107,9 +107,20 @@ exists, inspect or resume the job there, or choose another output folder.
 
 `process` ends with a few lines in plain words, for a finished, paused or
 halted job alike: how many pages were read and how many need a person, where
-the job is, the commonest reasons pages are held, the one command to run next
-(`review`, or `resume` for a job that did not finish) and the `export` command
-that writes the text out. `--json` prints the job result instead.
+the job is, why pages are held (up to three causes, one line each with its count
+of pages, each naming the reading and what is wrong with it, as
+[warnings.md](warnings.md#what-is-wrong-with-a-reading) words it), the one
+command to run next (`review`, or `resume` for a job that did not finish) and
+the `export` command that writes the text out
+(`pageledger export JOB --out NAME.md`, NAME being the job folder's name; `review
+--apply` and the job's report suggest the same). `--json` prints the job result
+instead.
+
+An error `process` meets before the job starts, such as a missing language pack
+or tool, is printed as its sentence with the diagnostic code last, in
+parentheses: `pageledger: error: Tesseract's orus model is not installed. …
+(missing_language_pack)`. With `--json` the error object is unchanged; so are
+the exit codes.
 
 While a job runs, `process` and `resume` show on stderr how many pages are
 done, how many need a person so far, and what is being read now: one line
@@ -118,7 +129,11 @@ the job has run for 15 seconds; nothing with `--json`. When most pages read by
 Tesseract were held because it was unsure of many words, the end of the output
 says the language given may not be the document's and how to try another; if
 Tesseract's script detection (its `osd` model) is sure which script two of
-those pages are in, it names a language to try. When pages carry pre-1918
+those pages are in, it names a language to try, with the command to run: the
+same `process` command with that `--lang`, the `--pages`, `--engine`,
+`--model-dir`, `--adapter-path` and `--review` it was given, and `--out` with the
+language added to the folder's name. A job run with `--config` is told which
+setting in the config to change instead, since `--lang` cannot go with it. When pages carry pre-1918
 Russian spelling and the language was `rus`, it points to the `orus` recipe.
 This advice is printed only, never recorded in the job.
 
@@ -140,7 +155,7 @@ pageledger review jobs/book --out review/ --images held
 pageledger review jobs/book --sheet review.csv
 pageledger review jobs/book --apply review.csv --reviewer "Name" --dry-run
 pageledger review jobs/book --apply review.csv --reviewer "Name"
-pageledger review jobs/book --apply review/review.json --reviewer "Name"
+pageledger review jobs/book --apply ~/Downloads/review.json --reviewer "Name"
 pageledger review jobs/book --apply reviewed-pages.json
 ```
 
@@ -150,18 +165,32 @@ and `--apply`; giving more than one is a usage error (exit 2).
 With none of them, or with `--out DIR`, it verifies the job, then writes a new
 folder holding
 `index.html`, a reading view of every page with its image beside its text, and
-the blank `review.csv`, binding and `review-decisions.txt` that `--sheet` writes. Decisions chosen and
-texts corrected in the view are downloaded as `review.json`, a decisions file
-(or, without corrections, as that `review.csv`), and recorded only by `--apply`.
-The folder is `JOB_DIR-review` beside the job unless `--out` names another; if
-it exists, `review` stops and says so.
+the blank `review.csv`, binding and `review-decisions.txt` that `--sheet` writes,
+and says so in two lines: where the view is, and that a spreadsheet user fills
+in `review.csv` as `review-decisions.txt` explains. Decisions chosen and
+texts corrected in the view are downloaded as `review.json` (where the browser
+saves downloads), a decisions file
+(or, without corrections, as that `review.csv`), and recorded only by `--apply`
+with the downloaded file's path.
+The folder is `JOB_DIR-review` beside the job unless `--out` names another. If
+that folder exists and is a review view of the job as it is now (the sheet
+`review` would write now has the same rows and bindings), `review` says it is
+up to date and where it is, and exits 0; if the job has changed since (decisions
+applied, say), it says so and asks for `--out DIR` (exit 1); any other folder
+there is refused as before. With `--out DIR`, an existing folder is always
+refused.
 `--images` renders a page image for every page (`all`, the default), only the
 pages that need a person (`held`), or none (`none`, which needs no Poppler).
 See [Review beside the page image](processing-spec.md#review-beside-the-page-image).
 
 `--sheet FILE` writes only the CSV of the job's pages, to fill in with a
 spreadsheet, its binding beside it, and `review-decisions.txt`, which lists the
-decisions and the readings each page can use.
+decisions and the readings each page can use. The cells a person reads lead with
+words, the code or ID last: `disposition` ("Text may be missing or damaged in the
+reading (coverage_defect)"), `attempt_summary` (the reading's name, its first
+words, its length and its ID) and `review_reasons`. Applying a sheet reads only
+`row_id`, `page_number`, `decision` and `note`, so a sheet written by 0.8 applies
+as before.
 
 `--apply FILE` records human decisions from that sheet, from a decisions file
 (JSON with the sheet's bindings, which the view downloads), or from a JSON file
@@ -176,7 +205,9 @@ recording any. See
 [Review in a spreadsheet](processing-spec.md#review-in-a-spreadsheet) and
 [Correct the text](processing-spec.md#correct-the-text).
 After recording, `--apply` says how many pages were accepted, corrected or
-marked blank and so on, how many still need a person, and the next command.
+marked blank and so on, each correction with the reading it started from by name
+("Correction of page 60, from Tesseract OCR (eng): 1 word changed, 0 added, 0
+removed"), how many still need a person, and the next command.
 `--images` goes only with the review view, and `--reviewer` and `--dry-run` only with
 `--apply` (usage error 2 otherwise). All three modes accept `--json`.
 `review`, `export` and `adjudicate` given a run folder, and `compare`, `rerun`
@@ -627,14 +658,16 @@ non-English collections need are visible from the start. `--adapter` without
 
 ```bash
 pageledger doctor
+pageledger doctor --all
 pageledger doctor --json
 pageledger doctor --config processing.yml
 ```
 
-Read-only diagnostics. The first lines say what `process` can do on this
+Read-only diagnostics. `doctor` says what `process` can do on this
 machine: read a PDF's own text, which OCR engine reads scans and images, the
 common languages installed for `--lang`, and which optional engines are not
-installed. The details follow: Python runtime, optional packages, external
+installed; and one line saying that `doctor --all` shows every detail. With
+`--all`, or with `--config`, the details follow: Python runtime, optional packages, external
 commands with versions and install hints, installed Tesseract language
 packs (the valid values for `run.adapter_options.lang`), and whether cloud
 OCR/VLM keys are present, without printing their values. With `--config`,
@@ -649,7 +682,9 @@ working through every 1.x release (see [stability](stability.md)); they are not
 listed by `pageledger --help`. On a job and a run written by 0.8.0, each printed
 what 0.8.0 printed, with two additions: the JSON result of `verify-job` has a
 `warnings` list (empty when there is nothing to report), and `review-sheet` also
-writes `review-decisions.txt`, a guide to the decisions, beside the sheet. They
+writes `review-decisions.txt`, a guide to the decisions, beside the sheet, whose
+`disposition`, `attempt_summary` and `review_reasons` cells now lead with words
+(the codes and IDs follow in parentheses; applying a sheet does not read them). They
 follow 0.9's rules where those changed what a command accepts: a moved job
 verifies, with a warning, where 0.8 refused it.
 

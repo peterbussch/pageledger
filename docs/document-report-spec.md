@@ -312,7 +312,22 @@ first (the opening, "Worth knowing" and the page table):
   `engines` names the stage in words ("the OCR engine"). Attempt IDs appear only
   in the record, where each is the link to its reading's text.
 - **Plain words, codes once.** Holds and page states are given in the words of
-  `pageledger/wording.py`; their codes are in the record, once per page. A page
+  `pageledger/wording.py`; their codes are in the record, once per page.
+- **A hold is said by its cause.** Where the report records what caused a hold
+  (`hold_causes`), the hold is said as the reading's name and what is wrong with
+  it, in the words of [warnings.md](warnings.md#what-is-wrong-with-a-reading):
+  "Tesseract OCR (rus) wrote a capital Ъ or Ь inside words, as OCR for modern
+  Russian does with pre-1918 letters". The same flaw on other readings follows the
+  selected one's ("; so does the engine …"). A flaw on a reading that is not the
+  selected text says which text was selected: for an earlier OCR layer, whose
+  own warnings hold the page only while nothing confirms the selected reading,
+  "the selected text is Tesseract OCR (eng); the PDF's own text (an earlier OCR),
+  the only other reading, has words run together, so the job did not compare the
+  two and nothing confirms the selected text"; for any other reading, "…, another
+  reading of the page, …". The causes are given most telling first (in the order
+  of the holds, the selected reading's first), at most two in the opening and the
+  page table, with how many more the record gives. A hold with no recorded cause
+  (a disagreement, a contested span), and a blank hold, keep the hold's own words. A page
   whose selected reading has text and that another reason holds is not also
   called blank there: the record still lists `blank_candidate`. Held only as a
   blank candidate with text, the page reads "The page is a scan with no text of
@@ -324,19 +339,28 @@ first (the opening, "Worth knowing" and the page table):
 Its sections, in order:
 
 1. **Title and opening.** The source's file name; the job's state in plain
-   words: finished; paused at a limit, with the limit and the command that
-   raises it; halted, with the reason the job recorded; or not finished
-   (interrupted or still running). Then the source, linked once, how many pages
+   words, as `process` says it ("Finished: 3 pages read; 3 need a person.");
+   paused at a limit, with the limit and the command that raises it; halted, with
+   the reason the job recorded; or not finished (interrupted or still running).
+   Then the source by its file name, linked by a reference (`[book.pdf][source]`)
+   whose target is written out once, at the end of the report, how many pages
    were selected and read, and the pages grouped by where they stand, the group
-   with most pages first: the pages that need a person, under each hold shown;
+   with most pages first: the pages that need a person, under each cause shown
+   (so every page in a group has that cause; a page is under its first two);
    the pages with text that nothing held; the pages a person reviewed, under
    each decision; and the pages not finished, under the engine they wait for.
    The opening ends with the one next command. Commands are written to be run
    in the job's folder (`pageledger review .`, `pageledger resume .`,
-   `pageledger export . --format md --out ../NAME.md`), because a report cannot
+   `pageledger export . --out ../NAME.md`, NAME being the folder's name, the
+   file name `process` and `review --apply` suggest), because a report cannot
    name its own folder after the job is moved; a paused job's recorded next
    action names the folder as `JOB_DIR`, which the opening shows as `.`.
-2. **Worth knowing.** Each warning that holds no page, once, with the pages it
+2. **Worth knowing.** The pages held only because an earlier OCR layer has a
+   flaw and nothing confirms the selected reading, with what a person can do:
+   check them against the image in the review view, where both readings are
+   shown (the layer has had words right that a clean-looking OCR got wrong; see
+   [what holding for the layer's warnings costs](processing-spec.md#hold-policy-09)),
+   and for a whole book add a `second_ocr` stage. Then each warning that holds no page, once, with the pages it
    is on, its code, its meaning and what to do about it (for
    `historical_orthography`: that stock modern-Russian models cannot write ѣ, і,
    ѳ or ѵ, and where the engine recipes are).
@@ -348,23 +372,27 @@ Its sections, in order:
    (the decision in words, who made it, when, and why). Pages not finished are
    marked as provisional.
 4. **For the record.** Everything below is in `document.json`:
-   - job identity, hold policy and report format; the source path and SHA-256
+   - job identity, hold policy and report format; the source path, written out
+     and linked by the same reference, and its SHA-256
      (and the IIIF snapshot record); which engine each stage ran, with its
      adapter; the page counts, with `unresolved_pages` under its own name; the
      corrected pages;
-   - **Each page**, one line per page: the page number linked to the source page,
-     its `disposition` and every hold reason the job recorded, the review decision
-     code; then each reading by its attempt ID, linked to its text, with its
-     outcome, failure code, warning codes, tile counts and whether it is the
-     selected one; then the correction (who, when, and the correction it revised)
-     or edition, the open contested spans, every comparison the job recorded with
-     the share of words that agree, how many numbers differ and whether the job
-     counted it, and any hold the hold policy placed (from `hold_causes`) that no
-     warning on the reading already names. A comparison is counted by the rules
-     the job's hold policy used: one with a reading that is held itself is not
-     counted, nor one with an earlier OCR layer that the policy sets aside or that
-     two of the job's own engines outvote. A comparison below 60% is called a
-     disagreement only on a page held for one;
+   - **Each page**, a short list per page, so that no line runs on: first the
+     page number (for page images, linked to the page's image; otherwise plain,
+     the source being linked once above), its `disposition`, every hold reason
+     the job recorded and the review decision code; then one line for each cause
+     the job recorded in `hold_causes` (the hold, its cause and the reading, then
+     the same in words, and for `letters_lost` the ѣ counts), one per reading (its
+     name, then its attempt ID linked to its text, with its outcome, failure code,
+     warning codes, tile counts and whether it is the selected one), the
+     correction (who, when, and the correction it revised) or edition, the open
+     contested spans, and one per comparison the job recorded, with the share of
+     words that agree, how many numbers differ and whether the job counted it. A
+     comparison is counted by the rules the job's hold policy used: one with a
+     reading that is held itself is not counted, nor one with an earlier OCR
+     layer that the policy sets aside or that two of the job's own engines
+     outvote. A comparison below 60% is called a disagreement only on a page held
+     for one;
    - **How the job ran**: work by stage, with the reason a configured stage read
      nothing, and the triggers that sent pages on; contested-span totals;
      readings made, image-model calls (and image requests in tiled jobs), local
@@ -386,34 +414,41 @@ step is a configured stage. These two definitions are the ones `process`,
 `inspect`, the review view and the JSONL and TEI exports use.
 
 `process` prints its own ending, not the report's opening: where the job is,
-how many pages were read and need a person, the commonest reasons in words, the
-next command (`pageledger review JOB`, or `pageledger resume JOB` for a job that
-did not finish) and the export command, with no codes.
+how many pages were read and need a person, the three commonest causes in the
+opening's words, one line each with its count of pages, the next command
+(`pageledger review JOB`, or `pageledger resume JOB` for a job that did not
+finish) and the export command (`pageledger export JOB --out NAME.md`), with no
+codes.
 
 The words for every code come from one table, `pageledger/wording.py`, which
 [warnings.md](warnings.md#in-plain-words) repeats. The report of a real
-two-page job, a scan whose first page is blank and whose second carries an
-earlier OCR layer, read with Tesseract in English:
+three-page job, three pages of an 1877 book scanned by the Internet Archive
+(the first blank, the others carrying the scan's earlier OCR layer, which runs
+words together), read with Tesseract in English:
 
 ```markdown
 # book.pdf: document job report
 
-Finished: every stage this job is configured to run has run.
+Finished: 3 pages read; 3 need a person.
 
-Source: [book.pdf](<../../book.pdf>); 2 of its 3 pages selected, 2 read.
+Source: [book.pdf][source]; 3 of its 3 pages selected, 3 read.
 
-- Need a person: 1 page (1):
+- Need a person: 3 pages (1-3):
+  - The selected text is Tesseract OCR (eng); the PDF's own text (an earlier OCR), the only other reading, has words run together, so the job did not compare the two and nothing confirms the selected text: 2 pages (2-3).
   - No reading found text, or one came back empty: the page may be blank: 1 page (1).
-- Text selected and nothing held the page; no person has checked it: 1 page (2).
 
-Next: in this job's folder, `pageledger review .` writes the review view, where you check the page that needs a person beside its page image and record what you decide.
+Next: in this job's folder, `pageledger review .` writes the review view, where you check the 3 pages that need a person, each beside its page image, and record what you decide.
 
 ## Worth knowing
 
+- On 2 pages (2-3), nothing confirms the selected text: the PDF's earlier OCR, which could have, has a flaw of its own.
+  - Check each page against its image in the review view, where both readings are shown: an OCR reading with no warning of its own can still be wrong, and an earlier OCR that runs words together can have the words right.
+  - For a whole book of such pages, add a second OCR engine (`second_ocr` in the config; `pageledger init` writes it as a commented block), so that a second reading can confirm the first.
+  - Why these pages are held: docs/processing-spec.md, under Hold policy 0.9, "What holding for the layer's warnings costs".
+
 These warnings hold no page, but they bear on how far to trust the text.
 
-- On 2 pages (1-2) (`render_upsampled`): The page was rendered at more pixels than its source image has; the extra pixels add no detail. What to do: Judge the reading by the source image, and look for a higher-resolution copy of the page.
-- On 1 page (2) (`ocr_text_layer`): The PDF's text layer is an earlier OCR of the scan, not typeset text. What to do: Treat the layer as one OCR reading among others; where the job read the page again, it compared the two.
+- On 2 pages (2-3) (`ocr_text_layer`): The PDF's text layer is an earlier OCR of the scan, not typeset text. What to do: Treat the layer as one OCR reading among others; where the job read the page again, it compared the two.
 
 ## Pages
 
@@ -421,36 +456,50 @@ Pages that need a person come first. The review view (`pageledger review .` in t
 
 | Page | Held for | Selected text | Review |
 | --- | --- | --- | --- |
-| 1 | No reading found text, or one came back empty: the page may be blank | none | not checked |
-| 2 | nothing | [Tesseract OCR (eng)](<attempts/local_ocr-0002/raw/doc_0001_page_0002.txt>) | not checked |
+| 1 | No reading found text, or one came back empty: the page may be blank. | none | not checked |
+| 2 | The selected text is Tesseract OCR (eng); the PDF's own text (an earlier OCR), the only other reading, has words run together, so the job did not compare the two and nothing confirms the selected text. | [Tesseract OCR (eng)](<attempts/local_ocr-0002/raw/doc_0001_page_0002.txt>) | not checked |
+| 3 | The selected text is Tesseract OCR (eng); the PDF's own text (an earlier OCR), the only other reading, has words run together, so the job did not compare the two and nothing confirms the selected text. | [Tesseract OCR (eng)](<attempts/local_ocr-0003/raw/doc_0001_page_0003.txt>) | not checked |
 
 ## For the record
 
 Everything below is in document.json, of which this report is a rendering. The codes in backticks are explained in PageLedger's docs/warnings.md.
 
-- Job: `job_054421fc6021478b9af15276d91f32e4`, created 2026-11-11T03:52:33Z; hold policy 0.9; report format 0.9.
-- Source: [../../book.pdf](<../../book.pdf>)
-- Source SHA-256: `02ddb0de5ff5e25b55a359b16a22b7427cb0ce3525d60e37bec357feff257855`
+- Job: `job_150c3191e82845999e92a81f9107cfd8`, created 2026-11-11T05:59:00Z; hold policy 0.9; report format 0.9.
+- Source: [../../book.pdf][source]
+- Source SHA-256: `64735b18c469f64dad4d3cb15ce67af05c7784007319bf25fa83d8c6c18110d1`
 - Read by: the `local_text` stage, the PDF's own text (`pdf_text`); the `local_ocr` stage, Tesseract OCR (eng) (`pdf_ocr`).
-- Pages: 2 selected of 3 in the source; 2 read; 1 with selected text; 2 not yet reviewed as text or blank (`unresolved_pages`).
+- Pages: 3 selected of 3 in the source; 3 read; 2 with selected text; 3 not yet reviewed as text or blank (`unresolved_pages`).
 
 ### Each page
 
-Each page's state and every hold the job recorded; then each reading, by its ID (a link to its text), with its outcome, failure and warnings; then the comparisons the job recorded and whether it counted them, and any hold its hold policy placed.
+Each page's number in the source, its state and every hold the job recorded; then what caused each hold, on which reading; each reading, by its ID (a link to its text), with its outcome, failure and warnings; and the comparisons the job recorded and whether it counted them.
 
-- Page [1](<../../book.pdf#page=1>): `blank_candidate`; held for `blank_candidate`. Readings: [local_text:doc_0001_page_0001](<attempts/local_text/raw/doc_0001_page_0001.txt>) completed, `empty_text`; [local_ocr-0001:doc_0001_page_0001](<attempts/local_ocr-0001/raw/doc_0001_page_0001.txt>) completed, `render_upsampled`, `empty_text`.
-- Page [2](<../../book.pdf#page=2>): `unreviewed_text`. Readings: [local_text:doc_0001_page_0002](<attempts/local_text/raw/doc_0001_page_0002.txt>) completed, `ocr_text_layer`; [local_ocr-0002:doc_0001_page_0002](<attempts/local_ocr-0002/raw/doc_0001_page_0002.txt>) completed, `render_upsampled`, selected. Compared: `local_text:doc_0001_page_0002` and `local_ocr-0002:doc_0001_page_0002`: 98% of words agree; counted as agreement.
+- Page 1: `blank_candidate`; held for `blank_candidate`.
+  - Hold: `blank_candidate` from `empty_text` on `local_text:doc_0001_page_0001`: the PDF's own text is empty, with no letters or digits.
+  - Hold: `blank_candidate` from `empty_text` on `local_ocr-0001:doc_0001_page_0001`: Tesseract OCR (eng) is empty, with no letters or digits.
+  - The PDF's own text: [local_text:doc_0001_page_0001](<attempts/local_text/raw/doc_0001_page_0001.txt>) completed, `empty_text`.
+  - Tesseract OCR (eng): [local_ocr-0001:doc_0001_page_0001](<attempts/local_ocr-0001/raw/doc_0001_page_0001.txt>) completed, `empty_text`.
+- Page 2: `coverage_defect`; held for `coverage_defect`.
+  - Hold: `coverage_defect` from `joined_text` on `local_text:doc_0001_page_0002`: the PDF's own text (an earlier OCR) has words run together.
+  - The PDF's own text (an earlier OCR): [local_text:doc_0001_page_0002](<attempts/local_text/raw/doc_0001_page_0002.txt>) completed, `ocr_text_layer`, `joined_text`.
+  - Tesseract OCR (eng): [local_ocr-0002:doc_0001_page_0002](<attempts/local_ocr-0002/raw/doc_0001_page_0002.txt>) completed, selected.
+  - Compared `local_text:doc_0001_page_0002` and `local_ocr-0002:doc_0001_page_0002`: 2% of words agree; not counted, because `local_text:doc_0001_page_0002` is held itself.
+- Page 3: `coverage_defect`; held for `coverage_defect`.
+  - Hold: `coverage_defect` from `joined_text` on `local_text:doc_0001_page_0003`: the PDF's own text (an earlier OCR) has words run together.
+  - The PDF's own text (an earlier OCR): [local_text:doc_0001_page_0003](<attempts/local_text/raw/doc_0001_page_0003.txt>) completed, `ocr_text_layer`, `joined_text`.
+  - Tesseract OCR (eng): [local_ocr-0003:doc_0001_page_0003](<attempts/local_ocr-0003/raw/doc_0001_page_0003.txt>) completed, selected.
+  - Compared `local_text:doc_0001_page_0003` and `local_ocr-0003:doc_0001_page_0003`: 2% of words agree, 1 number differs; not counted, because `local_text:doc_0001_page_0003` is held itself.
 
 ### How the job ran
 
 | Stage | Pages read | Tokens | Seconds |
 | --- | --- | --- | --- |
-| `local_text` | 2 | not reported | 0 |
-| `local_ocr` | 2 | not reported | 2.7 |
+| `local_text` | 3 | not reported | 0 |
+| `local_ocr` | 3 | not reported | 7.9 |
 
-Readings sent on to the next stage for a reason other than a hold, by trigger (a page can be sent on more than once): `ocr_layer` 1.
+Readings sent on to the next stage for a reason other than a hold, by trigger (a page can be sent on more than once): `ocr_layer` 2.
 
-- Readings made: 4 (one per page and stage).
+- Readings made: 6 (one per page and stage).
 - Calls to an image model: 0.
 - Tokens: unknown: not every engine reported them (reported: 0).
 - Cost: unknown: not every engine reported a cost.
@@ -468,17 +517,19 @@ PageLedger records what it knows of the source file; it does not preserve or rem
 
 ### Files
 
-- Transcript: [transcript.md](<transcript.md>), SHA-256 `1bc450b926ac75b32e8e7e13428fb8f59940988f70a0c541e93deaf2955d0406`
+- Transcript: [transcript.md](<transcript.md>), SHA-256 `e20dd99bf05de43486e697a2078b9c250f3035a7de1d59817c817f9eaca0e10c`
 - Next action recorded by the job: Check the pages against the source, those that need a person first, and record decisions with pageledger review.
+
+[source]: <../../book.pdf>
 ```
 
 The status line comes first because it changes what the rest means. The groups
-under it count pages, and a page held for two reasons is named under both. The
+under it count pages, and a page held for two causes is named under both. The
 table says, for each page, what holds it and which reading is its text; the
 record says the same with every code and ID, so a reader can look the codes up
-in [warnings.md](warnings.md) and follow each ID to its reading. Page 2's
-earlier OCR layer and Tesseract's reading share 98% of their words, so the job
-counted the comparison as agreement and selected Tesseract's reading.
+in [warnings.md](warnings.md) and follow each ID to its reading. Pages 2 and 3
+are held although Tesseract's reading carries no warning: the earlier OCR, the
+only other reading, runs its words together, so nothing confirms Tesseract's.
 
 ### Older formats
 

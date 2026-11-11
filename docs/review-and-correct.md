@@ -18,21 +18,47 @@ server and nothing from the network. It changes nothing in the job. Page
 images need Poppler's `pdftoppm`; add `--images none` to write the view
 without them, or `--images held` for only the pages that need a person.
 
+Run the same command again later and it says whether the view there still shows
+the job as it is: if nothing has changed, it says the view is up to date and
+where it is; once decisions have been applied, it says the view shows the job as
+it was, and asks for a new folder with `--out DIR` (or remove the old one).
+
 ## What the view shows
 
 The page list comes first, the pages that need a person at the top, each with
-why it needs a person in plain words. Under each page:
+why it needs a person in plain words: which reading has what flaw, such as
+"Tesseract OCR (rus) wrote a capital Ъ or Ь inside words, as OCR for modern
+Russian does with pre-1918 letters" (at most two causes there). Under each page:
 
-- why it needs a person, its selected text (named by the engine that read it,
-  such as "Tesseract OCR (rus)" or "the PDF's own text"), how far the engines
-  agree, and any warnings on its readings;
+- why it needs a person, every cause; its selected text (named by the engine
+  that read it, such as "Tesseract OCR (rus)" or "the PDF's own text"); how far
+  the engines agree, where the job weighed a comparison; and any warnings on its
+  readings;
 - "From the record", folded: the page's codes, which
   [warnings.md](warnings.md#in-plain-words) explains, and each reading's ID;
 - the page image beside the selected text;
 - the other readings, each compared word by word with the selected text: words
   only the selected text has are struck, the other reading's are underlined. A
   reading with no letters or digits, such as the empty text layer of a scan, is
-  listed as empty.
+  listed as empty; the own text of a page image, which is always empty, is
+  left out (the record keeps it).
+
+### When the flawed reading is not the selected one
+
+A scan with an earlier OCR layer (the Internet Archive's, say) is read again by
+Tesseract, whose reading becomes the text. When that layer has a flaw of its own
+(words run together, `joined_text`) and no other reading agrees with
+Tesseract's, the page is held, and the view says: "The selected text is
+Tesseract OCR (eng); the PDF's own text (an earlier OCR), the only other reading,
+has words run together, so the job did not compare the two and nothing confirms
+the selected text". The hold is not a formality. In the 2026-11 re-walk, on two
+of three such pages of an 1877 book, Tesseract's clean-looking reading had
+misread dates and terms that the damaged layer had right. Compare the two
+readings with the page image; for a whole book of such pages, add a second OCR
+engine (`second_ocr`, which `pageledger init` writes as a commented block), so
+that a second reading can confirm the first. The
+[processing spec](processing-spec.md#hold-policy-09) says why the rule stays,
+under "What holding for the layer's warnings costs".
 
 ## Decide each page
 
@@ -65,23 +91,31 @@ never edited, with who changed it and when.
 ## Apply the decisions
 
 Your choices stay in the browser until you download them. Choose "Download my
-decisions (review.json)", save the file in the view's folder, and apply it,
-first as a dry run:
+decisions (review.json)". Your browser saves the file where it saves downloads,
+usually your Downloads folder, and may name it `review (1).json` if a
+`review.json` is there already. Apply it by that path, first as a dry run:
 
 ```bash
-pageledger review jobs/book --apply jobs/book-review/review.json --reviewer "Your Name" --dry-run
-pageledger review jobs/book --apply jobs/book-review/review.json --reviewer "Your Name"
+pageledger review jobs/book --apply ~/Downloads/review.json --reviewer "Your Name" --dry-run
+pageledger review jobs/book --apply ~/Downloads/review.json --reviewer "Your Name"
 ```
 
+The view shows this command with `DOWNLOADED_FILE` where the path goes.
+
 The dry run checks every decision and says how many words each correction
-changes, without recording anything. The file is refused if the job has
+changes ("Correction of page 60, from Tesseract OCR (eng): 1 word changed, 0
+added, 0 removed"), without recording anything. The file is refused if the job has
 changed since the view was written: write a new view.
 
 ## In a spreadsheet instead
 
 The view's folder also holds `review.csv`, one row per page, and
 `review-decisions.txt`, which lists the decisions and the readings each page can
-use. Type a decision in each row's `decision` column (the codes in the table
+use. The sheet's `disposition`, `attempt_summary` and `review_reasons` cells are
+for you to read: each leads with words ("Text may be missing or damaged in the
+reading (coverage_defect)", "Tesseract OCR (eng): the first words … (2407
+characters; local_ocr-0060:doc_0001_page_0060)"); applying the sheet reads only
+`row_id`, `page_number`, `decision` and `note`. Type a decision in each row's `decision` column (the codes in the table
 above), save the sheet as CSV in the same folder, and apply it the same way:
 
 ```bash
@@ -97,7 +131,7 @@ as it was. `pageledger review jobs/book --sheet FILE` writes a sheet on its own.
 
 ```bash
 pageledger verify jobs/book
-pageledger export jobs/book --format md --out book.md
+pageledger export jobs/book --out book.md
 ```
 
 `verify` checks the job, the decisions and the corrections against their

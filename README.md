@@ -36,20 +36,24 @@ your machine: Tesseract, in English, unless you choose otherwise. It never
 calls a paid service unless you configure one. The folder `jobs/book` is
 the *job*: the record of everything done to this one document.
 
-On a three-page scan whose first page is blank, the screen shows:
+On three pages of an 1877 book scanned by the Internet Archive, the first
+blank and the others carrying the scan's earlier OCR, the screen shows:
 
 ```text
 Reading book.pdf: each page's own text, then Tesseract OCR in English for pages that need it. Nothing is sent anywhere.
-Finished: 3 pages read; 1 needs a person.
+Finished: 3 pages read; 3 need a person.
 The job is in jobs/book.
-Held because no reading found text, or one came back empty: the page may be blank (1).
-Next: pageledger review jobs/book shows that page beside its page image for checking.
-Text out: pageledger export jobs/book --format md --out book.md
+Why they need a person:
+  2 pages: the selected text is Tesseract OCR (eng); the PDF's own text (an earlier OCR), the only other reading, has words run together, so the job did not compare the two and nothing confirms the selected text.
+  1 page: no reading found text, or one came back empty: the page may be blank.
+Next: pageledger review jobs/book shows those pages beside their page images for checking.
+Text out: pageledger export jobs/book --out book.md
 ```
 
 When something looks wrong on a page (text missing, an engine unsure of many
 words, two engines disagreeing), the job *holds* the page, and the screen says
-how many pages need a person and why. Then:
+how many pages need a person and why: which reading, and what is wrong with
+it. Then:
 
 - `pageledger inspect jobs/book` shows the job's report, `report.md`: where
   each page stands and which reading was selected, then the record of how
@@ -57,9 +61,9 @@ how many pages need a person and why. Then:
 - `pageledger review jobs/book` writes a review view into `jobs/book-review`
   to open in a browser: each page's image beside its text. Choose a decision for each
   page or correct its text there, and record the decisions with
-  `pageledger review jobs/book --apply review.json --reviewer "Your Name"`,
-  naming the `review.json` the view downloaded.
-- `pageledger export jobs/book --format md --out book.md` writes the text out
+  `pageledger review jobs/book --apply ~/Downloads/review.json --reviewer "Your Name"`,
+  naming the `review.json` the view downloaded where your browser saved it.
+- `pageledger export jobs/book --out book.md` writes the text out
   as plain text, Markdown, JSON lines or TEI, each page marked with whether a
   person has checked it.
 

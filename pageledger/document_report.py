@@ -1039,7 +1039,9 @@ def _comparisons(page: dict, report: dict) -> list[str]:
         ratio = item["agreement_ratio"]
         differences = len(item.get("number_differences") or [])
         figure = f"{ratio:.0%} of words agree" + (
-            f", {differences} number{'' if differences == 1 else 's'} differ" if differences else ""
+            f", {differences} number{' differs' if differences == 1 else 's differ'}"
+            if differences
+            else ""
         )
         pair = (item["left_attempt"], item["right_attempt"])
         other = pair[1] if pair[0] == selected else pair[0]
