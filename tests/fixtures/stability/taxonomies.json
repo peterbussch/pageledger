@@ -263,6 +263,8 @@
       "sparse": "coverage_defect",
       "suspicious_embedded_text_delta": "coverage_defect",
       "suspicious_symbol_density": "coverage_defect",
+      "tile_edge_cut": "coverage_defect",
+      "tile_failed": "coverage_defect",
       "truncated_text": "coverage_defect",
       "unknown": "coverage_defect",
       "unreadable": "unreadable"
@@ -372,6 +374,7 @@
     "warning_codes": [
       "alto_geometry_mismatch",
       "alto_invalid",
+      "alto_layout_rejected",
       "alto_missing",
       "blank",
       "blank_candidate",
@@ -417,6 +420,10 @@
       "sparse",
       "suspicious_embedded_text_delta",
       "suspicious_symbol_density",
+      "tile_edge_cut",
+      "tile_failed",
+      "tile_layout_missing",
+      "tile_text_small",
       "truncated_text",
       "unconfirmed_model_output",
       "unknown",

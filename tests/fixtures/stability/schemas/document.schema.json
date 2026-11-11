@@ -79,7 +79,8 @@
               "max_image_pages",
               "max_local_image_pages",
               "max_tokens",
-              "max_cost_usd"
+              "max_cost_usd",
+              "max_image_requests"
             ]
           },
           "previous": {
@@ -320,6 +321,53 @@
                     "second_opinion"
                   ]
                 },
+                "tiling": {
+                  "additionalProperties": false,
+                  "description": "A reading in tiles: its plan, the layout it was cut along, and what the tiles found. Present only in jobs with processing.tiling.",
+                  "properties": {
+                    "edge_cut": {
+                      "items": {
+                        "pattern": "^t[0-9]{2}$",
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "failed": {
+                      "items": {
+                        "pattern": "^t[0-9]{2}$",
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "layout_attempt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "plan_sha256": {
+                      "pattern": "^[0-9a-f]{64}$",
+                      "type": "string"
+                    },
+                    "sent": {
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "tiles": {
+                      "minimum": 1,
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "plan_sha256",
+                    "layout_attempt",
+                    "tiles",
+                    "sent",
+                    "failed",
+                    "edge_cut"
+                  ],
+                  "type": "object"
+                },
                 "usage": {
                   "type": "object"
                 },
@@ -469,6 +517,35 @@
               "witness_attempt": {
                 "minLength": 1,
                 "type": "string"
+              },
+              "witness_projection": {
+                "additionalProperties": false,
+                "description": "The witness regrouped in the tile order of a reading in tiles (tiling.project_witness), kept as an artifact.",
+                "properties": {
+                  "artifact": {
+                    "pattern": "^witnesses/doc_[0-9]{4}_page_[0-9]{4,}\\.txt$",
+                    "type": "string"
+                  },
+                  "outside_items": {
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "plan_sha256": {
+                    "pattern": "^[0-9a-f]{64}$",
+                    "type": "string"
+                  },
+                  "sha256": {
+                    "pattern": "^[0-9a-f]{64}$",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "plan_sha256",
+                  "artifact",
+                  "outside_items",
+                  "sha256"
+                ],
+                "type": "object"
               }
             },
             "required": [
@@ -1229,6 +1306,11 @@
           ]
         },
         "image_calls": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "image_requests": {
+          "description": "Image requests the paid stages sent: one per tile of a reading in tiles, one per other page. Present only in jobs with processing.tiling.",
           "minimum": 0,
           "type": "integer"
         },

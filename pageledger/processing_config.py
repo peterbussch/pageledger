@@ -39,6 +39,7 @@ def processing_config(data: dict[str, Any], *, pdf: bool) -> dict[str, Any]:
         "escalate_on",
         "lexicon",
         "contest",
+        "tiling",
     }
     if unknown:
         raise ValueError(f"Unknown processing key: {sorted(unknown)[0]}")
@@ -73,6 +74,8 @@ def processing_config(data: dict[str, Any], *, pdf: bool) -> dict[str, Any]:
             raise ValueError(f"Invalid processing.{name} adapter, options or prompt")
         if "evidence_dir" in options:
             raise ValueError("processing owns the adapter evidence_dir")
+        if "tiles" in options and (adapter == "vision" or name in _tiled(value)):
+            raise ValueError("processing owns the adapter tiles; plan them with processing.tiling")
         result[name] = {"adapter": adapter, "adapter_options": dict(options), "prompt": prompt}
     if result["second_opinion"] is not None and result["image"] is None:
         raise ValueError("second_opinion requires an image stage")
@@ -82,14 +85,26 @@ def processing_config(data: dict[str, Any], *, pdf: bool) -> dict[str, Any]:
         if name in result and result["local_ocr"] is None:
             raise ValueError(f"processing.{name} requires an explicit local_ocr stage")
     local_image = "local_image" in result
+    tiling = _tiling(value.get("tiling"), result)
     limits = value.get("limits", {})
     keys = {"max_attempt_pages", "max_image_pages", "max_tokens", "max_cost_usd"}
     if local_image:
         keys.add("max_local_image_pages")
+    if tiling:
+        keys.add("max_image_requests")
     if not isinstance(limits, dict) or set(limits) - keys:
         if isinstance(limits, dict) and "max_local_image_pages" in limits:
             raise ValueError("processing.limits.max_local_image_pages needs a local_image stage")
+        if isinstance(limits, dict) and "max_image_requests" in limits:
+            raise ValueError("processing.limits.max_image_requests needs processing.tiling")
         raise ValueError("Invalid processing.limits")
+    if tiling and (
+        type(limits.get("max_image_requests")) is not int or limits["max_image_requests"] < 1
+    ):
+        raise ValueError(
+            "processing.tiling needs processing.limits.max_image_requests, a positive bound on "
+            "the image requests (one per tile) a job may send"
+        )
     normalized: dict[str, Any] = {key: limits.get(key) for key in keys}
     normalized["max_image_pages"] = limits.get("max_image_pages", 0)
     if local_image:
@@ -167,7 +182,58 @@ def processing_config(data: dict[str, Any], *, pdf: bool) -> dict[str, Any]:
         result["lexicon"] = lexicon
     if contest is not None:
         result["contest"] = dict(contest)
+    if tiling:
+        result["tiling"] = tiling
     return result
+
+
+# Stages that read a page image with a model, which tiling can cut up, and the
+# literal stages whose layout it can cut along.
+TILED_STAGES = ("local_image", "image", "second_opinion")
+LAYOUT_STAGES = ("local_text", "local_ocr", "second_ocr")
+TILING_DEFAULTS = {"min_line_pixels": 32, "max_tiles": 24}
+
+
+def _tiled(value: dict[str, Any]) -> list[str]:
+    tiling = value.get("tiling")
+    stages = tiling.get("stages") if isinstance(tiling, dict) else None
+    return [name for name in stages if isinstance(name, str)] if isinstance(stages, list) else []
+
+
+def _tiling(tiling: Any, stages: dict[str, Any]) -> dict[str, Any] | None:
+    if tiling is None:
+        return None
+    from .tiling import MAX_TILES
+
+    if not isinstance(tiling, dict) or set(tiling) - {"stages", *TILING_DEFAULTS, "layout"}:
+        raise ValueError("processing.tiling takes stages, layout, min_line_pixels and max_tiles")
+    tiled = tiling.get("stages")
+    if (
+        not isinstance(tiled, list)
+        or not tiled
+        or len(set(tiled)) != len(tiled)
+        or any(name not in TILED_STAGES or stages.get(name) is None for name in tiled)
+    ):
+        raise ValueError(
+            "processing.tiling.stages must list configured image stages "
+            f"({', '.join(TILED_STAGES)}), each once"
+        )
+    layout = tiling.get("layout")
+    if layout not in LAYOUT_STAGES or stages.get(layout) is None:
+        raise ValueError(
+            "processing.tiling.layout must name a configured stage whose engine reports where "
+            f"the text is ({', '.join(LAYOUT_STAGES)})"
+        )
+    settings = {**TILING_DEFAULTS, **{k: v for k, v in tiling.items() if k in TILING_DEFAULTS}}
+    if type(settings["min_line_pixels"]) is not int or settings["min_line_pixels"] < 1:
+        raise ValueError("processing.tiling.min_line_pixels must be a positive integer")
+    if type(settings["max_tiles"]) is not int or not 1 <= settings["max_tiles"] <= MAX_TILES:
+        raise ValueError(f"processing.tiling.max_tiles must be an integer from 1 to {MAX_TILES}")
+    return {
+        "stages": [name for name in TILED_STAGES if name in tiled],
+        "layout": layout,
+        **settings,
+    }
 
 
 def _escalation(value: dict[str, Any], *, contest: bool) -> tuple[list[str], dict[str, Any] | None]:

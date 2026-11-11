@@ -448,14 +448,17 @@ class _View:
             evidence = attempt.get("input_evidence")
             if not evidence:
                 continue
-            path = self.root / attempt["run_path"] / evidence["artifact"]
-            if file_digest(path) != evidence["sha256"]:
-                raise ValueError(f"Image evidence for {page['page_id']} changed")
-            target = relative_path(str(path), self.out)
-            links.append(
-                f'<a href="{_e(_href(target))}">The image sent to the model in '
-                f"{_e(attempt['attempt_id'])}</a>"
-            )
+            tiled = evidence.get("kind") == "page_tiles"
+            for image in evidence["tiles"] if tiled else [evidence]:
+                path = self.root / attempt["run_path"] / image["artifact"]
+                if file_digest(path) != image["sha256"]:
+                    raise ValueError(f"Image evidence for {page['page_id']} changed")
+                target = relative_path(str(path), self.out)
+                what = f"Tile {image['tile_id']} sent" if tiled else "The image sent"
+                links.append(
+                    f'<a href="{_e(_href(target))}">{what} to the model in '
+                    f"{_e(attempt['attempt_id'])}</a>"
+                )
         picture = self.pictures.get(page["page_id"])
         image = (
             f'<img src="{_e(picture)}" alt="Page {page["page_number"]} of the source" '

@@ -26,7 +26,9 @@ INSTRUCTIONS = """\
 # Settle contested spans against the page image
 
 Each `<page_id>.json` packet lists places where two engines read a page
-differently. The page image is `<page_id>.jpg`.
+differently. The page image is `<page_id>.jpg`. A page that was read in tiles
+has no single image: each span names its `tile_id`, and that tile's image is
+`<page_id>-<tile_id>.jpg`, listed under `images`.
 
 For every span, `candidates` are the two readings, in no particular order, and
 `before` and `after` are the text around the place, to help you find it. Your
@@ -226,6 +228,16 @@ def _touches(text: str, span: dict, patterns: list[re.Pattern[str]]) -> bool:
     return any(p.search(part) for p in patterns for part in parts)
 
 
+def _tile_of(evidence: dict, offset: int) -> str:
+    """The tile whose text holds ``offset`` of a reading in tiles; a place on the line
+    break between two tiles belongs to the next one."""
+    read = [tile for tile in evidence["tiles"] if tile["outcome"] == "completed"]
+    for tile in read:
+        if offset < tile["text_offset"] + tile["text_length"] or tile is read[-1]:
+            return tile["tile_id"]
+    raise ValueError("A reading in tiles has no tile text")
+
+
 def write_packets(job: dict, root: Path, directory: Path, terms: list[str] | None = None) -> dict:
     """One packet per page with open spans and the image the reader saw.
 
@@ -262,7 +274,21 @@ def write_packets(job: dict, root: Path, directory: Path, terms: list[str] | Non
         in_packets += len(still_open)
         image = None
         evidence = base.get("input_evidence")
-        if evidence:
+        tiles: dict[str, str] = {}
+        images: list[dict] | None = None
+        if evidence and evidence.get("kind") == "page_tiles":
+            tiles = {span["span_id"]: _tile_of(evidence, span["start"]) for span in still_open}
+            images = []
+            for tile in evidence["tiles"]:
+                if tile["tile_id"] not in tiles.values():
+                    continue
+                name = f"{page['page_id']}-{tile['tile_id']}.jpg"
+                source = root / base["run_path"] / tile["artifact"]
+                if file_digest(source) != tile["sha256"]:
+                    raise ValueError(f"Image evidence for {page['page_id']} changed")
+                shutil.copyfile(source, directory / name)
+                images.append({"tile_id": tile["tile_id"], "path": name, "sha256": tile["sha256"]})
+        elif evidence:
             name = f"{page['page_id']}.jpg"
             source = root / base["run_path"] / evidence["artifact"]
             if file_digest(source) != evidence["sha256"]:
@@ -277,12 +303,14 @@ def write_packets(job: dict, root: Path, directory: Path, terms: list[str] | Non
             "page_number": page["page_number"],
             "contested_sha256": contested["sha256"],
             "image": image,
+            **({"images": images} if images is not None else {}),
             "spans": [
                 {
                     "span_id": span["span_id"],
                     "candidates": sorted({span["base"], span["witness"]}),
                     "before": text[max(0, span["start"] - _AROUND) : span["start"]],
                     "after": text[span["end"] : span["end"] + _AROUND],
+                    **({"tile_id": tiles[span["span_id"]]} if tiles else {}),
                 }
                 for span in still_open
             ],

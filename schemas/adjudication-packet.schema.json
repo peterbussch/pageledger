@@ -36,11 +36,13 @@
           "span_id": { "type": "string", "pattern": "^sp_[0-9a-f]{16}$" },
           "candidates": { "type": "array", "items": { "type": "string" }, "minItems": 1, "maxItems": 2, "description": "The two readings, sorted; an empty string means a reading has nothing there." },
           "before": { "type": "string" },
-          "after": { "type": "string" }
+          "after": { "type": "string" },
+          "tile_id": { "type": "string", "pattern": "^t[0-9]{2}$", "description": "For a page read in tiles: the tile whose image shows this place." }
         },
         "additionalProperties": false
       }
     },
+    "images": { "type": "array", "description": "For a page read in tiles: the tile images its spans lie in, copied beside the packet; image is then null.", "items": { "type": "object", "required": ["tile_id", "path", "sha256"], "properties": { "tile_id": { "type": "string", "pattern": "^t[0-9]{2}$" }, "path": { "type": "string", "minLength": 1 }, "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" } }, "additionalProperties": false } },
     "terms": { "type": "array", "items": { "type": "string", "minLength": 1 }, "minItems": 1, "description": "Present when the packets were written with --term: this packet holds only the open spans near one of these words. The page's other open spans are still open." }
   },
   "additionalProperties": false

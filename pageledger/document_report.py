@@ -456,7 +456,9 @@ def render_document_report(report: dict) -> str:
         "",
         f"Annotations: {annotations['status']} ({annotation_count}). This inventory does not establish body extraction or citation completeness.",
         "",
-        f"Attempt pages: {usage['attempt_pages']}; image calls: {usage['image_calls']}; tokens: {tokens}; cost: {cost}.",
+        f"Attempt pages: {usage['attempt_pages']}; image calls: {usage['image_calls']}"
+        + (f" ({usage['image_requests']} image requests)" if "image_requests" in usage else "")
+        + f"; tokens: {tokens}; cost: {cost}.",
         "",
         *_relocation_lines(report),
         *_escalation_accounting(report),
@@ -526,6 +528,12 @@ def render_document_report(report: dict) -> str:
             noted = [w for w in attempt.get("warnings", []) if w in _NOTED_WARNINGS]
             if noted:
                 detail += f"; quality warning {', '.join(noted)}"
+            tiling = attempt.get("tiling")
+            if tiling:
+                detail += f"; read in {tiling['sent']} of {tiling['tiles']} tiles"
+                for label, key in (("failed", "failed"), ("cut through text", "edge_cut")):
+                    if tiling[key]:
+                        detail += f", {label}: {', '.join(tiling[key])}"
             stage = _stage_label(attempt["stage"]) if current else attempt["stage"]
             lines.append(
                 f"- Page {page['page_number']}: {evidence}; stage {stage}; "

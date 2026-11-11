@@ -139,6 +139,30 @@
           "minLength": 1,
           "type": "string"
         },
+        "projection": {
+          "additionalProperties": false,
+          "description": "The witness regrouped in the tile order of a reading in tiles (tiling.project_witness), kept as an artifact.",
+          "properties": {
+            "artifact": {
+              "pattern": "^witnesses/doc_[0-9]{4}_page_[0-9]{4,}\\.txt$",
+              "type": "string"
+            },
+            "outside_items": {
+              "minimum": 0,
+              "type": "integer"
+            },
+            "plan_sha256": {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            }
+          },
+          "required": [
+            "plan_sha256",
+            "artifact",
+            "outside_items"
+          ],
+          "type": "object"
+        },
         "text_sha256": {
           "pattern": "^[0-9a-f]{64}$",
           "type": "string"

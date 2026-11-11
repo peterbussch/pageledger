@@ -86,6 +86,9 @@ _WARNING_HOLDS = {
     "model_commentary": "coverage_defect",
     "script_mismatch": "coverage_defect",
     "historical_letters_lost": "coverage_defect",
+    # Only a job that reads pages in tiles (processing.tiling) records these.
+    "tile_edge_cut": "coverage_defect",
+    "tile_failed": "coverage_defect",
 }
 # Jobs written before 0.6 carry no hold_policy and filed an engine's low
 # confidence under coverage_defect; verification rebuilds them that way.

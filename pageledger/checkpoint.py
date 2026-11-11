@@ -489,10 +489,14 @@ class Checkpoint:
                         or completion["provenance"].get("result", {}).get("raw_artifact")
                         != relative
                         or completion["provenance"].get("input_evidence") != result.input_evidence
-                        or completion["provenance"].get("layout_sha256")
-                        != (None if result.layout is None else layout_sha256(result.layout))
                     ):
                         raise ValueError("Invalid completion evidence")
+                    if completion["provenance"].get("layout_sha256") != (
+                        None if result.layout is None else layout_sha256(result.layout)
+                    ):
+                        raise ValueError(
+                            f"The saved layout of {page_id} no longer matches its provenance hash"
+                        )
                     alignment = completion["alignment"]
                     if alignment is not None:
                         normalized = self.root / "normalized" / f"{page_id}.json"

@@ -33,6 +33,7 @@ from .classifier import classify_signals, merge_classify_thresholds, structural_
 from .comparison import compare_texts
 from .config import load_config
 from .contest import contest as contest_spans
+from .image_evidence import validate_tile_text
 from .image_source import (
     KIND,
     manifest_changes,
@@ -40,8 +41,9 @@ from .image_source import (
     snapshot_growth,
     snapshot_warnings,
 )
+from .layout import layout_sha256
 from .lexicon import load_lexicon, roughness
-from .processing_config import ladder, processing_config
+from .processing_config import LAYOUT_STAGES, ladder, processing_config
 from .processing_policy import (
     HOLD_POLICIES,
     HOLD_POLICY,
@@ -51,6 +53,7 @@ from .processing_source import TEXT, inspect_source, source_kind
 from .replay import _package_code_sha256
 from .review_sheet import read_review_sheet, write_review_sheet
 from .source_index import SourceUnavailable, resolve_source
+from .tiling import centres_inside, check_edges, plan_sha256, plan_tiles, project_witness
 from .verify import verify_run
 
 
@@ -419,10 +422,11 @@ def _process(
     # Build every stage's adapter now, so a bad option fails before the job exists
     # rather than when the first page reaches that stage. Constructors make no requests.
     runner._apply_adapter_path(adapter_path)
+    adapters = {}
     for name in ladder(policy):
         if policy[name] is not None:
             try:
-                adapter = runner.load_adapter(
+                adapter = adapters[name] = runner.load_adapter(
                     policy[name]["adapter"], policy[name]["adapter_options"]
                 )
                 # alto's {stem} names files after page images, which only they have.
@@ -430,6 +434,8 @@ def _process(
                     adapter.preflight([source])
             except ValueError as exc:
                 raise ValueError(f"processing.{name}: {exc}") from exc
+    if policy.get("tiling"):
+        _check_tiling_adapters(policy["tiling"], adapters)
     # A missing or unreadable word list fails here, before the job exists.
     lexicon = load_lexicon(policy["lexicon"]).identity if policy.get("lexicon") else None
     source_sha = images.sha256 if images else file_digest(source)
@@ -580,13 +586,32 @@ def _job_lexicon(job: dict) -> Any:
     return load_lexicon(config)
 
 
-def _contester(job: dict) -> Any:
-    """Compare a page's reader with its literal witness, when the job contests readings."""
+def _contester(job: dict, root: Path) -> Any:
+    """Compare a page's reader with its literal witness, when the job contests readings.
+
+    A reading in tiles follows its tiles' order, so the witness is its own layout
+    regrouped tile by tile (``tiling.project_witness``), kept as an artifact.
+    """
     settings = job["policy"].get("contest")
     if not settings:
         return None
     lexicon = _job_lexicon(job) if job["policy"].get("lexicon") else None
     receipts = {page["page_id"]: page.get("adjudications", []) for page in job["pages"]}
+    stages = {stage["stage_id"]: stage for stage in job["stages"]}
+
+    def witness_text(base: dict, witness: dict) -> tuple[str, dict | None]:
+        evidence = base.get("input_evidence") or {}
+        stage = stages[base["attempt_id"].split(":")[0]]
+        if evidence.get("kind") != "page_tiles" or "tiles" not in stage:
+            return witness["text"], None
+        if not witness.get("layout_sha256"):
+            return witness["text"], None
+        text, outside = project_witness(_attempt_layout(root, witness), _stage_plan(root, stage))
+        return text, {
+            "plan_sha256": evidence["plan_sha256"],
+            "artifact": f"witnesses/{base['page_id']}.txt",
+            "outside_items": outside,
+        }
 
     @functools.cache
     def spans(base: str, witness: str, engine: str) -> list[dict]:
@@ -600,6 +625,7 @@ def _contester(job: dict) -> Any:
 
     def contest(base: dict, witness: dict) -> dict:
         engine = job["policy"][witness["stage"]]["adapter"]
+        text, projection = witness_text(base, witness)
         record = {
             "schema_version": "0.1",
             "page_id": base["page_id"],
@@ -607,10 +633,11 @@ def _contester(job: dict) -> Any:
             "base": {"attempt": base["attempt_id"], "text_sha256": _text_sha256(base["text"])},
             "witness": {
                 "attempt": witness["attempt_id"],
-                "text_sha256": _text_sha256(witness["text"]),
+                "text_sha256": _text_sha256(text),
                 "adapter": engine,
+                **({"projection": projection} if projection else {}),
             },
-            "spans": copy.deepcopy(spans(base["text"], witness["text"], engine)),
+            "spans": copy.deepcopy(spans(base["text"], text, engine)),
         }
         sha256 = hashlib.sha256(adjudication.encode(record)).hexdigest()
         still_open, decided = adjudication.settle(record, sha256, receipts[base["page_id"]])
@@ -622,6 +649,7 @@ def _contester(job: dict) -> Any:
             "edition": adjudication.edition(base["text"], record, decided)
             if not still_open
             else None,
+            "witness_text": text if projection else None,
         }
 
     return contest
@@ -679,6 +707,16 @@ def _retain_contested(
             {"reason": reason, "attempt": attempt} for reason, attempt in result["superseded"]
         ],
     }
+    projection = record["witness"].get("projection")
+    if projection is not None:
+        sha256 = _retain(
+            root,
+            projection["artifact"],
+            result["witness_text"].encode("utf-8"),
+            materialize,
+            "Witness projections",
+        )
+        page["contested"]["witness_projection"] = {**projection, "sha256": sha256}
     if result["edition"] is not None:
         relative = f"editions/{page['page_id']}.txt"
         sha256 = _retain(root, relative, result["edition"].encode(), materialize, "Edition texts")
@@ -831,9 +869,16 @@ def _refresh(job: dict, root: Path, *, materialize: bool = True) -> None:
                     next_action="Inspect the image adapter: completed image calls require bound input evidence.",
                 )
             pages[page_id]["attempts"].append(attempt)
+    if job["policy"].get("tiling"):
+        stages = {stage["stage_id"]: stage for stage in job["stages"]}
+        for page in pages.values():
+            for attempt in page["attempts"]:
+                stage = stages[attempt["attempt_id"].split(":")[0]]
+                if "tiles" in stage:
+                    _check_tiled_attempt(job, root, page, attempt, stage)
     holds = warning_holds(job)
     escalate_on, roughness_of, rough_below = _escalation(job)
-    contest = _contester(job)
+    contest = _contester(job, root)
     for page in pages.values():
         if job.get("hold_policy") in HOLD_POLICIES:
             page["comparisons"] = _build_comparisons(page["attempts"])
@@ -877,6 +922,8 @@ def _refresh(job: dict, root: Path, *, materialize: bool = True) -> None:
             if "local_image" in job["policy"]
             else {}
         ),
+        # Present only in jobs that read pages in tiles: one request per tile sent.
+        **({"image_requests": sum(map(_requests, paid))} if job["policy"].get("tiling") else {}),
         "tokens": sum(t for t in token_values if t is not None),
         "tokens_known": all(t is not None for t in token_values),
         "cost_usd": known_cost if all(c is not None for c in cost_values) else None,
@@ -887,7 +934,9 @@ def _refresh(job: dict, root: Path, *, materialize: bool = True) -> None:
     }
 
 
-def _budget_reason(job: dict, stage: str, count: int) -> str | None:
+def _budget_reason(job: dict, stage: str, count: int, requests: int | None = None) -> str | None:
+    """Why ``count`` more pages of ``stage`` (``requests`` image requests, when they are
+    planned tiles) would pass a limit, if they would."""
     limits, usage = job["limits"], job["usage"]
     if (
         limits["max_attempt_pages"] is not None
@@ -906,6 +955,12 @@ def _budget_reason(job: dict, stage: str, count: int) -> str | None:
     if stage in {"image", "second_opinion"}:
         if usage["image_calls"] + count > limits["max_image_pages"]:
             return "max_image_pages"
+        if (
+            limits.get("max_image_requests") is not None
+            and usage["image_requests"] + (count if requests is None else requests)
+            > limits["max_image_requests"]
+        ):
+            return "max_image_requests"
         if limits["max_tokens"] is not None and not usage["paid_tokens_known"]:
             return "unknown_token_usage"
         if limits["max_cost_usd"] is not None and not usage["paid_cost_known"]:
@@ -921,6 +976,7 @@ _RAISABLE_LIMITS = (
     "max_local_image_pages",
     "max_tokens",
     "max_cost_usd",
+    "max_image_requests",
 )
 # Stages that send a page image to a model and keep the exact image as evidence.
 IMAGE_STAGES = ("local_image", "image", "second_opinion")
@@ -1008,7 +1064,13 @@ def _raise_limits(job: dict, raised: dict[str, int | float]) -> None:
 
 
 def _plan_stage(
-    job: dict, root: Path, stage: str, numbers: list[int], *, retry: bool = False
+    job: dict,
+    root: Path,
+    stage: str,
+    numbers: list[int],
+    *,
+    retry: bool = False,
+    tiles: dict | None = None,
 ) -> dict:
     # A job's first text batch keeps the plain name; a batch resumed after a
     # budget pause is named by its first page, like the per-page stages.
@@ -1030,6 +1092,10 @@ def _plan_stage(
     path = f"attempts/{stage_id}"
     if stage in IMAGE_STAGES:
         options["evidence_dir"] = str(root / path / "evidence")
+    if tiles is not None:
+        if len(numbers) != 1:
+            raise ValueError("A tiled stage reads one page")
+        options["tiles"] = tiles
     config = copy.deepcopy(job["config"])
     config.pop("processing", None)
     config["taxonomy"] = {
@@ -1050,7 +1116,7 @@ def _plan_stage(
     config_path = f".job/{stage_id}.yml"
     encoded = yaml.safe_dump(config, sort_keys=True, allow_unicode=True).encode("utf-8")
     atomic_bytes(root / config_path, encoded)
-    item = {
+    item: dict[str, Any] = {
         "stage_id": stage_id,
         "stage": stage,
         "pages": numbers,
@@ -1059,9 +1125,206 @@ def _plan_stage(
         "config_sha256": file_digest(root / config_path),
         "status": "planned",
     }
+    if tiles is not None:
+        item["tiles"] = {
+            "plan_sha256": plan_sha256(tiles),
+            "count": len(tiles["tiles"]),
+            "layout_attempt": (tiles["layout"] or {}).get("attempt"),
+        }
     job["stages"].append(item)
     _save(job, root)
     return item
+
+
+# Reading a dense page in tiles (processing.tiling). The plan for a page is made from
+# the layout of a literal reading, kept in the stage's hashed configuration, and made
+# again from the retained layout whenever the job is rebuilt.
+
+
+def _check_tiling_adapters(tiling: dict, adapters: dict) -> None:
+    layout = adapters[tiling["layout"]]
+    if "layout" not in getattr(layout, "capabilities", ()):
+        raise ValueError(
+            f"processing.tiling.layout: the {tiling['layout']} adapter reports no layout "
+            "(capability layout); use rapidocr or alto"
+        )
+    for name in tiling["stages"]:
+        adapter = adapters[name]
+        if "page_tiles" not in getattr(adapter, "capabilities", ()):
+            raise ValueError(
+                f"processing.tiling.stages: the {name} adapter cannot read tiles "
+                "(capability page_tiles); use vision"
+            )
+        if type(getattr(adapter, "max_image_side", None)) is not int:
+            raise ValueError(f"processing.tiling.stages: the {name} adapter has no max_image_side")
+
+
+def _tiler(job: dict, root: Path, stage: str, adapter_path: Path | None) -> Any:
+    """A function planning one page's tiles for ``stage``, or None when it is not tiled."""
+    tiling = job["policy"].get("tiling")
+    if not tiling or stage not in tiling["stages"]:
+        return None
+    from .adapters import native_page_pixels
+    from .alto_adapter import rendered_page_size
+
+    runner._apply_adapter_path(adapter_path)
+    profile = job["policy"][stage]
+    side = runner.load_adapter(profile["adapter"], profile["adapter_options"]).max_image_side
+    source = _check_source(job)
+    pages = {page["page_number"]: page for page in job["pages"]}
+
+    def plan(number: int) -> dict:
+        size = rendered_page_size(source, number)
+        if size is None:
+            raise ValueError(f"pdfinfo cannot say the size of page {number}; tiles need it")
+        native = native_page_pixels(source, number)
+        attempt, _ = _layout_attempt(job, root, pages[number])
+        return plan_tiles(
+            None if attempt is None else _attempt_layout(root, attempt),
+            page_width=size[0],
+            page_height=size[1],
+            min_line_pixels=tiling["min_line_pixels"],
+            max_tiles=tiling["max_tiles"],
+            max_image_side=side,
+            max_dpi=None if native is None else max(native[0], native[1]) / native[2],
+            layout_attempt=None if attempt is None else attempt["attempt_id"],
+        )
+
+    return plan
+
+
+def _layout_attempt(job: dict, root: Path, page: dict) -> tuple[dict | None, dict | None]:
+    """The literal reading whose layout a page is cut along, and the one set aside.
+
+    The configured stage's latest completed reading with a layout. When that is not
+    the job's own OCR (an ALTO file, say) and fewer than nine in ten of its item
+    centres fall inside the OCR's boxes, its boxes point elsewhere on the page: the
+    OCR layout is used instead, and the other is returned as rejected.
+    """
+
+    def latest(stage: str) -> dict | None:
+        found = [
+            attempt
+            for attempt in page["attempts"]
+            if attempt["stage"] == stage
+            and attempt["outcome"] == "completed"
+            and attempt.get("layout_sha256")
+        ]
+        return found[-1] if found else None
+
+    stage = job["policy"]["tiling"]["layout"]
+    chosen, ocr = latest(stage), latest("local_ocr")
+    if chosen is None or ocr is None or stage == "local_ocr":
+        return chosen, None
+    inside, total = centres_inside(_attempt_layout(root, chosen), _attempt_layout(root, ocr))
+    if total and 10 * inside < 9 * total:
+        return ocr, chosen
+    return chosen, None
+
+
+def _attempt_layout(root: Path, attempt: dict) -> dict:
+    """An attempt's layout from its stage's recovery record, checked against its hash."""
+    path = _safe(root, attempt["run_path"]) / ".checkpoint" / "pages" / f"{attempt['page_id']}.json"
+    layout = read_record(path).get("result", {}).get("layout")
+    if layout is None or layout_sha256(layout) != attempt.get("layout_sha256"):
+        raise ValueError(f"The layout of {attempt['attempt_id']} changed or is missing")
+    return layout
+
+
+def _stage_plan(root: Path, stage: dict) -> dict:
+    """A tiled stage's plan, from its hashed configuration."""
+    config = yaml.safe_load(_safe(root, stage["config_path"]).read_text(encoding="utf-8"))
+    plan = config["run"]["adapter_options"].get("tiles")
+    if plan is None or plan_sha256(plan) != stage["tiles"]["plan_sha256"]:
+        raise ValueError(f"The tile plan of {stage['stage_id']} changed")
+    return plan
+
+
+def _requests(attempt: dict) -> int:
+    """Image requests a paid attempt made: one per tile sent, or one for the page."""
+    evidence = attempt.get("input_evidence") or {}
+    return len(evidence["tiles"]) if evidence.get("kind") == "page_tiles" else 1
+
+
+def _check_tiled_attempt(job: dict, root: Path, page: dict, attempt: dict, stage: dict) -> None:
+    """Bind a tiled reading to its plan, the plan to its layout, and record what the tiles
+    found: failed tiles, cuts through text, text too small, a missing or rejected layout."""
+    plan = _stage_plan(root, stage)
+    tiling = job["policy"]["tiling"]
+    if (
+        plan["settings"]["min_line_pixels"] != tiling["min_line_pixels"]
+        or plan["settings"]["max_tiles"] != tiling["max_tiles"]
+    ):
+        raise ValueError(f"The tile plan of {stage['stage_id']} differs from the job's tiling")
+    by_id = {item["attempt_id"]: item for item in page["attempts"]}
+    source = plan["layout"]["attempt"] if plan["layout"] else None
+    if plan["layout"] is not None and (
+        source not in by_id or by_id[source].get("layout_sha256") != plan["layout"]["sha256"]
+    ):
+        raise ValueError(f"The layout the tiles of {stage['stage_id']} were cut along is missing")
+    again = plan_tiles(
+        None if source is None else _attempt_layout(root, by_id[source]),
+        page_width=plan["page_box"]["width"],
+        page_height=plan["page_box"]["height"],
+        max_dpi=plan["tiles"][0]["max_dpi"],
+        layout_attempt=source,
+        **plan["settings"],
+    )
+    if plan_sha256(again) != stage["tiles"]["plan_sha256"]:
+        raise ValueError(
+            f"The tiles of {stage['stage_id']} cannot be planned again from the retained "
+            "layout: this job was planned by another PageLedger version"
+        )
+    evidence = attempt.get("input_evidence")
+    if evidence is None:
+        return
+    if evidence.get("kind") != "page_tiles" or evidence["plan_sha256"] != plan_sha256(plan):
+        raise ValueError(f"{attempt['attempt_id']} was not read from its tile plan")
+    planned = {tile["tile_id"]: tile for tile in plan["tiles"]}
+    for tile in evidence["tiles"]:
+        box, crop = planned.get(tile["tile_id"]), tile["crop"]
+        if box is None or crop.get("kind") != "box":
+            raise ValueError(f"{attempt['attempt_id']} sent a tile its plan does not have")
+        pixel = crop["width"] / tile["width"] + 0.001
+        if any(
+            abs(crop[start] - box[start]) > pixel
+            or abs(crop[start] + crop[size] - box[start] - box[size]) > pixel
+            for start, size in (("x", "width"), ("y", "height"))
+        ):
+            raise ValueError(
+                f"{attempt['attempt_id']} tile {tile['tile_id']} is not its planned box"
+            )
+    validate_tile_text(evidence, attempt["text"])
+    literal = [
+        _attempt_layout(root, item)
+        for item in page["attempts"]
+        if item["stage"] in LAYOUT_STAGES
+        and item["outcome"] == "completed"
+        and item.get("layout_sha256")
+    ]
+    failed = [tile["tile_id"] for tile in evidence["tiles"] if tile["outcome"] == "failed"]
+    edge_cut = check_edges(plan, literal)
+    chosen = by_id.get(source) if source else None
+    rejected = chosen is not None and chosen["stage"] != tiling["layout"]
+    codes = {
+        "tile_failed": bool(failed),
+        "tile_edge_cut": bool(edge_cut),
+        "tile_text_small": any(tile["small_text"] for tile in plan["tiles"]),
+        "tile_layout_missing": plan["layout"] is None,
+        "alto_layout_rejected": rejected,
+    }
+    attempt["warnings"] = [
+        *attempt["warnings"],
+        *(code for code, found in codes.items() if found and code not in attempt["warnings"]),
+    ]
+    attempt["tiling"] = {
+        "plan_sha256": stage["tiles"]["plan_sha256"],
+        "layout_attempt": source,
+        "tiles": len(plan["tiles"]),
+        "sent": len(evidence["tiles"]),
+        "failed": failed,
+        "edge_cut": edge_cut,
+    }
 
 
 def _retry_local(job: dict, root: Path, stage: dict, adapter_path: Path | None) -> bool:
@@ -1236,14 +1499,24 @@ def _execute_stages(
         return False
     retries = [stage for stage, _, action in actions if action == "retry"]
     if retries:
-        reason = _budget_reason(job, retries[0]["stage"], len(retries))
+        # A tiled page is read again whole: every tile of its plan is requested again.
+        requests = sum(stage.get("tiles", {}).get("count", 1) for stage in retries)
+        reason = _budget_reason(job, retries[0]["stage"], len(retries), requests)
         if reason:
             _stop_for_budget(job, reason)
             return False
     job.update(status="processing", halt_reason=None)
     if retries:
         planned = (
-            _plan_stage(job, root, stage["stage"], stage["pages"], retry=True) for stage in retries
+            _plan_stage(
+                job,
+                root,
+                stage["stage"],
+                stage["pages"],
+                retry=True,
+                tiles=_stage_plan(root, stage) if "tiles" in stage else None,
+            )
+            for stage in retries
         )
         return _execute_stages(job, root, planned, adapter_path, concurrent)
     _publish(job, root)
@@ -1275,12 +1548,18 @@ def _continue(job: dict, root: Path, adapter_path: Path | None) -> dict:
             )
         groups = [eligible] if name == "local_text" and eligible else [[n] for n in eligible]
         size, concurrent = _batching(job, name)
+        tiler = _tiler(job, root, name, adapter_path)
+        plans: dict[int, dict] = {}
         while groups:
             batch: list[list[int]] = []
             stop: str | None = None
             for numbers in groups[:size]:
                 count = sum(len(item) for item in batch)
-                reason = _budget_reason(job, name, count + len(numbers))
+                requests = None
+                if tiler is not None:
+                    plans[numbers[0]] = plans.get(numbers[0]) or tiler(numbers[0])
+                    requests = sum(len(plans[item[0]]["tiles"]) for item in [*batch, numbers])
+                reason = _budget_reason(job, name, count + len(numbers), requests)
                 allowance = _attempt_allowance(job) - count
                 if reason == "max_attempt_pages" and 0 < allowance < len(numbers):
                     # Process what the limit allows, then pause for the rest.
@@ -1295,7 +1574,10 @@ def _continue(job: dict, root: Path, adapter_path: Path | None) -> dict:
                 batch.append(numbers)
             groups = groups[len(batch) :]
             if batch:
-                planned = (_plan_stage(job, root, name, numbers) for numbers in batch)
+                planned = (
+                    _plan_stage(job, root, name, numbers, tiles=plans.get(numbers[0]))
+                    for numbers in batch
+                )
                 if not _execute_stages(job, root, planned, adapter_path, concurrent):
                     return _publish(job, root)
             if stop:

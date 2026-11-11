@@ -24,7 +24,7 @@ reviewed as text or blank. For meanings and suggested actions, see the
 | `selected_pages` | Unique, one-based source page numbers requested for this job |
 | `status` | `processing`, `completed`, or `halted`; completion does not mean human review |
 | `pages` | The selected-page inventory, including pages without attempts or selected text |
-| `usage` | `attempt_pages`, `image_calls`, `tokens`, `cost_usd`, and `cost_known`; optional `known_cost_usd`, `tokens_known`, `paid_cost_known`, and `paid_tokens_known` |
+| `usage` | `attempt_pages`, `image_calls`, `tokens`, `cost_usd`, and `cost_known`; optional `known_cost_usd`, `tokens_known`, `paid_cost_known`, `paid_tokens_known`, `local_image_calls` and `image_requests` (jobs with `processing.tiling`) |
 | `limits` | The job's recorded execution limits |
 | `stage_accounting` | Optional configured-stage attempt counts; a stage with zero pages includes why it did not run. Absent from older reports, which still verify with their original fields. |
 | `links` | Nullable `article` and `custody` references supplied by the job |
@@ -79,6 +79,14 @@ and `response`. A retained response awaiting completion is still uncertain.
 Failed partial outputs remain linked as attempt evidence and cannot be selected.
 Child-run attempts also retain `run_path`, `run_id`, `page_id`, `page_number`,
 `source_sha256`, and nullable `input_evidence` for image preparation provenance.
+An attempt whose engine returned a layout adds `layout_sha256`, and a reading in
+tiles adds `tiling`: the plan's `plan_sha256`, the `layout_attempt` it was cut
+along, how many `tiles` were planned and `sent`, and the ids of the tiles that
+`failed` or whose edge cut through text (`edge_cut`). The report's attempt line
+then says how many tiles were read and names those tiles, and its usage line
+adds the image requests (`usage.image_requests`). A contested page read in tiles
+adds `contested.witness_projection`. Each is present only when it applies, so
+older jobs render as before.
 
 For a selected output, the report decodes its verified raw bytes as UTF-8 and
 embeds the resulting string without Unicode normalization, whitespace trimming,

@@ -84,7 +84,7 @@ def test_a_layout_that_no_longer_matches_its_provenance_hash_is_refused(job):
     record = read_record(path)
     record["result"]["layout"]["items"][0]["text"] = "edited"
     write_record(path, record)
-    with pytest.raises(ValueError, match="Invalid completion evidence"):
+    with pytest.raises(ValueError, match="no longer matches its provenance hash"):
         Checkpoint(job[2], existing=True)
 
 

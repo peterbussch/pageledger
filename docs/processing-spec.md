@@ -590,6 +590,101 @@ and `unresolved_pages` keeps its meaning: pages without a person's review. A
 person can answer packets too, under their own `--reviewer` name, or review the
 page as before.
 
+## Read dense pages in tiles
+
+A vision model asked to transcribe a dense page of many columns, such as a
+directory or a newspaper, often reads one column and stops. Cut along the white
+space between columns and between lines into pieces small enough for the print
+to stay legible, the same page is read almost whole. In a test on a telephone
+directory, a model given a whole spread transcribed one column and stopped;
+from pieces cut at the gutters it read 138 of 141 lines exactly (four pieces of
+three pages, checked by hand). The ledger keeps the plan of the cuts, the exact image
+of every piece sent, and where each piece's text lies in the page's reading,
+so every line can be traced to the piece of the page it was read from.
+
+```yaml
+processing:
+  local_ocr: {adapter: rapidocr, adapter_options: {rec_model_dir: ..., reading_order: columns}}
+  image: {adapter: vision, adapter_options: {base_url: ..., model: ..., max_image_side: 2048}}
+  tiling:
+    stages: [image]          # any of local_image, image, second_opinion
+    layout: local_ocr        # the stage whose boxes the page is cut along; or local_text for alto
+    min_line_pixels: 32      # optional: how tall a median line should render, in pixels
+    max_tiles: 24            # optional: most tiles for one page (at most 99)
+  limits: {max_image_pages: 80, max_image_requests: 1500}
+```
+
+How a page is cut. Before a tiled stage reads a page, PageLedger plans its
+tiles from the layout of the `layout` stage's reading of that page: the boxes
+where that engine found lines (`rapidocr`) or words (`alto`). The planner
+(`pageledger/tiling.py`) finds the gutters between columns and gives a line
+that runs across them (a heading) a full-width band, then cuts each column into
+pieces short enough that their lines render at `min_line_pixels` within the
+reader's `max_image_side`, cutting in the whitespace between lines and
+preferring a gap above an unindented line, the start of an entry. Tiles share
+edges, never overlap and cover the whole page, so text the layout missed still
+falls in some tile. They are read in order: bands and column regions from top
+to bottom, columns from left to right, a column's pieces from top to bottom.
+Each tile is rendered at no more than the page image's own resolution, sent as
+its own image with the stage's prompt, and its text joined to the others with
+a line break. A tile whose first line is indented records, for review, the
+heading of the entry it continues; the heading is not sent to the model. When
+the layout stage is `local_text` (an ALTO file) and fewer than nine in ten of
+its word centres lie inside a line the job's own OCR found, its boxes are taken
+to point elsewhere: the page is cut along the OCR's layout and the reading is
+marked `alto_layout_rejected`. A page with no layout is read as one tile, the
+whole page, and marked `tile_layout_missing`.
+
+What the ledger keeps. The plan goes into the stage's configuration
+(`.job/<stage_id>.yml`, `adapter_options.tiles`, which the job hashes), and the
+stage records its `tiles`: the plan's SHA-256, the number of tiles and the
+reading whose layout it was cut along. The layout itself stays in that
+reading's recovery record, bound by the `layout_sha256` its provenance holds.
+The reading's image evidence is of kind `page_tiles`
+([image evidence](image-evidence-spec.md#page-tiles)): every tile image sent,
+under `evidence/<page_id>-tNN.jpg`, with its hash, the box actually rendered,
+the renderer's arguments, the model that answered, and where its text lies in
+the reading. The attempt in `job.json` records `tiling`: the plan's hash, the
+layout's reading, how many tiles were planned and sent, and which tiles failed
+or cut through text. `verify-job` plans every page again from the retained
+layout and refuses a different plan, checks each tile image against its hash
+and each rendered box against its planned one, and checks that the reading is
+exactly its tiles' texts in order.
+
+Warnings and holds. `tile_failed` (a tile the model would not read) and
+`tile_edge_cut` (a tile edge runs through a line some literal engine found on
+the page) hold the page as `coverage_defect`. `tile_text_small`,
+`tile_layout_missing` and `alto_layout_rejected` are recorded only. See
+[warnings](warnings.md#quality-warnings).
+
+Contest and adjudication. A tiled reading follows its tiles' order, which is
+not the literal engine's. When the job contests readings, the witness is the
+literal reading's own layout regrouped tile by tile
+(`tiling.project_witness`), written to `witnesses/<page_id>.txt` and named in
+the contested record as `witness.projection` and on the page as
+`contested.witness_projection`; spans are then about words, not about order.
+Adjudication packets for a tiled page have no single image: each span names
+its `tile_id`, the tile images are copied beside the packet as
+`<page_id>-tNN.jpg` and listed under `images`, and the receipt's
+`image_sha256` is null.
+
+Budget. Each tile is one request, and `max_image_requests` bounds them; a page
+whose planned tiles would pass it pauses the job (`paused_budget`) before any
+of its tiles is sent, and `resume --raise-limit max_image_requests=N` goes on.
+`max_image_pages` still counts pages. What failed tiles mean for retries is in
+[Failed remote reads](#failed-remote-reads).
+
+Limits. Tiles are cut only along a layout; there is no blind grid. A tiled stage
+reads every tile of a page; it cannot read only some. A page that is retried is
+read again whole, tiles already read are not reused. Each tile gets the stage's
+own prompt, without the heading or any word of where the tile lies. The literal
+OCR still reads the whole page, not the tiles. Column order assumes
+left-to-right print. `vision` is the only built-in adapter that reads tiles
+(capability `page_tiles`); `rapidocr` and `alto` are the built-in layouts
+(capability `layout`). Engine comparisons that are not contested (`engine_disagreement`)
+compare the tiled reading with the literal one in each reading's own order: use
+`reading_order: columns` for the OCR, or contest the job.
+
 ## One budget for the job
 
 `processing.limits` accepts:
@@ -599,11 +694,12 @@ page as before.
 | `max_attempt_pages` | Counts attempts, not unique pages: every attempted source page at every stage counts, including failed/uncertain attempts. A local batch larger than the remaining allowance is cut to fit; the job then pauses. At process start, PageLedger prints the maximum possible attempts for the selected pages and configured stages when that projection exceeds this limit. |
 | `max_image_pages` | Required positive limit when image processing is enabled. Counts both image and second-opinion attempts; checked before every call. |
 | `max_local_image_pages` | Required positive limit when a `local_image` stage is configured, and accepted only then. Counts that stage's attempts; checked before every call. |
+| `max_image_requests` | Required positive limit when `processing.tiling` is configured, and accepted only then. Counts the requests the `image` and `second_opinion` stages send: one per tile of a page read in tiles, one per other page. Checked before every page against the tiles planned for it. `usage.image_requests` in `job.json` holds the count. |
 | `max_tokens` | Accumulates reported usage across stages. Stops at the cap before new work and after a response crosses it. A response can exceed the remaining amount; this is not a provider billing ceiling. Unknown paid token usage prevents another image attempt when this cap is configured. |
 | `max_cost_usd` | Accumulates reported dollar charges. Stops at the cap before new work and after a response crosses it. Unknown paid cost stops another image attempt. The first charge can be unknown or exceed the remaining amount; use a provider-side spending limit for a hard monetary ceiling. |
 
-A job that reaches `max_attempt_pages`, `max_image_pages`, `max_local_image_pages`, `max_tokens` or
-`max_cost_usd` ends with status `paused_budget`, keeping everything it has
+A job that reaches `max_attempt_pages`, `max_image_pages`, `max_local_image_pages`,
+`max_image_requests`, `max_tokens` or `max_cost_usd` ends with status `paused_budget`, keeping everything it has
 done. It continues only when resumed with a higher limit:
 
 ```bash
@@ -660,6 +756,16 @@ on to its other pages. Any failure of the optional `second_opinion` witness
 holds only its page. A quota failure (`MODEL_QUOTA`, HTTP 429) of the `image`
 stage, a partial output, a refusal, and an outcome the job cannot know still
 halt the job.
+
+A page read in tiles follows the same rules, with one addition. A tile the
+model will not read (cut off, filtered, invalid, or empty where the layout
+found text) does not stop the page: the page completes with the other tiles
+and is held for `tile_failed`. A request that fails in a way a second request
+could repeat (quota, timeout, network, unavailable, an HTTP error) stops the
+page at that tile. Its tiles read so far are kept as a partial output, so the
+job halts; nothing is bought again without you. A retry of a tiled page, when
+one happens, requests every tile of its plan again, and each counts against
+`max_image_requests`: tiles already read are not reused.
 
 ## Durable job and attempts
 

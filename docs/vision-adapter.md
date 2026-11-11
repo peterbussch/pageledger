@@ -153,6 +153,17 @@ needed at most about 3,000 output tokens, so a lower `max_tokens`, such as
 | `max_image_side` | 2048 | Longest side of the page image in pixels, from 256 to 4096. |
 | `reasoning_effort` | not sent | `none`, `minimal`, `low`, `medium` or `high`, sent as the request's `reasoning_effort` for models that reason before answering. |
 
+A document job can have the adapter read a page in tiles
+([Read dense pages in tiles](processing-spec.md#read-dense-pages-in-tiles)):
+processing then passes a `tiles` option, the page's tile plan, as it passes
+`evidence_dir`; a configuration may not set it. The adapter declares the
+capability `page_tiles`. It renders each planned box with
+`pdftoppm -r DPI -x -y -W -H`, at the resolution that fits the box's longer side
+in `max_image_side` (never above the page image's own resolution), checks that
+the image has the size asked for, and sends it as its own request with the
+same prompt. The reading is the tiles' texts joined by line breaks, and the
+evidence is one `page_tiles` record of every tile image sent.
+
 ## What it records
 
 In a plain `run`, and in the local stages of a document job, each page's

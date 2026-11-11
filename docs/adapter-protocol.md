@@ -243,9 +243,18 @@ came from and may be empty. `pageledger.layout.validate_layout` checks the
 shape and a malformed layout fails the page. The run keeps the layout in the
 page's recovery record and writes its digest to provenance as
 `layout_sha256`; an adapter that declares `layout` in `capabilities` is one a
-job may plan tiles from. `rapidocr` returns its line boxes and `alto` its word
-boxes. The field defaults to null, so adapters that know nothing of layouts
-are unchanged.
+job may plan tiles from ([Read dense pages in tiles](processing-spec.md#read-dense-pages-in-tiles)).
+`rapidocr` returns its line boxes and `alto` its word boxes. The field defaults
+to null, so adapters that know nothing of layouts are unchanged.
+
+An adapter that declares `page_tiles` can read a page as a set of tiles. A job
+that tiles its stage passes the page's tile plan as the `tiles` constructor
+option (`pageledger.tiling`; a configuration may not set it), with
+`evidence_dir`; the adapter must also have an integer `max_image_side`
+attribute, the size the plan was made for. It reads each planned box as its own
+image and returns one reading with `page_tiles` image evidence
+([image evidence](image-evidence-spec.md#page-tiles)). `vision` is the
+built-in one.
 
 ## The `usage.pages` contract
 

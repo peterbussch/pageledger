@@ -314,8 +314,9 @@ if the reading must be checked later, and compare its digest by hand.
 
 Not supported: ALTO files that hold several pages, hOCR and PAGE XML, ALTO
 used as the contest witness, and finding ALTO links in a IIIF manifest. The
-word boxes are recorded for later use in tiled reads but are not yet attached
-to the reading.
+word boxes are returned as the reading's layout (when they fit the page), so a
+job can cut dense pages into tiles along them with `tiling.layout: local_text`;
+see [Read dense pages in tiles](processing-spec.md#read-dense-pages-in-tiles).
 
 ## Tesseract with the community orus model (macOS and Linux)
 

@@ -25,7 +25,7 @@ used across the reference.
 | Page images: a JPEG or PNG file is a one-page document, and a folder of them one document in natural order of file name. | Each image is hashed and the source's identity is a hash of the page list, so `verify` name an image that changed, went missing or was added. The engines read a PDF carrier that holds the images' own bytes. | JPEG and PNG only; TIFF and JPEG 2000 must be converted first. See [a folder of page scans](pdf-ocr-first-run.md#9-a-folder-of-page-scans). |
 | Built-in adapter defaults, `adapter_options`, `--adapter-path`, and dry-run planning. | Defaults are recorded; dry runs do not call extractors. | Only explicitly supplied configuration is read. See [CLI](cli.md), [adapter protocol](adapter-protocol.md), and [OCR options](ocr-options.md). |
 | Page budgets, retries and optional continue-on-error. | Page, token and dollar limits; failed or unattempted pages can enter rerun work. | Cost may be unknown or estimated, not provider-billed spend. See [plan time and cost](plan-time-and-cost.md) and [warnings](warnings.md). |
-| `alto`: a library's ALTO OCR, one file per page, as a page's text layer. | Text from word boxes in column order, word confidences, and the file's name, SHA-256 and declared software in the provenance. In a document job it is an inherited OCR layer: the page is read again by local OCR. A missing or unusable file gives an empty reading with `alto_missing` or `alto_invalid`; boxes that do not fit the page give `alto_geometry_mismatch`. Files are found by page number (`{page:04d}.xml`) or, for page images, by the image's own name (`{stem}.xml`). | Only boxes that misfit the page's shape or edges are caught, not a box placed wrongly inside it. Verification does not re-read the ALTO file. One page per file; no hOCR or PAGE XML; not used as the contest witness; not found from IIIF manifests; word boxes not yet attached to the reading. See [the recipe](engine-recipes.md#alto-from-a-library-any-platform-no-engine). |
+| `alto`: a library's ALTO OCR, one file per page, as a page's text layer. | Text from word boxes in column order, word confidences, its word boxes as the reading's layout (for tiling), and the file's name, SHA-256 and declared software in the provenance. In a document job it is an inherited OCR layer: the page is read again by local OCR. A missing or unusable file gives an empty reading with `alto_missing` or `alto_invalid`; boxes that do not fit the page give `alto_geometry_mismatch`. Files are found by page number (`{page:04d}.xml`) or, for page images, by the image's own name (`{stem}.xml`). | Only boxes that misfit the page's shape or edges are caught here; a box placed wrongly inside the page is caught only when tiling compares the words with the job's OCR (`alto_layout_rejected`). Verification does not re-read the ALTO file. One page per file; no hOCR or PAGE XML; not used as the contest witness; not found from IIIF manifests. See [the recipe](engine-recipes.md#alto-from-a-library-any-platform-no-engine). |
 | Text-quality warnings, OCR confidence, historical-orthography signals and grades. | Diagnostics identify some risks and can guide review. RapidOCR warns when rows mode joins several page columns; choose `reading_order: columns` for such pages. | They are not calibrated accuracy measures. See [warnings](warnings.md) and [multilingual OCR](multilingual-ocr.md). |
 
 ### Route pages
@@ -60,6 +60,18 @@ English directory pages measured the Latin rules settled 7% of spans, leaving
 numbers and split exchange names open; an adjudicator can be wrong, which is why it should
 come from another model family than the reader. See
 [contest](processing-spec.md#contest-a-models-reading).
+
+With `processing.tiling`, a dense page is read by `vision` in tiles cut along
+the whitespace of the job's OCR layout (`rapidocr`) or of an ALTO file: one
+image and one request per tile, bounded by `limits.max_image_requests`. The
+plan, every tile image and where each tile's text lies are kept and checked by
+`verify-job`, and contest compares the reading with the OCR regrouped in tile
+order. Tiles follow a layout only (no blind grid), every tile of a page is read
+and a retried page is read again whole, the model gets the stage's prompt
+without the entry heading a tile continues, the OCR still reads the whole page,
+column order assumes left-to-right print, and `vision` is the only built-in
+adapter that reads tiles. See
+[Read dense pages in tiles](processing-spec.md#read-dense-pages-in-tiles).
 
 ### Review and export
 

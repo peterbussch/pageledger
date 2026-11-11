@@ -135,6 +135,20 @@ and, from 1.0, [stability](docs/stability.md).
   keeps the layout in the page's recovery record and writes its digest to provenance as `layout_sha256`;
   a document job copies that digest to the attempt. Adapters without layouts and recovery records written
   before this release are unchanged.
+- Tiled reads of dense pages. With `processing.tiling` (`stages`, `layout`, optional `min_line_pixels` and
+  `max_tiles`), a document job cuts each page a reader stage reads into tiles along the whitespace of the
+  `layout` stage's boxes (the job's RapidOCR, or ALTO checked against it), and `vision` reads every tile as
+  its own image and request; the reading is the tiles' texts in order. The plan is kept in the stage's hashed
+  configuration and planned again from the retained layout by `verify-job`; the evidence is a new
+  `page_tiles` record of every tile image sent, the box actually rendered and where each tile's text lies in
+  the reading ([image evidence](docs/image-evidence-spec.md#page-tiles)). A new limit,
+  `max_image_requests`, required with tiling, counts requests rather than pages and pauses the job before a
+  page whose tiles would pass it (`usage.image_requests`). Contest compares a tiled reading with the OCR
+  regrouped in tile order (`witnesses/<page_id>.txt`), and adjudication packets carry the tile image of each
+  span. New warnings: `tile_failed` and `tile_edge_cut` (held as `coverage_defect`), `tile_text_small`,
+  `tile_layout_missing` and `alto_layout_rejected` (recorded only). Every new hold needs this opt-in
+  configuration, so the hold policy is unchanged and older jobs rebuild as before. See
+  [Read dense pages in tiles](docs/processing-spec.md#read-dense-pages-in-tiles).
 
 ### Changed
 
@@ -210,6 +224,14 @@ and, from 1.0, [stability](docs/stability.md).
 - `render_upsampled` on a PDF page checks the page's largest image by its proportions, not by how large it
   is drawn, so a born-digital page whose only image is small and happens to have the page's shape is warned
   about as if it were a low-resolution scan.
+  and its word boxes are checked against the page's shape and edges, and against the job's OCR only when
+  tiles are planned from them. hOCR, PAGE XML, ALTO as the contest witness and ALTO found through IIIF
+  manifests are not supported.
+- Tiles are cut along a layout only, never as a blind grid; a tiled page is read whole (every tile) and read
+  again whole on a retry; each tile gets the stage's prompt without the heading it continues; the OCR still
+  reads the whole page; column order assumes left-to-right print; `vision` is the only built-in adapter that
+  reads tiles. Uncontested engine comparisons compare a tiled reading with the OCR in each reading's own
+  order.
 
 ### Not supported yet
 

@@ -20,7 +20,7 @@
         "required": ["at", "limit", "previous", "value"],
         "properties": {
           "at": {"type": "string", "minLength": 1},
-          "limit": {"enum": ["max_attempt_pages", "max_image_pages", "max_local_image_pages", "max_tokens", "max_cost_usd"]},
+          "limit": {"enum": ["max_attempt_pages", "max_image_pages", "max_local_image_pages", "max_tokens", "max_cost_usd", "max_image_requests"]},
           "previous": {"type": "number"},
           "value": {"type": "number"}
         },
@@ -363,7 +363,8 @@
                 "layout_sha256": {
                   "type": "string",
                   "pattern": "^[0-9a-f]{64}$"
-                }
+                },
+                "tiling": {"type": "object", "description": "A reading in tiles: its plan, the layout it was cut along, and what the tiles found. Present only in jobs with processing.tiling.", "properties": {"plan_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}, "layout_attempt": {"type": ["string", "null"]}, "tiles": {"type": "integer", "minimum": 1}, "sent": {"type": "integer", "minimum": 0}, "failed": {"type": "array", "items": {"type": "string", "pattern": "^t[0-9]{2}$"}}, "edge_cut": {"type": "array", "items": {"type": "string", "pattern": "^t[0-9]{2}$"}}}, "required": ["plan_sha256", "layout_attempt", "tiles", "sent", "failed", "edge_cut"], "additionalProperties": false}
               },
               "required": [
                 "attempt_id",
@@ -633,7 +634,8 @@
                   "required": ["reason", "attempt"],
                   "additionalProperties": false
                 }
-              }
+              },
+              "witness_projection": {"type": "object", "description": "The witness regrouped in the tile order of a reading in tiles (tiling.project_witness), kept as an artifact.", "properties": {"plan_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}, "artifact": {"type": "string", "pattern": "^witnesses/doc_[0-9]{4}_page_[0-9]{4,}\\.txt$"}, "outside_items": {"type": "integer", "minimum": 0}, "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}}, "required": ["plan_sha256", "artifact", "outside_items", "sha256"], "additionalProperties": false}
             },
             "required": ["artifact", "sha256", "base_attempt", "witness_attempt", "kinds", "open", "by_rule", "by_review", "superseded"],
             "additionalProperties": false
@@ -902,6 +904,7 @@
           "type": "integer",
           "minimum": 0
         },
+        "image_requests": {"type": "integer", "minimum": 0, "description": "Image requests the paid stages sent: one per tile of a reading in tiles, one per other page. Present only in jobs with processing.tiling."},
         "local_image_calls": {
           "type": "integer",
           "minimum": 0,
