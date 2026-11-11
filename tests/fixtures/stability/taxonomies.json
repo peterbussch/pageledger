@@ -231,6 +231,7 @@
     "warning_holds": {
       "blank": "blank_candidate",
       "blank_candidate": "blank_candidate",
+      "capital_sign_in_word": "coverage_defect",
       "clipped_text": "coverage_defect",
       "column_conflict": "numeric_column_conflict",
       "control_characters": "coverage_defect",
@@ -246,6 +247,7 @@
       "instruction_echo": "coverage_defect",
       "joined": "coverage_defect",
       "joined_text": "coverage_defect",
+      "labels_without_values": "coverage_defect",
       "low_confidence": "low_confidence",
       "missing_content": "coverage_defect",
       "missing_required_columns": "coverage_defect",
@@ -261,6 +263,7 @@
       "script_mismatch": "coverage_defect",
       "source_defect": "source_defect",
       "sparse": "coverage_defect",
+      "split_words": "coverage_defect",
       "suspicious_embedded_text_delta": "coverage_defect",
       "suspicious_symbol_density": "coverage_defect",
       "tile_edge_cut": "coverage_defect",
@@ -327,7 +330,8 @@
     "hold_policies": [
       "0.6",
       "0.6.1",
-      "0.8"
+      "0.8",
+      "0.9"
     ],
     "hold_reasons": [
       "blank_candidate",
@@ -378,6 +382,7 @@
       "alto_missing",
       "blank",
       "blank_candidate",
+      "capital_sign_in_word",
       "clipped_text",
       "column_conflict",
       "control_characters",
@@ -395,6 +400,7 @@
       "instruction_echo",
       "joined",
       "joined_text",
+      "labels_without_values",
       "low_confidence",
       "missing_content",
       "missing_required_columns",
@@ -418,6 +424,7 @@
       "short_text",
       "source_defect",
       "sparse",
+      "split_words",
       "suspicious_embedded_text_delta",
       "suspicious_symbol_density",
       "tile_edge_cut",

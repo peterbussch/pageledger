@@ -511,7 +511,8 @@ def _text_quality_warnings(metrics: dict[str, Any]) -> list[str]:
 # stop (an abbreviation) is a piece of a broken word. The 2026-11 dogfood's split-word
 # layer ("Сырны й комбина т") had 14-19% such tokens; its 12 correct pages had at most 0.7%.
 _ONE_LETTER_WORDS = frozenset("абвжикосуяАБВЖИКОСУЯ")
-_LETTERS = re.compile(r"[^\W\d_]+")
+# Letters with their combining marks, so a stressed "е́хать" stays one word.
+_LETTERS = re.compile(r"[^\W\d_](?:[^\W\d_]|[̀-ͯ])*")
 _SPLIT_MIN_TOKENS = 50
 _SPLIT_MIN_SHARE = 0.10
 # A lower-case letter then a capital Ъ or Ь: no word of either Russian orthography is
@@ -523,7 +524,9 @@ _CAPITAL_SIGN_MIN_SHARE = 0.01
 # A dot leader leads to a value. Ten or more leaders ending a line with no number after
 # them, and fewer lines of numbers than half of those, is a table whose values the
 # reading lost: the 1880 gazetteer layer kept 34 row labels and almost none of 20 columns.
-_LEADER = re.compile(r"(?:\.\s?){3,}|…|_{3,}")
+# A leader is four dots or more, or three spaced ones; "..." is an ellipsis, which
+# dialogue ends lines with.
+_LEADER = re.compile(r"\.{4,}|\.(?: \.){2,}")
 _LEADERS_MIN = 10
 
 
@@ -534,7 +537,7 @@ def _misread_warnings(text: str) -> list[str]:
     tokens = [
         (m.group(), m.end())
         for m in _LETTERS.finditer(text)
-        if all("\u0400" <= char <= "\u04ff" for char in m.group())
+        if all("\u0400" <= char <= "\u04ff" or "\u0300" <= char <= "\u036f" for char in m.group())
     ]
     if len(tokens) >= _SPLIT_MIN_TOKENS:
         stray = sum(

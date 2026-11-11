@@ -207,6 +207,9 @@ def test_a_layer_that_splits_off_the_last_letter_of_words_is_flagged():
     assert "split_words" in _misread_warnings(split)
     modern = " ".join(["В Москве и в Твери у реки с домом к г. Тула я и он а также"] * 10)
     assert "split_words" not in _misread_warnings(modern)
+    # A textbook marks stress with a combining accent, which does not split the word.
+    stressed = " ".join(["е́хать я е́ду ты е́дешь он е́дет мы е́дем"] * 10)
+    assert "split_words" not in _misread_warnings(stressed)
 
 
 def test_a_capital_hard_sign_inside_a_lower_case_word_is_flagged():
@@ -225,6 +228,9 @@ def test_table_labels_whose_values_are_missing_are_flagged():
     # Columns extracted one after another: the values follow the labels.
     serialized = labels + "\n" + "\n".join("1.590 4.234 378" for _ in range(34))
     assert _misread_warnings(serialized) == []
+    # Dialogue ending its lines in an ellipsis is not a table.
+    dialogue = "\n".join("— Ты еще Салтычиху вспомни..." for _ in range(20))
+    assert _misread_warnings(dialogue) == []
 
 
 # ---------------------------------------------------------------------------
@@ -309,6 +315,26 @@ def test_a_junk_layer_does_not_win_over_the_ocr_it_disagrees_with():
     typeset = _page({**layer, "warnings": []}, ocr, comparisons=page["comparisons"])
     held = assess_page(typeset, witnesses=True)
     assert "coverage_defect" in held["review_reasons"]
+
+
+def test_a_damaged_layer_holds_the_page_until_another_reading_confirms_the_ocr():
+    # The 1939 Leningrad directory: the layer split its words, and the one OCR reading
+    # of the page misread names too.
+    layer = _attempt("a1", "local_text", "Сырны й комбина т", warnings=[*LAYER, "split_words"])
+    ocr = _attempt("a2", "local_ocr", "Сырный комбинат")
+    page = _page(layer, ocr, comparisons=[_compared("a1", "a2", 0.2)])
+    before = assess_page(page, ocr_layer_climbs=True, corroborate=True, stages=LADDER)
+    assert before["disposition"] == "unreviewed_text"
+    held = assess_page(page, ocr_layer_climbs=True, corroborate=True, witnesses=True)
+    assert (held["selected_attempt"], held["disposition"]) == ("a2", "coverage_defect")
+    assert held["next_action"] == "review"
+    # With a second OCR stage, the reading goes there; one that agrees settles the page.
+    climbs = assess_page(page, corroborate=True, witnesses=True, stages=LADDER)
+    assert climbs["next_action"] == "second_ocr"
+    page["attempts"].append(_attempt("a3", "second_ocr", "Сырный комбинат"))
+    page["comparisons"] += [_compared("a1", "a3", 0.2), _compared("a2", "a3", 0.95)]
+    settled = assess_page(page, corroborate=True, witnesses=True, stages=LADDER)
+    assert (settled["disposition"], settled["next_action"]) == ("unreviewed_text", "review")
 
 
 # ---------------------------------------------------------------------------

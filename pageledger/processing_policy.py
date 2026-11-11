@@ -467,7 +467,8 @@ def assess_page(
 
     With ``witnesses`` (hold policy 0.9) an inherited OCR layer and the job's own OCR are two
     witnesses. The layer stays selectable and comparable after the page is read again,
-    though our own reading is preferred and the layer's own warnings raise no hold; the
+    though our own reading is preferred, and the layer's own warnings hold the page until
+    another clean reading confirms the selected one; the
     length warning a reading carries for differing from that layer is set aside, since
     their comparison is the evidence; and the layer's disagreement holds the page without
     sending it up the ladder. A literal reading that lost the pre-reform letters another
@@ -572,6 +573,9 @@ def assess_page(
     )
     if any(item["number_differences"] for item in selected_comparisons):
         reasons.append("numeric_disagreement")
+    if witnesses and selected is not None:
+        held_by_layer = _layer_holds(page, selected["attempt_id"], holds_by_id, set_aside)
+        reasons.extend(hold for hold in held_by_layer if hold not in reasons)
     # Contest replaces these reasons on the page, but a local reader still climbs on them.
     if witnesses:
         disagreements = [
@@ -827,6 +831,20 @@ def _compare_with_layer(
         if any(_warning_code(w) == _DELTA for w in item.get("warnings") or []):
             kept = [w for w in item["warnings"] if _warning_code(w) != _DELTA]
             holds_by_id[item["attempt_id"]] = _attempt_holds({**item, "warnings": kept}, holds_for)
+
+
+def _layer_holds(
+    page: dict, selected: str, holds_by_id: dict[str, list[str]], layers: set[str]
+) -> list[str]:
+    """An inherited layer's own holds, while no clean reading confirms the selected one.
+
+    An earlier OCR that failed on the page says the page is hard to read; one more
+    reading that nothing confirms does not settle it. The 1939 directory: the layer
+    split its words, and our one OCR reading of the page misread names too.
+    """
+    if _corroborated(page, selected, holds_by_id):
+        return []
+    return [hold for attempt_id in sorted(layers) for hold in holds_by_id[attempt_id]]
 
 
 def yat_words(text: str) -> int:
