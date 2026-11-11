@@ -804,7 +804,7 @@ def test_the_sheet_carries_a_guide_to_its_decisions(job, tmp_path):
     guide = (tmp_path / "sheets" / "review-decisions.txt").read_text(encoding="utf-8")
     assert guide.startswith("How to fill in pages.csv\n")
     assert "--apply pages.csv" in guide and "pages.csv.binding.json" in guide
-    for token in ("accept", "use:ID", "correct:FILE", "blank", "illustration", "handwriting"):
+    for token in ("accept", "use:READING", "correct:FILE", "blank", "illustration", "handwriting"):
         assert f"\n  {token} " in guide
     page = read_record(job / "job.json")["pages"][1]
     other = next(a for a in page["attempts"] if a["attempt_id"] != page["selected_attempt"])

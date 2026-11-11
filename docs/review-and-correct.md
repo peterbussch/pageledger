@@ -10,10 +10,10 @@ The [glossary](glossary.md) defines the terms; the
 ## Write the review view
 
 ```bash
-pageledger review jobs/book --out jobs/book-review
+pageledger review jobs/book
 ```
 
-This writes a folder with `index.html` in it. Open it in a browser: it needs no
+This writes the folder `jobs/book-review` beside the job (`--out DIR` names another), with `index.html` in it. Open it in a browser: it needs no
 server and nothing from the network. It changes nothing in the job. Page
 images need Poppler's `pdftoppm`; add `--images none` to write the view
 without them, or `--images held` for only the pages that need a person.
@@ -43,7 +43,7 @@ this table.
 | In the view | Records | In a sheet |
 |---|---|---|
 | The selected text is right | that you checked the text against the page | `accept` |
-| Use (another reading) instead | that another reading is right; it becomes the text | `use:ID` |
+| Use (another reading) instead | that another reading is right; it becomes the text | `use:READING` (the reading's ID) |
 | My corrected text, below | your text as a new reading; the engines' readings stay as they are | `correct:FILE` |
 | Blank page | that the page has no text | `blank` |
 | Illustration, map or chart | that the page is a picture, not text | `illustration` |

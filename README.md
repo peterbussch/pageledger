@@ -39,7 +39,12 @@ the *job*: the record of everything done to this one document.
 On a three-page scan whose first page is blank, the screen shows:
 
 ```text
-SAMPLE
+Reading book.pdf: each page's own text, then Tesseract OCR in English for pages that need it. Nothing is sent anywhere.
+Finished: 3 pages read; 1 needs a person.
+The job is in jobs/book.
+Held because no reading found text, or one came back empty: the page may be blank (1).
+Next: pageledger review jobs/book shows that page beside its page image for checking.
+Text out: pageledger export jobs/book --format md --out book.md
 ```
 
 When something looks wrong on a page (text missing, an engine unsure of many

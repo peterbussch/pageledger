@@ -119,10 +119,10 @@ def _guide(job: dict, sheet: Path, root: Path) -> str:
     for title, choices in DECISION_GROUPS:
         lines += ["", title]
         for token, _label, records in choices:
-            shown = {"use:": "use:ID", "correct": "correct:FILE"}.get(token, token)
+            shown = {"use:": "use:READING", "correct": "correct:FILE"}.get(token, token)
             lines.append(f"  {shown:<15} records {records}.")
             if token == "use:":
-                lines.append(f"  {'':<15} The IDs each page can use are listed below.")
+                lines.append(f"  {'':<15} READING is the ID of a reading listed below.")
             if token == "correct":
                 lines.append(
                     f"  {'':<15} Save your corrected text in FILE, a text file beside the sheet."

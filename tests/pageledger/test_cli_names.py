@@ -651,7 +651,7 @@ def test_an_interrupted_job_stops_cleanly_and_resumes(
     code, stdout, _ = _cli(capsys, "verify", str(out))
     assert code == 1 and stdout.startswith("Status: fail (unfinished)")
     code, stdout, _ = _cli(capsys, "resume", str(out))
-    assert code == 0 and stdout.startswith("Status: finished.")
+    assert code == 0 and stdout.startswith("Finished: 3 pages read;")
     assert _cli(capsys, "verify", str(out))[0] == 0
 
 

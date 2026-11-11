@@ -799,7 +799,7 @@ def _choices_legend() -> str:
     for title, choices in DECISION_GROUPS:
         lines = "".join(
             f"<li>{_e(label.replace('READING', 'another reading'))} "
-            f"(<code>{_e(token + 'ID' if token == 'use:' else token)}</code>): "
+            f"(<code>{_e(token + 'READING' if token == 'use:' else token)}</code>): "
             f"records {_e(records)}.</li>"
             for token, label, records in choices
         )
