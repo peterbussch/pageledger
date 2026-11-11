@@ -985,18 +985,30 @@ def _variants(value):
 def test_no_shape_of_manifest_or_info_json_escapes_as_anything_but_a_iiif_error(
     tmp_path: Path,
 ) -> None:
-    manifest = manifest_v3([SERVICE])
-    info = info_v3(SERVICE, 40, 60, sizes=[{"width": 20, "height": 30}])
-    image = {f"{SERVICE}/full/max/0/default.jpg": jpeg(40, 60)}
-    cases = [
-        {MANIFEST_URL: variant, f"{SERVICE}/info.json": info, **image}
-        for variant in _variants(manifest)
+    image = {
+        f"{SERVICE}/full/max/0/default.jpg": jpeg(40, 60),
+        f"{SERVICE}/full/full/0/default.jpg": jpeg(40, 60),
+        f"{SERVICE}/full/20,/0/default.jpg": jpeg(20, 30),
+    }
+    v2_service = {"@id": SERVICE, "profile": "http://iiif.io/api/image/2/level0.json"}
+    pairs = [
+        (manifest_v3([SERVICE]), info_v3(SERVICE, 40, 60, sizes=[{"width": 20, "height": 30}])),
+        (
+            manifest_v2([v2_service]),
+            info_v2(SERVICE, 40, 60, maxWidth=30, sizes=[{"width": 20, "height": 30}]),
+        ),
     ]
-    cases += [
-        {MANIFEST_URL: manifest, f"{SERVICE}/info.json": variant, **image}
-        for variant in _variants(info)
-    ]
-    assert len(cases) > 200
+    cases = []
+    for manifest, info in pairs:
+        cases += [
+            {MANIFEST_URL: variant, f"{SERVICE}/info.json": info, **image}
+            for variant in _variants(manifest)
+        ]
+        cases += [
+            {MANIFEST_URL: manifest, f"{SERVICE}/info.json": variant, **image}
+            for variant in _variants(info)
+        ]
+    assert len(cases) > 400
     for number, routes in enumerate(cases):
         out = tmp_path / f"s{number}"
         try:
@@ -1030,8 +1042,8 @@ def test_a_manifest_the_record_could_not_store_is_refused_before_any_file(
 @pytest.mark.parametrize(
     ("service", "error"),
     [
-        ("https://images.example.org/iiif/a b", "space, control or non-ASCII"),
-        ("https://images.example.org/iiif/стр", "space, control or non-ASCII"),
+        ("https://images.example.org/iiif/a b", "space or a control character"),
+        ("https://images.example.org/iiif/стр", "non-ASCII character"),
         ("https://[x", "not a usable URL"),
         ("https://images.example.org:99999/iiif", "not a usable URL"),
     ],
@@ -1048,6 +1060,17 @@ def test_an_unusable_service_url_fails_its_canvas_only(
     summary = iiif.fetch_iiif(MANIFEST_URL, tmp_path / "snap", opener=server, sleep=lambda _s: None)
     assert summary["fetched"] == 1 and error in summary["missing"][0]["error"]
     assert len(server.requests) == 3
+
+
+def test_an_international_host_name_is_fetched() -> None:
+    url = "https://b\u00fccher.example.org/iiif/manifest.json"
+    server = FakeServer({url: ok({})})
+    assert (
+        iiif.Client(server, sleep=lambda _s: None, home=url)
+        .get(url, accept="*/*", limit=10, what="x")
+        .body
+        == b"{}"
+    )
 
 
 def test_an_invalid_url_from_the_connection_is_not_retried() -> None:
@@ -1116,6 +1139,20 @@ def test_retry_after_dates_are_gmt_even_without_a_zone(monkeypatch) -> None:
         monkeypatch.undo()
         time.tzset()
     assert 25 <= wait <= 31
+
+
+@pytest.mark.parametrize("stored", [b"[]", b"{}", b"not json", b'{"type": "Manifest"}'])
+def test_resume_refuses_a_stored_manifest_of_another_shape(tmp_path: Path, stored: bytes) -> None:
+    server = two_page_v3()
+    server.routes[f"{SERVICE}2/info.json"] = FakeResponse(404)
+    out = tmp_path / "snap"
+    assert iiif.fetch_iiif(MANIFEST_URL, out, opener=server, sleep=lambda _s: None)["missing"]
+    (out / "iiif/manifest.json").write_bytes(stored)
+    record = load(out)
+    record["manifest"]["sha256"] = hashlib.sha256(stored).hexdigest()
+    (out / iiif.RECORD_NAME).write_text(json.dumps(record), encoding="utf-8")
+    with pytest.raises(iiif.IIIFError):
+        iiif.fetch_iiif(MANIFEST_URL, out, resume=True, opener=two_page_v3(), sleep=lambda _s: None)
 
 
 def test_a_missing_entry_without_its_error_is_a_damaged_record(tmp_path: Path) -> None:

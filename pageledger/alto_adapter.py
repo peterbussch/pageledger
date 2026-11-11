@@ -59,7 +59,8 @@ _NUMBERED = (
     "the page images in {source} carry numbers of their own that are not their positions "
     "({example}), as in a IIIF snapshot with a canvas missing or a folder with a page left "
     "out. {{page}} would read another page's file. If the ALTO files are named after the "
-    "images, use name: '{{stem}}.xml'"
+    "images, use name: '{{stem}}.xml'; if they really are numbered by page position, name "
+    "the images so that their numbers are their page numbers"
 )
 _PAGE_SPEC = re.compile(r"(0?[1-9])?d?\Z")
 _CC = re.compile(r"[0-9](\s*[0-9])*\Z")

@@ -514,6 +514,27 @@ def _job(reel, tmp_path, ocr_page_1, second_page_1=None):
 
 
 @needs_pdfinfo
+def test_the_review_view_renders_the_pdf_it_verified_not_one_swapped_in_after(
+    reel, tmp_path, monkeypatch
+):
+    from pageledger import review_html
+
+    job, _ = _job(reel, tmp_path, COLUMNS_TEXT)
+    source = reel[0]
+    real = review_html.write_review_sheet
+
+    def swap_then_write(*args, **kwargs):
+        # The job has verified; another program now replaces the PDF.
+        _pdf(source, [(300, 300, 0), (300, 300, 0)])
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(review_html, "write_review_sheet", swap_then_write)
+    with pytest.raises(ValueError, match="changed since the job was verified"):
+        review_html.write_review_html(job, tmp_path / "view", images="all")
+    assert not (tmp_path / "view").exists()
+
+
+@needs_pdfinfo
 def test_alto_that_agrees_with_our_ocr_confirms_it(reel, tmp_path):
     _, pages = _job(reel, tmp_path, COLUMNS_TEXT)
     first = pages[1]
@@ -742,6 +763,7 @@ def test_a_run_reaches_as_far_as_its_widest_word():
         (["cover.png", "0001.png"], "'0001.png' is page 2"),
         (["page-1.png", "page-2.png", "page-10.png"], "'page-10.png' is page 3"),
         (["letter-1923.png"], "'letter-1923.png' is page 1"),
+        (["001r.png", "001v.png"], "'001v.png' is page 2"),
     ],
 )
 def test_page_images_whose_own_numbers_are_not_their_positions(names, example):

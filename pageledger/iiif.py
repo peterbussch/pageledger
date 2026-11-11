@@ -35,6 +35,8 @@ DEFAULT_DELAY = 1.0
 DEFAULT_MAX_IMAGE_BYTES = 256 * 1024 * 1024
 MAX_MANIFEST_BYTES = 64 * 1024 * 1024
 MAX_INFO_BYTES = 1024 * 1024
+# The record repeats the manifest's labels and ids, so it can be about as large.
+MAX_RECORD_BYTES = 2 * MAX_MANIFEST_BYTES
 MAX_REDIRECTS = 3
 MAX_RETRIES = 5
 RETRY_AFTER_CAP = 60.0
@@ -135,13 +137,16 @@ def _sha256(data: bytes) -> str:
 
 
 def check_url(url: str) -> None:
-    if not url.isascii() or not url.isprintable() or any(c.isspace() for c in url):
-        raise FetchError(f"URL holds a space, control or non-ASCII character: {url!r}")
+    if not url.isprintable() or any(c.isspace() for c in url):
+        raise FetchError(f"URL holds a space or a control character: {url!r}")
     try:
         parts = urllib.parse.urlsplit(url)
         host, _port = parts.hostname, parts.port
     except ValueError as error:
         raise FetchError(f"not a usable URL ({error}): {url}") from error
+    # A host name may be international; HTTP sends it in its ASCII form.
+    if not parts._replace(netloc="").geturl().isascii():
+        raise FetchError(f"URL path holds a non-ASCII character, which is not sent as is: {url}")
     if parts.scheme not in {"http", "https"} or not host:
         raise FetchError(f"only http and https URLs can be fetched: {url}")
     if "@" in parts.netloc:
@@ -682,12 +687,18 @@ def _top_level_images(folder: Path) -> list[Path]:
     )
 
 
+def _read_up_to(path: Path, limit: int) -> bytes:
+    """At most one byte more than ``limit``: enough to tell the file is larger."""
+    with path.open("rb") as handle:
+        return handle.read(max(limit, 0) + 1)
+
+
 def _load_record(out: Path) -> tuple[dict[str, Any], bytes]:
     path = out / RECORD_NAME
     if path.is_symlink() or not path.is_file():
         raise IIIFError(f"{out} has no {RECORD_NAME} to resume or check")
-    data = path.read_bytes()
-    record = _parse_json(data)
+    data = _read_up_to(path, MAX_RECORD_BYTES)
+    record = _parse_json(data) if len(data) <= MAX_RECORD_BYTES else None
     if (
         not isinstance(record, dict)
         or record.get("kind") != "iiif_fetch"
@@ -740,7 +751,7 @@ def _check_snapshot(out: Path, record: Mapping[str, Any]) -> None:
         path = out / entry["file"]
         if path.is_symlink() or not path.is_file():
             raise IIIFError(f"{path} is listed in the fetch record but missing")
-        data = path.read_bytes()
+        data = _read_up_to(path, entry.get("bytes") if isinstance(entry.get("bytes"), int) else 0)
         if _sha256(data) != entry["sha256"] or len(data) != entry.get("bytes"):
             raise IIIFError(
                 f"{path} no longer matches the fetch record; restore it, or start a new fetch"
@@ -794,6 +805,8 @@ def fetch_iiif(
         if isinstance(manifest, dict):
             _check_artifact(out, str(manifest.get("artifact")), str(manifest.get("sha256")))
             document = _parse_json((out / str(manifest["artifact"])).read_bytes())
+            if _document_kind(document) != "manifest":
+                raise IIIFError(f"{out}: the stored manifest is not a IIIF manifest")
             _version, canvases = manifest_canvases(document)
         else:
             fetched, _kind, document = _resolve(client, url)

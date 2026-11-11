@@ -123,12 +123,14 @@ pixels than the archive holds.
   refused. To fetch from a IIIF server on your own machine or network, name a
   manifest on the same host as its images (`http://localhost:8080/...` with
   services on `localhost:8182` is fine). Under an `https` URL nothing is
-  fetched over plain `http`. PageLedger checks the addresses a name resolves to
+  fetched over plain `http`, so every canvas of an https manifest that lists
+  `http://` image services fails; name the manifest's `http://` URL if you
+  accept fetching over plain http. PageLedger checks the addresses a name resolves to
   just before asking, but cannot stop a name that resolves differently a moment
   later; fetch only manifests you have reason to trust.
 - It follows at most three redirects and never one from https to http. It
   sends no cookies and uses your system's proxy settings, as a browser would.
-- A URL with a space, a control character or a non-ASCII character in it is
+- A URL with a space or a control character in it, or a non-ASCII character in its path, is
   refused, naming the canvas; a manifest PageLedger could not store again in its
   record (for example one holding `NaN`) is refused before anything is written.
 - Keep the snapshot. The record vouches for the files only while they are
