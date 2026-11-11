@@ -333,6 +333,28 @@ def test_process_says_when_the_ocr_language_is_probably_wrong(
     json.loads(capsys.readouterr().out)
 
 
+def test_the_retry_command_keeps_every_option_that_still_applies(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    import shlex
+
+    from pageledger import language_hint
+    from pageledger.cli import build_parser
+
+    source = _hello_pdf(tmp_path, pages=2)
+    _ocr_reads(monkeypatch, "Агоипа Фе ите оЁ фе МезоШЫс репо", ["low_confidence"])
+    monkeypatch.setattr(language_hint, "_script", lambda job, numbers: "Latin")
+    out = tmp_path / "jobs" / "my {book}"
+    argv = ["process", str(source), "--lang", "rus", "--pages", "2", "--out", str(out)]
+    assert main(argv) == 0
+    lines = capsys.readouterr().out.splitlines()
+    retry = lines[lines.index("Try --lang eng:") + 1].strip()
+    # A sample stays a sample: the command parses as the same job but for its language.
+    args = build_parser().parse_args(shlex.split(retry)[1:])
+    assert (args.source, args.pages, args.lang) == (source, "2", "eng")
+    assert args.out == Path(f"{out}-eng") and args.config is None
+
+
 def _advice_after(tmp_path, monkeypatch, capsys, script, *args: str) -> list[str]:
     from pageledger import language_hint
 

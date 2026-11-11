@@ -1811,13 +1811,31 @@ def _started_from(report: dict, item: dict) -> str:
     return f"the edition of {name}" if edition else name
 
 
+def _retry_command(args: argparse.Namespace) -> str:
+    """The process command as given, with {lang} for the language and a new --out: every
+    other option still applies to a second reading of the same pages."""
+    lang = "@@lang@@"
+    argv = ["pageledger", "process", str(args.source), "--lang", lang]
+    for option, value in (
+        ("--engine", args.engine),
+        ("--model-dir", args.model_dir),
+        ("--pages", args.pages),
+        ("--adapter-path", args.adapter_path),
+        ("--review", args.review),
+    ):
+        if value is not None:
+            argv += [option, str(value)]
+    argv += ["--out", f"{args.out}-{lang}"]
+    joined = shlex.join(argv).replace("{", "{{").replace("}", "}}")
+    return joined.replace(lang, "{lang}")
+
+
 def _print_language_advice(job: Path, args: argparse.Namespace) -> None:
     from .language_hint import advice
 
     retry = None
     if args.command == "process" and args.config is None:
-        retry = shlex.join(["pageledger", "process", str(args.source), "--lang", "LANG"])
-        retry = retry.replace("LANG", "{lang}") + f" --out {shlex.quote(str(args.out))}-{{lang}}"
+        retry = _retry_command(args)
     lines = advice(job, retry)
     if lines:
         print("\n" + "\n".join(lines))
