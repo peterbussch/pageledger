@@ -337,6 +337,11 @@ the commands.
   it does for a run. The job's own evidence is checked either way.
   `review --apply` and `adjudicate --decisions` work without the source too,
   with the same warning; `resume` needs it.
+- A born-digital PDF page whose text lies under an opaque page-sized image, or
+  one made in an OCR program's PDF editor over a page-sized picture, is taken
+  for an earlier OCR layer (`text_under_image` or `producer`). When the job's
+  OCR agrees with it, the OCR reading is selected and the page is not held,
+  though the text layer was exact. A see-through watermark does not do this.
 
 ## Tested scale and documents
 

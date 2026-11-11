@@ -1210,7 +1210,6 @@ def _text_and_scan(page: Any) -> dict[str, bool]:
                         not any(see.values())
                         and not any(key in xobject for key in ("/SMask", "/Mask"))
                         and not xobject.get("/ImageMask", False)
-                        and not xobject.get("/SMaskInData", 0)
                     )
                     if opaque:
                         shown["covered"] = shown["all"]

@@ -558,7 +558,7 @@ def _misread_warnings(text: str) -> list[str]:
             and text[m.end() : m.end() + 1] != "."
             and not (
                 m.group().islower()
-                and _UNIT_BEFORE.search(text, 0, m.start())
+                and _UNIT_BEFORE.search(text, max(0, m.start() - 32), m.start())
                 and not text[m.end() : m.end() + 1].isdecimal()
             )
         )

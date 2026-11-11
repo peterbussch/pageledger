@@ -176,12 +176,17 @@ and, from 1.0, [stability](docs/stability.md).
   on a page an image covers, painted before an opaque page-covering image (ABBYY FineReader), or a PDF
   Producer or Creator naming OCR software (ABBYY, FineReader, LuraDocument, Tesseract, OCRmyPDF, OmniPage,
   Readiris, Paper Capture) on such a page. The signals that fired are recorded in the reading's
-  `confidence_detail.ocr_text_layer`. Image data is never decoded.
+  `confidence_detail.ocr_text_layer`. Image data is never decoded. An image drawn with transparency (an
+  alpha below 1, a soft mask or a blend mode other than Normal, as a watermark is stamped over a typeset
+  page) hides no text.
 - Quality warnings that hold a page: `split_words` (more than one Cyrillic word in ten is a stray letter,
   as when a layer splits off each word's last letter), `capital_sign_in_word` (a lower-case letter followed
   by a capital Ъ or Ь, which no Russian word has: OCR trained on modern text reading ѣ and a final ъ), and
   `labels_without_values` (ten or more lines ending in a dot leader with no number, and few lines of
-  numbers: a table whose values the reading lost).
+  numbers: a table whose values the reading lost). A lone small letter after a number or after
+  млн/млрд/тыс/трлн is a unit ("млн т", "кВт·ч"), a titlo keeps a Church Slavonic numeral one word, and a
+  roman page number after a leader is a value. A blank form with dot leaders is held by
+  `labels_without_values`: its text cannot tell it from a table that lost its values.
 - `review --apply`, with or without `--dry-run`, warns (`blank_with_text`) when a page recorded as blank
   has a selected reading of 50 or more words.
 - A reviewer can correct a page's text. The engine's reading is never edited: the corrected text is kept as a
@@ -195,7 +200,8 @@ and, from 1.0, [stability](docs/stability.md).
   unchanged and refuses while a page is corrected. Text is recorded exactly, after CRLF and CR become LF. An
   empty correction, or one identical to its reading, is refused with the decision to use instead (`blank`,
   `accept`); `--dry-run` prints each correction's size and warns when it changes more than half the words. A
-  page can be corrected again, as a chain; accepting a corrected page keeps its correction. `verify` checks
+  page can be corrected again, as a chain; accepting a corrected page keeps its correction, and a plain JSON
+  receipt that does not carry it is refused (it has no binding to show it saw the correction). `verify` checks
   every correction's file and where it started; `report.md`, `transcript.md`, `document.json`
   (`selected_output.correction`, `counts.corrected_pages`) and all four export formats mark the text as a
   person's correction, TEI with a `<change>` in `<revisionDesc>`. See
@@ -317,22 +323,9 @@ and, from 1.0, [stability](docs/stability.md).
   handwriting, unreadable or a source defect. The page keeps its boundary, disposition and review, with
   null `attempt` and `text` in JSONL and a `<gap reason="…"/>` in TEI. With `--reviewed-only` such text
   read as checked: a page reviewed as blank was exported with 1,295 words of OCR.
-- A born-digital PDF with a see-through watermark over its text (drawn at an alpha below 1, through a soft
-  mask, or in a blend mode other than Normal) is no longer taken for an earlier OCR layer. `pdf_text` read the
-  stamp as an opaque scan over the text (`text_under_image`), and a document job then selected its own OCR
-  reading over the exact typeset text without holding the page.
 - An image page that failed transiently just as `max_image_pages` was reached keeps its one retry: after
   `resume --raise-limit` the retry is requested before any unread page. It used to be lost, leaving the page
   held as `provider_failure` while later pages got both a read and a retry.
-- `split_words` no longer holds a correct Soviet production table, whose rows end in units of one letter
-  ("млн т", "кВт·ч"), or Church Slavonic text, whose numerals and abbreviations carry a titlo; and
-  `labels_without_values` no longer holds a table of contents numbered in roman numerals. A blank form with
-  dot leaders is still held by `labels_without_values`: its text cannot tell it from a table that lost its
-  values.
-- `review --apply` refuses a plain JSON receipt that decides a page a person corrected, unless the receipt
-  carries that correction. An older receipt naming the machine reading used to replace the correction without
-  a warning, and `export` then gave the uncorrected text as reviewed. Review sheets and decisions files were
-  already refused there; decide the page in one of them.
 
 ### Known limits
 

@@ -431,9 +431,10 @@ hold such pages for review. Every page with text that these signals recognised
 without `font` or `invisible_text` was a real earlier OCR: in the dogfood, all
 pages of a yearbook, an 1859 gazetteer and an 1888 provincial gazette; in two
 random samples of a research library's PDFs (208 and 393 pages), a 1992 Federal
-Register scan and three books made with ABBYY FineReader. Holding every page where
-two such witnesses differ at all would hold almost every page of the most common
-inherited layer.
+Register scan and three books made with ABBYY FineReader. Two OCR engines rarely
+read a page word for word alike, so holding every page where such witnesses
+differ at all would likely hold almost every page of the most common inherited
+layer; that has not been measured.
 
 **The layer and the job's own OCR are two witnesses.** Under 0.8 the layer was set
 aside once local OCR had read the page. Under 0.9:
