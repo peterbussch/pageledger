@@ -141,8 +141,10 @@ def _safe(root: Path, relative: str) -> Path:
     return full
 
 
-# Commands that may change a job outside the directory it was written in.
+# Commands that may change a job outside the directory it was written in, as recorded,
+# and as a person types them now.
 RELOCATED_WRITERS = ("review-job", "adjudicate")
+_WRITER_COMMANDS = {"review-job": "review --apply", "adjudicate": "adjudicate"}
 
 
 def _load(root: Path) -> dict:
@@ -269,7 +271,7 @@ def _location_warnings(job: dict, root: Path) -> list[dict]:
             {
                 "code": "job_changed_elsewhere",
                 "message": (
-                    f"{item['command']} changed this job in {item['root']} "
+                    f"{_WRITER_COMMANDS[item['command']]} changed this job in {item['root']} "
                     f"on {item['at']}, not where it was written"
                 ),
                 **item,

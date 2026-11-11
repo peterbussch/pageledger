@@ -154,6 +154,10 @@ def test_a_colleague_reviews_a_copy_and_the_record_says_where(setup, tmp_path): 
     result = verify_job(copy)
     assert result["status"] == "pass", result
     assert _codes(result) == ["job_relocated", "job_changed_elsewhere"]
+    # The record keeps the command's recorded name; the message names the one to type.
+    changed = result["warnings"][1]
+    assert changed["command"] == "review-job"
+    assert changed["message"].startswith(f"review --apply changed this job in {copy} on ")
 
     # Moved on again, it still verifies and still says where it was reviewed.
     again = _copy(copy, tmp_path, "archive")
