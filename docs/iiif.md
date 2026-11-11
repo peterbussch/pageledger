@@ -75,7 +75,7 @@ also an error; delete that file and resume.
 ## Process the snapshot
 
 ```bash
-pageledger fetch-iiif https://example.org/iiif/item/manifest.json --pages "1-8,81" --out sources/item
+pageledger fetch https://example.org/iiif/item/manifest.json --pages "1-8,81" --out sources/item
 pageledger process sources/item --out jobs/item
 ```
 
@@ -87,7 +87,7 @@ IIIF canvas. Pages are numbered by their place in the folder, so here
 `0081.jpg` is page 9 of the job; the report, the transcript and the review view
 show both, as `9 (0081.jpg)`. A folder whose images no longer match its record,
 or that holds anything else, is refused with what is wrong. An incomplete
-snapshot can be processed; the report says it is incomplete, and `verify-job`
+snapshot can be processed; the report says it is incomplete, and `verify`
 warns about it and, after a later `--resume` adds images, names them (see
 [durable job and attempts](processing-spec.md#durable-job-and-attempts)).
 

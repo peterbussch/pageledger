@@ -15,8 +15,8 @@ and, from 1.0, [stability](docs/stability.md).
   [a folder of page scans](docs/pdf-ocr-first-run.md#9-a-folder-of-page-scans).
 - Custody stays with the images. Every image is hashed, and the source's identity is the hash of a page
   manifest (each page's file name, SHA-256, size and pixel dimensions). The run manifest, checkpoint and
-  document job record that manifest; provenance names each page's own image; `verify-run` names an image that
-  changed, went missing or was added, and `verify-job` refuses the job with the same detail.
+  document job record that manifest; provenance names each page's own image; `verify` names an image that
+  changed, went missing or was added, and `verify` refuses the job with the same detail.
 - The built-in engines read page images through a carrier: a PDF PageLedger writes for the run, holding each
   JPEG's bytes as they are and each PNG's compressed data unchanged (a PNG with an alpha channel is split into
   an image and a soft mask). Its page size comes from the image's declared density (JFIF, EXIF or `pHYs`), or
@@ -76,7 +76,7 @@ and, from 1.0, [stability](docs/stability.md).
 - A word list as the lexicon: `processing.lexicon: {provider: wordlist, path: FILE}` names a plain UTF-8 file
   with one word per line, so the `rough` trigger and contest's glyph rule work in any language. Words match
   after NFC normalization and case folding. The job records the list's resolved path, SHA-256, size, word
-  count and matching rule; `resume` and `verify-job` refuse a job whose list is missing or changed. No list
+  count and matching rule; `resume` and `verify` refuse a job whose list is missing or changed. No list
   ships with PageLedger; [processing spec](docs/processing-spec.md#a-word-list-as-the-lexicon) says where to
   get one. On the 1934 telephone directory tiles a general English list knew 56 to 58% of the words in good
   and bad readings alike, so `rough` does not help on directories.
@@ -92,14 +92,14 @@ and, from 1.0, [stability](docs/stability.md).
   written this way carry an optional `terms` field.
 - A document job verifies wherever it is, so a deposited copy can be checked on another machine.
   `root` in `job.json` is now a record of where the job was written, not part of its identity:
-  `verify-job` on a moved or copied job checks every hash, attempt, selection, receipt and the report as
+  `verify` on a moved or copied job checks every hash, attempt, selection, receipt and the report as
   before, and reports warning `job_relocated` with the recorded and the current directory. This holds
-  for jobs written by every earlier release. `inspect-job`, `export`, `review-sheet` and
+  for jobs written by every earlier release. `inspect`, `export`, `review --sheet` and
   `adjudicate --packets` work on a moved job with no extra step.
-- `review-job` and `adjudicate --decisions` work on a moved or copied job, so a colleague can review a
+- `review --apply` and `adjudicate --decisions` work on a moved or copied job, so a colleague can review a
   deposited copy. Each such change is recorded in a new optional `relocations` list in `job.json` (the
   directory, the command and the time), repeated in `document.json` and as a line in `report.md`, and
-  reported by `verify-job` as `job_changed_elsewhere`. Jobs without the field read and render exactly as
+  reported by `verify` as `job_changed_elsewhere`. Jobs without the field read and render exactly as
   before.
 - A built-in `alto` adapter reads the OCR a library published beside its scans as ALTO XML (word boxes and
   confidences), one file per page, from a folder named by `adapter_options.dir` and a file-name template
@@ -116,13 +116,13 @@ and, from 1.0, [stability](docs/stability.md).
   for `0081.jpg` whatever the page's place in the folder, in a plain `run` and in a document job. With a PDF
   source `{stem}` is refused before the run or job starts.
 - A IIIF snapshot is a source: `pageledger process sources/item --out jobs/item` reads the folder
-  `fetch-iiif` wrote as a folder of page images, provided its `iiif-fetch.json` lists exactly the folder's
+  `fetch` wrote as a folder of page images, provided its `iiif-fetch.json` lists exactly the folder's
   images with their hashes (anything else, or a record that disagrees, is refused with what is wrong). The
   run manifest, checkpoint, job and `document.json` record the record as the optional `iiif` field: its
   SHA-256, the requested URL, `complete` or `incomplete`, and each page's canvas, so a page can be cited by its
   IIIF canvas. The source's identity is still the images alone. `report.md` names the snapshot and whether
-  it was complete. `verify-job` and `verify-run` warn `iiif_snapshot_incomplete` and `iiif_record_changed`;
-  `verify-job` passes with `iiif_snapshot_grown`, naming the images, when a later `fetch-iiif --resume` added
+  it was complete. `verify` warn `iiif_snapshot_incomplete` and `iiif_record_changed`;
+  `verify` passes with `iiif_snapshot_grown`, naming the images, when a later `fetch --resume` added
   images and every image the job read is unchanged. See [processing the snapshot](docs/iiif.md#process-the-snapshot).
 - For page images, `report.md`, `transcript.md` and the review view show each page's file name after its
   number, as `9 (0081.jpg)`, because a folder numbers pages by position.
@@ -136,7 +136,7 @@ and, from 1.0, [stability](docs/stability.md).
   workflow (`process`, `review`, `export`, `verify`, `inspect`, `adjudicate`, `init`, `fetch`,
   `doctor`), then the commands for runs. `verify` and `inspect` take a job or a run and tell which from
   the folder (`job.json`, or `manifest.json` or `checkpoint.json`); their output for each is what
-  `verify-job`/`verify-run` and `inspect-job`/`inspect-run` print. `review` writes the page view
+  `verify`/`verify` and `inspect`/`inspect` print. `review` writes the page view
   (`--out`), the review sheet (`--sheet`, formerly `review-sheet --out`) or records decisions
   (`--apply`, formerly `review-job --review`). `init` writes the document-job config, `init --run` the
   run config (formerly `init-config`), and `compare-runs` is `compare`. The earlier names keep working
@@ -157,18 +157,18 @@ and, from 1.0, [stability](docs/stability.md).
   text file, so a `.md` source no longer gets `pdf_ocr` and halts. A source that is none of these, such as a
   `.docx` file or a folder without page images, is refused with what a source can be, where it used to become
   a halted job (`source_container_invalid:UnicodeDecodeError`).
-- `fetch-iiif` reads each JPEG's header with the folder reader's own header reader, so it also refuses an
+- `fetch` reads each JPEG's header with the folder reader's own header reader, so it also refuses an
   image stored mirrored and a JPEG with two frame headers, which a folder of page images could not read.
 - The README's "Process a document" and the document-job tutorial start with the one-command job and
   introduce the config file second, as the way to change it.
 - `docs/adapter-protocol.md`: a new required adapter attribute or a change to the `extract()` call
   now waits for a major release, not a minor one.
-- `verify-job` no longer needs the source document. A missing source is reported as warning
-  `source_missing`, and one found through the source index as `source_relocated`, as `verify-run`
-  does; other bytes at the recorded path still fail verification. `resume`, `review-job` and
-  `adjudicate --decisions` still need the source, at its path or through the index. `verify-job`'s
+- `verify` no longer needs the source document. A missing source is reported as warning
+  `source_missing`, and one found through the source index as `source_relocated`, as `verify`
+  does; other bytes at the recorded path still fail verification. `resume`, `review --apply` and
+  `adjudicate --decisions` still need the source, at its path or through the index. `verify`'s
   result has a `warnings` list.
-- `verify-run` and `verify-job` read a missing `raw/` or `partials/` directory as an empty one, and a
+- `verify` read a missing `raw/` or `partials/` directory as an empty one, and a
   missing `normalized/` too when the run has no schema, since Git and some archive tools drop empty
   directories. A file the run or job records inside one is still required.
 - `resume` refuses a job that is not in the directory where it was written, and says to move it back
@@ -199,7 +199,7 @@ and, from 1.0, [stability](docs/stability.md).
   and its word boxes are checked against the page's shape and edges but not yet attached to the reading or
   used to place tiles. hOCR, PAGE XML, ALTO as the contest witness and ALTO found through IIIF manifests
   are not supported.
-- A job on a IIIF snapshot that a later `--resume` grew verifies and exports, but `resume`, `review-job` and
+- A job on a IIIF snapshot that a later `--resume` grew verifies and exports, but `resume`, `review --apply` and
   `adjudicate` refuse the grown folder as a changed source.
 - `render_upsampled` on a PDF page checks the page's largest image by its proportions, not by how large it
   is drawn, so a born-digital page whose only image is small and happens to have the page's shape is warned

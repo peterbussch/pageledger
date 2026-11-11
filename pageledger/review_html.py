@@ -119,7 +119,7 @@ def write_review_html(job_dir: Path, out: Path, *, images: str = "all") -> dict:
         try:
             source = _check_source(job)
         except ValueError:
-            # Images a later fetch-iiif --resume added; each page is read by its own name.
+            # Images a later fetch --resume added; each page is read by its own name.
             if snapshot_growth(job["source"]) is None:
                 raise
             source = Path(job["source"]["path"]).expanduser()

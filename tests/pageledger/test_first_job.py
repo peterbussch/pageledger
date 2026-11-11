@@ -193,7 +193,7 @@ def test_process_without_config_follows_the_kind_of_source(
             "is not a PDF, a page image or UTF-8 text",
         ),
         ("empty-folder", None, "is a folder with no page images"),
-        ("nowhere.txt", "", "Source does not exist"),
+        ("nowhere.txt", "", "Source file was not found"),
     ],
 )
 def test_a_source_that_is_neither_pdf_images_nor_text_is_refused_before_the_job_exists(

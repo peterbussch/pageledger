@@ -216,7 +216,7 @@ the commands.
   page's proportions (an 85 by 110 pixel picture on a Letter page) is warned
   about as if it were a low-resolution scan.
 - A folder is numbered by position, so a page's number in a job is not always
-  the number in its file name: after `fetch-iiif --pages "1-8,81"`, `0081.jpg`
+  the number in its file name: after `fetch --pages "1-8,81"`, `0081.jpg`
   is page 9. Reports, transcripts and the review view show both, as
   `9 (0081.jpg)`.
 - A [IIIF snapshot](iiif.md#process-the-snapshot) is read as a folder of page

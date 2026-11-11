@@ -181,7 +181,7 @@ def _processing_template(engine: str, lang: str | None, model_dir: str | None) -
         if lang is not None or model_dir is not None:
             raise _UsageError(
                 "--lang and --model-dir need an OCR engine, and the engine is none "
-                "(the default for a .txt source); name one with --engine"
+                "(the default for a text file); name one with --engine"
             )
         return (
             PROCESSING_HEADER.replace("{then_ocr}", ".")
@@ -889,7 +889,7 @@ def _add_engine_options(parser: argparse.ArgumentParser, when: str) -> None:
         "--engine",
         choices=OCR_ENGINES,
         default=None,
-        help=f"Local OCR engine or none, {when} (default: pdf_ocr; process uses none for a .txt source)",
+        help=f"Local OCR engine or none, {when} (default: pdf_ocr; process uses none for a text file)",
     )
     parser.add_argument(
         "--lang",

@@ -393,8 +393,6 @@ def _process(
     review_path: Path | None = None,
 ) -> dict:
     source = source.expanduser().resolve()
-    if not source.exists():
-        raise ValueError(f"Source file was not found: {source}")
     if out_dir.expanduser().exists():
         raise ValueError(
             f"A job or another file is already at {out_dir.expanduser()}. "

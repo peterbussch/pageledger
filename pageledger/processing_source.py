@@ -23,7 +23,7 @@ def source_kind(source: Path) -> str:
     records why it cannot be read. Text is any file that decodes as UTF-8.
     """
     if not source.exists():
-        raise ValueError(f"Source does not exist: {source}")
+        raise ValueError(f"Source file was not found: {source}")
     if is_image_source(source):
         return KIND
     if source.is_dir():

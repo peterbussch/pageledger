@@ -105,7 +105,7 @@ class ImageSource:
     path: Path
     pages: tuple[ImagePage, ...]
     skipped: tuple[str, ...] = ()
-    # The IIIF fetch record of a folder fetch-iiif wrote: context, not identity.
+    # The IIIF fetch record of a folder fetch wrote: context, not identity.
     fetch: dict[str, Any] | None = None
 
     @property
@@ -152,7 +152,7 @@ def _natural_key(name: str) -> tuple[list[Any], str]:
 def read_image_source(path: Path) -> ImageSource:
     """Hash and measure every page image; refuse anything that is not one.
 
-    A folder ``fetch-iiif`` wrote also holds ``iiif-fetch.json`` and ``iiif/``.
+    A folder ``fetch`` wrote also holds ``iiif-fetch.json`` and ``iiif/``.
     They are read only when the record lists exactly the folder's images with
     their hashes, and the record is kept as context beside the images.
     """
@@ -199,7 +199,7 @@ def _fetch_annotation(path: Path, pages: tuple[ImagePage, ...]) -> dict[str, Any
     except ValueError as exc:
         raise ValueError(
             f"{exc}. A folder holding {RECORD_NAME} is read as the IIIF snapshot it records, "
-            "so its images must be exactly the ones fetch-iiif fetched."
+            "so its images must be exactly the ones `pageledger fetch` fetched."
         ) from exc
     assert fetched is not None
     canvases = fetched["canvases"]
@@ -305,7 +305,7 @@ def snapshot_warnings(source: dict[str, Any], located: Path | None) -> list[dict
 
 
 def snapshot_growth(source: dict[str, Any]) -> list[dict[str, Any]] | None:
-    """Warnings for a IIIF snapshot that ``fetch-iiif --resume`` added images to, or None.
+    """Warnings for a IIIF snapshot that ``fetch --resume`` added images to, or None.
 
     The snapshot has grown when its folder is still a valid snapshot of the same
     URL and every recorded image is there unchanged. The recorded pages keep
@@ -333,7 +333,7 @@ def snapshot_growth(source: dict[str, Any]) -> list[dict[str, Any]] | None:
         {
             "code": "iiif_snapshot_grown",
             "message": (
-                f"fetch-iiif --resume added {len(added)} image(s) to {source['path']} after this "
+                f"fetch --resume added {len(added)} image(s) to {source['path']} after this "
                 f"was written ({', '.join(added)}); every image it read is unchanged and keeps "
                 "its page number here. A new job on the folder would number pages differently."
             ),
@@ -418,7 +418,7 @@ def jpeg_header(data: bytes, name: str) -> dict[str, Any]:
     """Frame, density and orientation from a JPEG's header, up to its first scan.
 
     Everything PageLedger cannot carry to a PDF renderer is refused here, so
-    ``fetch-iiif`` keeps only JPEGs a folder of page images can read. ``scan``
+    ``fetch`` keeps only JPEGs a folder of page images can read. ``scan``
     says whether the header reached the image data.
     """
     if data[:2] != b"\xff\xd8":
