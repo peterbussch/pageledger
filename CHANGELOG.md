@@ -20,11 +20,23 @@ if you come from 0.7, read its notes below too.
 Starting a job
 
 - `process SOURCE --out DIR` runs without `--config`: Tesseract in English for
-  a PDF or page images (`--engine`, `--lang` and `--model-dir` choose
-  otherwise), no OCR for a text file, nothing paid. The job records exactly the
-  configuration `init` writes, and the screen says so. A missing engine stops
-  the command before the job exists, naming what to install. See
+  a PDF or page images (`--lang` chooses another language), no OCR for a text
+  file, nothing paid. The job records exactly the configuration `init` writes,
+  and one line on the screen says what will be read and how. `--engine` and
+  `--model-dir` work on `process` too but are left out of its `--help`; `init`
+  is where an engine is chosen. A missing engine stops the command before the
+  job exists, naming what to install. See
   [start with local text and OCR](docs/processing-spec.md#start-with-local-text-and-ocr).
+- `process` and `resume` show progress while a job runs (pages done, pages
+  that need a person so far, what is being read now), and Ctrl-C stops a job
+  without a traceback, keeps what was read and prints the `resume` command
+  (exit 130). `resume` of a job ends with the same summary as `process`. See
+  [process](docs/cli.md#process).
+- When most pages Tesseract read were held for low confidence, `process` says
+  the language may be wrong and, when Tesseract's script detection is sure,
+  which language to try; on pre-1918 Russian read with `rus` it points to the
+  `orus` model, and `--lang orus` without that model names its recipe. See
+  [process](docs/cli.md#process).
 - `init` writes a commented `processing.yml` with each optional stage as a
   commented block; [`docs/examples/processing.yml`](docs/examples/processing.yml)
   is that file. See [init](docs/cli.md#init).
@@ -98,7 +110,8 @@ Reading
 
 Reviewing and exporting
 
-- `review JOB --out DIR` writes a review view to open in a browser: each page's
+- `review JOB` writes a review view into `JOB-review` beside the job (or
+  `--out DIR`) to open in a browser: each page's
   image beside its text, the other readings compared word by word, and why the
   page is held, the pages that need a person first. Decisions download as
   `review.json` ([schema](schemas/review-decisions.schema.json)) or, without
@@ -122,6 +135,11 @@ Reviewing and exporting
   repeated in [warnings](docs/warnings.md#in-plain-words).
 - JSONL exports give each page's `state`, `review_reasons` and `warnings`;
   TEI marks each page's state, holds and warnings. See [export](docs/export.md).
+- `review --apply` says what it recorded in plain words (accepted, corrected,
+  blank and so on), how many pages still need a person, and the next command:
+  `export` once none do. `export` takes the format from the end of `--out`
+  (`.txt`, `.md`, `.jsonl`, `.xml`) when `--format` is not given. See
+  [review](docs/cli.md#review) and [export](docs/cli.md#export).
 - `review --apply` warns (`blank_with_text`) when a page recorded as blank has
   a reading of 50 or more words. See
   [troubleshooting](docs/troubleshooting.md#a-review-is-refused).
@@ -140,7 +158,12 @@ The contract
   `init-config` is `init --run` and `init-config --processing` is `init`;
   `compare-runs` is `compare`. `verify` and `inspect` tell a job from a run by
   its folder. The earlier names work as before through every 1.x release, but
-  `--help` no longer lists them. See [earlier command names](docs/cli.md#earlier-command-names).
+  `--help` no longer lists them. `--help` (or `pageledger help`) lists only the
+  commands for reading a document and setting up; `pageledger help pipelines`
+  lists the commands for runs and `adjudicate`. A run command given a job, or
+  a job command given a run, says which kind of folder it is and which command
+  fits. See [earlier command names](docs/cli.md#earlier-command-names) and
+  [the CLI reference](docs/cli.md).
 - **A folder of JPEG or PNG files is one document,** not a set of one-page
   documents, and every file in it must be a page image. An adapter that reads
   images itself gets JPEG and PNG only; TIFF, JPEG 2000 and WebP are refused. See
@@ -148,7 +171,8 @@ The contract
 - **`process` refuses an unsupported source before the job exists.** A source
   is a PDF, page images, or text that reads as UTF-8; anything else, such as a
   `.docx` or a folder without page images, is a usage error and no job folder
-  is written, where 0.8 wrote a halted job. A `.md` source no longer gets OCR. See
+  is written, where 0.8 wrote a halted job. So is an empty file of any kind.
+  A `.md` source no longer gets OCR. See
   [troubleshooting](docs/troubleshooting.md#is-not-a-pdf-a-page-image-or-utf-8-text).
 - **New jobs record hold policy 0.9.** An earlier OCR in a PDF's text layer is
   recognised in any font and kept as a witness beside the job's own OCR: its
@@ -198,6 +222,12 @@ The contract
   a page image below 72 DPI, down to half its own density, instead of stopping
   with `render_limit`. See
   [page size and rendering](docs/ocr-options.md#page-size-and-rendering).
+- `doctor` opens with what `process` can do on this machine (PDF text, which
+  OCR engine, the common languages installed for `--lang`, optional engines
+  not installed), then the details as before; `--json` is unchanged. A new job
+  makes `partials/` only when it keeps a partial reading. A review file for
+  another document, or one that is not a receipt, is refused saying which. See
+  [doctor](docs/cli.md#doctor).
 - The README leads with `process`, and [the documentation](docs/README.md) is
   arranged by task; "Choose OCR settings" is folded into
   [non-English and historical OCR](docs/multilingual-ocr.md) and

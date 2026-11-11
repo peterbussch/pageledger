@@ -39,8 +39,7 @@ the *job*: the record of everything done to this one document.
 On a three-page scan, the screen shows:
 
 ```text
-pageledger: no --config given, so this job uses the default document config: the text layer, then pdf_ocr (lang eng) for pages that need OCR, and no paid stages.
-To change it, write it out with `pageledger init --engine pdf_ocr --lang eng --out processing.yml` and pass --config processing.yml.
+Reading book.pdf: each page's own text, then Tesseract OCR in English for pages that need it. Nothing is sent anywhere.
 Status: finished. Every stage this job is configured to run has run.
 
 Source: book.pdf; 3 of its 3 pages selected, 3 read.
@@ -58,8 +57,8 @@ how many pages need a person and why. Then:
 
 - `pageledger inspect jobs/book` shows the job's report, `report.md`: each
   page that needs a person, with the evidence for it.
-- `pageledger review jobs/book --out book-review` writes a review view to open
-  in a browser: each page's image beside its text. Choose a decision for each
+- `pageledger review jobs/book` writes a review view into `jobs/book-review`
+  to open in a browser: each page's image beside its text. Choose a decision for each
   page or correct its text there, and record the decisions with
   `pageledger review jobs/book --apply book-review/review.json --reviewer "Your Name"`.
 - `pageledger export jobs/book --format md --out book.md` writes the text out

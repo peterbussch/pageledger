@@ -68,7 +68,7 @@ def test_process_checks_source_and_output_before_default_config_banner(tmp_path,
         out.mkdir()
     exit_code, _, stderr = _run_cli(["process", str(source), "--out", str(out), "--engine", "none"])
     assert exit_code == 1
-    assert "no --config given" not in stderr
+    assert "Reading " not in stderr
     if failure == "missing-source":
         assert "Source file was not found" in stderr
     else:

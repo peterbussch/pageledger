@@ -141,8 +141,9 @@ def test_process_without_config_records_what_the_written_config_would(
     implicit, explicit = tmp_path / "jobs" / "implicit", tmp_path / "jobs" / "explicit"
     assert main(["process", str(source), "--out", str(implicit)]) == 0
     err = capsys.readouterr().err
-    assert "no --config given" in err
-    assert "pageledger init --engine none --out processing.yml" in err
+    assert (
+        err == "Reading letters.txt: the text of each page, as it is. Nothing is sent anywhere.\n"
+    )
     config = _write_config(tmp_path, "--engine", "none")
     assert main(["process", str(source), "--config", str(config), "--out", str(explicit)]) == 0
     capsys.readouterr()
@@ -166,7 +167,7 @@ def test_process_without_config_follows_the_kind_of_source(
     notes.write_text("# Notes\n\nA page of notes in Markdown.\fA second page.", encoding="utf-8")
     out = tmp_path / "jobs" / "notes"
     assert main(["process", str(notes), "--out", str(out)]) == 0
-    assert "--engine none" in capsys.readouterr().err
+    assert "the text of each page, as it is" in capsys.readouterr().err
     job = json.loads((out / "job.json").read_text(encoding="utf-8"))["payload"]
     assert job["config"]["processing"]["local_ocr"] is None
     assert job["status"] == "completed"
@@ -193,6 +194,8 @@ def test_process_without_config_follows_the_kind_of_source(
             "is not a PDF, a page image or UTF-8 text",
         ),
         ("empty-folder", None, "is a folder with no page images"),
+        ("empty.docx", b"", "is empty"),
+        ("empty.pdf", b"", "is empty"),
         ("nowhere.txt", "", "Source file was not found"),
     ],
 )
@@ -212,7 +215,7 @@ def test_a_source_that_is_neither_pdf_images_nor_text_is_refused_before_the_job_
     assert exit_info.value.code == 2
     err = capsys.readouterr().err
     assert message in err
-    if name != "nowhere.txt":
+    if name not in {"nowhere.txt", "empty.docx", "empty.pdf"}:
         assert "A source is a PDF, a UTF-8 text file" in err
     config = _write_config(tmp_path, "--engine", "none")
     with pytest.raises(ValueError, match=message):
@@ -267,29 +270,103 @@ def test_process_without_config_names_a_missing_engine_package(
     assert not out.exists()
 
 
-def test_process_without_config_runs_a_pdf_with_the_default_engine(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> None:
+def _hello_pdf(tmp_path: Path, pages: int = 1) -> Path:
     pypdf = pytest.importorskip("pypdf")
     from pypdf.generic import DecodedStreamObject, DictionaryObject, NameObject
 
     writer = pypdf.PdfWriter()
-    page = writer.add_blank_page(width=200, height=200)
-    font = DictionaryObject(
-        {
-            NameObject("/Type"): NameObject("/Font"),
-            NameObject("/Subtype"): NameObject("/Type1"),
-            NameObject("/BaseFont"): NameObject("/Helvetica"),
-        }
-    )
-    page[NameObject("/Resources")] = DictionaryObject(
-        {NameObject("/Font"): DictionaryObject({NameObject("/F1"): writer._add_object(font)})}
-    )
-    content = DecodedStreamObject()
-    content.set_data(b"BT /F1 12 Tf 10 100 Td (Hello PageLedger) Tj ET")
-    page[NameObject("/Contents")] = writer._add_object(content)
+    for _ in range(pages):
+        page = writer.add_blank_page(width=200, height=200)
+        font = DictionaryObject(
+            {
+                NameObject("/Type"): NameObject("/Font"),
+                NameObject("/Subtype"): NameObject("/Type1"),
+                NameObject("/BaseFont"): NameObject("/Helvetica"),
+            }
+        )
+        page[NameObject("/Resources")] = DictionaryObject(
+            {NameObject("/Font"): DictionaryObject({NameObject("/F1"): writer._add_object(font)})}
+        )
+        content = DecodedStreamObject()
+        content.set_data(b"BT /F1 12 Tf 10 100 Td (Hello PageLedger) Tj ET")
+        page[NameObject("/Contents")] = writer._add_object(content)
     source = tmp_path / "hello.pdf"
     writer.write(source)
+    return source
+
+
+def _ocr_reads(monkeypatch: pytest.MonkeyPatch, text: str, warnings: list[str]) -> None:
+    def read(self, source, *, page_id, page_number, action, prompt=None):
+        return adapters.ExtractionResult(
+            content=text,
+            format="text",
+            confidence=0.3,
+            model=None,
+            warnings=list(warnings),
+            usage={"pages": 1, "tokens": None, "compute_seconds": None, "cost_usd": None},
+        )
+
+    monkeypatch.setattr(adapters.PdfOcrAdapter, "preflight", lambda self, sources: None)
+    monkeypatch.setattr(adapters.PdfOcrAdapter, "extract", read)
+
+
+def test_process_says_when_the_ocr_language_is_probably_wrong(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from pageledger import language_hint
+
+    source = _hello_pdf(tmp_path, pages=2)
+    _ocr_reads(monkeypatch, "Агоипа Фе ите оЁ фе МезоШЫс репо", ["low_confidence"])
+    monkeypatch.setattr(language_hint, "_script", lambda job, numbers: "Latin")
+    out = tmp_path / "jobs" / "hello"
+    assert main(["process", str(source), "--lang", "rus", "--out", str(out)]) == 0
+    lines = capsys.readouterr().out.splitlines()
+    advice = lines[lines.index("OCR was unsure of many words on 2 of the 2 pages it read.") :]
+    assert advice == [
+        "OCR was unsure of many words on 2 of the 2 pages it read.",
+        "That often means the language given (rus) is not the document's.",
+        "These pages look like Latin script. Try --lang eng:",
+        f"  pageledger process {source} --lang eng --out {out}-eng",
+        "`pageledger doctor` lists the languages installed.",
+    ]
+    assert main(["process", str(source), "--lang", "rus", "--out", str(out) + "2", "--json"]) == 0
+    json.loads(capsys.readouterr().out)
+
+
+def test_language_advice_without_a_sure_script_and_for_pre_reform_spelling(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from pageledger import language_hint
+
+    source = _hello_pdf(tmp_path)
+    old = "Городъ Гродно стоитъ на рѣкѣ Нѣманѣ; въ немъ живутъ мѣщане и купцы."
+    _ocr_reads(monkeypatch, old, ["low_confidence"])
+    monkeypatch.setattr(language_hint, "_script", lambda job, numbers: None)
+    out = tmp_path / "jobs" / "grodno"
+    assert main(["process", str(source), "--lang", "rus", "--out", str(out)]) == 0
+    text = capsys.readouterr().out
+    assert "To try another, run it again with --lang and the document's language." in text
+    assert "Some pages are in pre-1918 Russian spelling." in text
+    assert "engine-recipes.md#tesseract-with-the-community-orus-model" in text
+
+
+def test_language_advice_never_fails_the_job(tmp_path: Path, monkeypatch, capsys) -> None:
+    from pageledger import language_hint
+
+    def broken(job, numbers):
+        raise OSError("tesseract vanished")
+
+    source = _hello_pdf(tmp_path)
+    _ocr_reads(monkeypatch, "Hello", ["low_confidence"])
+    monkeypatch.setattr(language_hint, "_script", broken)
+    assert main(["process", str(source), "--out", str(tmp_path / "jobs" / "x")]) == 0
+    assert "OCR was unsure" not in capsys.readouterr().out
+
+
+def test_process_without_config_runs_a_pdf_with_the_default_engine(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    source = _hello_pdf(tmp_path)
     calls: list[int] = []
 
     def read(self, source, *, page_id, page_number, action, prompt=None):
@@ -308,7 +385,10 @@ def test_process_without_config_runs_a_pdf_with_the_default_engine(
     out = tmp_path / "jobs" / "hello"
     assert main(["process", str(source), "--out", str(out)]) == 0
     captured = capsys.readouterr()
-    assert "pdf_ocr (lang eng)" in captured.err
+    assert captured.err == (
+        "Reading hello.pdf: each page's own text, then Tesseract OCR in English for pages "
+        "that need it. Nothing is sent anywhere.\n"
+    )
     job = json.loads((out / "job.json").read_text(encoding="utf-8"))["payload"]
     assert job["policy"]["local_ocr"]["adapter"] == "pdf_ocr"
     assert [attempt["stage"] for attempt in job["pages"][0]["attempts"]] == [

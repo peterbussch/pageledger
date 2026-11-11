@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import argparse
+import csv
+import io
 import json
 import re
 from pathlib import Path
@@ -181,6 +183,52 @@ def test_review_writes_the_page_view_by_default(
     assert "review-job" not in page and "review-html" not in page
 
 
+def test_review_with_no_option_writes_the_view_beside_the_job(
+    job: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    code, stdout, _ = _cli(capsys, "review", f"{job}/", "--images", "none")
+    view = tmp_path / "job-review"
+    assert code == 0 and (view / "index.html").is_file()
+    assert stdout.startswith(f"Review view: {view / 'index.html'} ")
+    assert "Open that file in a web browser" in stdout
+
+    code, stdout, err = _cli(capsys, "review", str(job))
+    assert code == 1 and stdout == ""
+    assert f"{view} already exists" in err and "--out DIR" in err
+
+
+def test_review_of_the_current_folder_writes_beside_it(
+    job: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch
+) -> None:
+    monkeypatch.chdir(job)
+    assert _cli(capsys, "review", ".", "--images", "none")[0] == 0
+    assert (tmp_path / "job-review" / "index.html").is_file()
+    assert not (job / "job-review").exists()
+
+
+def test_review_apply_says_what_was_recorded_and_what_comes_next(
+    job: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    sheet = tmp_path / "review.csv"
+    assert main(["review", str(job), "--sheet", str(sheet)]) == 0
+    capsys.readouterr()
+    with sheet.open(encoding="utf-8-sig", newline="") as stream:
+        rows = list(csv.DictReader(stream))
+    for row in rows:
+        row["decision"] = "accept" if row["page_number"] == "1" else "blank"
+    with sheet.open("w", encoding="utf-8", newline="") as stream:
+        writer = csv.DictWriter(stream, fieldnames=list(rows[0]))
+        writer.writeheader()
+        writer.writerows(rows)
+    code, stdout, _ = _cli(capsys, "review", str(job), "--apply", str(sheet), "--reviewer", "A")
+    assert code == 0
+    assert stdout.splitlines() == [
+        "Recorded: 2 pages: 1 accepted, 1 blank.",
+        "No page needs a person now.",
+        f"Next: pageledger export {job} --out job.txt",
+    ]
+
+
 def test_review_sheet_is_review_sheet(
     job: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -212,10 +260,9 @@ def test_review_apply_is_review_job(
 @pytest.mark.parametrize(
     ("args", "message"),
     [
-        ([], "one of the arguments --out --sheet --apply is required"),
         (["--out", "v", "--sheet", "s.csv"], "not allowed with argument"),
         (["--sheet", "s.csv", "--apply", "s.csv"], "not allowed with argument"),
-        (["--sheet", "s.csv", "--images", "held"], "--images goes with --out"),
+        (["--sheet", "s.csv", "--images", "held"], "--images is for the review view"),
         (["--out", "v", "--reviewer", "A"], "--reviewer and --dry-run go with --apply"),
         (["--sheet", "s.csv", "--dry-run"], "--reviewer and --dry-run go with --apply"),
     ],
@@ -291,16 +338,25 @@ def _choices() -> dict[str, argparse.ArgumentParser]:
     return dict(action.choices)
 
 
-def test_every_command_is_listed_once_or_is_an_earlier_name() -> None:
-    listed = [name for _, names in cli.COMMAND_GROUPS for name in names]
+def _listed(out: str) -> list[str]:
+    return re.findall(r"^  ([a-z]+) {2,}\S", out, flags=re.MULTILINE)
+
+
+def test_every_command_is_on_the_first_screen_or_the_pipelines_screen_once(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    first = _listed(_cli(capsys, "--help")[1])
+    pipelines = _listed(_cli(capsys, "help", "pipelines")[1])
+    listed = first + pipelines
     assert len(listed) == len(set(listed)) == len(cli.COMMAND_HELP)
     assert set(listed) == set(cli.COMMAND_HELP)
     assert set(_choices()) == set(listed) | set(EARLIER_NAMES)
     assert "review-html" not in _choices() and "fetch-iiif" not in _choices()
-    assert all(new in listed for new in EARLIER_NAMES.values())
+    assert all(new in first for new in EARLIER_NAMES.values() if new != "compare")
+    assert "compare" in pipelines and "adjudicate" in pipelines
 
 
-def test_top_level_help_is_grouped_and_lists_no_earlier_name(
+def test_top_level_help_lists_the_document_commands_and_points_to_the_rest(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     code, out, _ = _cli(capsys, "--help")
@@ -311,11 +367,31 @@ def test_top_level_help_is_grouped_and_lists_no_earlier_name(
     headings = [heading for heading, _ in cli.COMMAND_GROUPS]
     positions = [out.index(f"\n{heading}:\n") for heading in headings]
     assert positions == sorted(positions)
-    listed = re.findall(r"^  ([a-z]+) {2,}\S", out, flags=re.MULTILINE)
-    assert listed == [name for _, names in cli.COMMAND_GROUPS for name in names]
-    for name in [*EARLIER_NAMES, "review-html", "fetch-iiif"]:
+    assert _listed(out) == [name for _, names in cli.COMMAND_GROUPS for name in names]
+    assert _listed(out)[:6] == ["process", "review", "export", "verify", "inspect", "resume"]
+    assert "pageledger help pipelines" in out
+    for name in [*EARLIER_NAMES, "review-html", "fetch-iiif", "adjudicate"]:
         assert name not in out
     assert out.rstrip().endswith("docs/document-first-run.md")
+
+
+def test_help_pseudo_command(capsys: pytest.CaptureFixture[str]) -> None:
+    assert _cli(capsys, "help") == _cli(capsys, "--help")
+    assert _cli(capsys, "help", "export") == _cli(capsys, "export", "--help")
+    code, out, _ = _cli(capsys, "help", "pipelines")
+    assert code == 0 and "\nFor jobs with a model stage:\n  adjudicate" in out
+    code, out, err = _cli(capsys, "help", "nothing")
+    assert code == 2 and out == "" and "no help for 'nothing'" in err
+
+
+def test_process_help_shows_only_lang_as_an_engine_choice(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    out = " ".join(_cli(capsys, "process", "--help")[1].split())
+    assert "--lang" in out and "`pageledger doctor` lists the languages installed" in out
+    assert "--engine" not in out and "--model-dir" not in out and "pdf_ocr" not in out
+    init = _cli(capsys, "init", "--help")[1]
+    assert "--engine" in init and "--model-dir" in init
 
 
 def test_each_listed_command_help_opens_with_a_description_and_an_example(
@@ -342,3 +418,206 @@ def test_an_unknown_command_names_no_earlier_name(capsys: pytest.CaptureFixture[
 def test_an_earlier_name_keeps_its_own_usage(capsys: pytest.CaptureFixture[str], name: str) -> None:
     code, out, _ = _cli(capsys, name, "--help")
     assert code == 0 and out.startswith(f"usage: pageledger {name} ")
+
+
+# -- export ------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("name", "first"),
+    [
+        ("book.txt", "letters.txt\n"),
+        ("book.md", "# "),
+        ("book.jsonl", "{"),
+        ("book.xml", "<?xml"),
+        ("book.tei.xml", "<?xml"),
+    ],
+)
+def test_export_takes_the_format_from_the_file_ending(
+    job: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str], name: str, first: str
+) -> None:
+    out = tmp_path / name
+    assert _cli(capsys, "export", str(job), "--out", str(out))[0] == 0
+    assert out.read_text(encoding="utf-8").startswith(first)
+
+
+def test_export_format_wins_and_an_unknown_ending_is_a_usage_error(
+    job: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    out = tmp_path / "book.md"
+    assert _cli(capsys, "export", str(job), "--out", str(out), "--format", "jsonl")[0] == 0
+    assert out.read_text(encoding="utf-8").startswith("{")
+    code, stdout, err = _cli(capsys, "export", str(job), "--out", str(tmp_path / "book.docx"))
+    assert code == 2 and stdout == ""
+    assert "cannot tell the format from book.docx" in err and "txt, md, jsonl, tei" in err
+
+
+# -- a job where a run belongs, and the reverse ---------------------------------
+
+
+def test_run_commands_say_when_given_a_job(
+    job: Path, run: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    code, _, err = _cli(capsys, "compare", str(job), str(run))
+    assert code == 1
+    assert f"`compare` takes a run folder, and {job} is a document job" in err
+    assert f"pageledger review {job}" in err
+    code, _, err = _cli(capsys, "rerun", str(job), "--out", "x")
+    assert code == 2 and f"`rerun` takes a run folder, and {job} is a document job" in err
+    code, _, err = _cli(capsys, "align", str(job))
+    assert code == 1 and "`align` takes a run folder" in err
+
+
+def test_job_commands_say_when_given_a_run(
+    run: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    for argv in (["review", str(run)], ["export", str(run), "--out", str(tmp_path / "x.txt")]):
+        code, _, err = _cli(capsys, *argv)
+        assert code == 1
+        assert f"takes a document job, and {run} is a run folder" in err
+        assert f"pageledger inspect {run}" in err
+
+
+def test_run_without_a_config_points_to_process(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    code, _, err = _cli(capsys, "run", str(tmp_path), "--out", str(tmp_path / "run"))
+    assert code == 2
+    assert "one of the arguments --config --adapter is required" in err
+    assert "pageledger process SOURCE --out DIR" in err
+
+
+# -- progress and interruption -----------------------------------------------
+
+
+class _Terminal(io.StringIO):
+    def isatty(self) -> bool:
+        return True
+
+
+def test_progress_rewrites_one_line_on_a_terminal() -> None:
+    stream = _Terminal()
+    progress = cli._Progress(stream=stream)
+    progress({"stage": "local_text", "pages": [1, 2, 3], "selected": 3, "done": 0, "held": 0})
+    progress({"stage": "local_ocr", "pages": [2], "selected": 3, "done": 1, "held": 1})
+    progress.clear()
+    written = stream.getvalue()
+    assert "\n" not in written
+    assert "\r0 of 3 pages done. Now: checking for text the pages already carry" in written
+    assert "\r1 of 3 pages done; 1 need a person so far. Now: OCR, page 2" in written
+    assert written.endswith("\r")
+
+
+def test_progress_off_a_terminal_is_quiet_at_first_then_plain_lines(monkeypatch) -> None:
+    clock = [0.0]
+    monkeypatch.setattr(cli.time, "monotonic", lambda: clock[0])
+    stream = io.StringIO()
+    progress = cli._Progress(stream=stream)
+    event = {"stage": "local_ocr", "pages": [4], "selected": 9, "done": 3, "held": 0}
+    progress(event)
+    assert stream.getvalue() == ""
+    clock[0] = 20.0
+    progress(event)
+    progress(event)
+    clock[0] = 51.0
+    progress(event)
+    assert stream.getvalue().splitlines() == ["3 of 9 pages done. Now: OCR, page 4"] * 2
+    progress({"notice": "Notice: something"})
+    assert stream.getvalue().endswith("Notice: something\n")
+
+
+def test_progress_is_silent_with_json_but_notices_are_not() -> None:
+    stream = _Terminal()
+    progress = cli._Progress(show=False, stream=stream)
+    progress({"stage": "local_ocr", "pages": [1], "selected": 1, "done": 0, "held": 0})
+    assert stream.getvalue() == ""
+    progress({"notice": "Notice: x"})
+    assert stream.getvalue() == "Notice: x\n"
+
+
+def test_an_interrupted_job_stops_cleanly_and_resumes(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch
+) -> None:
+    from pageledger.checkpoint import Checkpoint
+
+    source = tmp_path / "letters.txt"
+    source.write_text("The first page of letters.\fThe second page.\fThe third.", encoding="utf-8")
+    out = tmp_path / "jobs" / "letters"
+    original = Checkpoint.save
+
+    def stop(self, page_id, record):
+        original(self, page_id, record)
+        if record["state"] == "completed" and page_id.endswith("0002"):
+            raise KeyboardInterrupt
+
+    with monkeypatch.context() as patch:
+        patch.setattr(Checkpoint, "save", stop)
+        code, _, err = _cli(capsys, "process", str(source), "--out", str(out))
+    assert code == 130
+    assert "Traceback" not in err
+    assert err.endswith(
+        f"\nInterrupted. The pages read so far are kept in {out}.\n"
+        f"To continue: pageledger resume {out}\n"
+    )
+    code, stdout, _ = _cli(capsys, "verify", str(out))
+    assert code == 1 and stdout.startswith("Status: fail (unfinished)")
+    code, stdout, _ = _cli(capsys, "resume", str(out))
+    assert code == 0 and stdout.startswith("Status: finished.")
+    assert _cli(capsys, "verify", str(out))[0] == 0
+
+
+def test_an_interrupt_before_the_job_exists_says_nothing_was_written(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch
+) -> None:
+    from pageledger import processing
+
+    def stop(**kwargs):
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(processing, "_process", stop)
+    source = tmp_path / "letters.txt"
+    source.write_text("A page.", encoding="utf-8")
+    code, _, err = _cli(capsys, "process", str(source), "--out", str(tmp_path / "j"))
+    assert code == 130 and err.endswith("\nInterrupted before anything was written.\n")
+
+
+def test_an_interrupted_run_or_fetch_says_how_to_go_on(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch
+) -> None:
+    from pageledger import iiif
+
+    def stop(*args, **kwargs):
+        raise KeyboardInterrupt
+
+    source = tmp_path / "pages.txt"
+    source.write_text("first page\fsecond page\n", encoding="utf-8")
+    monkeypatch.setattr(cli, "run", stop)
+    out = tmp_path / "run"
+    code, _, err = _cli(capsys, "run", str(source), "--adapter", "text", "--out", str(out))
+    assert code == 130 and err.endswith("\nInterrupted before anything was written.\n")
+    out.mkdir()
+    code, _, err = _cli(capsys, "run", str(source), "--adapter", "text", "--out", str(out))
+    assert code == 130 and "the run was not started with --resumable" in err
+    (out / "checkpoint.json").write_text("{}", encoding="utf-8")
+    code, _, err = _cli(capsys, "run", str(source), "--adapter", "text", "--out", str(out))
+    assert f"To continue: pageledger resume {out}\n" in err
+
+    monkeypatch.setattr(iiif, "fetch_iiif", stop)
+    url = "https://example.org/iiif/manifest.json"
+    code, _, err = _cli(capsys, "fetch", url, "--out", str(out))
+    assert code == 130
+    assert f"To fetch the rest: pageledger fetch {url} --out {out} --resume\n" in err
+
+
+def test_an_interrupted_review_view_leaves_nothing(
+    job: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch
+) -> None:
+    from pageledger import review_html
+
+    def stop(*args, **kwargs):
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(review_html, "_write_view", stop)
+    code, _, err = _cli(capsys, "review", str(job), "--images", "none")
+    assert code == 130 and "No review view was written" in err
+    assert not (tmp_path / "job-review").exists()

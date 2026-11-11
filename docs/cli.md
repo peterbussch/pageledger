@@ -4,8 +4,10 @@ Use `process` to manage a job, or `run` for an extraction run with one
 adapter. `verify` and `inspect` take either a job or a run. `rerun` extracts
 flagged pages into a new run; `resume` recovers pending work in place.
 `classify` prepares routes, and `align` revises structured records from
-retained output. `pageledger --help` lists the commands in two groups: the
-document workflow first, then the commands for runs.
+retained output. `pageledger --help` (or `pageledger help`) lists the commands
+for reading a document and for setting up; `pageledger help pipelines` lists
+the commands for runs and `adjudicate`, and `pageledger help COMMAND` shows a
+command's options.
 
 `pageledger --version` prints the installed release. Invalid command-line
 syntax returns exit code 2. Runtime errors return 1; commands can also return 1
@@ -24,8 +26,8 @@ such as stage, route and disposition are defined in the
 | Command | Synopsis and options | Exit code 0 | Exit code 1 |
 |---|---|---|---|
 | `process` | `process SOURCE [--config FILE | --engine ENGINE --lang LANGS --model-dir DIR] --out DIR [--pages RANGE] [--adapter-path DIR] [--review FILE] [--json]` | Job completed or paused by a limit. | Job halted or failed, or runtime error. |
-| `review` | `review JOB_DIR (--out DIR [--images all|held|none] | --sheet FILE | --apply FILE [--reviewer NAME] [--dry-run]) [--json]` | View or sheet written, or decisions checked or recorded. | With `--out`, the job does not verify or the folder exists; with `--apply`, the job is halted or failed; or runtime error. |
-| `export` | `export JOB_DIR --format txt|md|jsonl|tei --out FILE [--reviewed-only]` | Verified export written. | Runtime error or refused export. |
+| `review` | `review JOB_DIR ([--out DIR] [--images all|held|none] | --sheet FILE | --apply FILE [--reviewer NAME] [--dry-run]) [--json]` | View or sheet written, or decisions checked or recorded. | With `--out`, the job does not verify or the folder exists; with `--apply`, the job is halted or failed; or runtime error. |
+| `export` | `export JOB_DIR --out FILE [--format txt|md|jsonl|tei] [--reviewed-only]` | Verified export written. | Runtime error or refused export. |
 | `verify` | `verify DIR [--json]` | The job or run verifies. | Verification fails, `DIR` is not a job or a run, or runtime error. |
 | `inspect` | `inspect DIR [--json | --csv]` | Report or summary written. | Runtime error, `DIR` is not a job or a run, `--csv` on a job, or with `--json`, the job is halted or failed. `--json` and `--csv` are mutually exclusive (usage error 2). |
 | `adjudicate` | `adjudicate JOB_DIR (--packets DIR [--term TERM]... | --decisions DIR --reviewer NAME [--dry-run]) [--json]` | Packets written, or decisions checked or recorded. | Refused decisions, a halted job (decisions are still recorded), or runtime error. |
@@ -68,9 +70,10 @@ the options say otherwise, for a PDF and for page images, and `none` for a
 text source (any file that reads as UTF-8, such as `.txt` or `.md`). A source
 that is none of these, or does not exist, is refused with a message that says
 what a source can be: as a usage error (exit 2) when `process` would choose the
-engine, and otherwise (exit 1) before the job directory is created. Two lines on
-stderr name the configuration used and the `init` command that writes it out
-for editing. Before the job directory is created, the engine is loaded
+engine, and otherwise (exit 1) before the job directory is created; so is an
+empty file. One line on stderr says what the job will read and with which OCR
+engine and language. `process --help` shows `--lang` but not `--engine` and
+`--model-dir`, which still work; `init` documents them. Before the job directory is created, the engine is loaded
 and its preflight run; a missing package or tool is an error naming what to
 install, and pointing to `pageledger doctor` where the engine's own message
 does not. `--engine`, `--lang` and `--model-dir` together with `--config` are
@@ -105,6 +108,21 @@ paused or halted job alike: its status, how many pages were read, how many
 need a person and why, the one command to run next, and the `inspect` command
 that shows the full report. `--json` prints the job result instead.
 
+While a job runs, `process` and `resume` show on stderr how many pages are
+done, how many need a person so far, and what is being read now: one line
+rewritten in place on a terminal, and otherwise a plain line now and then once
+the job has run for 15 seconds; nothing with `--json`. When most pages read by
+Tesseract were held because it was unsure of many words, the end of the output
+says the language given may not be the document's and how to try another; if
+Tesseract's script detection (its `osd` model) is sure which script two of
+those pages are in, it names a language to try. When pages carry pre-1918
+Russian spelling and the language was `rus`, it points to the `orus` recipe.
+This advice is printed only, never recorded in the job.
+
+Ctrl-C stops a job cleanly (exit 130): the pages read so far are kept, and the
+message gives the `pageledger resume` command that continues it. `run` with
+`--resumable`, `fetch` and `review` say the same for their folders.
+
 A job can finish with unresolved pages. `completed` means processing finished,
 `paused_budget` means a processing limit was reached (continue with
 `resume --raise-limit`), and `halted` records a stop that will not be retried
@@ -123,14 +141,17 @@ pageledger review jobs/book --apply review/review.json --reviewer "Name"
 pageledger review jobs/book --apply reviewed-pages.json
 ```
 
-`review` does one of three things, chosen by exactly one of `--out`, `--sheet`
-and `--apply`; giving none or more than one is a usage error (exit 2).
+`review` does one of three things, chosen by at most one of `--out`, `--sheet`
+and `--apply`; giving more than one is a usage error (exit 2).
 
-`--out DIR` verifies the job, then writes a new folder `DIR` holding
+With none of them, or with `--out DIR`, it verifies the job, then writes a new
+folder holding
 `index.html`, a reading view of every page with its image beside its text, and
 the blank `review.csv` and binding that `--sheet` writes. Decisions chosen and
 texts corrected in the view are downloaded as `review.json`, a decisions file
 (or, without corrections, as that `review.csv`), and recorded only by `--apply`.
+The folder is `JOB_DIR-review` beside the job unless `--out` names another; if
+it exists, `review` stops and says so.
 `--images` renders a page image for every page (`all`, the default), only the
 pages that need a person (`held`), or none (`none`, which needs no Poppler).
 See [Review beside the page image](processing-spec.md#review-beside-the-page-image).
@@ -150,18 +171,24 @@ and counts them, and prints how many words each correction changes, without
 recording any. See
 [Review in a spreadsheet](processing-spec.md#review-in-a-spreadsheet) and
 [Correct the text](processing-spec.md#correct-the-text).
-`--images` goes only with `--out`, and `--reviewer` and `--dry-run` only with
+After recording, `--apply` says how many pages were accepted, corrected or
+marked blank and so on, how many still need a person, and the next command.
+`--images` goes only with the review view, and `--reviewer` and `--dry-run` only with
 `--apply` (usage error 2 otherwise). All three modes accept `--json`.
+`review`, `export` and `adjudicate` given a run folder, and `compare`, `rerun`
+and `align` given a job, say which kind of folder it is and which command fits.
 
 ## export
 
 ```bash
-pageledger export jobs/book --format txt --out book.txt
+pageledger export jobs/book --out book.txt
 pageledger export jobs/book --format jsonl --out book.jsonl --reviewed-only
 ```
 
 Writes a job's selected text page by page as `txt`, `md`, `jsonl` or `tei`,
-with each page's review state and the reading that produced it. A job that does
+with each page's review state and the reading that produced it. Without
+`--format`, the format follows the end of `--out`: `.txt`, `.md`, `.jsonl`, and
+`.xml` or `.tei` for TEI; any other ending is a usage error (exit 2). A job that does
 not verify is refused. `--reviewed-only` keeps only pages with a human review
 receipt. See [Export document text](export.md) for the formats and for citing an
 export.
@@ -600,7 +627,10 @@ pageledger doctor --json
 pageledger doctor --config processing.yml
 ```
 
-Read-only diagnostics: Python runtime, optional packages, external
+Read-only diagnostics. The first lines say what `process` can do on this
+machine: read a PDF's own text, which OCR engine reads scans and images, the
+common languages installed for `--lang`, and which optional engines are not
+installed. The details follow: Python runtime, optional packages, external
 commands with versions and install hints, installed Tesseract language
 packs (the valid values for `run.adapter_options.lang`), and whether cloud
 OCR/VLM keys are present, without printing their values. With `--config`,
