@@ -532,11 +532,30 @@ _LANGUAGE_CODES = {
 }
 
 
+# Models people ask for by name that Tesseract does not ship, and where their recipe is.
+_COMMUNITY_MODELS = {
+    "orus": (
+        "a community model for Russian printed before 1918",
+        "https://github.com/peterbussch/pageledger/blob/main/docs/engine-recipes.md"
+        "#tesseract-with-the-community-orus-model-macos-and-linux",
+    ),
+}
+
+
 def _check_tesseract_langs(tesseract: str, lang: str) -> None:
     installed = _tesseract_installed_langs(tesseract)
     if installed is None:
         return
     missing = [part for part in lang.split("+") if part not in installed]
+    known = [part for part in missing if part in _COMMUNITY_MODELS]
+    if known:
+        part = known[0]
+        about, recipe = _COMMUNITY_MODELS[part]
+        raise PageLedgerDiagnostic(
+            "missing_language_pack",
+            f"Tesseract's {part} model is not installed. {part} is {about}, not one of "
+            f"Tesseract's stock languages. How to install it: {recipe}",
+        )
     if missing:
         suggestions: list[str] = []
         for part in missing:

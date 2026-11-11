@@ -28,6 +28,8 @@ def source_kind(source: Path) -> str:
         return KIND
     if source.is_dir():
         raise ValueError(f"{source} is a folder with no page images in it. {_SOURCES}")
+    if source.stat().st_size == 0:
+        raise ValueError(f"{source} is empty (0 bytes), so there is nothing to read.")
     if source.suffix.lower() == ".pdf":
         return PDF
     decoder = codecs.getincrementaldecoder("utf-8")()

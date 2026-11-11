@@ -48,11 +48,12 @@ selected output and hashes.
 
 ## A review is refused
 
-- `Invalid document review identity or envelope`: a JSON review receipt
+- `This review file was made for another document`: a JSON review receipt
   names a different source (its `source_sha256`) than the job holds, usually
-  because it was written for another job, or it is not a receipt at all (its
-  top-level fields must be exactly `schema_version`, `source_sha256` and
-  `decisions`). See the [receipt contract](document-report-spec.md#human-review-receipt).
+  because it was written for another job. `This review file is not a review
+  receipt` means its top-level fields are not exactly `schema_version`,
+  `source_sha256` and `decisions`. See the
+  [receipt contract](document-report-spec.md#human-review-receipt).
 - `Page N carries text corrected by ...; a JSON receipt cannot replace it`:
   decide a corrected page in a review sheet or the review view, which show the
   correction.

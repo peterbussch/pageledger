@@ -8,10 +8,10 @@ import hashlib
 import json
 import math
 import shlex
-import sys
 from collections import Counter
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
+from contextvars import ContextVar
 from dataclasses import asdict
 from pathlib import Path
 from typing import Any
@@ -57,6 +57,38 @@ from .review_sheet import read_review_decisions, read_review_sheet, write_review
 from .source_index import SourceUnavailable, resolve_source
 from .tiling import centres_inside, check_edges, plan_sha256, plan_tiles, project_witness
 from .verify import verify_run
+
+# Where a running job reports its progress and notices, if anyone listens:
+# set by process() and resume_job() for the calls they make on this thread.
+Progress = Callable[[dict], None]
+_progress: ContextVar[Progress | None] = ContextVar("pageledger_progress", default=None)
+
+
+def _tell(event: dict) -> None:
+    listener = _progress.get()
+    if listener is not None:
+        listener(event)
+
+
+def _starting(job: dict, stage: dict) -> None:
+    """Tell the listener a stage starts, with the pages settled and held so far."""
+    configured = {name for name in ladder(job["policy"]) if job["policy"][name] is not None}
+    settled = [page for page in job["pages"] if page["next_action"] not in configured]
+    held = [
+        page
+        for page in settled
+        if page.get("review") is None
+        and (page["review_reasons"] or page.get("selected_attempt") is None)
+    ]
+    _tell(
+        {
+            "stage": stage["stage"],
+            "pages": list(stage["pages"]),
+            "selected": len(job["pages"]),
+            "done": len(settled),
+            "held": len(held),
+        }
+    )
 
 
 def _page_id(number: int) -> str:
@@ -330,14 +362,31 @@ def _stage_checkpoint(job: dict, root: Path, stage: dict) -> Checkpoint:
 def _review_decisions(job: dict, review: dict) -> None:
     from .processing_policy import validate_review
 
-    if (
-        not isinstance(review, dict)
-        or set(review) != {"schema_version", "source_sha256", "decisions"}
-        or review["schema_version"] != "0.1"
-        or review["source_sha256"] != job["source"]["sha256"]
-        or not isinstance(review["decisions"], list)
-    ):
-        raise ValueError("Invalid document review identity or envelope")
+    fields = {"schema_version", "source_sha256", "decisions"}
+    receipt = "a review receipt has exactly schema_version, source_sha256 and decisions"
+    if not isinstance(review, dict):
+        raise ValueError(f"This review file is not a JSON object: {receipt}.")
+    if set(review) != fields:
+        unknown, missing = sorted(set(review) - fields), sorted(fields - set(review))
+        listed = "; ".join(
+            f"{label} {', '.join(names)}"
+            for label, names in (("it has", unknown), ("it lacks", missing))
+            if names
+        )
+        raise ValueError(f"This review file is not a review receipt ({listed}): {receipt}.")
+    if review["schema_version"] != "0.1":
+        raise ValueError(
+            f"This review file's schema_version is {review['schema_version']!r}; "
+            'this version of PageLedger reads "0.1".'
+        )
+    if review["source_sha256"] != job["source"]["sha256"]:
+        raise ValueError(
+            "This review file was made for another document: its source_sha256 is "
+            f"{str(review['source_sha256'])[:12]}…, this job's source is "
+            f"{job['source']['sha256'][:12]}…. Use the review file made for this job."
+        )
+    if not isinstance(review["decisions"], list):
+        raise ValueError("This review file's decisions must be a list, one entry per page.")
     by_id = {p["page_id"]: p for p in job["pages"]}
     seen = set()
     for decision in review["decisions"]:
@@ -400,16 +449,24 @@ def process(
     pages: str | None = None,
     adapter_path: Path | None = None,
     review_path: Path | None = None,
+    progress: Progress | None = None,
 ) -> dict:
+    """Read a document into a new job. `progress`, if given, is called with a dict when
+    each stage starts ({"stage", "pages", "selected", "done", "held"}) and with
+    {"notice": text} for anything worth saying before the job runs."""
     warnings = _process_run_settings(load_config(config_path, validate_adapter=False).data)
-    result = _process(
-        source=source,
-        config_path=config_path,
-        out_dir=out_dir,
-        pages=pages,
-        adapter_path=adapter_path,
-        review_path=review_path,
-    )
+    token = _progress.set(progress)
+    try:
+        result = _process(
+            source=source,
+            config_path=config_path,
+            out_dir=out_dir,
+            pages=pages,
+            adapter_path=adapter_path,
+            review_path=review_path,
+        )
+    finally:
+        _progress.reset(token)
     if warnings:
         result["config_warnings"] = warnings
     return result
@@ -502,11 +559,12 @@ def _process(
     configured_stages = [name for name in ladder(policy) if policy.get(name) is not None]
     projected_attempts = len(selected) * len(configured_stages)
     if selected and attempt_limit is not None and projected_attempts > attempt_limit:
-        print(
-            f"Notice: up to {projected_attempts} attempts are possible for {len(selected)} selected "
-            f"pages across {len(configured_stages)} configured stages; max_attempt_pages is "
-            f"{attempt_limit}.",
-            file=sys.stderr,
+        _tell(
+            {
+                "notice": f"Notice: up to {projected_attempts} attempts are possible for "
+                f"{len(selected)} selected pages across {len(configured_stages)} configured "
+                f"stages; max_attempt_pages is {attempt_limit}."
+            }
         )
     root = out_dir.expanduser().resolve()
     from .checkpoint import _sync_directory
@@ -1488,6 +1546,7 @@ def _run_concurrently(
                 return False
             stage["status"] = "running"
             _save(job, root)
+            _starting(job, stage)
             running[pool.submit(_launch, root, source, stage, adapter_path)] = stage
             return True
 
@@ -1522,6 +1581,7 @@ def _execute_stages(
         for stage in stages:
             stage["status"] = "running"
             _save(job, root)
+            _starting(job, stage)
             error = _launch(root, source, stage, adapter_path)
             stage["status"] = "halted" if error else "completed"
             done.append((stage, error))
@@ -1718,6 +1778,18 @@ def resume_job(
     *,
     adapter_path: Path | None = None,
     raise_limits: dict[str, int | float] | None = None,
+    progress: Progress | None = None,
+) -> dict:
+    """Continue a job where it stopped; `progress` is called as process() calls it."""
+    token = _progress.set(progress)
+    try:
+        return _resume_job(job_dir, adapter_path, raise_limits)
+    finally:
+        _progress.reset(token)
+
+
+def _resume_job(
+    job_dir: Path, adapter_path: Path | None, raise_limits: dict[str, int | float] | None
 ) -> dict:
     root = job_dir.expanduser().resolve()
     with writer_lock(root):

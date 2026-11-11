@@ -1212,6 +1212,17 @@ def test_pdf_ocr_suggests_installed_tesseract_language_codes(tmp_path, monkeypat
     assert "Tesseract uses three-letter language codes" in str(excinfo.value)
 
 
+def test_pdf_ocr_names_the_recipe_of_a_known_model_not_installed(tmp_path, monkeypatch):
+    _fake_binaries_with_langs(monkeypatch, ["eng", "rus", "yor", "osd"])
+    with pytest.raises(RuntimeError) as excinfo:
+        _extract_one(PdfOcrAdapter(lang="orus"), tmp_path)
+    message = str(excinfo.value)
+    assert "Tesseract's orus model is not installed." in message
+    assert "Russian printed before 1918" in message
+    assert "engine-recipes.md#tesseract-with-the-community-orus-model" in message
+    assert "Did you mean" not in message
+
+
 def test_pdf_ocr_shows_only_a_few_installed_languages(tmp_path, monkeypatch):
     langs = [f"q{i:02d}" for i in range(20)]
     _fake_binaries_with_langs(monkeypatch, langs)

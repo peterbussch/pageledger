@@ -1181,13 +1181,24 @@ def test_process_projects_attempts_before_extraction(setup, capsys):
     data["processing"]["limits"]["max_attempt_pages"] = 2
     config.write_text(yaml.safe_dump(data))
 
-    result = process(source=source, config_path=config, out_dir=out)
+    events: list[dict] = []
+    result = process(source=source, config_path=config, out_dir=out, progress=events.append)
 
     assert result["status"] == "paused_budget"
+    assert capsys.readouterr().err == ""
     assert (
         "up to 9 attempts are possible for 3 selected pages across 3 configured stages"
-        in capsys.readouterr().err
+        in events[0]["notice"]
     )
+    stages = [event for event in events if "stage" in event]
+    assert stages[0] == {
+        "stage": "local_text",
+        "pages": [1, 2],  # max_attempt_pages: 2
+        "selected": 3,
+        "done": 0,
+        "held": 0,
+    }
+    assert all(event["selected"] == 3 for event in stages)
 
 
 @pytest.mark.parametrize("failure", [False, True])

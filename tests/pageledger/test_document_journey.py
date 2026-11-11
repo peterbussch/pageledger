@@ -124,7 +124,7 @@ def test_stale_review_record_is_rejected_without_extraction_or_artifact_changes(
         raise AssertionError("applying a review must not call an extraction adapter")
 
     monkeypatch.setattr(TextAdapter, "extract", fail_if_called)
-    with pytest.raises(ValueError, match="Invalid document review identity"):
+    with pytest.raises(ValueError, match="made for another document"):
         review_job(job_dir, review_path)
 
     assert calls == []
