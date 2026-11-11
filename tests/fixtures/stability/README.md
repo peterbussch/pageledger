@@ -33,11 +33,19 @@ uvx --from 'pageledger==VERSION' pageledger process sample.txt --config processi
 
 with `VERSION` 0.5.2, 0.6.0 and 0.7.0. `releases/<version>/pageledger.yml` is
 that release's `init-config` output; `releases/processing.yml` is shared. The jobs
-record hold policy none (0.5.2), `0.6` (0.6.0) and `0.6.1` (0.7.0).
+record hold policy none (0.5.2), `0.6` (0.6.0), `0.6.1` (0.7.0) and `0.8` (0.8.0).
+
+0.8.0 was built but never published to PyPI. `releases/0.8.0/` was written the same
+way, the same day, from the local build
+`pageledger-0.8.0-py3-none-any.whl` (SHA-256
+`0d350f2dc1079c5abbd2caf1040ea6474d6f93638d3e4d81ed3c99741d27de5d`), with
+`uvx --from pageledger-0.8.0-py3-none-any.whl pageledger ...` in place of
+`'pageledger==VERSION'`.
 
 Each release's own `verify-run` and `verify-job` passed on what it wrote, and the
-0.8.0 `verify_run` and `verify_job` passed on all six in place (checked once, by
-hand: the suite cannot recreate the recorded directory). Moved, the runs
+0.8.0 `verify_run` and `verify_job` passed on the first six in place (checked once, by
+hand: the suite cannot recreate the recorded directory); the 0.9.0 ones passed on
+0.8.0's run and job in place. Moved, the runs
 verify with `source_missing`, or `source_relocated` through a source index.
 From 0.9.0 the jobs verify after a move too, adding warning `job_relocated`:
 `root` in `job.json` records where a job was written and is no longer part of

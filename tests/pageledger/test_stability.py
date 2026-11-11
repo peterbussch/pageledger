@@ -51,7 +51,7 @@ from pageledger.verify import verify_run
 REPO = Path(__file__).resolve().parents[2]
 SNAPSHOTS = REPO / "tests" / "fixtures" / "stability"
 RELEASES = SNAPSHOTS / "releases"
-RELEASE_VERSIONS = ("0.5.2", "0.6.0", "0.7.0")
+RELEASE_VERSIONS = ("0.5.2", "0.6.0", "0.7.0", "0.8.0")
 UPDATE = os.environ.get("PAGELEDGER_UPDATE_STABILITY") == "1"
 HOW = (
     "Additions are compatible: record them on purpose with "
@@ -1106,7 +1106,7 @@ def test_old_artifacts_validate_against_current_schemas(version: str, kind: str)
 
 
 def test_release_fixtures_record_their_versions_and_hold_policies() -> None:
-    expected_policy = {"0.5.2": None, "0.6.0": "0.6", "0.7.0": "0.6.1"}
+    expected_policy = {"0.5.2": None, "0.6.0": "0.6", "0.7.0": "0.6.1", "0.8.0": "0.8"}
     for version in RELEASE_VERSIONS:
         manifest = json.loads((RELEASES / version / "run" / "manifest.json").read_text())
         assert manifest["pageledger_version"] == version

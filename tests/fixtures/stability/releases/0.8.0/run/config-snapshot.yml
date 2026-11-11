@@ -1,0 +1,23 @@
+schema_version: "0.1"
+taxonomy:
+  page_types:
+    blank:
+      default_action: skip
+    # review: true extracts these pages and still keeps them for review.
+    sparse:
+      default_action: transcribe_text
+      review: true
+    prose:
+      default_action: transcribe_text
+    table_likely:
+      default_action: transcribe_text
+      review: true
+    unknown:
+      default_action: transcribe_text
+      review: true
+# For tabular work, add a schema section (columns, aliases, checks) so
+# structured adapter output lands in normalized/ with graded evidence,
+# and a run.grading section to act on grades. Commented reference:
+# docs/examples/pageledger.yml
+run:
+  adapter: text

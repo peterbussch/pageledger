@@ -77,9 +77,9 @@ and, from 1.0, [stability](docs/stability.md).
   across versions, examples), the deprecation rule, and which older runs and jobs verify.
 - `tests/pageledger/test_stability.py` holds the package to snapshots of the 0.8.0 contract in
   `tests/fixtures/stability/`: removing or narrowing anything fails, and an addition needs a deliberate
-  snapshot update. It also holds a run and a job written by each of 0.5.2, 0.6.0 and 0.7.0 from PyPI:
-  the runs and the jobs verify after a move, a tampered copy of each job does not, and all of them
-  validate against the current schemas.
+  snapshot update. It also holds a run and a job written by each of 0.5.2, 0.6.0 and 0.7.0 from PyPI,
+  and by the unpublished 0.8.0 from its local build: the runs and the jobs verify after a move, a tampered
+  copy of each job does not, and all of them validate against the current schemas.
 - A word list as the lexicon: `processing.lexicon: {provider: wordlist, path: FILE}` names a plain UTF-8 file
   with one word per line, so the `rough` trigger and contest's glyph rule work in any language. Words match
   after NFC normalization and case folding. The job records the list's resolved path, SHA-256, size, word

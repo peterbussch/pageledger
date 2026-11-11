@@ -1,0 +1,37 @@
+{
+  "by_adapter": {
+    "text": {
+      "compute_seconds": null,
+      "cost_known": false,
+      "cost_usd": null,
+      "pages": 2,
+      "tokens": null
+    }
+  },
+  "by_page_type": {
+    "prose": {
+      "compute_seconds": null,
+      "cost_known": false,
+      "cost_usd": null,
+      "pages": 2,
+      "tokens": null
+    }
+  },
+  "canonical_unit": "pages",
+  "cost_basis": "none",
+  "cost_known": false,
+  "cost_usd": null,
+  "currency": "USD",
+  "execution_mode": "execute",
+  "pages_extracted": 2,
+  "pricing": {},
+  "run_id": "run-20261111T022924063377Z",
+  "schema_version": "0.1",
+  "tokens_total": 0,
+  "usage": {
+    "compute_seconds": null,
+    "extraction_seconds": 0.0,
+    "pages": 2,
+    "tokens": null
+  }
+}
