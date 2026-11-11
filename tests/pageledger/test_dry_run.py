@@ -284,7 +284,7 @@ def test_run_rejects_missing_inputs_before_writing_artifacts(tmp_path):
     config.write_text('schema_version: "0.1"\n', encoding="utf-8")
     out_dir = tmp_path / "run"
 
-    with pytest.raises(ValueError, match="Input path does not exist"):
+    with pytest.raises(ValueError, match="Source file was not found"):
         run(inputs=[missing], config_path=config, out_dir=out_dir, dry_run=True)
 
     assert not out_dir.exists()
@@ -1260,7 +1260,7 @@ def test_cli_reports_value_errors_without_traceback(tmp_path, capsys):
     captured = capsys.readouterr()
     assert exit_code == 1
     assert captured.out == ""
-    assert "Input path does not exist" in captured.err
+    assert "Source file was not found" in captured.err
     assert "Traceback" not in captured.err
     assert not out_dir.exists()
 
