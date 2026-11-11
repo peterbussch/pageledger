@@ -89,3 +89,11 @@ them).
   for jobs written under earlier policies, and
   `tests/pageledger/test_hold_policy_09.py` that a job written under 0.8 is
   rebuilt without the 0.9 rules.
+
+Verification finds any inconsistency inside a run or a job: a byte changed,
+removed or added anywhere it records. It cannot find a consistent rewrite, in
+which someone changes the record and then rebuilds the report and every hash
+with PageLedger's own code; nothing outside the folder anchors it. To anchor a
+deposit, put the job in a repository that timestamps it or assigns it a DOI, or
+publish the SHA-256 of its `job.json` (of `manifest.json` for a run) where others
+can see when it was published.

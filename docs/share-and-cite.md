@@ -77,6 +77,13 @@ files themselves.
 3. Record `shasum -a 256 jobs/book/job.json` and the archive's hash with the deposit,
    alongside `verification.json` and the PageLedger version.
 
+`verify` finds any inconsistency inside the job, a byte changed, removed or
+added anywhere, but not a consistent rewrite: someone who changes `job.json` and
+then rebuilds the report and hashes with PageLedger's own code leaves a job that
+verifies. Nothing outside the job anchors it. Deposit it in a repository that
+timestamps deposits or assigns a DOI, or publish the hash of `job.json`, so a
+reader can check the copy they have against what you published.
+
 A reader who unpacks the deposit anywhere runs `pageledger verify book`.
 It passes with warning `job_relocated`, naming the directory the job was
 written in and the one it is in now, and with `source_missing` when the reader
