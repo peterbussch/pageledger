@@ -18,11 +18,11 @@ reviewed as text or blank. For meanings and suggested actions, see the
 | Field | Meaning |
 | --- | --- |
 | `schema_version` | `"0.1"` |
-| `report_format` | `"0.6"`: the source is named by its path relative to the job directory. `"0.5.1"`: by its absolute path. Absent on 0.5.0 reports, which use the legacy renderer. |
+| `report_format` | `"0.9"`: `report.md` is written for a reader (see [Report format 0.9](#report-format-09)) and pages carry `hold_causes`; the source is named as in 0.6. `"0.6"`: the source is named by its path relative to the job directory. `"0.5.1"`: by its absolute path. Absent on 0.5.0 reports, which use the legacy renderer. |
 | `job_id`, `created_at` | Job identity and creation timestamp |
 | `source` | Original `path`, exact byte `sha256`, `page_count`, and annotation inventory; for page images also `kind` and the page manifest `images`, and `sha256` is the manifest's hash; for a IIIF snapshot also `iiif` (see [durable job and attempts](processing-spec.md#durable-job-and-attempts)) |
 | `selected_pages` | Unique, one-based source page numbers requested for this job |
-| `status` | `processing`, `completed`, or `halted`; completion does not mean human review |
+| `status` | `processing` (not finished: interrupted or still running), `completed`, `halted`, or `paused_budget`; completion does not mean human review |
 | `pages` | The selected-page inventory, including pages without attempts or selected text |
 | `usage` | `attempt_pages`, `image_calls`, `tokens`, `cost_usd`, and `cost_known`; optional `known_cost_usd`, `tokens_known`, `paid_cost_known`, `paid_tokens_known`, `local_image_calls` and `image_requests` (jobs with `processing.tiling`) |
 | `limits` | The job's recorded execution limits |
@@ -70,6 +70,20 @@ Each page includes `page_id`, `page_number`, `source_sha256`, `attempts`,
 `next_action`. The report adds `source_link` and nullable `selected_output`.
 `selected_output` contains the chosen `attempt_id`, relative artifact `path`,
 `sha256`, `format`, and exact `text`.
+
+Reports in format 0.9 add `hold_causes` to a page whose readings are held: one
+entry per hold on each reading, with `attempt_id`, `hold` and `cause`. The cause
+is the warning or classification code that files the hold, `empty_reading` (a
+reading with no text) or `alignment` (the table check); or a hold the
+[hold policy](processing-spec.md#hold-policy-09) places itself:
+`layer_outvoted` (two later readings agree with each other better than with the
+PDF's text layer), `reader_short` (a model's reading has under half the words of
+the OCR) or `letters_lost` (a literal reading spells far fewer words with ѣ than
+another reading of the page; `yat_words` and `most_yat_words` give the two
+counts). The job derives them from the same steps that set its holds, while the
+readings' text is at hand, so that the report can name every hold's evidence; it
+does not change what the job selects or holds. Absent when no reading is held,
+and from reports in older formats.
 
 Each attempt records `attempt_id`, `stage`, `outcome`, nullable `raw_artifact`
 and `raw_sha256`, `format`, `warnings`, `classification`, nullable `alignment`,
@@ -276,6 +290,99 @@ of attempt …". None of these fields or lines appear in a job without a
 correction, so earlier jobs rebuild byte for byte.
 
 ## Human summary rendering
+
+### Report format 0.9
+
+Jobs written by 0.9 render `report.md` for a reader who has not seen this
+specification: what happened and what to do first, every page that needs a
+person with the evidence for its holds, and the ledger detail last. Its
+sections, in order:
+
+1. **Title and opening.** The source's file name, then the job's status in
+   plain words: finished; paused at a limit, with the limit and the command
+   that raises it; halted, with the reason the job recorded; or not finished
+   (interrupted or still running). Then how many pages were selected and read,
+   and the pages grouped by where they stand, the group with most pages first:
+   the pages that need a person, under each hold reason; the pages with text
+   that nothing held; the pages a person reviewed, under each decision; and the
+   pages not finished, under the stage they wait for. Each group names its page
+   numbers. The opening ends with the one next command. Commands name the job
+   folder as `JOB_DIR`; `process` prints the same opening with the real folder.
+2. **Pages that need a person.** One subsection per page. Each hold reason is
+   given in plain words with its code, followed by its evidence: the warning on
+   the reading that filed it (code and meaning), the comparison that fell below
+   the agreement threshold, the open contested spans, a hold the policy placed
+   itself (from `hold_causes`), or the latest failed attempt. Then the selected
+   text, and every comparison the job recorded on the page: which two readings,
+   the share of words that agree, how many numbers differ, and whether the job
+   counted it (a comparison with a reading that is held itself, or with an
+   earlier OCR layer that the job's hold policy sets aside, is not counted).
+   On a held page the comparisons are introduced as not clearing the holds.
+3. **Pages not finished.** In a job that has not finished, the pages still
+   waiting for a configured stage, and the stages that have read them so far.
+4. **Worth knowing.** Each warning that holds no page, once, with the pages it
+   is on, its meaning and what to do about it (for `historical_orthography`:
+   that stock modern-Russian models cannot write ѣ, і, ѳ or ѵ, and where the
+   engine recipes are).
+5. **Other pages.** A table of the pages that need no one now: selected text,
+   the lowest counted word agreement, and any review with its reviewer, time
+   and reason.
+6. **Usage and cost.** Readings made, image-model calls (and image requests in
+   tiled jobs), local image-model readings, tokens and cost. A cost or token
+   count that not every engine reported is unknown, with the reported part
+   beside it; a job that read nothing spent nothing.
+7. **For the record.** Job identity, hold policy and report format; source path
+   and SHA-256 (and the IIIF snapshot record); the page counts, with
+   `unresolved_pages` under its own name; corrected pages; the PDF annotation
+   inventory; limits and limit raises; changes made elsewhere; work by stage
+   with the reason a configured stage read nothing, and the triggers that sent
+   pages on; contested-span totals; every reading with its stage, outcome,
+   failure code, warning codes and tile counts; source custody; links; the
+   transcript and its hash; and the next action the job recorded.
+
+A page **needs a person** when no one has reviewed it, it is not waiting for a
+stage, and it has a hold reason or no selected text. A page is **not finished**
+when it was never read, or when the job has not completed and the page's next
+step is a configured stage. These two definitions are the ones `process`,
+`inspect`, the review view and the JSONL and TEI exports use.
+
+The words for every code come from one table, `pageledger/wording.py`, which
+[warnings.md](warnings.md#in-plain-words) repeats. A shortened example, for a
+job with one clean page and one held page:
+
+```markdown
+# source.txt: document job report
+
+Status: finished. Every stage this job is configured to run has run.
+
+Source: source.txt; 2 of its 3 pages selected, 2 read.
+
+- Need a person: 1 page (2):
+  - Text may be missing or damaged in the reading (`coverage_defect`): 1 page (2).
+- Text selected and nothing held the page; no person has checked it (`unreviewed_text`): 1 page (1).
+
+Next: `pageledger review JOB_DIR --out source-review` shows the page that needs a person beside the page images.
+JOB_DIR stands for the folder that holds this report.
+
+## Pages that need a person
+
+### Page [2](<../source.txt#page=2>)
+
+- Text may be missing or damaged in the reading (`coverage_defect`).
+  - `coverage_defect` on the Local text reading [local_text:doc_0001_page_0002](<attempts/local_text/raw/doc_0001_page_0002.txt>): Text may be missing from the reading.
+- Selected text: the Local text reading [local_text:doc_0001_page_0002](<attempts/local_text/raw/doc_0001_page_0002.txt>).
+- Comparisons the job recorded (they do not clear the holds above):
+  - The Local text reading `local_text:doc_0001_page_0002` and the Local OCR reading `local_ocr-0002:doc_0001_page_0002`: 100% of words agree; not counted, because the Local OCR reading `local_ocr-0002:doc_0001_page_0002` is held itself.
+```
+
+The status line comes first because it changes what the rest means. The groups
+under it count pages, and a page held for two reasons is named under both. The
+held page's code, `coverage_defect`, is the one to look up in
+[warnings.md](warnings.md); the warning under it says which reading raised it.
+The comparison agrees, but the reading it agrees with is held too, so the job
+did not count it.
+
+### Older formats
 
 Reports marked with `report_format` `"0.5.1"` retain separate page-summary
 columns for `Current output`, `Review status`, and `Recorded concerns`. Current

@@ -44,6 +44,9 @@ page, shown here across several lines:
   "page_number": 12,
   "page_id": "doc_0001_page_0012",
   "disposition": "reviewed_text",
+  "state": "reviewed",
+  "review_reasons": [],
+  "warnings": [],
   "attempt": {
     "attempt_id": "local_ocr:doc_0001_page_0012",
     "stage": "local_ocr",
@@ -64,6 +67,13 @@ page, shown here across several lines:
   }
 }
 ```
+
+`state` says where the page stands, by the report's definitions:
+`needs_person` (the job holds it), `pending` (the job has not finished reading
+it), `unreviewed` (nothing held it and no person checked it) or `reviewed`.
+`review_reasons` lists the page's hold reasons and `warnings` the warning codes
+on the reading the text comes from; see [warnings](warnings.md#in-plain-words).
+The three fields were added in 0.9.
 
 `review` is the page's decision from its
 [review receipt](document-report-spec.md#human-review-receipt), or null. A page
@@ -90,6 +100,15 @@ All schema of TEI P5 4.12.0:
 - Each page starts with `<pb n="12" facs="../scans/book.pdf#page=12"/>` (for
   a folder of page images, `facs="../scans/page-12.jpg"`),
   followed by `<div type="page" subtype="reviewed">` or
+  `subtype="unreviewed"`.
+- Each page division also points with `ana` to a category of a `<taxonomy>`
+  in the header's `<classDecl>`, which says where the page stands:
+  `#pageledger-needs-person` (the job holds it for a person),
+  `#pageledger-pending`, `#pageledger-unreviewed` or `#pageledger-reviewed`.
+  A held page opens with one `<note type="hold" n="coverage_defect">` per
+  hold reason, and any page with text with one `<note type="warning" n="…">`
+  per warning on its reading, each in plain words. A TEI reader can so tell
+  the pages the job distrusts from those nothing held, though both are
   `subtype="unreviewed"`.
 - The text is in `<ab>`, with `<lb/>` between lines. A page without text
   holds `<gap reason="…"/>` naming its disposition, such as `pending`,

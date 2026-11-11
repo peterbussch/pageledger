@@ -34,7 +34,13 @@ field checks in `tests/pageledger/test_schemas.py` enforce them.
 
 - The wording of Markdown renderings such as `audit.md`, `report.md` and
   `transcript.md`, and of human-readable command output and log messages.
-  `audit.md` is a rendering of `audit.json`, which is covered.
+  `audit.md` is a rendering of `audit.json`, which is covered. `report.md` is
+  compared byte for byte at verification, so its wording changes only under a
+  new report format: `document.json` records the `report_format` a job was
+  written with, and verification renders it with that format's renderer. Jobs
+  written by 0.5.2 to 0.8 keep their format and verify unchanged; 0.9 added the
+  format `0.9`. The plain words for each code are listed in
+  [warnings.md](warnings.md#in-plain-words) and may be reworded under a new format.
 - The keys of `--json` command output, and the issue codes in a verification
   report (`source_missing` and the like). They are not yet frozen by tests.
 - Grades and quality signals across versions. A later release may grade the

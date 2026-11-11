@@ -4,7 +4,9 @@ A warning is evidence that an extraction may need attention. It is not a
 verdict that text is wrong. A hold keeps a document-job page in review or sends
 it to another configured stage. A disposition describes the page's current
 state. A document job can finish while pages remain unresolved; see
-[review at scale](processing-spec.md#review-at-scale).
+[review at scale](processing-spec.md#review-at-scale). The report, the terminal
+and the review view describe each code in the short words listed under
+[in plain words](#in-plain-words), with the code beside them.
 
 ## Quality warnings
 

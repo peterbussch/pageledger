@@ -191,8 +191,40 @@ and, from 1.0, [stability](docs/stability.md).
   person's correction, TEI with a `<change>` in `<revisionDesc>`. See
   [correct the text](docs/processing-spec.md#correct-the-text).
 
+- Report format `0.9`, for jobs written by 0.9. `report.md` opens with what happened and what to do: the
+  job's status (a halted or paused job's reason, an unfinished job said to be unfinished), how many pages
+  were read, how many need a person and why, grouped by reason, and the one next command. Each page that
+  needs a person follows with the evidence for every hold, and every comparison the job recorded with its
+  figure and whether the job counted it; agreement on a held page is not shown as reassurance. Warnings that
+  hold nothing (`historical_orthography`, `render_dpi_capped`, `multi_column_rows` and the rest) are listed
+  once, with the pages they are on and what to do. Hashes, attempts, stage work, limits and custody follow,
+  in plain labels, in a final "For the record" section. Cost that no engine reported stays unknown; a job
+  that read nothing says it spent nothing. Reports of jobs written by 0.5.2 to 0.8 render byte for byte as
+  before. See [report format 0.9](docs/document-report-spec.md#report-format-09).
+- `document.json` pages in format 0.9 carry `hold_causes`: each hold on each reading and its cause, including
+  the holds the hold policy places itself (a reading that lost the pre-reform letters another kept, a text
+  layer two later readings outvote, a model's reading with under half the OCR's words). A report no longer
+  shows "retained review concern" where the job knew why.
+- One table of plain words for every hold reason, page state, review decision and warning code
+  (`pageledger/wording.py`), used by the report, `process`, `inspect` and the review view, and repeated in
+  [warnings.md](docs/warnings.md#in-plain-words); a test keeps the two equal and fails when a code has no
+  words.
+- JSONL export records gain `state` (`needs_person`, `pending`, `unreviewed`, `reviewed`), `review_reasons`
+  and `warnings`. TEI page divisions point with `ana` to a state taxonomy in `classDecl`, and a held page
+  carries `<note type="hold">` per reason and `<note type="warning">` per warning on its reading.
+
 ### Changed
 
+- `process` ends by printing the opening of the job's report, with the job's folder in its commands, for a
+  halted or paused job too; the "Pages needing a person" and "Then:" lines are gone.
+- One definition of a page that needs a person, shared by the report, `process`, `inspect`, the review view
+  and the exports: read, not reviewed, not waiting for a stage, and held or without text. A page of an
+  unfinished or paused job that still waits for a configured stage is shown as not finished, not as settled.
+- `verify` on a job that did not finish (still `processing`) fails with `"reason": "unfinished"` and says to
+  run `resume`, instead of "Job selections disagree with retained evidence". The status stays `fail`, so a
+  script that checks for `pass` reads it as before. Finished jobs are checked as before.
+- The review view words hold reasons, states and warnings from the shared table, shows a reviewed page's
+  decision as a person's, and shows the engine comparison by the report's rules.
 - Commands have single-word names, and `pageledger --help` lists them in two groups: the document
   workflow (`process`, `review`, `export`, `verify`, `inspect`, `adjudicate`, `init`, `fetch`,
   `doctor`), then the commands for runs. `verify` and `inspect` take a job or a run and tell which from

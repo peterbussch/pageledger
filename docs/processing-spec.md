@@ -96,6 +96,12 @@ pageledger inspect jobs/book
 pageledger verify jobs/book
 ```
 
+Until it is resumed, an interrupted job's `job.json` still says `processing`.
+`verify` on such a job fails with `"reason": "unfinished"` in its JSON result and
+says to run `resume` (`Status: fail (unfinished)` on screen), rather than
+comparing work in progress with a finished job's evidence. Its `report.md` says
+the job is not finished and lists the pages still waiting for a stage.
+
 If the source has moved, add its new path to a
 [source index](checkpoint-spec.md#moved-source-files) rather than editing
 `job.json`; resume and `verify` then find it by SHA-256.
@@ -1160,7 +1166,8 @@ Open `index.html` in a browser; it needs no server and loads nothing from the
 network. It lists the pages, those that need a person first, with their state,
 what holds them and how far the engines agree. Under each page are its image
 beside the selected text, the source page and any image a model was sent, the
-warnings recorded on each reading, and the other readings, each shown in full
+warnings recorded on each reading (each code with its meaning in plain words,
+from the same table the report uses), and the other readings, each shown in full
 and compared word by word with the selected text. On a contested page, the open
 spans are marked in the reading they were found in and listed with what each
 engine read. Transcripts are shown exactly, with their line breaks and spacing;

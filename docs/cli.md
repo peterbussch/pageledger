@@ -417,7 +417,11 @@ names these files (exit 1), as are a file and a missing path. `--json` prints
 the report the job or run check produces; the two have different fields.
 
 For a job, `verify` checks the source, retained attempts, selections, and
-report, in whatever directory the job is now. It reports warnings:
+report, in whatever directory the job is now. A job that did not finish (its
+`job.json` still says `processing`, because it was interrupted or is still
+running) fails with `"reason": "unfinished"` in the JSON result, prints
+`Status: fail (unfinished)`, and says to run `resume`; a finished job is checked
+in full. It reports warnings:
 `job_relocated` when the job is not in the directory it was written in,
 `job_changed_elsewhere` for a review or adjudication recorded on such a copy,
 and `source_missing` or `source_relocated` as for a run; other bytes at the
@@ -533,8 +537,9 @@ pageledger inspect runs/run-001/ --csv > pages.csv
 ```
 
 Shows a document job or a run, recognized as [verify](#verify) recognizes
-them. For a job, `inspect` displays `report.md`, or `document.json` with
-`--json`; `--csv` is for runs and is refused for a job (exit 1).
+them. For a job, `inspect` displays `report.md`, which opens with the job's
+status, the pages that need a person and why, and the next command (the lines
+`process` prints when it ends), or `document.json` with `--json`; `--csv` is for runs and is refused for a job (exit 1).
 
 For a run, it summarizes the run directory: status, page counts, warnings, failures,
 review-queue size, records normalized, grade distributions grouped by evidence

@@ -64,7 +64,10 @@ pageledger inspect jobs/complete
 pageledger verify jobs/complete
 ```
 
-The report shows unknown cost because the local adapter supplies no charge.
+The report opens with what happened: the job's status, how many pages need a
+person and why, and the one command to run next. Hashes, attempts and custody
+come last, for the record. It shows unknown cost because the local adapter
+supplies no charge.
 Unknown cost is different from a known zero. The selected text remains subject
 to source review even though processing completed.
 

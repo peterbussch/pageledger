@@ -109,9 +109,11 @@ machine with `--engine rapidocr` or `--engine indra`. If the engine or its
 tools are missing, `process` stops before the job starts and names what to
 install. A plain-text file (`.txt`) is read without OCR.
 
-When the job finishes, `process` says how many pages need a person and what to
-run next. `jobs/book/report.md` lists those pages first, with the text the job
-selected, whether engines agree and any review so far:
+When the job finishes, `process` says how many pages need a person, why, and
+what to run next. `jobs/book/report.md` opens with the same lines, then gives
+each of those pages with the evidence for its holds, notes warnings that bear on
+the whole document (such as pre-1918 spelling that a modern OCR model cannot
+write), and keeps hashes and attempts for the record at the end:
 
 ```bash
 pageledger inspect jobs/book
