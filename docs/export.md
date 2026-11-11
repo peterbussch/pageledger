@@ -74,7 +74,9 @@ When a person corrected the page's text, `text` is the correction and an
 extra `correction` object says so: `path` and `sha256` of the corrected text,
 `from_path` and `from_sha256` of the reading it was made from (the attempt's
 output, its edition, or an earlier correction), and `words` with the counts
-`changed`, `added` and `removed`. `attempt` still names the attempt beneath the
+`changed`, `added` and `removed`, and the `reviewer`, `reviewed_at` and
+`reason` of the receipt that made the correction (a later acceptance does not
+change who is credited). `attempt` still names the attempt beneath the
 correction, and `review` carries the receipt's own `correction`; see
 [corrected text](document-report-spec.md#corrected-text).
 
@@ -95,8 +97,8 @@ All schema of TEI P5 4.12.0:
   `unreadable` or `reviewed_blank`.
 - A page whose text a person corrected keeps `subtype="reviewed"` and points
   with `change="#correction-12"` to a `<change>` in the header's
-  `<revisionDesc>`. The change has `when` (the review time) and says who
-  corrected the page, from which reading, how many words changed, and the
+  `<revisionDesc>`. The change has `when` (when the correction was made) and
+  says who corrected the page, from which reading, how many words changed, and the
   reviewer's reason.
 - Control characters, which XML cannot carry, are left out of TEI; the other
   formats keep the text unchanged.

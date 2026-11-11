@@ -427,9 +427,137 @@ def test_a_corrected_page_shows_the_correction_and_the_reading_beneath(job, tmp_
     document = (tmp_path / "view" / "index.html").read_text(encoding="utf-8")
     data = _embedded(document)
     page = read_record(job / "job.json")["pages"][0]
-    assert "a person&#x27;s correction of" in document
-    assert "text corrected, by A. Reader" in document
+    assert "a correction by A. Reader at" in document
+    assert "Reviewed text (reviewed_text) with a correction, by A. Reader" in document
     assert data["texts"]["p0001"] == {
         "": TEXT.replace("prose", "verse"),
         page["selected_attempt"]: TEXT,
     }
+
+
+# A stand-in for the few browser objects the view's script touches, so its event
+# wiring runs in node: each form is built from the options the page itself offers.
+_STUB_DOM = r"""
+const input = JSON.parse(require('fs').readFileSync(0, 'utf8'));
+const saved = [];
+function element(attributes) {
+  return {value: "", disabled: true, textContent: "", handlers: {}, children: [],
+    attributes: attributes || {},
+    addEventListener(type, fn) { this.handlers[type] = fn; },
+    appendChild(child) { this.children.push(child); return child; },
+    removeChild(child) { this.children.splice(this.children.indexOf(child), 1); },
+    get firstChild() { return this.children[0] || null; },
+    getAttribute(name) { return this.attributes[name]; },
+    fire(type) { (this.handlers[type] || function () {})({preventDefault() {}}); }};
+}
+function choice(values) {
+  const node = element();
+  let current = "";
+  node.options = values.map(value => ({value}));
+  Object.defineProperty(node, "value", {
+    get() { return current; }, set(value) { current = values.includes(value) ? value : ""; }});
+  return node;
+}
+function load(storage) {
+  const ids = {};
+  for (const id of ["download-decisions", "download-sheet", "download-binding", "forget",
+                    "storage", "download-problem"]) { ids[id] = element(); }
+  ids["review-data"] = {textContent: JSON.stringify(input.data)};
+  const forms = input.forms.map(spec => {
+    const parts = {decision: choice(spec.decision), note: element(),
+      text: spec.from ? element() : undefined, from: spec.from ? choice(spec.from) : undefined};
+    const found = {".changes": element(), ".marked": element(), ".problem": element()};
+    const form = element({"data-row": spec.row});
+    form.elements = parts;
+    form.querySelector = selector => found[selector];
+    return form;
+  });
+  global.document = {
+    getElementById: id => ids[id],
+    querySelectorAll: selector => selector === "form.decision" ? forms : [],
+    createElement: tag => ({tag, textContent: "", click() { saved.push(this); }, remove() {}}),
+    createTextNode: text => ({text}),
+    body: {appendChild() {}},
+  };
+  global.window = {confirm: () => true, localStorage: {
+    getItem: key => storage[key] === undefined ? null : storage[key],
+    setItem: (key, value) => { storage[key] = value; }}};
+  global.Blob = function (parts) { this.text = parts.join(""); };
+  global.URL = {createObjectURL: blob => blob, revokeObjectURL() {}};
+  new Function(input.script)();
+  const byRow = {};
+  forms.forEach(form => { byRow[form.getAttribute("data-row")] = form; });
+  return {ids, forms: byRow};
+}
+"""
+
+
+def _forms(document: str) -> list[dict]:
+    forms = []
+    for row, body in re.findall(r'<form class="decision" data-row="(p\d+)"(.*?)</form>', document):
+        selects = dict(
+            re.findall(r'<select id="p\d+-(\w+)" name="\w+" disabled>(.*?)</select>', body)
+        )
+        values = {
+            name: re.findall(r'<option value="([^"]*)"', options)
+            for name, options in selects.items()
+        }
+        forms.append({"row": row, "decision": values["decision"], "from": values.get("from")})
+    return forms
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
+def test_the_pages_script_keeps_a_correction_across_a_reload_and_forgets_it(job, tmp_path):
+    write_review_html(job, tmp_path / "view", images="none")
+    document = (tmp_path / "view" / "index.html").read_text(encoding="utf-8")
+    data = _embedded(document)
+    forms = _forms(document)
+    # A page without selected text starts from its first reading.
+    ocr = next(key for key in data["texts"]["p0002"] if key)
+    data["texts"]["p0002"] = {ocr: data["texts"]["p0002"][ocr]}
+    for form in forms:
+        if form["row"] == "p0002":
+            form["from"] = [ocr]
+    program = (
+        _STUB_DOM
+        + r"""
+const storage = {};
+let page = load(storage);
+const first = page.forms.p0001, second = page.forms.p0002;
+const report = {start: first.elements.text.value, secondFrom: second.elements.from.value,
+                secondStart: second.elements.text.value};
+first.elements.text.value = first.elements.text.value + "\tadded  ";
+first.elements.text.fire("input");
+report.decision = first.elements.decision.value;
+report.marked = first.querySelector(".marked").children.map(c => c.tag || "text");
+page.ids["download-sheet"].fire("click");
+report.sheetProblem = page.ids["download-problem"].textContent;
+page.ids["download-decisions"].fire("click");
+report.download = saved[saved.length - 1].href.text;
+page = load(storage);
+report.reloaded = {decision: page.forms.p0001.elements.decision.value,
+                   text: page.forms.p0001.elements.text.value};
+page.ids["forget"].fire("click");
+report.forgotten = {decision: page.forms.p0001.elements.decision.value,
+                    text: page.forms.p0001.elements.text.value,
+                    stored: JSON.parse(Object.values(storage)[0])};
+process.stdout.write(JSON.stringify(report));
+"""
+    )
+    report = json.loads(
+        _node(program, {"data": data, "forms": forms, "script": review_html._SCRIPT})
+    )
+
+    assert report["start"] == TEXT
+    assert report["secondFrom"] == ocr and report["secondStart"] == HOSTILE.replace("\r\n", "\n")
+    assert report["decision"] == "correct"
+    assert "ins" in report["marked"]
+    assert "cannot carry corrected text" in report["sheetProblem"]
+    assert report["reloaded"] == {"decision": "correct", "text": TEXT + "\tadded  "}
+    assert report["forgotten"] == {"decision": "", "text": TEXT, "stored": {}}
+    path = tmp_path / "view" / "review.json"
+    path.write_text(report["download"], encoding="utf-8")
+    review_job(job, path, reviewer="A. Reader")
+    page = read_record(job / "job.json")["pages"][0]
+    stored = job / page["review"]["decisions"][0]["correction"]["artifact"]
+    assert stored.read_text(encoding="utf-8") == TEXT + "\tadded  "

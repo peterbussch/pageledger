@@ -612,9 +612,12 @@
                     "description": "Present when the text is the selected attempt's edition: its adjudicated changes applied."
                   },
                   "correction": {
-                    "description": "Present when the text is a person's correction, recorded in the page's review receipt. path and sha256 then name the corrected text; from_path and from_sha256 the text it was made from (the attempt's output, its edition, or an earlier correction); words what it changed.",
+                    "description": "Present when the text is a person's correction, recorded in the page's review receipt. path and sha256 then name the corrected text; from_path and from_sha256 the text it was made from (the attempt's output, its edition, or an earlier correction); words what it changed; reviewer, reviewed_at and reason come from the receipt that first recorded it, which a later accept does not replace.",
                     "type": "object",
                     "properties": {
+                      "reviewer": {"type": "string", "minLength": 1},
+                      "reviewed_at": {"type": "string", "minLength": 1},
+                      "reason": {"type": "string", "minLength": 1},
                       "from_path": {"type": "string", "minLength": 1},
                       "from_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
                       "words": {
@@ -628,7 +631,7 @@
                         "additionalProperties": false
                       }
                     },
-                    "required": ["from_path", "from_sha256", "words"],
+                    "required": ["from_path", "from_sha256", "words", "reviewer", "reviewed_at", "reason"],
                     "additionalProperties": false
                   }
                 },

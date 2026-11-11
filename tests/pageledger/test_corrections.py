@@ -13,7 +13,7 @@ from pathlib import Path
 import pytest
 import yaml
 from jsonschema import validate
-from test_processing import TEXT, StageAdapter
+from test_processing import TEXT, StageAdapter, _adjudicated, _review, setup  # noqa: F401
 
 from pageledger import runner
 from pageledger.checkpoint import read_record, write_record
@@ -146,6 +146,9 @@ def test_a_correction_is_a_new_reading_bound_by_its_receipt(job, tmp_path):
         "from_path": attempt["raw_artifact"],
         "from_sha256": attempt["raw_sha256"],
         "words": {"changed": 1, "added": 0, "removed": 0},
+        "reviewer": "A. Reader",
+        "reviewed_at": decision["reviewed_at"],
+        "reason": "compleat",
     }
     assert document["counts"]["corrected_pages"] == 1
     report = (job / "report.md").read_text()
@@ -323,11 +326,35 @@ def test_correcting_a_correction_is_recorded_as_a_chain(job, tmp_path):
     review_job(job, accepted, reviewer="C. Reader")
     page = _pages(job)[0]
     assert page["review"]["decisions"][0]["correction"] == later["correction"]
-    assert (
-        json.loads((job / "document.json").read_text())["pages"][0]["selected_output"]["text"]
-        == TEXT
-    )
+    selected = json.loads((job / "document.json").read_text())["pages"][0]["selected_output"]
+    assert selected["text"] == TEXT
+    # The correction is still credited to the person who made it, not to the one who accepted it.
+    assert selected["correction"]["reviewer"] == "B. Reader"
+    assert selected["correction"]["reviewed_at"] == later["reviewed_at"]
+    assert "made by B. Reader at" in (job / "report.md").read_text()
+    out = tmp_path / "book.xml"
+    export_job(job, out, format="tei")
+    change = ET.fromstring(out.read_bytes()).find(f"{TEI}teiHeader/{TEI}revisionDesc/{TEI}change")
+    assert change is not None and "corrected by B. Reader" in change.text
+    assert change.get("when") == later["reviewed_at"]
     assert verify_job(job)["status"] == "pass"
+
+
+def test_a_correction_of_an_edition_starts_from_the_edition(setup, monkeypatch, tmp_path):  # noqa: F811
+    page = _adjudicated(setup, monkeypatch, tmp_path)
+    edition = (setup[2] / page["edition"]["artifact"]).read_text(encoding="utf-8")
+    (tmp_path / "edition.txt").write_text(edition.replace("полные", "полныя", 1), encoding="utf-8")
+
+    assert _review(setup, tmp_path, "correct:edition.txt")["status"] == "completed"
+
+    decision = read_record(setup[2] / "job.json")["pages"][0]["review"]["decisions"][0]
+    assert decision["output_sha256"] == page["edition"]["sha256"]
+    assert decision["correction"]["from_sha256"] == page["edition"]["sha256"]
+    selected = json.loads((setup[2] / "document.json").read_text())["pages"][0]["selected_output"]
+    assert "edition" not in selected
+    assert selected["correction"]["from_path"] == page["edition"]["artifact"]
+    assert selected["correction"]["words"] == {"changed": 1, "added": 0, "removed": 0}
+    assert verify_job(setup[2])["status"] == "pass"
 
 
 def test_a_tampered_or_missing_correction_fails_verification(job, tmp_path):
@@ -422,7 +449,7 @@ def test_txt_and_md_exports_carry_the_corrected_text_and_say_so(corrected, tmp_p
         first = content.split("Page 2")[0]
         assert TEXT in first and WRONG not in first
         assert "Correction: corrections/doc_0001_page_0001-" in first
-        assert "the text as a person corrected it from" in first
+        assert "the text as A. Reader corrected it on 20" in first
         assert "1 word changed, 0 added, 0 removed" in first
         assert "Correction SHA-256: " in first
 

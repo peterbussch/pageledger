@@ -45,7 +45,7 @@
     },
     "correction": {
       "additionalProperties": false,
-      "description": "Present when the text is a person's correction: its file and hash, the text it was made from (the attempt's output, an edition, or an earlier correction), and the words it changed, added and removed. The review names who made it.",
+      "description": "Present when the text is a person's correction: its file and hash, the text it was made from (the attempt's output, an edition, or an earlier correction), the words it changed, added and removed, and who made it, when and why, from the receipt that first recorded it.",
       "properties": {
         "from_path": {
           "minLength": 1,
@@ -57,6 +57,18 @@
         },
         "path": {
           "pattern": "^corrections/",
+          "type": "string"
+        },
+        "reason": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "reviewed_at": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "reviewer": {
+          "minLength": 1,
           "type": "string"
         },
         "sha256": {
@@ -92,7 +104,10 @@
         "sha256",
         "from_path",
         "from_sha256",
-        "words"
+        "words",
+        "reviewer",
+        "reviewed_at",
+        "reason"
       ],
       "type": "object"
     },

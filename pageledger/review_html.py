@@ -420,8 +420,9 @@ class _View:
             what = (
                 f"edition of attempt {selected['attempt_id']}, with settled spans applied"
                 if selected.get("edition")
-                else f"a person's correction of {correction['from_path']}, "
-                f"attempt {selected['attempt_id']} ({describe(correction['words'])})"
+                else f"a correction by {correction['reviewer']} at {correction['reviewed_at']} "
+                f"of {correction['from_path']}, attempt {selected['attempt_id']} "
+                f"({describe(correction['words'])})"
                 if correction
                 else f"attempt {selected['attempt_id']}"
             )
@@ -664,7 +665,7 @@ def _review(page: dict) -> str:
     if review is None:
         return "not reviewed"
     decision = next(item for item in review["decisions"] if item["page_id"] == page["page_id"])
-    corrected = ", text corrected" if "correction" in decision else ""
+    corrected = " with a correction" if "correction" in decision else ""
     return (
         f"{_label(decision['disposition'])}{corrected}, by {decision['reviewer']} at "
         f"{decision['reviewed_at']}: {decision['reason']}"
@@ -894,7 +895,9 @@ _SCRIPT = (
     var marked = form.querySelector(".marked");
     var problem = form.querySelector(".problem");
     var starts = data.texts[row] || {};
-    var origin = "";
+    // The selected text, or on a page without one, the first reading there is.
+    var first = own(starts, "") ? "" : Object.keys(starts)[0];
+    var origin = first;
     var chosen = decisions[row];
     var valid = Boolean(chosen) && Array.prototype.some.call(select.options, function (option) {
       return option.value === chosen.decision;
@@ -970,7 +973,7 @@ _SCRIPT = (
       store();
     }
     if (area !== null) {
-      origin = valid && chosen.decision === "correct" ? chosen.from || "" : "";
+      origin = valid && chosen.decision === "correct" ? chosen.from || "" : first;
       from.value = origin;
       load();
       if (valid && chosen.decision === "correct" && !area.disabled) { area.value = chosen.text; }
@@ -1016,8 +1019,8 @@ _SCRIPT = (
       note.value = "";
       problem.textContent = "";
       if (area !== null) {
-        origin = "";
-        from.value = "";
+        origin = first;
+        from.value = first;
         load();
         mark();
       }

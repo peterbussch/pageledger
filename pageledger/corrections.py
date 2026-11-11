@@ -121,6 +121,11 @@ def validate(correction: object, page_id: str) -> None:
         raise ValueError("Review correction is invalid")
 
 
+def author(history: list[dict], page_id: str, sha256: str) -> dict:
+    """The receipt decision that first recorded a correction; a later accept carries it on."""
+    return next(decision for decision, item in chain(history, page_id) if item["sha256"] == sha256)
+
+
 def chain(history: list[dict], page_id: str) -> list[tuple[dict, dict]]:
     """Each receipt decision with a correction, in order, refusing one with no recorded start.
 

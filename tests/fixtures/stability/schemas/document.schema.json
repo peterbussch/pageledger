@@ -1025,7 +1025,7 @@
                   },
                   "correction": {
                     "additionalProperties": false,
-                    "description": "Present when the text is a person's correction, recorded in the page's review receipt. path and sha256 then name the corrected text; from_path and from_sha256 the text it was made from (the attempt's output, its edition, or an earlier correction); words what it changed.",
+                    "description": "Present when the text is a person's correction, recorded in the page's review receipt. path and sha256 then name the corrected text; from_path and from_sha256 the text it was made from (the attempt's output, its edition, or an earlier correction); words what it changed; reviewer, reviewed_at and reason come from the receipt that first recorded it, which a later accept does not replace.",
                     "properties": {
                       "from_path": {
                         "minLength": 1,
@@ -1033,6 +1033,18 @@
                       },
                       "from_sha256": {
                         "pattern": "^[0-9a-f]{64}$",
+                        "type": "string"
+                      },
+                      "reason": {
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "reviewed_at": {
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "reviewer": {
+                        "minLength": 1,
                         "type": "string"
                       },
                       "words": {
@@ -1062,7 +1074,10 @@
                     "required": [
                       "from_path",
                       "from_sha256",
-                      "words"
+                      "words",
+                      "reviewer",
+                      "reviewed_at",
+                      "reason"
                     ],
                     "type": "object"
                   },

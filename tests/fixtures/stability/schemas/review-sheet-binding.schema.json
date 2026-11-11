@@ -21,7 +21,8 @@
               {
                 "type": "null"
               }
-            ]
+            ],
+            "description": "The hash of the text the row was written for: the selected output, its edition, or, on a page a person corrected, the correction."
           },
           "page_id": {
             "minLength": 1,

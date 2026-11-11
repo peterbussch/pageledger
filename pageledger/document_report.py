@@ -233,16 +233,15 @@ def _current_output(page: dict) -> str:
     if correction is None:
         return _link(label, selected["path"])
     shown = _link(f"Correction by a person of {label}", selected["path"])
+    made = f"; made by {_escape(correction['reviewer'])} at {_escape(correction['reviewed_at'])}"
     revised = ""
     if correction["from_path"].startswith("corrections/"):
-        earlier = next(
-            decision
-            for decision, item in corrections.chain(page["review_history"], page["page_id"])
-            if item["artifact"] == correction["from_path"]
+        earlier = corrections.author(
+            page["review_history"], page["page_id"], correction["from_sha256"]
         )
         who = f"the correction by {earlier['reviewer']} at {earlier['reviewed_at']}"
         revised = f", revising {_link(who, correction['from_path'])}"
-    return f"{shown} ({corrections.describe(correction['words'])}{revised})"
+    return f"{shown} ({corrections.describe(correction['words'])}{made}{revised})"
 
 
 def _agreement(page: dict, holds_for: dict[str, str], layer_witness: bool = False) -> str:
@@ -604,13 +603,13 @@ def _apply_correction(root: Path, page: dict) -> None:
     if correction is None:
         return
     selected = page["selected_output"]
+    history = page.get("review_history", [])
     start = selected["path"]
     if correction["from_sha256"] != decision["output_sha256"]:
-        start = next(
-            earlier["artifact"]
-            for _, earlier in corrections.chain(page.get("review_history", []), page["page_id"])
-            if earlier["sha256"] == correction["from_sha256"]
-        )
+        start = corrections.author(history, page["page_id"], correction["from_sha256"])[
+            "correction"
+        ]["artifact"]
+    made = corrections.author(history, page["page_id"], correction["sha256"])
     content = _artifact_bytes(root, correction["artifact"], correction["sha256"])
     selected.pop("edition", None)
     selected.update(
@@ -621,6 +620,7 @@ def _apply_correction(root: Path, page: dict) -> None:
             "from_path": start,
             "from_sha256": correction["from_sha256"],
             "words": dict(correction["words"]),
+            **{key: made[key] for key in ("reviewer", "reviewed_at", "reason")},
         },
     )
 

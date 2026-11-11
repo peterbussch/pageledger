@@ -84,7 +84,7 @@ engines report `render_upsampled` when they render beyond the source image's pix
 | `outcome_unknown` | A request may have been sent, but no durable result was saved. | Investigate adapter/provider records before starting new work; automatic retry is not safe. |
 | `source_defect` | A person or adapter identified a source problem. | Seek an alternate source; review does not restore missing content. |
 | `illustration`, `handwriting`, `unreadable` | A human classified the page's content. | The classification itself remains unresolved; document any other transcription or preservation workflow separately. |
-| `reviewed_text` | A human receipt binds a selected completed output to the source page. | Keep the receipt with the job; it records a review, not a guarantee of perfection. |
+| `reviewed_text` | A human receipt binds a selected completed output, or a person's correction of it, to the source page. | Keep the receipt with the job; it records a review, not a guarantee of perfection. |
 | `reviewed_blank` | A human receipt confirms the page is blank. | Retain the receipt and source binding. |
 
 ## Run-level outcomes and next actions

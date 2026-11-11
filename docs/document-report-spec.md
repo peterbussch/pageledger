@@ -264,10 +264,13 @@ correction. A changed, missing or unanchored correction fails `verify`.
 In `document.json`, a corrected page's `selected_output` has the corrected
 text: `path` and `sha256` name the correction file, `attempt_id` is still the
 attempt beneath it, and an optional `correction` object gives `from_path` (the
-attempt's output, its edition, or the earlier correction), `from_sha256` and
-`words`. `edition` is then absent. `report.md` shows the page's selected text
-as "Correction by a person of" the attempt, with the word counts and, for a
-chain, a link to the correction it revised, and adds a line "Pages whose text
+attempt's output, its edition, or the earlier correction), `from_sha256`,
+`words`, and the `reviewer`, `reviewed_at` and `reason` of the receipt that
+first recorded the correction. A later `accept` carries the correction on in a
+receipt of its own, but the correction stays credited to the person who made
+it. `edition` is then absent. `report.md` shows the page's selected text as
+"Correction by a person of" the attempt, with the word counts, who made it and
+when, and, for a chain, a link to the correction it revised, and adds a line "Pages whose text
 a person corrected: N." `transcript.md` labels the page "Correction by a person
 of attempt …". None of these fields or lines appear in a job without a
 correction, so earlier jobs rebuild byte for byte.

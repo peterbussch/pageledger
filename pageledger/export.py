@@ -147,8 +147,9 @@ def _facts(page: dict) -> list[tuple[str, str]]:
         facts.append(
             (
                 "Correction",
-                f"{correction['path']}, the text as a person corrected it from "
-                f"{correction['from_path']} ({describe(correction['words'])})",
+                f"{correction['path']}, the text as {correction['reviewer']} corrected it on "
+                f"{correction['reviewed_at']} from {correction['from_path']} "
+                f"({describe(correction['words'])})",
             )
         )
         facts.append(("Correction SHA-256", correction["sha256"]))
@@ -215,13 +216,14 @@ def _tei(report: dict, pages: list[dict], source: str) -> str:
     if corrected:
         revisions = ET.SubElement(header, "revisionDesc")
         for page in corrected:
-            review, correction = page["review"], page["correction"]
-            change = ET.SubElement(revisions, "change", when=review["reviewed_at"])
+            correction = page["correction"]
+            change = ET.SubElement(revisions, "change", when=correction["reviewed_at"])
             change.set(_XML_ID, f"correction-{page['page_number']}")
             change.text = _NOT_XML.sub(
                 "",
-                f"Page {page['page_number']}: text corrected by {review['reviewer']} from "
-                f"{correction['from_path']} ({describe(correction['words'])}): {review['reason']}",
+                f"Page {page['page_number']}: text corrected by {correction['reviewer']} from "
+                f"{correction['from_path']} ({describe(correction['words'])}): "
+                f"{correction['reason']}",
             )
     body = ET.SubElement(ET.SubElement(tei, "text"), "body")
     for page in pages:
