@@ -141,6 +141,12 @@ When the empty reading is the page's own text on a scanned PDF or a page image, 
 reads: The page is a scan with no text of its own, and no other reading confirms the
 OCR.
 
+A hold that one of the job's own rules placed is named by that rule when it is the
+only cause of the hold on the page: A reading lost the old-spelling letters (such as ѣ)
+that another reading of the page kept; Two of the job's readings agree with each other
+and not with the PDF's earlier OCR; A model's reading has far fewer words than the OCR
+reading. The record names the rule (`letters_lost`, `layer_outvoted`, `reader_short`).
+
 ### Review decisions
 
 | Code | Words |

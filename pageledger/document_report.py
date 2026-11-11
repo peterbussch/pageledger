@@ -35,6 +35,7 @@ from .wording import (
     BLANK_WITH_TEXT,
     CORRECTION,
     HOLDS,
+    PLACED,
     REVIEWED,
     reading_name,
     sentence,
@@ -593,21 +594,34 @@ def shown_holds(page: dict) -> list[str]:
     return reasons
 
 
+def _placed_cause(page: dict, reason: str) -> str | None:
+    """The one rule of the job's that placed this hold on the page, when only one did."""
+    causes = {item["cause"] for item in page.get("hold_causes") or [] if item["hold"] == reason}
+    return next(iter(causes)) if len(causes) == 1 and causes <= set(PLACED) else None
+
+
 def hold_in_words(page: dict, reason: str) -> str:
     """A hold or page state in plain words, without its code."""
     if reason == "blank_candidate" and _has_text(page):
         return BLANK_SCAN if _scan(page) else BLANK_WITH_TEXT
+    cause = _placed_cause(page, reason)
+    if cause:
+        return PLACED[cause]
     return HOLDS.get(reason) or REVIEWED.get(reason) or reason
 
 
 def _group_keys(page: dict) -> list[str]:
-    """A page's holds as shown, with a blank hold on a page with text grouped on its own."""
-    return [
-        f"{reason}:{'scan' if _scan(page) else 'text'}"
-        if reason == "blank_candidate" and _has_text(page)
-        else reason
-        for reason in shown_holds(page)
-    ]
+    """A page's holds as shown; a blank hold on a page with text, and a hold one rule
+    placed, are grouped on their own."""
+    keys = []
+    for reason in shown_holds(page):
+        if reason == "blank_candidate" and _has_text(page):
+            keys.append(f"{reason}:{'scan' if _scan(page) else 'text'}")
+        elif _placed_cause(page, reason):
+            keys.append(f"{reason}:{_placed_cause(page, reason)}")
+        else:
+            keys.append(reason)
+    return keys
 
 
 def _waiting_for(report: dict, stage: object) -> str:

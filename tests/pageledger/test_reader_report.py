@@ -679,3 +679,26 @@ def test_a_blank_candidate_with_text_is_grouped_and_worded_apart(tmp_path):
     rendered = render_document_report(build_document_report(job, tmp_path))
     assert f"  - {wording.BLANK_WITH_TEXT}: 1 page (1)." in rendered
     assert "the page may be blank" not in rendered
+
+
+def test_a_hold_one_rule_placed_is_named_by_that_rule():
+    from pageledger.document_report import _group_keys, hold_in_words
+
+    page = {
+        "review_reasons": ["coverage_defect"],
+        "disposition": "coverage_defect",
+        "attempts": [],
+        "selected_output": {"text": "Бѣлоконскій"},
+        "hold_causes": [{"attempt_id": "a2", "hold": "coverage_defect", "cause": "letters_lost"}],
+    }
+    assert hold_in_words(page, "coverage_defect") == wording.PLACED["letters_lost"]
+    assert _group_keys(page) == ["coverage_defect:letters_lost"]
+    # Two causes, or a cause that is a warning code, keep the hold's own words.
+    page["hold_causes"].append(
+        {"attempt_id": "a1", "hold": "coverage_defect", "cause": "fragmented_text"}
+    )
+    assert hold_in_words(page, "coverage_defect") == wording.HOLDS["coverage_defect"]
+    assert _group_keys(page) == ["coverage_defect"]
+    docs = " ".join((ROOT / "docs" / "warnings.md").read_text(encoding="utf-8").split())
+    for words in wording.PLACED.values():
+        assert " ".join(words.split()) in docs

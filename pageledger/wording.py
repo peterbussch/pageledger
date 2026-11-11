@@ -43,6 +43,18 @@ BLANK_WITH_TEXT = (
 )
 BLANK_SCAN = "The page is a scan with no text of its own, and no other reading confirms the OCR"
 
+# A hold the job's own rules placed on a reading, named by its cause, which says more
+# than the hold does. Used when it is the only cause of that hold on the page.
+PLACED = {
+    "letters_lost": (
+        "A reading lost the old-spelling letters (such as ѣ) that another reading of the page kept"
+    ),
+    "layer_outvoted": (
+        "Two of the job's readings agree with each other and not with the PDF's earlier OCR"
+    ),
+    "reader_short": "A model's reading has far fewer words than the OCR reading",
+}
+
 # A person's review decision.
 REVIEWED = {
     "reviewed_text": "A person checked the text against the page",
