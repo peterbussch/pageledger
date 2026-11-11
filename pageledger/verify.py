@@ -655,6 +655,13 @@ def verify_run(
                     page_id=page_id,
                     artifact=raw_name,
                 )
+            elif isinstance(evidence, dict) and evidence.get("kind") == "page_tiles":
+                from .image_evidence import validate_tile_text
+
+                try:
+                    validate_tile_text(evidence, raw_path.read_text(encoding="utf-8"))
+                except (ValueError, KeyError, TypeError, UnicodeError) as exc:
+                    _add(errors, "input_evidence_invalid", str(exc), page_id=page_id)
 
     for page_id, entry in quality.items():
         _check_schema(entry, schema_version, errors, "quality.jsonl", page_id)

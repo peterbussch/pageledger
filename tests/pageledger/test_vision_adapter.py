@@ -215,7 +215,7 @@ def test_endpoints_on_this_machine_and_allowed_remote_ones():
     for base_url in ("http://localhost:8080/v1", "http://127.0.0.1/v1", "http://[::1]:8080/v1"):
         assert "remote" not in vision.VisionAdapter(base_url=base_url, model="m").capabilities
     remote = vision.VisionAdapter(base_url="https://example.org/v1", model="m", allow_remote=True)
-    assert remote.capabilities == ("ocr", "page_image", "generative", "remote")
+    assert remote.capabilities == ("ocr", "page_image", "generative", "page_tiles", "remote")
 
 
 def test_a_page_that_cannot_fit_the_request_is_a_render_error(pdf, endpoint, monkeypatch):

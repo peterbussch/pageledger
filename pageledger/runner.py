@@ -1635,6 +1635,12 @@ def _validate_extraction_result(adapter_name: str, result: Any) -> None:
         validate_input_evidence(input_evidence)
         if input_evidence["model"] != result.model:
             raise ValueError("Image evidence actual model disagrees with extraction result")
+        if input_evidence["kind"] == "page_tiles":
+            from .image_evidence import validate_tile_text
+
+            if not isinstance(result.content, str):
+                raise ValueError("A reading in tiles must be text")
+            validate_tile_text(input_evidence, result.content)
     layout = getattr(result, "layout", None)
     if layout is not None:
         from .layout import validate_layout
