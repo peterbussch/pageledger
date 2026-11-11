@@ -170,6 +170,76 @@ def test_reviewed_only_exports_only_reviewed_pages(job):
     assert [json.loads(line)["page_number"] for line in records] == [1]
 
 
+def _review_page_two(job, disposition, *, dry_run=False):
+    page = json.loads((job / "document.json").read_text())["pages"][1]
+    decision = {
+        "page_id": page["page_id"],
+        "page_number": 2,
+        "disposition": disposition,
+        "selected_attempt": page["selected_output"]["attempt_id"],
+        "output_sha256": page["selected_output"]["sha256"],
+        "reason": "looked at the scan",
+        "reviewer": "A. Reader",
+        "reviewed_at": "2026-11-10T12:00:00Z",
+    }
+    receipt = job.parent / f"review-{disposition}.json"
+    receipt.write_text(
+        json.dumps(
+            {
+                "schema_version": "0.1",
+                "source_sha256": page["source_sha256"],
+                "decisions": [decision],
+            }
+        )
+    )
+    return review_job(job, receipt, dry_run=dry_run)
+
+
+@pytest.mark.parametrize("disposition", ["unreadable", "source_defect", "reviewed_blank"])
+def test_a_page_reviewed_as_not_text_is_exported_without_its_machine_text(job, disposition):
+    # 2026-11 dogfood: a page reviewed as blank was exported with 1,295 words of OCR.
+    _review_page_two(job, disposition)
+    records = [json.loads(line) for line in _export(job, "jsonl", reviewed_only=True).splitlines()]
+    assert [(r["page_number"], r["disposition"]) for r in records] == [
+        (1, "reviewed_text"),
+        (2, disposition),
+    ]
+    assert records[1]["text"] is None and records[1]["attempt"] is None
+    assert records[1]["review"]["disposition"] == disposition
+    text = _export(job, "txt", reviewed_only=True)
+    assert "Page two" not in text and "--- Page 2 ---" in text
+    assert "Page two" not in _export(job, "md")
+    tei = ET.fromstring(_export(job, "tei", reviewed_only=True))
+    gap = tei.findall(f".//{TEI}div")[1].find(f"{TEI}gap")
+    assert gap is not None and gap.get("reason") == disposition
+
+
+def test_recording_blank_on_a_page_with_many_words_warns():
+    from pageledger.processing import _blank_over_text
+
+    words = " ".join(["слово"] * 60)
+    job = {
+        "pages": [
+            {
+                "page_id": "p1",
+                "page_number": 5,
+                "selected_attempt": "a1",
+                "attempts": [{"attempt_id": "a1", "text": words}],
+            }
+        ]
+    }
+    blank = {
+        "decisions": [{"page_id": "p1", "disposition": "reviewed_blank", "selected_attempt": None}]
+    }
+    assert [w["code"] for w in _blank_over_text(job, blank)] == ["blank_with_text"]
+    assert "60 words" in _blank_over_text(job, blank)[0]["message"]
+    job["pages"][0]["attempts"][0]["text"] = "- 12 -"
+    assert _blank_over_text(job, blank) == []
+    text = {"decisions": [{"page_id": "p1", "disposition": "reviewed_text"}]}
+    job["pages"][0]["attempts"][0]["text"] = words
+    assert _blank_over_text(job, text) == []
+
+
 def test_export_refuses_a_job_that_does_not_verify(job, tmp_path):
     (job / "report.md").write_text("edited by hand")
 

@@ -22,7 +22,15 @@ _INSTRUCTION_MARKERS = (
     "[/INST]",
 )
 _PROSE_ONLY_WARNINGS = frozenset(
-    {"suspicious_symbol_density", "fragmented_text", "joined_text", "digits_only_text"}
+    {
+        "suspicious_symbol_density",
+        "fragmented_text",
+        "joined_text",
+        "digits_only_text",
+        "split_words",
+        "labels_without_values",
+        "capital_sign_in_word",
+    }
 )
 # Model loops. On 287 outputs of 24 transcribed pages by 11 engines, these
 # limits flag 16 pages from the local vision models, every one a loop on
@@ -91,7 +99,7 @@ def _build_quality_entry(
     text_quality.update(_content_coverage_metrics(text, tokens))
     repetition_metrics, repetition_warnings = _repetition_evidence(text)
     text_quality.update(repetition_metrics)
-    shape_warnings = _text_quality_warnings(text_quality)
+    shape_warnings = _text_quality_warnings(text_quality) + _misread_warnings(text)
     if result.format in ALIGNABLE_FORMATS:
         # The symbol/shape heuristics are calibrated on prose. Structured
         # payloads are full of pipes, braces, and short numeric tokens by
@@ -497,6 +505,60 @@ def _text_quality_warnings(metrics: dict[str, Any]) -> list[str]:
         # mostly in that script is simply written in it.
         warnings.append("foreign_script_characters")
     return warnings
+
+
+# Russian words of one letter; any other lone Cyrillic letter not closed by a full
+# stop (an abbreviation) is a piece of a broken word. The 2026-11 dogfood's split-word
+# layer ("Сырны й комбина т") had 14-19% such tokens; its 12 correct pages had at most 0.7%.
+_ONE_LETTER_WORDS = frozenset("абвжикосуяАБВЖИКОСУЯ")
+_LETTERS = re.compile(r"[^\W\d_]+")
+_SPLIT_MIN_TOKENS = 50
+_SPLIT_MIN_SHARE = 0.10
+# A lower-case letter then a capital Ъ or Ь: no word of either Russian orthography is
+# written so (capitals start words or fill a whole one). ABBYY's 1788 layer read every
+# final ѣ and ъ this way ("благочестивЪйшихЪ").
+_CAPITAL_SIGN = re.compile(r"[а-яёѣіѳѵ][ЪЬ]")
+_CAPITAL_SIGN_MIN = 5
+_CAPITAL_SIGN_MIN_SHARE = 0.01
+# A dot leader leads to a value. Ten or more leaders ending a line with no number after
+# them, and fewer lines of numbers than half of those, is a table whose values the
+# reading lost: the 1880 gazetteer layer kept 34 row labels and almost none of 20 columns.
+_LEADER = re.compile(r"(?:\.\s?){3,}|…|_{3,}")
+_LEADERS_MIN = 10
+
+
+def _misread_warnings(text: str) -> list[str]:
+    """Defects of a reading a page's metrics do not show: broken words, impossible
+    capitals, and table labels whose values are missing."""
+    found = []
+    tokens = [
+        (m.group(), m.end())
+        for m in _LETTERS.finditer(text)
+        if all("\u0400" <= char <= "\u04ff" for char in m.group())
+    ]
+    if len(tokens) >= _SPLIT_MIN_TOKENS:
+        stray = sum(
+            1
+            for token, end in tokens
+            if len(token) == 1 and token not in _ONE_LETTER_WORDS and text[end : end + 1] != "."
+        )
+        if stray >= _SPLIT_MIN_SHARE * len(tokens):
+            found.append("split_words")
+        signs = len(_CAPITAL_SIGN.findall(text))
+        if signs >= max(_CAPITAL_SIGN_MIN, _CAPITAL_SIGN_MIN_SHARE * len(tokens)):
+            found.append("capital_sign_in_word")
+    lines = [line for line in text.splitlines() if line.strip()]
+    unfinished = 0
+    for line in lines:
+        leaders = list(_LEADER.finditer(line))
+        if leaders and not any(char.isdigit() for char in line[leaders[-1].end() :]):
+            unfinished += 1
+    numeric = sum(
+        1 for line in lines if any(c.isdigit() for c in line) and not any(c.isalpha() for c in line)
+    )
+    if unfinished >= _LEADERS_MIN and numeric < unfinished / 2:
+        found.append("labels_without_values")
+    return found
 
 
 _REPEATED_TEXT_MAX_CHARACTERS = 200

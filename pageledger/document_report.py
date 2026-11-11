@@ -15,6 +15,7 @@ from .image_source import page_target
 from .processing_policy import (
     _DISAGREEMENTS,
     ENGINE_AGREEMENT_THRESHOLD,
+    HOLD_POLICY,
     _attempt_holds,
     selected_clean_comparisons,
     validate_review,
@@ -228,11 +229,11 @@ def _current_output(page: dict) -> str:
     return _link(label, selected["path"])
 
 
-def _agreement(page: dict, holds_for: dict[str, str]) -> str:
+def _agreement(page: dict, holds_for: dict[str, str], layer_witness: bool = False) -> str:
     selected = page.get("selected_attempt")
     if selected is None:
         return "not compared"
-    comparisons = selected_clean_comparisons(page, selected, holds_for)
+    comparisons = selected_clean_comparisons(page, selected, holds_for, layer_witness=layer_witness)
     if not comparisons:
         return "not compared"
     ratio = min(item["agreement_ratio"] for item in comparisons)
@@ -282,7 +283,7 @@ def _explicit_attempt_hold(attempt: dict, reason: str, holds_for: dict[str, str]
     return None
 
 
-def _recorded_concerns(page: dict, holds_for: dict[str, str]) -> str:
+def _recorded_concerns(page: dict, holds_for: dict[str, str], layer_witness: bool = False) -> str:
     reasons = page.get("review_reasons") or []
     if not reasons:
         return "None recorded"
@@ -290,7 +291,9 @@ def _recorded_concerns(page: dict, holds_for: dict[str, str]) -> str:
     for reason in reasons:
         evidence = []
         if reason in _DISAGREEMENTS and page["selected_attempt"] is not None:
-            comparisons = selected_clean_comparisons(page, page["selected_attempt"], holds_for)
+            comparisons = selected_clean_comparisons(
+                page, page["selected_attempt"], holds_for, layer_witness=layer_witness
+            )
             for comparison in comparisons:
                 applies = (
                     comparison["agreement_ratio"] < ENGINE_AGREEMENT_THRESHOLD
@@ -483,20 +486,22 @@ def render_document_report(report: dict) -> str:
         ),
     ]
     pages, holds = report["pages"], warning_holds(report)
+    # Under hold policy 0.9 an inherited OCR layer is a witness, and its comparison is shown.
+    witness = report.get("hold_policy") == HOLD_POLICY
     if format_06:
         pages = sorted(pages, key=lambda page: (not _needs_person(page), page["page_number"]))
     for page in pages:
         if format_06:
             row = (
                 f"| {_link(str(page['page_number']) + _image_name(report, page), page['source_link'])} | "
-                f"{_selected_text(page)} | {_agreement(page, holds)} | "
-                f"{_human_review(page)} | {_recorded_concerns(page, holds)} |"
+                f"{_selected_text(page)} | {_agreement(page, holds, witness)} | "
+                f"{_human_review(page)} | {_recorded_concerns(page, holds, witness)} |"
             )
         elif current:
             row = (
                 f"| {_link(str(page['page_number']) + _image_name(report, page), page['source_link'])} | "
                 f"{_current_output(page)} | {_review_status(page)} | "
-                f"{_recorded_concerns(page, warning_holds(report))} |"
+                f"{_recorded_concerns(page, warning_holds(report), witness)} |"
             )
         else:
             selected = page["selected_output"]

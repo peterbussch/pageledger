@@ -879,6 +879,7 @@ def _refresh(job: dict, root: Path, *, materialize: bool = True) -> None:
     holds = warning_holds(job)
     escalate_on, roughness_of, rough_below = _escalation(job)
     contest = _contester(job, root)
+    ladder_policy = job.get("hold_policy") in processing_policy.LADDER_POLICIES
     for page in pages.values():
         if job.get("hold_policy") in HOLD_POLICIES:
             page["comparisons"] = _build_comparisons(page["attempts"])
@@ -892,10 +893,12 @@ def _refresh(job: dict, root: Path, *, materialize: bool = True) -> None:
                 # Only jobs written under the current policy clear a blank hold this way.
                 text_refutes_blank=job.get("hold_policy")
                 in processing_policy.BLANK_REFUTING_POLICIES,
-                layer_outvoted=job.get("hold_policy") == processing_policy.HOLD_POLICY,
-                reader_coverage=job.get("hold_policy") == processing_policy.HOLD_POLICY,
-                ocr_layer_climbs=job.get("hold_policy") == processing_policy.HOLD_POLICY,
-                corroborate=job.get("hold_policy") == processing_policy.HOLD_POLICY,
+                layer_outvoted=ladder_policy,
+                reader_coverage=ladder_policy,
+                ocr_layer_climbs=ladder_policy,
+                corroborate=ladder_policy,
+                witnesses=job.get("hold_policy") == processing_policy.HOLD_POLICY,
+                configured=tuple(n for n in ladder(job["policy"]) if job["policy"][n] is not None),
                 escalate_on=escalate_on,
                 roughness=roughness_of,
                 rough_below=rough_below,
@@ -1685,6 +1688,7 @@ def review_job(
             raise ValueError("--reviewer is for review sheets; a JSON receipt names its reviewers")
         else:
             review = json.loads(review_path.read_text(encoding="utf-8"))
+        warnings = _blank_over_text(job, review)
         if dry_run:
             _review_decisions(copy.deepcopy(job), review)
             return {
@@ -1692,6 +1696,7 @@ def review_job(
                 "out_dir": str(root),
                 "status": "checked",
                 "decisions": _decision_counts(review),
+                "warnings": warnings,
             }
         _review_decisions(job, review)
         _note_relocation(job, root, "review-job")
@@ -1704,7 +1709,35 @@ def review_job(
             )
         elif job["status"] == "completed":
             job["next_action"] = _review_next_action(job)
-        return {**_publish(job, root), "decisions": _decision_counts(review)}
+        return {**_publish(job, root), "decisions": _decision_counts(review), "warnings": warnings}
+
+
+# A page a person calls blank whose selected reading has this many words may be
+# misfiled: the 2026-11 dogfood recorded blank on a page with 1,295 OCR words.
+BLANK_WORDS_WARNING = 50
+
+
+def _blank_over_text(job: dict, review: Any) -> list[dict]:
+    """Warn on each page recorded as blank whose selected reading has many words."""
+    pages = {page["page_id"]: page for page in job["pages"]}
+    decisions = review.get("decisions") if isinstance(review, dict) else None
+    warnings = []
+    for decision in decisions if isinstance(decisions, list) else []:
+        page = pages.get(decision.get("page_id")) if isinstance(decision, dict) else None
+        if page is None or decision.get("disposition") != "reviewed_blank":
+            continue
+        chosen = decision.get("selected_attempt") or page.get("selected_attempt")
+        attempt: dict = next((a for a in page["attempts"] if a["attempt_id"] == chosen), {})
+        words = len((attempt.get("text") or "").split())
+        if words >= BLANK_WORDS_WARNING:
+            warnings.append(
+                {
+                    "code": "blank_with_text",
+                    "message": f"Page {page['page_number']} is recorded as blank, but its "
+                    f"selected reading has {words} words. Check the page before applying.",
+                }
+            )
+    return warnings
 
 
 def adjudication_packets(job_dir: Path, out: Path, terms: list[str] | None = None) -> dict:

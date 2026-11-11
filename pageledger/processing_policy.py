@@ -89,6 +89,9 @@ _WARNING_HOLDS = {
     # Only a job that reads pages in tiles (processing.tiling) records these.
     "tile_edge_cut": "coverage_defect",
     "tile_failed": "coverage_defect",
+    "split_words": "coverage_defect",
+    "labels_without_values": "coverage_defect",
+    "capital_sign_in_word": "coverage_defect",
 }
 # Jobs written before 0.6 carry no hold_policy and filed an engine's low
 # confidence under coverage_defect; verification rebuilds them that way.
@@ -98,9 +101,15 @@ _LEGACY_WARNING_HOLDS = {**_WARNING_HOLDS, "low_confidence": "coverage_defect"}
 # 0.8: a text layer that two agreeing later readings both disagree with is the
 # suspect, not them; and a reader that returns under half the words of the literal
 # OCR is held as incomplete. Jobs written under 0.6.1 are rebuilt without these.
-HOLD_POLICY = "0.8"
-HOLD_POLICIES = frozenset({"0.6", "0.6.1", HOLD_POLICY})
-BLANK_REFUTING_POLICIES = frozenset({"0.6.1", HOLD_POLICY})
+# 0.9: an inherited OCR layer stays a witness after our own OCR reads the page; a
+# literal reading that lost the pre-reform letters another kept is held; held readings
+# are ranked by evidence; an attempt that never finished raises no hold. Jobs written
+# under 0.8 are rebuilt without these.
+HOLD_POLICY = "0.9"
+HOLD_POLICIES = frozenset({"0.6", "0.6.1", "0.8", HOLD_POLICY})
+BLANK_REFUTING_POLICIES = frozenset({"0.6.1", "0.8", HOLD_POLICY})
+# Policies that outvote a layer, hold short readers, reread OCR layers and corroborate.
+LADDER_POLICIES = frozenset({"0.8", HOLD_POLICY})
 _DELTA = "suspicious_embedded_text_delta"
 # A reader with fewer words than this share of the literal reading left text out.
 # Below the floor of literal words a page says too little to judge.
@@ -109,6 +118,13 @@ READER_COVERAGE_FLOOR = 40
 # Word agreement below which two engines disagree. On the 24 calibration pages it
 # flags 9 for RapidOCR/Apple Vision, 14 for Surya/RapidOCR, 22 for Tesseract/RapidOCR.
 ENGINE_AGREEMENT_THRESHOLD = 0.60
+# A page is pre-reform print when one literal reading spells ten or more words with
+# ѣ; a reading with under a quarter of that reading's ѣ-words modernised the spelling.
+# Only ѣ counts: garbled layers in the 2026-11 dogfood wrote ѳ for е and stray ѵ, but
+# put ѣ inside a well-formed word at most twice a page.
+YAT_WORDS_MIN = 10
+YAT_WORDS_KEPT_SHARE = 0.25
+_WORD = re.compile(r"(?<![^\W\d_])[А-ЯЁѢа-яёѣіѳѵ][а-яёѣіѳѵ]{2,}(?![^\W\d_])")
 _HASH = re.compile(r"[0-9a-f]{64}\Z")
 
 
@@ -360,15 +376,16 @@ def inherited_layers(attempts: list[dict]) -> set[str]:
 
 
 def selected_clean_comparisons(
-    page: dict, selected_attempt: str, holds_for: dict[str, str]
+    page: dict, selected_attempt: str, holds_for: dict[str, str], *, layer_witness: bool = False
 ) -> list[dict]:
     """Comparisons of the selected attempt with an attempt that has no hold of its own.
 
     A held attempt is why the page moved on to another engine, so its
     disagreement with that engine is expected and is not evidence. Neither is an
-    inherited OCR layer's once the page has been read again.
+    inherited OCR layer's once the page has been read again, except under hold
+    policy 0.9 (``layer_witness``), where the layer stays a witness.
     """
-    set_aside = inherited_layers(page["attempts"])
+    set_aside = set() if layer_witness else inherited_layers(page["attempts"])
     clean = {
         item["attempt_id"]
         for item in _usable(page["attempts"])
@@ -415,6 +432,8 @@ def assess_page(
     reader_coverage: bool = False,
     ocr_layer_climbs: bool = False,
     corroborate: bool = False,
+    witnesses: bool = False,
+    configured: tuple[str, ...] | None = None,
 ) -> dict:
     """Select evidence deterministically while keeping all recorded review holds.
 
@@ -446,6 +465,16 @@ def assess_page(
     reading is held and so cannot confirm it; an inherited OCR layer that agrees with it counts as
     confirmation, though its disagreement still does not count against it.
 
+    With ``witnesses`` (hold policy 0.9) an inherited OCR layer and the job's own OCR are two
+    witnesses. The layer stays selectable and comparable after the page is read again,
+    though our own reading is preferred and the layer's own warnings raise no hold; the
+    length warning a reading carries for differing from that layer is set aside, since
+    their comparison is the evidence; and the layer's disagreement holds the page without
+    sending it up the ladder. A literal reading that lost the pre-reform letters another
+    kept is held, readings that are all held are ranked by evidence rather than order, an
+    attempt that never finished raises no hold, and no trigger is recorded toward a stage
+    outside ``configured``.
+
     ``stages`` is the job's ladder. A local reader (``local_image``) that failed
     leaves no reading and does not stop the page: it goes on to the next stage.
     """
@@ -458,13 +487,25 @@ def assess_page(
     local_failed = bool(every_attempt) and every_attempt[-1] not in attempts
     reasons = list(dict.fromkeys(page.get("review_reasons") or []))
     completed = [item for item in attempts if item.get("outcome") == "completed"]
-    holds_by_id = {item["attempt_id"]: _attempt_holds(item, holds_for) for item in attempts}
+    holds_by_id = {
+        item["attempt_id"]: (
+            # An attempt that never finished is not a reading: it is not blank.
+            []
+            if witnesses and item.get("outcome") != "completed"
+            else _attempt_holds(item, holds_for)
+        )
+        for item in attempts
+    }
+    # An inherited OCR layer the page no longer rests on raises no review reason of its own.
+    set_aside = inherited_layers(completed)
+    if witnesses:
+        _compare_with_layer(attempts, holds_by_id, holds_for)
     if layer_outvoted:
         _outvote_layer(attempts, holds_by_id, page.get("comparisons", []), holds_for)
     if reader_coverage:
         _hold_short_readers(attempts, holds_by_id)
-    # An inherited OCR layer the page no longer rests on raises no review reason of its own.
-    set_aside = inherited_layers(completed)
+    if witnesses:
+        _hold_lost_letters(completed, holds_by_id)
     for attempt_id, holds in holds_by_id.items():
         if attempt_id not in set_aside:
             reasons.extend(hold for hold in holds if hold not in reasons)
@@ -472,7 +513,16 @@ def assess_page(
     if numeric_conflict and "numeric_column_conflict" not in reasons:
         reasons.append("numeric_column_conflict")
     usable = [item for item in _usable(completed) if item["attempt_id"] not in set_aside]
+    fresh = usable
+    if witnesses:
+        # Our own readings first; the layer is the witness left when they are held.
+        usable = [
+            *usable,
+            *(item for item in _usable(completed) if item["attempt_id"] in set_aside),
+        ]
     clean = [item for item in usable if not holds_by_id[item["attempt_id"]]]
+    # With every reading held, the best supported one is shown, not the first.
+    fallback = _ranked(usable, holds_by_id) if witnesses else usable
     if (
         text_refutes_blank
         and "blank_candidate" in reasons
@@ -491,12 +541,25 @@ def assess_page(
         # A contested job's text is the reader's, checked word by word against OCR.
         selected = _select(readers, readers, escalate_on, roughness, rough_below)
     else:
-        selected = _select(clean, usable, escalate_on, roughness, rough_below)
-    selected_comparisons = (
-        selected_clean_comparisons(page, selected["attempt_id"], holds_for)
-        if selected and holds_for is _WARNING_HOLDS
-        else []
-    )
+        selected = _select(clean, fallback, escalate_on, roughness, rough_below)
+    if not selected or holds_for is not _WARNING_HOLDS:
+        selected_comparisons = []
+    elif witnesses:
+        ids = {item["attempt_id"] for item in clean}
+        selected_comparisons = [
+            item
+            for item in page.get("comparisons", [])
+            if (item["left_attempt"] == selected["attempt_id"] and item["right_attempt"] in ids)
+            or (item["right_attempt"] == selected["attempt_id"] and item["left_attempt"] in ids)
+        ]
+    else:
+        selected_comparisons = selected_clean_comparisons(page, selected["attempt_id"], holds_for)
+    # A layer's objection holds the page for a person but buys no further reading.
+    climbing = [
+        item
+        for item in selected_comparisons
+        if not {item["left_attempt"], item["right_attempt"]} & set_aside
+    ]
     if any(item["agreement_ratio"] < ENGINE_AGREEMENT_THRESHOLD for item in selected_comparisons):
         reasons.append("engine_disagreement")
     # No clean reading to compare with, and none that confirms it. A clean reading that
@@ -504,13 +567,27 @@ def assess_page(
     uncorroborated = (
         corroborate
         and selected is not None
-        and not selected_comparisons
+        and not climbing
         and not _corroborated(page, selected["attempt_id"], holds_by_id)
     )
     if any(item["number_differences"] for item in selected_comparisons):
         reasons.append("numeric_disagreement")
     # Contest replaces these reasons on the page, but a local reader still climbs on them.
-    disagreements = [reason for reason in _DISAGREEMENTS if reason in reasons]
+    if witnesses:
+        disagreements = [
+            reason
+            for reason, found in zip(
+                _DISAGREEMENTS,
+                (
+                    any(c["agreement_ratio"] < ENGINE_AGREEMENT_THRESHOLD for c in climbing),
+                    any(c["number_differences"] for c in climbing),
+                ),
+                strict=True,
+            )
+            if found
+        ]
+    else:
+        disagreements = [reason for reason in _DISAGREEMENTS if reason in reasons]
     if holds_for is _WARNING_HOLDS and selected and _generative(selected):
         confirmed = any(
             item["agreement_ratio"] >= ENGINE_AGREEMENT_THRESHOLD for item in selected_comparisons
@@ -519,7 +596,7 @@ def assess_page(
             reasons.append("unconfirmed_model_output")
     contested = None
     if contest is not None and selected in clean and _generative(selected):
-        literals = [item for item in usable if not _generative(item)]
+        literals = [item for item in fresh if not _generative(item)]
         # Without a clean literal reading, the latest engine's is the witness.
         literal = _select(
             [item for item in literals if item in clean],
@@ -578,9 +655,11 @@ def assess_page(
     following = stages[stage_index + 1] if stage_index + 1 < len(stages) else None
     triggers = _triggers(
         selected,
-        reasons,
+        [r for r in reasons if r not in _DISAGREEMENTS or r in disagreements]
+        if witnesses
+        else reasons,
         stages[stage_index] if stage_index >= 0 else None,
-        following,
+        following if not witnesses or configured is None or following in configured else None,
         escalate_on,
         roughness,
         rough_below,
@@ -639,6 +718,8 @@ def assess_page(
                 reader_coverage,
                 ocr_layer_climbs,
                 corroborate,
+                witnesses,
+                configured,
             ),
             *(triggers if next_action not in {"review", "none"} else []),
         ]
@@ -727,6 +808,69 @@ def _hold_short_readers(attempts: list[dict], holds_by_id: dict[str, list[str]])
             held.append("coverage_defect")
 
 
+def _compare_with_layer(
+    attempts: list[dict], holds_by_id: dict[str, list[str]], holds_for: dict
+) -> None:
+    """A reading's length differs from an inherited OCR layer's: that is their disagreement.
+
+    The layer is another engine's reading, not the page, so the length warning holds
+    neither; their comparison decides. Teledir finding 10: the warning landed on two good
+    readings and the junk layer was selected.
+    """
+    if not any(
+        a.get("stage") == "local_text"
+        and any(_warning_code(w) == "ocr_text_layer" for w in a.get("warnings") or [])
+        for a in _usable(attempts)
+    ):
+        return
+    for item in _usable(attempts):
+        if any(_warning_code(w) == _DELTA for w in item.get("warnings") or []):
+            kept = [w for w in item["warnings"] if _warning_code(w) != _DELTA]
+            holds_by_id[item["attempt_id"]] = _attempt_holds({**item, "warnings": kept}, holds_for)
+
+
+def yat_words(text: str) -> int:
+    """Words of three or more letters spelt with ѣ, written in lower case after the first."""
+    return sum(1 for match in _WORD.finditer(text) if "ѣ" in match.group().lower())
+
+
+def _letters_lost(readings: list[dict]) -> set[str]:
+    """Literal readings that modernised the spelling another literal reading kept."""
+    literal = {
+        a["attempt_id"]: yat_words(a.get("text") or "") for a in readings if not _generative(a)
+    }
+    most = max(literal.values(), default=0)
+    if most < YAT_WORDS_MIN:
+        return set()
+    return {key for key, count in literal.items() if count < YAT_WORDS_KEPT_SHARE * most}
+
+
+def _hold_lost_letters(attempts: list[dict], holds_by_id: dict[str, list[str]]) -> None:
+    """Stock ``rus`` cannot write ѣ: its reading of a pre-reform page loses every one."""
+    for attempt_id in _letters_lost(_usable(attempts)):
+        if "coverage_defect" not in holds_by_id[attempt_id]:
+            holds_by_id[attempt_id].append("coverage_defect")
+
+
+def _ranked(readings: list[dict], holds_by_id: dict[str, list[str]]) -> list[dict]:
+    """Held readings by support: kept the pre-reform letters, held only for the engine's
+    low confidence, fewer stray symbols. Ties keep their order, our own readings first."""
+    from .quality import _is_suspicious_symbol
+
+    lost = _letters_lost(readings)
+
+    def key(item: dict) -> tuple:
+        text = item.get("text") or ""
+        symbols = sum(map(_is_suspicious_symbol, text)) / max(1, len(text))
+        return (
+            item["attempt_id"] in lost,
+            any(hold != "low_confidence" for hold in holds_by_id[item["attempt_id"]]),
+            round(symbols, 2),
+        )
+
+    return sorted(readings, key=key)
+
+
 def _trigger_history(
     page: dict,
     holds_for: dict[str, str],
@@ -739,6 +883,8 @@ def _trigger_history(
     reader_coverage: bool = False,
     ocr_layer_climbs: bool = False,
     corroborate: bool = False,
+    witnesses: bool = False,
+    configured: tuple[str, ...] | None = None,
 ) -> list[dict]:
     """Re-assess the page as it stood after each earlier stage, from retained attempts only."""
     reached = sorted(
@@ -770,6 +916,8 @@ def _trigger_history(
             reader_coverage=reader_coverage,
             ocr_layer_climbs=ocr_layer_climbs,
             corroborate=corroborate,
+            witnesses=witnesses,
+            configured=configured,
         )
         # Its list repeats the history found so far; only the tail is this stage's.
         history.extend(before["triggers"][len(history) :])

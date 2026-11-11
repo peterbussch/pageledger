@@ -57,6 +57,10 @@ def _pages(root: Path, recorded_root: Path, report: dict, reviewed_only: bool) -
         if reviewed_only and review is None:
             continue
         selected = page["selected_output"]
+        # A person who called the page blank, unreadable, a defect or not text did not
+        # accept the machine text as the page, so none is exported for it.
+        if review is not None and page["disposition"] != "reviewed_text":
+            selected = None
         attempt = None
         if selected is not None:
             chosen = next(a for a in page["attempts"] if a["attempt_id"] == selected["attempt_id"])
@@ -77,7 +81,7 @@ def _pages(root: Path, recorded_root: Path, report: dict, reviewed_only: bool) -
                 "model": checkpoints[run].records[page["page_id"]]["result"]["model"],
                 "output_sha256": chosen["raw_sha256"],
             }
-        edition = page.get("edition")
+        edition = page.get("edition") if selected is not None else None
         pages.append(
             {
                 **(

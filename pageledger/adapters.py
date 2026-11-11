@@ -271,14 +271,16 @@ class PdfTextAdapter:
             source,
             lambda path: _pdf_page_reading(path, page_number),
         )
+        layer = bool(ocr_layer) and bool(text.strip())
         return ExtractionResult(
             content=text,
             format="text",
             confidence=None,
             model=_pypdf_model_string(),
             # The layer is an earlier OCR of a scan, not text the author typeset.
-            warnings=["ocr_text_layer"] if ocr_layer and text.strip() else [],
+            warnings=["ocr_text_layer"] if layer else [],
             usage={"pages": 1, "tokens": None, "compute_seconds": None, "cost_usd": None},
+            confidence_detail={"ocr_text_layer": ocr_layer} if layer else None,
         )
 
 
@@ -1082,16 +1084,125 @@ def pdf_page_count(source: Path) -> int:
 
 # The invisible font Tesseract, OCRmyPDF and the Internet Archive draw their OCR text in.
 _OCR_LAYER_FONTS = (b"GlyphLessFont",)
+# OCR software that names itself in a PDF's Producer or Creator. In the 2026-11
+# dogfood, ABBYY FineReader 11, ABBYY Recognition Server and LuraDocument layers were
+# drawn in ordinary fonts and passed as typeset text.
+_OCR_PRODUCERS = re.compile(
+    r"ABBYY|FineReader|LuraDocument|Tesseract|OCRmyPDF|OmniPage|Readiris|Paper Capture", re.I
+)
+# An image drawn over at least this share of the page's width and height covers the page.
+_COVERS_PAGE = 0.9
+_TEXT_SHOWING = (b"Tj", b"TJ", b"'", b'"')
 
 
-def _pdf_page_reading(source: Path, page_number: int) -> tuple[str, bool]:
-    """A page's text layer, and whether that layer is an earlier OCR of a scanned image."""
+def _pdf_page_reading(source: Path, page_number: int) -> tuple[str, dict | None]:
+    """A page's text layer, and why that layer is an earlier OCR of a scanned image (or None).
+
+    The evidence names each signal that fired: ``font`` (GlyphLessFont), ``invisible_text``
+    (most text drawn invisibly on a page with a page-sized image), ``text_under_image`` (most
+    text painted before an opaque page-sized image that hides it), ``producer`` (the
+    document's Producer or Creator names OCR software and the page has a page-sized image).
+    """
     with source.open("rb") as handle, _reading_pdf(source) as open_pdf:
-        pages = open_pdf(handle).pages
+        reader = open_pdf(handle)
+        pages = reader.pages
         if not 1 <= page_number <= len(pages):
             raise ValueError(f"page_number {page_number} out of range for {source}")
         page = pages[page_number - 1]
-        return page.extract_text() or "", _ocr_layer(page)
+        text = page.extract_text() or ""
+        signals = ["font"] if _ocr_layer(page) else []
+        drawing = _text_and_scan(page)
+        producer = _ocr_producer(reader) if drawing["scan"] else None
+        if drawing["invisible"]:
+            signals.append("invisible_text")
+        if drawing["under_image"]:
+            signals.append("text_under_image")
+        if producer:
+            signals.append("producer")
+        if not signals:
+            return text, None
+        return text, {"signals": signals, **({"producer": producer} if producer else {})}
+
+
+def _ocr_producer(reader: Any) -> str | None:
+    try:
+        meta = reader.metadata or {}
+        names = [str(meta.get(key) or "").strip() for key in ("/Producer", "/Creator")]
+    except (AttributeError, KeyError, TypeError, ValueError):
+        return None
+    return next((name for name in names if _OCR_PRODUCERS.search(name)), None)
+
+
+def _text_and_scan(page: Any) -> dict[str, bool]:
+    """How the page draws its text relative to an image that covers the page.
+
+    Walks the page's content and its forms without decoding any image. The image is a
+    scan when, as placed, it covers the page; it hides text when it is opaque (no soft
+    mask, mask or stencil) and painted after that text.
+    """
+    from pypdf.generic import ContentStream
+
+    width, height = float(page.cropbox.width), float(page.cropbox.height)
+    shown = {"all": 0, "invisible": 0, "covered": 0, "scan": False}
+
+    def multiply(m: list[float], n: list[float]) -> list[float]:
+        return [
+            m[0] * n[0] + m[1] * n[2],
+            m[0] * n[1] + m[1] * n[3],
+            m[2] * n[0] + m[3] * n[2],
+            m[2] * n[1] + m[3] * n[3],
+            m[4] * n[0] + m[5] * n[2] + n[4],
+            m[4] * n[1] + m[5] * n[3] + n[5],
+        ]
+
+    def covers(ctm: list[float]) -> bool:
+        xs = [ctm[4], ctm[0] + ctm[4], ctm[2] + ctm[4], ctm[0] + ctm[2] + ctm[4]]
+        ys = [ctm[5], ctm[1] + ctm[5], ctm[3] + ctm[5], ctm[1] + ctm[3] + ctm[5]]
+        return (max(xs) - min(xs)) >= _COVERS_PAGE * width and (
+            max(ys) - min(ys)
+        ) >= _COVERS_PAGE * height
+
+    def walk(stream: Any, resources: Any, ctm: list[float], mode: int, depth: int) -> None:
+        resources = resources.get_object() if resources is not None else {}
+        xobjects = resources.get("/XObject") or {}
+        stack: list[tuple[list[float], int]] = []
+        for operands, operator in ContentStream(stream, page.pdf).operations:
+            if operator == b"q":
+                stack.append((ctm, mode))
+            elif operator == b"Q" and stack:
+                ctm, mode = stack.pop()
+            elif operator == b"cm" and len(operands) == 6:
+                ctm = multiply([float(x) for x in operands], ctm)
+            elif operator == b"Tr" and operands:
+                mode = int(operands[0])
+            elif operator in _TEXT_SHOWING:
+                shown["all"] += 1
+                shown["invisible"] += mode in (3, 7)
+            elif operator == b"Do" and operands and operands[0] in xobjects:
+                xobject = xobjects[operands[0]].get_object()
+                if xobject.get("/Subtype") == "/Form" and depth < 3:
+                    matrix = [float(x) for x in xobject.get("/Matrix", [1, 0, 0, 1, 0, 0])]
+                    walk(xobject, xobject.get("/Resources"), multiply(matrix, ctm), mode, depth + 1)
+                elif xobject.get("/Subtype") == "/Image" and covers(ctm):
+                    shown["scan"] = True
+                    opaque = not any(
+                        key in xobject for key in ("/SMask", "/Mask")
+                    ) and not xobject.get("/ImageMask", False)
+                    if opaque:
+                        shown["covered"] = shown["all"]
+
+    try:
+        contents = page.get_contents()
+        if contents is not None:
+            walk(contents, page.get("/Resources"), [1, 0, 0, 1, 0, 0], 0, 0)
+    except (AttributeError, KeyError, TypeError, ValueError, IndexError):
+        return {"scan": False, "invisible": False, "under_image": False}
+    total = shown["all"]
+    return {
+        "scan": bool(shown["scan"]),
+        "invisible": bool(shown["scan"]) and total > 0 and 2 * shown["invisible"] > total,
+        "under_image": total > 0 and 2 * shown["covered"] > total,
+    }
 
 
 def _ocr_layer(page: Any) -> bool:
