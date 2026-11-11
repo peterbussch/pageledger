@@ -116,10 +116,21 @@ pixels than the archive holds.
   the images keep their canvas numbers, so after `--pages` or a missing canvas
   page 9 of the job can be `0081.jpg`, and `{page}` is refused there (see
   [engine recipes](engine-recipes.md)).
-- PageLedger fetches whatever URLs the manifest names, over http or https,
-  including addresses on your own network; only fetch manifests you trust.
-  It follows at most three redirects and never one from https to http. It
+- You choose the URL; the manifest chooses the image services and a server
+  chooses its redirects. So only the host of the URL you named may be on your
+  own machine or network: any other host a manifest, service or redirect leads
+  to must be a public internet address, or that canvas fails with the address it
+  refused. To fetch from a IIIF server on your own machine or network, name a
+  manifest on the same host as its images (`http://localhost:8080/...` with
+  services on `localhost:8182` is fine). Under an `https` URL nothing is
+  fetched over plain `http`. PageLedger checks the addresses a name resolves to
+  just before asking, but cannot stop a name that resolves differently a moment
+  later; fetch only manifests you have reason to trust.
+- It follows at most three redirects and never one from https to http. It
   sends no cookies and uses your system's proxy settings, as a browser would.
+- A URL with a space, a control character or a non-ASCII character in it is
+  refused, naming the canvas; a manifest PageLedger could not store again in its
+  record (for example one holding `NaN`) is refused before anything is written.
 - Keep the snapshot. The record vouches for the files only while they are
   there and unchanged, and anything made from the images can be checked
   against them only as long as you keep them.

@@ -10,9 +10,11 @@ from __future__ import annotations
 import email.utils
 import hashlib
 import http.client
+import ipaddress
 import json
 import math
 import re
+import socket
 import time
 import urllib.error
 import urllib.parse
@@ -133,11 +135,38 @@ def _sha256(data: bytes) -> str:
 
 
 def check_url(url: str) -> None:
-    parts = urllib.parse.urlsplit(url)
-    if parts.scheme not in {"http", "https"} or not parts.hostname:
+    if not url.isascii() or not url.isprintable() or any(c.isspace() for c in url):
+        raise FetchError(f"URL holds a space, control or non-ASCII character: {url!r}")
+    try:
+        parts = urllib.parse.urlsplit(url)
+        host, _port = parts.hostname, parts.port
+    except ValueError as error:
+        raise FetchError(f"not a usable URL ({error}): {url}") from error
+    if parts.scheme not in {"http", "https"} or not host:
         raise FetchError(f"only http and https URLs can be fetched: {url}")
     if "@" in parts.netloc:
         raise FetchError(f"URL carries a user name or password, which would be recorded: {url}")
+
+
+def _addresses(host: str) -> list[str]:
+    try:
+        return [str(info[4][0]) for info in socket.getaddrinfo(host, None)]
+    except (OSError, UnicodeError):
+        return []
+
+
+def _public(host: str) -> bool:
+    """Whether every address ``host`` names is on the public internet.
+
+    A name that does not resolve counts as public: the request then fails on its own.
+    """
+    if host == "localhost" or host.endswith(".localhost"):
+        return False
+    try:
+        addresses = [ipaddress.ip_address(host.split("%")[0])]
+    except ValueError:
+        addresses = [ipaddress.ip_address(item.split("%")[0]) for item in _addresses(host)]
+    return all(address.is_global for address in addresses)
 
 
 def _retry_wait(retry_after: str | None, attempt: int) -> float:
@@ -147,8 +176,12 @@ def _retry_wait(retry_after: str | None, attempt: int) -> float:
             seconds = float(value)
         except ValueError:
             try:
-                seconds = email.utils.parsedate_to_datetime(value).timestamp() - time.time()
-            except (TypeError, ValueError):
+                date = email.utils.parsedate_to_datetime(value)
+                # An HTTP date is GMT; "-0000" parses without a zone.
+                if date.tzinfo is None:
+                    date = date.replace(tzinfo=timezone.utc)
+                seconds = date.timestamp() - time.time()
+            except (TypeError, ValueError, OverflowError):
                 seconds = float(2**attempt)
         if math.isfinite(seconds):
             return min(max(seconds, 0.0), RETRY_AFTER_CAP)
@@ -157,7 +190,8 @@ def _retry_wait(retry_after: str | None, attempt: int) -> float:
 
 def _read_capped(response: Response, limit: int, url: str, what: str) -> bytes:
     declared = response.headers.get("Content-Length")
-    if declared is not None and declared.strip().isdigit() and int(declared) > limit:
+    declared = declared.strip() if declared is not None else ""
+    if declared.isascii() and declared.isdigit() and int(declared) > limit:
         raise FetchError(
             f"{what}: {url} declares {int(declared)} bytes, above the {limit}-byte limit"
         )
@@ -174,7 +208,12 @@ def _read_capped(response: Response, limit: int, url: str, what: str) -> bytes:
 
 
 class Client:
-    """Polite sequential HTTP: a delay between requests, bounded redirects and retries."""
+    """Polite sequential HTTP: a delay between requests, bounded redirects and retries.
+
+    ``home`` is the URL the user named. Its host is trusted; any other host a
+    manifest, service or redirect leads to must be on the public internet, and
+    under an https ``home`` nothing is fetched over plain http.
+    """
 
     def __init__(
         self,
@@ -182,16 +221,32 @@ class Client:
         *,
         delay: float = DEFAULT_DELAY,
         sleep: Callable[[float], None] | None = None,
+        home: str | None = None,
     ) -> None:
         self.opener = opener or default_opener()
         self.delay = delay
         self.sleep = sleep or time.sleep
         self.requests = 0
+        self.home = urllib.parse.urlsplit(home) if home is not None else None
+
+    def _check_destination(self, url: str) -> None:
+        check_url(url)
+        if self.home is None:
+            return
+        parts = urllib.parse.urlsplit(url)
+        if self.home.scheme == "https" and parts.scheme == "http":
+            raise FetchError(f"refused a plain http URL under the https URL you named: {url}")
+        host = parts.hostname or ""
+        if host != self.home.hostname and not _public(host):
+            raise FetchError(
+                f"refused {url}: {host} is a loopback, private or link-local address, and "
+                f"only the host of the URL you named ({self.home.hostname}) may be one"
+            )
 
     def _open(self, url: str, accept: str) -> tuple[str, Response]:
         current = url
         for _ in range(MAX_REDIRECTS + 1):
-            check_url(current)
+            self._check_destination(current)
             if self.requests:
                 self.sleep(self.delay)
             self.requests += 1
@@ -231,6 +286,8 @@ class Client:
                     wait = _retry_wait(response.headers.get("Retry-After"), attempt)
                 finally:
                     response.close()
+            except http.client.InvalidURL as error:
+                raise FetchError(f"{what}: not a usable URL ({error}): {url}") from error
             except (OSError, http.client.HTTPException) as error:
                 problem = f"network error ({error})"
                 wait = _retry_wait(None, attempt)
@@ -409,7 +466,8 @@ def parse_info(document: Any) -> ImageInfo:
     if limits["maxHeight"] is None:
         limits["maxHeight"] = limits["maxWidth"]
     sizes = []
-    for size in document.get("sizes") or []:
+    listed = document.get("sizes")
+    for size in listed if isinstance(listed, list) else []:
         if isinstance(size, dict):
             size_width, size_height = (
                 _positive_int(size.get("width")),
@@ -470,10 +528,14 @@ def image_request(service_id: str, info: ImageInfo) -> str:
 
 
 def _parse_json(body: bytes) -> Any:
+    """The JSON document, or None. A value the record could not store again (NaN, a
+    lone surrogate, nesting too deep) makes it None too."""
     try:
-        return json.loads(body.decode("utf-8-sig"))
-    except (UnicodeDecodeError, json.JSONDecodeError):
+        document = json.loads(body.decode("utf-8-sig"))
+        json.dumps(document, ensure_ascii=False, allow_nan=False).encode("utf-8")
+    except (ValueError, RecursionError):
         return None
+    return document
 
 
 def _dump(value: Mapping[str, Any]) -> bytes:
@@ -656,7 +718,7 @@ def _load_record(out: Path) -> tuple[dict[str, Any], bytes]:
         if (
             not isinstance(entry, dict)
             or _positive_int(entry.get("canvas_index")) is None
-            or not isinstance(entry.get("error"), (str, type(None)))
+            or not isinstance(entry.get("error", 0), (str, type(None)))
         ):
             raise IIIFError(f"{path} has a malformed missing entry")
     if len(set(names)) != len(names):
@@ -712,7 +774,7 @@ def fetch_iiif(
     if max_image_bytes < 1:
         raise IIIFError("--max-image-bytes must be positive")
     check_url(url)
-    client = Client(opener, delay=delay, sleep=sleep)
+    client = Client(opener, delay=delay, sleep=sleep, home=url)
     say = progress or (lambda _message: None)
 
     if resume:
@@ -764,8 +826,6 @@ def fetch_iiif(
                     else ""
                 )
             )
-        out.mkdir(parents=True)
-        (out / RECORD_DIR).mkdir()
         manifest = None
         if kind == "manifest":
             manifest = {
@@ -775,7 +835,6 @@ def fetch_iiif(
                 "artifact": f"{RECORD_DIR}/manifest.json",
                 "api_version": version,
             }
-            atomic_bytes(out / manifest["artifact"], fetched.body)
         record = {
             "schema_version": "0.1",
             "kind": "iiif_fetch",
@@ -791,7 +850,12 @@ def fetch_iiif(
             "images": [],
             "missing": [_missing_entry(canvas, count, None) for canvas in pending],
         }
-        atomic_bytes(out / RECORD_NAME, _dump(record))
+        first = _dump(record)
+        out.mkdir(parents=True)
+        (out / RECORD_DIR).mkdir()
+        if manifest is not None:
+            atomic_bytes(out / manifest["artifact"], fetched.body)
+        atomic_bytes(out / RECORD_NAME, first)
 
     images = {entry["canvas_index"]: entry for entry in record["images"]}
     missing = {entry["canvas_index"]: entry for entry in record["missing"]}

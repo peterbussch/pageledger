@@ -27,6 +27,14 @@ def _no_host_source_index(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _no_dns(monkeypatch):
+    """IIIF fetch resolves hosts other than the one named; every test name is public here."""
+    import pageledger.iiif as iiif
+
+    monkeypatch.setattr(iiif, "_addresses", lambda host: ["93.184.215.14"])
+
+
+@pytest.fixture(autouse=True)
 def _clear_adapter_identity_caches():
     """Keep adapter runtime identity caches from leaking between tests.
 

@@ -966,3 +966,162 @@ def test_default_opener_returns_redirects_and_errors_as_responses(monkeypatch) -
     client = iiif.Client(opener, sleep=lambda _s: None)
     fetched = client.get("http://a.test/base", accept="*/*", limit=100, what="x")
     assert fetched.final_url == "http://a.test/base/info.json" and fetched.body == b"{}"
+
+
+def _variants(value):
+    """Every copy of ``value`` with one member, at any depth, replaced by another JSON shape."""
+    shapes = [None, 1, -1, True, "x", [], {}, [None], {"id": 1}]
+    members = list(value.items()) if isinstance(value, dict) else list(enumerate(value))
+    for key, member in members:
+        replacements = [shape for shape in shapes if shape != member]
+        if isinstance(member, (dict, list)):
+            replacements += list(_variants(member))
+        for replacement in replacements:
+            copy = json.loads(json.dumps(value))
+            copy[key] = replacement
+            yield copy
+
+
+def test_no_shape_of_manifest_or_info_json_escapes_as_anything_but_a_iiif_error(
+    tmp_path: Path,
+) -> None:
+    manifest = manifest_v3([SERVICE])
+    info = info_v3(SERVICE, 40, 60, sizes=[{"width": 20, "height": 30}])
+    image = {f"{SERVICE}/full/max/0/default.jpg": jpeg(40, 60)}
+    cases = [
+        {MANIFEST_URL: variant, f"{SERVICE}/info.json": info, **image}
+        for variant in _variants(manifest)
+    ]
+    cases += [
+        {MANIFEST_URL: manifest, f"{SERVICE}/info.json": variant, **image}
+        for variant in _variants(info)
+    ]
+    assert len(cases) > 200
+    for number, routes in enumerate(cases):
+        out = tmp_path / f"s{number}"
+        try:
+            iiif.fetch_iiif(MANIFEST_URL, out, opener=FakeServer(routes), sleep=lambda _s: None)
+        except iiif.IIIFError:
+            continue
+        validate(load(out))
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        json.dumps(manifest_v3([SERVICE])).replace('{"en": ["p. 1"]}', "NaN"),
+        json.dumps(manifest_v3([SERVICE])).replace('"p. 1"', '"\\ud800"'),
+        json.dumps(manifest_v3([SERVICE])).replace('"p. 1"', "[" * 100_000 + "]" * 100_000),
+        json.dumps(manifest_v3([SERVICE])).replace('"p. 1"', "1" * 5000),
+    ],
+    ids=["nan", "lone-surrogate", "deep", "long-integer"],
+)
+def test_a_manifest_the_record_could_not_store_is_refused_before_any_file(
+    tmp_path: Path, body: str
+) -> None:
+    server = FakeServer(
+        {MANIFEST_URL: FakeResponse(200, body.encode(), {"Content-Type": "application/json"})}
+    )
+    with pytest.raises(iiif.IIIFError, match="not a IIIF manifest"):
+        iiif.fetch_iiif(MANIFEST_URL, tmp_path / "snap", opener=server, sleep=lambda _s: None)
+    assert not (tmp_path / "snap").exists()
+
+
+@pytest.mark.parametrize(
+    ("service", "error"),
+    [
+        ("https://images.example.org/iiif/a b", "space, control or non-ASCII"),
+        ("https://images.example.org/iiif/стр", "space, control or non-ASCII"),
+        ("https://[x", "not a usable URL"),
+        ("https://images.example.org:99999/iiif", "not a usable URL"),
+    ],
+)
+def test_an_unusable_service_url_fails_its_canvas_only(
+    tmp_path: Path, service: str, error: str
+) -> None:
+    routes = {
+        MANIFEST_URL: manifest_v3([service, SERVICE]),
+        f"{SERVICE}/info.json": info_v3(SERVICE, 40, 60),
+        f"{SERVICE}/full/max/0/default.jpg": jpeg(40, 60),
+    }
+    server = FakeServer(routes)
+    summary = iiif.fetch_iiif(MANIFEST_URL, tmp_path / "snap", opener=server, sleep=lambda _s: None)
+    assert summary["fetched"] == 1 and error in summary["missing"][0]["error"]
+    assert len(server.requests) == 3
+
+
+def test_an_invalid_url_from_the_connection_is_not_retried() -> None:
+    import http.client
+
+    server = FakeServer({MANIFEST_URL: http.client.InvalidURL("bad")})
+    with pytest.raises(iiif.FetchError, match="not a usable URL"):
+        iiif.Client(server, sleep=lambda _s: None).get(
+            MANIFEST_URL, accept="*/*", limit=10, what="x"
+        )
+    assert len(server.requests) == 1
+
+
+def test_a_content_length_that_is_not_ascii_digits_is_ignored() -> None:
+    server = FakeServer({MANIFEST_URL: FakeResponse(200, b"{}", {"Content-Length": "²"})})
+    client = iiif.Client(server, sleep=lambda _s: None)
+    assert client.get(MANIFEST_URL, accept="*/*", limit=10, what="x").body == b"{}"
+
+
+@pytest.mark.parametrize(
+    ("home", "target", "addresses", "refused"),
+    [
+        ("http://iiif.example.org/m", "http://127.0.0.1:8080/admin", None, "loopback, private"),
+        ("http://iiif.example.org/m", "http://[::1]/x", None, "loopback, private"),
+        ("http://iiif.example.org/m", "http://localhost/x", None, "loopback, private"),
+        ("http://iiif.example.org/m", "http://169.254.169.254/latest", None, "loopback, private"),
+        ("http://iiif.example.org/m", "http://intranet.example.org/x", ["10.1.2.3"], "loopback"),
+        ("https://iiif.example.org/m", "http://images.example.org/x", None, "plain http"),
+        ("http://localhost:8080/m", "http://localhost:8182/iiif/x", None, None),
+        ("http://192.168.1.5/m", "http://192.168.1.5:8182/iiif/x", None, None),
+        ("https://iiif.example.org/m", "https://images.example.org/x", None, None),
+    ],
+)
+def test_only_the_host_named_may_be_local_and_https_stays_https(
+    monkeypatch, home, target, addresses, refused
+) -> None:
+    if addresses is not None:
+        monkeypatch.setattr(iiif, "_addresses", lambda host: addresses)
+    client = iiif.Client(FakeServer({target: ok({})}), sleep=lambda _s: None, home=home)
+    if refused is None:
+        assert client.get(target, accept="*/*", limit=10, what="x").body == b"{}"
+    else:
+        with pytest.raises(iiif.FetchError, match=refused):
+            client.get(target, accept="*/*", limit=10, what="x")
+
+
+def test_a_redirect_to_a_local_address_is_refused_at_its_hop(tmp_path: Path) -> None:
+    home, service = "http://iiif.example.org/m", "http://images.example.org/iiif/p"
+    hop = FakeResponse(302, headers={"Location": "http://169.254.169.254/latest/meta-data"})
+    server = FakeServer({home: manifest_v3([service]), f"{service}/info.json": hop})
+    summary = iiif.fetch_iiif(home, tmp_path / "snap", opener=server, sleep=lambda _s: None)
+    assert "169.254.169.254" in summary["missing"][0]["error"]
+    assert "loopback, private" in summary["missing"][0]["error"]
+    assert not any("169.254" in url for url in server.urls())
+
+
+def test_retry_after_dates_are_gmt_even_without_a_zone(monkeypatch) -> None:
+    import email.utils
+    import time
+
+    monkeypatch.setenv("TZ", "America/New_York")
+    time.tzset()
+    try:
+        wait = iiif._retry_wait(email.utils.formatdate(time.time() + 30), 1)
+    finally:
+        monkeypatch.undo()
+        time.tzset()
+    assert 25 <= wait <= 31
+
+
+def test_a_missing_entry_without_its_error_is_a_damaged_record(tmp_path: Path) -> None:
+    out = _complete(tmp_path)
+    record = load(out)
+    record["missing"].append({"canvas_index": 2})
+    (out / iiif.RECORD_NAME).write_text(json.dumps(record), encoding="utf-8")
+    with pytest.raises(ValueError, match="malformed missing entry"):
+        iiif.read_fetch_record(out)

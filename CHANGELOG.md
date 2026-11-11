@@ -38,7 +38,9 @@ and, from 1.0, [stability](docs/stability.md).
   SHA-256 to the URLs it came from. Images are fetched whole at native size, never above it; when a server
   only allows a smaller image the record marks it `below_native` and the command warns. One request at a
   time with a delay, retries that honour `Retry-After`, a byte cap on every response, and `--resume` that
-  checks what was fetched and fetches only what is missing. See [the how-to](docs/iiif.md).
+  checks what was fetched and fetches only what is missing. Only the host of the URL you named may be a
+  loopback, private or link-local address, and under an `https` URL nothing is fetched over `http`; a
+  service or redirect that breaks either rule fails its canvas. See [the how-to](docs/iiif.md).
 - `pageledger review JOB --out DIR` writes a static review view of a verified document job: one
   `index.html` to open in a browser, with no server, network or external scripts. It lists the pages, those
   that need a person first, and shows each page's image beside its selected text, the other readings in
