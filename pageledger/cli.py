@@ -7,6 +7,7 @@ import difflib
 import json
 import os
 import shlex
+import shutil
 import sys
 import tempfile
 import textwrap
@@ -1126,7 +1127,7 @@ def _directory_kind(path: Path) -> str:
 
 
 _JOB_COMMANDS = {"review", "export", "adjudicate"}
-_RUN_COMMANDS = {"compare", "compare-runs", "rerun", "align"}
+_RUN_COMMANDS = {"compare", "rerun", "align"}
 
 
 def _other_kind(command: str, folder: Path) -> str | None:
@@ -1137,15 +1138,14 @@ def _other_kind(command: str, folder: Path) -> str | None:
     except OSError:
         return None
     shown = shlex.quote(str(folder))
-    name = "compare" if command == "compare-runs" else command
     if command in _JOB_COMMANDS and run and not job:
         return (
-            f"`{name}` takes a document job, and {folder} is a run folder (made by "
+            f"`{command}` takes a document job, and {folder} is a run folder (made by "
             f"`pageledger run`, or one stage of a job). To see the run: pageledger inspect {shown}"
         )
     if command in _RUN_COMMANDS and job:
         return (
-            f"`{name}` takes a run folder, and {folder} is a document job. To see the job's "
+            f"`{command}` takes a run folder, and {folder} is a document job. To see the job's "
             f"pages and readings: pageledger review {shown}"
         )
     return None
@@ -1602,7 +1602,8 @@ def _cmd_job(args: argparse.Namespace) -> int:
         for warning in result.get("config_warnings", []):
             print(f"Config warning: {warning}")
         _print_language_advice(args.out, args)
-    elif args.command == "review-job":
+    elif args.command == "review-job" and getattr(args, "apply", None) is not None:
+        # review --apply; the earlier name review-job keeps its released output.
         _print_review_result(args.job_dir, result, dry_run=args.dry_run)
     else:
         reason = f" ({result['reason']})" if result.get("reason") else ""
@@ -1716,7 +1717,8 @@ def _check_engine(engine: str, options: dict, source: Path) -> None:
         message = str(exc).rstrip(".")
         if "install" in message and "doctor" not in message:
             message += ". Run 'pageledger doctor' to see which tools are installed"
-        raise ValueError(f"{engine}: {message}.") from exc
+        named = message if engine in message else f"{engine}: {message}"
+        raise ValueError(f"{named}.") from exc
 
 
 def _check_process_paths(source: Path, out: Path) -> None:
@@ -1762,7 +1764,7 @@ def _print_review_result(job: Path, result: dict, *, dry_run: bool) -> None:
     total = accepted + corrected + sum(decisions.values())
     pages = "page" if total == 1 else "pages"
     verb = "Checked, and nothing recorded (dry run)" if dry_run else "Recorded"
-    print(f"{verb}: {total} {pages}" + (f": {', '.join(parts)}." if parts else "."))
+    print(f"{verb}: {total} {pages}: {', '.join(parts)}." if parts else f"{verb}: no decisions.")
     for item in result.get("corrections", []):
         page, start = item["page_number"], item["from"]
         print(f"Correction of page {page}, from {start}: {describe(item['words'])}")
@@ -1844,6 +1846,7 @@ class _Progress:
             return
         line = self.line(event)
         if self.tty:
+            line = line[: shutil.get_terminal_size().columns - 1]
             self.stream.write("\r" + line.ljust(self.width))
             self.stream.flush()
             self.width = len(line)
@@ -1859,7 +1862,9 @@ class _Progress:
     def line(event: dict) -> str:
         pages, stage = event["pages"], event["stage"]
         doing = _STAGE_WORDS.get(stage, stage)
-        if stage != "local_text":
+        if stage == "local_text" and event.get("page_images"):
+            doing = "preparing the page images"
+        elif stage != "local_text":
             doing = (
                 f"{doing}, page {pages[0]}" if len(pages) == 1 else f"{doing}, {len(pages)} pages"
             )

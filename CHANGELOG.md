@@ -27,16 +27,19 @@ Starting a job
   is where an engine is chosen. A missing engine stops the command before the
   job exists, naming what to install. See
   [start with local text and OCR](docs/processing-spec.md#start-with-local-text-and-ocr).
-- `process` and `resume` show progress while a job runs (pages done, pages
-  that need a person so far, what is being read now), and Ctrl-C stops a job
-  without a traceback, keeps what was read and prints the `resume` command
-  (exit 130). `resume` of a job ends with the same summary as `process`. See
-  [process](docs/cli.md#process).
+- `process` and `resume` show progress while a job runs: pages done, pages
+  that need a person so far, and what is being read now. `resume` of a job ends
+  with the same summary as `process`. See [process](docs/cli.md#process).
+- Ctrl-C stops a job without a traceback, keeps what was read and prints the
+  `resume` command (exit 130); `run`, `fetch` and `review` say the same for
+  their folders. See [process](docs/cli.md#process).
 - When most pages Tesseract read were held for low confidence, `process` says
   the language may be wrong and, when Tesseract's script detection is sure,
   which language to try; on pre-1918 Russian read with `rus` it points to the
-  `orus` model, and `--lang orus` without that model names its recipe. See
-  [process](docs/cli.md#process).
+  `orus` model. See [process](docs/cli.md#process).
+- `--lang orus` without that model installed names its recipe instead of
+  suggesting similar codes. See
+  [the orus recipe](docs/engine-recipes.md#tesseract-with-the-community-orus-model-macos-and-linux).
 - `init` writes a commented `processing.yml` with each optional stage as a
   commented block; [`docs/examples/processing.yml`](docs/examples/processing.yml)
   is that file. See [init](docs/cli.md#init).
@@ -137,9 +140,10 @@ Reviewing and exporting
   TEI marks each page's state, holds and warnings. See [export](docs/export.md).
 - `review --apply` says what it recorded in plain words (accepted, corrected,
   blank and so on), how many pages still need a person, and the next command:
-  `export` once none do. `export` takes the format from the end of `--out`
-  (`.txt`, `.md`, `.jsonl`, `.xml`) when `--format` is not given. See
-  [review](docs/cli.md#review) and [export](docs/cli.md#export).
+  `export` once none do. The earlier name `review-job` keeps its output. See
+  [review](docs/cli.md#review).
+- `export` takes the format from the end of `--out` (`.txt`, `.md`, `.jsonl`,
+  `.xml`) when `--format` is not given. See [export](docs/cli.md#export).
 - `review --apply` warns (`blank_with_text`) when a page recorded as blank has
   a reading of 50 or more words. See
   [troubleshooting](docs/troubleshooting.md#a-review-is-refused).
@@ -224,10 +228,13 @@ The contract
   [page size and rendering](docs/ocr-options.md#page-size-and-rendering).
 - `doctor` opens with what `process` can do on this machine (PDF text, which
   OCR engine, the common languages installed for `--lang`, optional engines
-  not installed), then the details as before; `--json` is unchanged. A new job
-  makes `partials/` only when it keeps a partial reading. A review file for
-  another document, or one that is not a receipt, is refused saying which. See
+  not installed), then the details as before; `--json` is unchanged. See
   [doctor](docs/cli.md#doctor).
+- A new job makes `partials/` only when it keeps a partial reading. See
+  [artifacts](docs/artifacts.md).
+- A review file for another document, or one that is not a review receipt, is
+  refused saying which. See
+  [troubleshooting](docs/troubleshooting.md#a-review-is-refused).
 - The README leads with `process`, and [the documentation](docs/README.md) is
   arranged by task; "Choose OCR settings" is folded into
   [non-English and historical OCR](docs/multilingual-ocr.md) and

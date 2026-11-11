@@ -6,6 +6,7 @@ import argparse
 import csv
 import io
 import json
+import os
 import re
 from pathlib import Path
 
@@ -254,7 +255,13 @@ def test_review_apply_is_review_job(
     new = ["review", str(job), "--apply", str(sheet), "--reviewer", "A. Reader", *flags]
     before = _cli(capsys, *old)
     assert before[0] == 0
-    assert _cli(capsys, *new) == before
+    after = _cli(capsys, *new)
+    if "--json" in flags:
+        assert after == before
+    else:
+        # The earlier name keeps its released lines; review --apply says it in words.
+        assert before[1] == "Status: checked\nDecisions: none\n"
+        assert after == (0, "Checked, and nothing recorded (dry run): no decisions.\n", "")
 
 
 @pytest.mark.parametrize(
@@ -487,6 +494,79 @@ def test_run_without_a_config_points_to_process(
     assert "pageledger process SOURCE --out DIR" in err
 
 
+# -- doctor and the opening line of process --------------------------------------
+
+
+def _doctor_report(*, tesseract: bool = True, pdftoppm: bool = True) -> dict:
+    command = {"install_hint": "Install it.", "version": None}
+    return {
+        "optional_packages": {
+            "pypdf": {"available": True},
+            "rapidocr": {"available": True},
+            "onnxruntime": {"available": True},
+            "indra_ocr": {"available": False},
+        },
+        "external_commands": {
+            "tesseract": {**command, "available": tesseract, "version": "tesseract 5.5.2"},
+            "pdftoppm": {**command, "available": pdftoppm, "install_hint": "Install poppler."},
+        },
+        "ocr_languages": {"available": tesseract, "languages": ["deu", "eng", "osd", "rus"]},
+    }
+
+
+def test_doctor_opens_with_what_process_can_do() -> None:
+    assert cli._doctor_summary(_doctor_report()) == [
+        "What process can do on this machine:",
+        "  Read the text a PDF carries (pypdf).",
+        "  Read page images and scanned PDFs with Tesseract 5.5.2 OCR.",
+        "  Languages for --lang (4 installed): eng, rus, deu, and more, listed below.",
+        "  Other OCR engines ready (choose one with pageledger init): RapidOCR.",
+        "  Not installed, optional: Indra OCR. See docs/engine-recipes.md.",
+    ]
+
+
+def test_doctor_says_what_is_missing_for_ocr() -> None:
+    lines = cli._doctor_summary(_doctor_report(pdftoppm=False))
+    assert lines[2] == (
+        "  Read page images (scanned PDFs also need pdftoppm: Install poppler.) "
+        "with Tesseract 5.5.2 OCR."
+    )
+    lines = cli._doctor_summary(_doctor_report(tesseract=False))
+    assert lines[2].startswith("  No OCR: Tesseract is not installed")
+    assert not any("--lang" in line for line in lines)
+
+
+def test_doctor_text_opens_with_the_summary_and_json_is_unchanged(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    code, out, _ = _cli(capsys, "doctor")
+    assert code == 0 and out.startswith("What process can do on this machine:\n")
+    assert "\n\nDetails:\nPageLedger " in out
+    code, out, _ = _cli(capsys, "doctor", "--json")
+    assert "What process" not in out and json.loads(out)["optional_packages"]
+
+
+def test_the_opening_line_fits_each_kind_of_source(tmp_path: Path) -> None:
+    pdf, notes, scans = tmp_path / "book.pdf", tmp_path / "notes.txt", tmp_path / "scans"
+    pdf.write_bytes(b"%PDF-1.4\n")
+    notes.write_text("a page", encoding="utf-8")
+    scans.mkdir()
+    (scans / "0001.png").write_bytes(b"\x89PNG\r\n\x1a\n")
+    assert cli._reading_line(pdf, "pdf_ocr", {"lang": "rus+eng"}) == (
+        "Reading book.pdf: each page's own text, then Tesseract OCR in Russian and English "
+        "for pages that need it. Nothing is sent anywhere."
+    )
+    assert cli._reading_line(notes, "none", None) == (
+        "Reading notes.txt: the text of each page, as it is. Nothing is sent anywhere."
+    )
+    assert cli._reading_line(scans, "pdf_ocr", {"lang": "eng"}) == (
+        "Reading scans: Tesseract OCR in English, page by page. Nothing is sent anywhere."
+    )
+    assert cli._reading_line(scans, "rapidocr", {"rec_model_dir": "m"}) == (
+        "Reading scans: RapidOCR, page by page. Nothing is sent anywhere."
+    )
+
+
 # -- progress and interruption -----------------------------------------------
 
 
@@ -506,6 +586,15 @@ def test_progress_rewrites_one_line_on_a_terminal() -> None:
     assert "\r0 of 3 pages done. Now: checking for text the pages already carry" in written
     assert "\r1 of 3 pages done; 1 need a person so far. Now: OCR, page 2" in written
     assert written.endswith("\r")
+
+
+def test_progress_fits_the_terminal_and_names_page_images(monkeypatch) -> None:
+    monkeypatch.setattr(cli.shutil, "get_terminal_size", lambda: os.terminal_size((40, 24)))
+    stream = _Terminal()
+    progress = cli._Progress(stream=stream)
+    event = {"stage": "local_text", "pages": [1], "selected": 1, "done": 0, "held": 0}
+    progress({**event, "page_images": True})
+    assert stream.getvalue() == "\r" + "0 of 1 pages done. Now: preparing the page images"[:39]
 
 
 def test_progress_off_a_terminal_is_quiet_at_first_then_plain_lines(monkeypatch) -> None:

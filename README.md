@@ -60,7 +60,8 @@ how many pages need a person and why. Then:
 - `pageledger review jobs/book` writes a review view into `jobs/book-review`
   to open in a browser: each page's image beside its text. Choose a decision for each
   page or correct its text there, and record the decisions with
-  `pageledger review jobs/book --apply book-review/review.json --reviewer "Your Name"`.
+  `pageledger review jobs/book --apply review.json --reviewer "Your Name"`,
+  naming the `review.json` the view downloaded.
 - `pageledger export jobs/book --format md --out book.md` writes the text out
   as plain text, Markdown, JSON lines or TEI, each page marked with whether a
   person has checked it.

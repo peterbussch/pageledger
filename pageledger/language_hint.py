@@ -81,11 +81,14 @@ def language_names(lang: str) -> str:
 def advice(job_dir: Path, retry: str | None = None) -> list[str]:
     """Lines to print after a job when its OCR language looks wrong.
 
-    `retry` is the command to run again, with {lang} where the language goes.
+    `retry` is the command to run again, with {lang} where the language goes;
+    without it, the job's language came from a config file, and the advice names
+    the setting there.
     """
     try:
         return _advice(job_dir, retry)
-    except Exception:
+    except (Exception, KeyboardInterrupt):
+        # An interrupt here comes after the job finished: skip the advice, not the summary.
         return []
 
 
@@ -112,19 +115,37 @@ def _advice(job_dir: Path, retry: str | None) -> list[str]:
         if page.get("review") is None and "low_confidence" in page["review_reasons"]
     ]
     if read and 2 * len(unsure) > len(read):
-        lines += [
-            f"OCR was unsure of many words on {len(unsure)} of the {len(read)} pages it read.",
-            f"That often means the language given ({lang}) is not the document's.",
-        ]
+        change = (
+            "run it again with --lang and that language's code"
+            if retry
+            else "set lang (processing.local_ocr.adapter_options.lang) in the config to its code"
+        )
+        lines.append(
+            f"OCR was unsure of many words on {len(unsure)} of the {len(read)} pages it read."
+        )
         script = _script(job, [page["page_number"] for page in unsure[:2]])
+        known = all(any(code in members for members in _SCRIPTS.values()) for code in codes)
         written = {name for name, members in _SCRIPTS.items() if set(codes) & set(members)}
-        if script in _SUGGEST and script not in written:
+        if known and script in written:
+            lines.append(
+                f"Their script, {script}, fits the language given ({lang}), so the cause may "
+                "be the scan or the print."
+            )
+            lines.append(f"If the document is in another {script}-script language, {change}.")
+        elif known and script in _SUGGEST:
             suggested = _SUGGEST[script]
-            lines.append(f"These pages look like {script} script. Try --lang {suggested}:")
+            lines.append(f"They look like {script} script, which {lang} is not written in.")
             if retry:
+                lines.append(f"Try --lang {suggested}:")
                 lines.append(f"  {retry.format(lang=suggested)}")
+            else:
+                lines.append(
+                    f"Try {suggested}: set lang (processing.local_ocr.adapter_options.lang) "
+                    "in the config."
+                )
         else:
-            lines.append("To try another, run it again with --lang and the document's language.")
+            lines.append(f"That can mean the language given ({lang}) is not the document's.")
+            lines.append(f"If so, {change}.")
         lines.append("`pageledger doctor` lists the languages installed.")
     orthography = any(
         "historical_orthography" in item.get("warnings", [])

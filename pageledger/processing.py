@@ -87,6 +87,7 @@ def _starting(job: dict, stage: dict) -> None:
             "selected": len(job["pages"]),
             "done": len(settled),
             "held": len(held),
+            "page_images": job["source"].get("kind") == KIND,
         }
     )
 
@@ -452,7 +453,7 @@ def process(
     progress: Progress | None = None,
 ) -> dict:
     """Read a document into a new job. `progress`, if given, is called with a dict when
-    each stage starts ({"stage", "pages", "selected", "done", "held"}) and with
+    each stage starts ({"stage", "pages", "selected", "done", "held", "page_images"}) and with
     {"notice": text} for anything worth saying before the job runs."""
     warnings = _process_run_settings(load_config(config_path, validate_adapter=False).data)
     token = _progress.set(progress)

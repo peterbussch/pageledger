@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import dataclasses
 import json
+import re
 from pathlib import Path
 
 import jsonschema
@@ -1175,6 +1176,35 @@ def test_process_cli_and_resume_job_dispatch(setup, capsys):
     assert verify_job(setup[2])["status"] == "pass"
 
 
+@pytest.mark.parametrize(
+    ("review", "message"),
+    [
+        ([], "This review file is not a JSON object"),
+        (
+            {"schema_version": "0.1", "decisions": [], "rows": []},
+            "not a review receipt (it has rows; it lacks source_sha256)",
+        ),
+        (
+            {"schema_version": "0.2", "source_sha256": "a" * 64, "decisions": []},
+            "schema_version is '0.2'",
+        ),
+        (
+            {"schema_version": "0.1", "source_sha256": "b" * 64, "decisions": []},
+            "made for another document: its source_sha256 is bbbbbbbbbbbb…",
+        ),
+        (
+            {"schema_version": "0.1", "source_sha256": "a" * 64, "decisions": {}},
+            "decisions must be a list",
+        ),
+    ],
+)
+def test_a_review_file_is_refused_saying_what_is_wrong(review, message):
+    from pageledger.processing import _review_decisions
+
+    with pytest.raises(ValueError, match=re.escape(message)):
+        _review_decisions({"source": {"sha256": "a" * 64}, "pages": []}, review)
+
+
 def test_process_projects_attempts_before_extraction(setup, capsys):
     source, config, out, _shared = setup
     data = yaml.safe_load(config.read_text())
@@ -1197,6 +1227,7 @@ def test_process_projects_attempts_before_extraction(setup, capsys):
         "selected": 3,
         "done": 0,
         "held": 0,
+        "page_images": False,
     }
     assert all(event["selected"] == 3 for event in stages)
 

@@ -324,13 +324,52 @@ def test_process_says_when_the_ocr_language_is_probably_wrong(
     advice = lines[lines.index("OCR was unsure of many words on 2 of the 2 pages it read.") :]
     assert advice == [
         "OCR was unsure of many words on 2 of the 2 pages it read.",
-        "That often means the language given (rus) is not the document's.",
-        "These pages look like Latin script. Try --lang eng:",
+        "They look like Latin script, which rus is not written in.",
+        "Try --lang eng:",
         f"  pageledger process {source} --lang eng --out {out}-eng",
         "`pageledger doctor` lists the languages installed.",
     ]
     assert main(["process", str(source), "--lang", "rus", "--out", str(out) + "2", "--json"]) == 0
     json.loads(capsys.readouterr().out)
+
+
+def _advice_after(tmp_path, monkeypatch, capsys, script, *args: str) -> list[str]:
+    from pageledger import language_hint
+
+    source = _hello_pdf(tmp_path)
+    _ocr_reads(monkeypatch, "Hallo Welt", ["low_confidence"])
+    monkeypatch.setattr(language_hint, "_script", lambda job, numbers: script)
+    assert main(["process", str(source), *args, "--out", str(tmp_path / "jobs" / "j")]) == 0
+    lines = capsys.readouterr().out.splitlines()
+    return lines[lines.index("OCR was unsure of many words on 1 of the 1 pages it read.") + 1 :]
+
+
+def test_language_advice_when_the_script_fits_the_language(tmp_path, monkeypatch, capsys):
+    advice = _advice_after(tmp_path, monkeypatch, capsys, "Latin", "--lang", "deu")
+    assert advice[:2] == [
+        "Their script, Latin, fits the language given (deu), so the cause may be the scan or "
+        "the print.",
+        "If the document is in another Latin-script language, run it again with --lang and "
+        "that language's code.",
+    ]
+
+
+def test_language_advice_names_no_language_for_a_code_it_does_not_know(
+    tmp_path, monkeypatch, capsys
+):
+    advice = _advice_after(tmp_path, monkeypatch, capsys, "Latin", "--lang", "frm")
+    assert advice[0] == "That can mean the language given (frm) is not the document's."
+    assert not any("Try --lang" in line for line in advice)
+
+
+def test_language_advice_for_a_config_job_names_the_setting(tmp_path, monkeypatch, capsys):
+    config = _write_config(tmp_path, "--lang", "rus")
+    advice = _advice_after(tmp_path, monkeypatch, capsys, "Latin", "--config", str(config))
+    assert advice[:2] == [
+        "They look like Latin script, which rus is not written in.",
+        "Try eng: set lang (processing.local_ocr.adapter_options.lang) in the config.",
+    ]
+    assert not any("--lang" in line for line in advice)
 
 
 def test_language_advice_without_a_sure_script_and_for_pre_reform_spelling(
@@ -345,7 +384,7 @@ def test_language_advice_without_a_sure_script_and_for_pre_reform_spelling(
     out = tmp_path / "jobs" / "grodno"
     assert main(["process", str(source), "--lang", "rus", "--out", str(out)]) == 0
     text = capsys.readouterr().out
-    assert "To try another, run it again with --lang and the document's language." in text
+    assert "If so, run it again with --lang and that language's code." in text
     assert "Some pages are in pre-1918 Russian spelling." in text
     assert "engine-recipes.md#tesseract-with-the-community-orus-model" in text
 

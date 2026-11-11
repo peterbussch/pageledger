@@ -267,7 +267,7 @@ def test_dry_run_reports_the_change_and_warns_of_a_likely_wrong_page(job, tmp_pa
 
     out = capsys.readouterr().out
     assert code == 0
-    assert "Status: checked" in out
+    assert out.startswith("Checked, and nothing recorded (dry run): 1 page: 1 corrected.\n")
     assert "Correction of page 1, from local_text:doc_0001_page_0001:" in out
     assert "Warning: the correction of page 1 changes more than half the words" in out
     assert _pages(job)[0]["review"] is None

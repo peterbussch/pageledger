@@ -11,7 +11,8 @@ command's options.
 
 `pageledger --version` prints the installed release. Invalid command-line
 syntax returns exit code 2. Runtime errors return 1; commands can also return 1
-for a failed result as shown below. Commands with `--json` emit runtime errors
+for a failed result as shown below, and a command interrupted with Ctrl-C
+returns 130. Commands with `--json` emit runtime errors
 as JSON on stdout and a diagnostic on stderr.
 
 For a complete text-only example, follow [First run](first-run.md).
@@ -19,7 +20,8 @@ For a complete text-only example, follow [First run](first-run.md).
 ## Command index
 
 Each command below accepts `-h`/`--help`. Required arguments and options are
-shown in the synopsis; optional path flags have no implicit path default. Terms
+shown in the synopsis; optional path flags have no implicit path default,
+except that `review` writes its view to `JOB_DIR-review` beside the job. Terms
 such as stage, route and disposition are defined in the
 [glossary](glossary.md).
 
