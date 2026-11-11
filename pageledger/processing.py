@@ -445,7 +445,8 @@ def _process(
     )
     if count is not None and (not selected or max(selected) > count):
         if selected and max(selected) > count:
-            raise ValueError(f"Page {count + 1} is past the end: the source has {count} pages.")
+            first = min(page for page in selected if page > count)
+            raise ValueError(f"Page {first} is past the end: the source has {count} pages.")
         raise ValueError("No pages were selected.")
     if container_error:
         selected = []

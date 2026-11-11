@@ -11,11 +11,11 @@ import math
 import re
 import shutil
 import subprocess
+import sys
 import tempfile
 import time
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
-from contextvars import ContextVar
 from dataclasses import dataclass, field
 from functools import lru_cache
 from pathlib import Path
@@ -505,33 +505,38 @@ def _tesseract_data_dir(tesseract: str) -> Path:
     return data_dir
 
 
+# What people type for a language, and the three-letter code Tesseract wants.
+_LANGUAGE_CODES = {
+    "english": "eng",
+    "en": "eng",
+    "russian": "rus",
+    "ru": "rus",
+    "french": "fra",
+    "fr": "fra",
+    "german": "deu",
+    "de": "deu",
+    "spanish": "spa",
+    "es": "spa",
+    "italian": "ita",
+    "it": "ita",
+    "dutch": "nld",
+    "nl": "nld",
+    "ukrainian": "ukr",
+    "uk": "ukr",
+    "polish": "pol",
+    "pl": "pol",
+}
+
+
 def _check_tesseract_langs(tesseract: str, lang: str) -> None:
     installed = _tesseract_installed_langs(tesseract)
     if installed is None:
         return
     missing = [part for part in lang.split("+") if part not in installed]
     if missing:
-        aliases = {
-            "english": "eng",
-            "eng": "eng",
-            "russian": "rus",
-            "ru": "rus",
-            "french": "fra",
-            "fr": "fra",
-            "german": "deu",
-            "de": "deu",
-            "spanish": "spa",
-            "es": "spa",
-            "italian": "ita",
-            "it": "ita",
-            "dutch": "nld",
-            "nl": "nld",
-            "ukrainian": "ukr",
-            "uk": "ukr",
-        }
         suggestions: list[str] = []
         for part in missing:
-            mapped = aliases.get(part.casefold())
+            mapped = _LANGUAGE_CODES.get(part.casefold())
             candidates = (
                 [mapped]
                 if mapped in installed
@@ -984,25 +989,39 @@ _PDF_READ_ERRORS = (
     RecursionError,
 )
 
-_PYPDF_REPAIRS: ContextVar[dict[str, int] | None] = ContextVar(
-    "pageledger_pypdf_repairs", default=None
-)
+_PYPDF_REPAIR_NOTICES = ("Ignoring wrong pointing object", "Xref table not zero-indexed")
 
 
 @contextmanager
 def capture_pypdf_repairs() -> Iterator[None]:
-    """Collect repair notices into one command-level stderr summary."""
-    repairs: dict[str, int] = {}
-    token = _PYPDF_REPAIRS.set(repairs)
+    """For one command, count pypdf's routine repair notices and print a single line.
+
+    pypdf logs one line for every object it repairs while reading a damaged PDF, which
+    buried a four-page job under 95 lines. Its other warnings still reach stderr. This is
+    logging configuration, so the command line applies it; library callers keep pypdf's own.
+    """
+    repaired = 0
+    other = logging.StreamHandler()
+
+    class _Notices(logging.Handler):
+        def emit(self, record: logging.LogRecord) -> None:
+            nonlocal repaired
+            if record.getMessage().startswith(_PYPDF_REPAIR_NOTICES):
+                repaired += 1
+            else:
+                other.emit(record)
+
+    logger = logging.getLogger("pypdf")
+    handler, propagate = _Notices(), logger.propagate
+    logger.addHandler(handler)
+    logger.propagate = False
     try:
         yield
     finally:
-        _PYPDF_REPAIRS.reset(token)
-        total = sum(repairs.values())
-        if total:
-            import sys
-
-            print(f"pypdf repaired {total} objects while reading PDF files.", file=sys.stderr)
+        logger.removeHandler(handler)
+        logger.propagate = propagate
+        if repaired:
+            print(f"pypdf repaired {repaired} objects while reading PDF files.", file=sys.stderr)
 
 
 @contextmanager
@@ -1026,60 +1045,27 @@ def _reading_pdf(source: Path) -> Iterator[Callable[..., Any]]:
                 "(Internet Archive lending copies are one example). Use an unencrypted copy.",
             ) from exc
 
-    pypdf_logger = logging.getLogger("pypdf")
-    previous_propagate = pypdf_logger.propagate
-    repairs = 0
-    fallback = logging.StreamHandler()
-
-    class _PypdfHandler(logging.Handler):
-        def emit(self, record: logging.LogRecord) -> None:
-            nonlocal repairs
-            if record.getMessage().startswith(
-                ("Ignoring wrong pointing object", "Xref table not zero-indexed")
-            ):
-                repairs += 1
-            else:
-                fallback.emit(record)
-
-    handler = _PypdfHandler()
-    pypdf_logger.addHandler(handler)
-    pypdf_logger.propagate = False
     try:
-        try:
-            yield open_pdf
-        except DependencyError as exc:
-            raise PageLedgerDiagnostic(
-                "missing_crypto_dependency",
-                f"{source.name} is AES-encrypted and pypdf needs the 'cryptography' package "
-                "to read it. Reinstall pageledger[pdf], which includes it.",
-            ) from exc
-        except FileNotDecryptedError as exc:
-            raise PageLedgerDiagnostic(
-                "unsupported_encryption",
-                f"{source.name} needs a password to open. PageLedger reads encrypted PDFs "
-                "only when they open without one; use an unprotected copy.",
-            ) from exc
-        except (PyPdfError, *_PDF_READ_ERRORS) as exc:
-            raise PageLedgerDiagnostic(
-                "malformed_pdf",
-                f"pypdf could not read {source.name} ({type(exc).__name__}); the file may "
-                "be damaged, truncated or not a PDF. PageLedger does not repair sources; "
-                "a PDF tool such as qpdf can often write a readable copy.",
-            ) from exc
-    finally:
-        pypdf_logger.removeHandler(handler)
-        pypdf_logger.propagate = previous_propagate
-        if repairs:
-            captured = _PYPDF_REPAIRS.get()
-            if captured is not None:
-                captured[source.name] = captured.get(source.name, 0) + repairs
-            else:
-                import sys
-
-                print(
-                    f"pypdf repaired {repairs} objects while reading {source.name}.",
-                    file=sys.stderr,
-                )
+        yield open_pdf
+    except DependencyError as exc:
+        raise PageLedgerDiagnostic(
+            "missing_crypto_dependency",
+            f"{source.name} is AES-encrypted and pypdf needs the 'cryptography' package "
+            "to read it. Reinstall pageledger[pdf], which includes it.",
+        ) from exc
+    except FileNotDecryptedError as exc:
+        raise PageLedgerDiagnostic(
+            "unsupported_encryption",
+            f"{source.name} needs a password to open. PageLedger reads encrypted PDFs "
+            "only when they open without one; use an unprotected copy.",
+        ) from exc
+    except (PyPdfError, *_PDF_READ_ERRORS) as exc:
+        raise PageLedgerDiagnostic(
+            "malformed_pdf",
+            f"pypdf could not read {source.name} ({type(exc).__name__}); the file may "
+            "be damaged, truncated or not a PDF. PageLedger does not repair sources; "
+            "a PDF tool such as qpdf can often write a readable copy.",
+        ) from exc
 
 
 def _pdf_page_count(source: Path) -> int:
