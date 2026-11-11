@@ -11,7 +11,8 @@ and, from 1.0, [stability](docs/stability.md).
   folder of them as one document, pages in natural order of file name (`page-2` before `page-10`). The folder
   is not searched below its top level; hidden files are skipped and reported; any other file or subfolder in
   it stops the command before anything runs. TIFF, JPEG 2000 and other formats are refused with
-  `unsupported_image` and the lossless conversion to make; a damaged image with `malformed_image`. See
+  `unsupported_image` and the lossless conversion to make, as is an image larger than 400,000,000 pixels; a
+  damaged image with `malformed_image`. See
   [a folder of page scans](docs/pdf-ocr-first-run.md#9-a-folder-of-page-scans).
 - Custody stays with the images. Every image is hashed, and the source's identity is the hash of a page
   manifest (each page's file name, SHA-256, size and pixel dimensions). The run manifest, checkpoint and

@@ -213,8 +213,12 @@ the commands.
   affected. An image that declares none is taken as 300 pixels per inch.
 - ICC colour profiles and PNG gamma are not carried into the carrier, so
   colours may render slightly differently from a colour-managed viewer. A PNG
-  with an alpha channel is decoded in Python, which is slow for very large
-  images.
+  with an alpha channel is decompressed in memory to split off its
+  transparency, so it costs memory in proportion to its pixels.
+- An image larger than 400,000,000 pixels, the largest render
+  `max_render_pixels` allows, is refused with `unsupported_image`: split it into
+  pages or scale it down first. A PNG with an alpha channel whose data is longer
+  or shorter than its declared size is refused with `malformed_image`.
 - `classify` refuses page images, which have no text layer to probe; run an
   OCR engine and classify that run with `--from-run`. `bundle`, and so
   `replay`, refuse runs of page images.

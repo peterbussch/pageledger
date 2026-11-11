@@ -33,6 +33,8 @@ KIND = "page_images"
 DEFAULT_PPI = 300
 # A declared density outside this range is treated as no declaration.
 _PPI_RANGE = (20.0, 4800.0)
+# The largest render run.adapter_options.max_render_pixels allows.
+MAX_IMAGE_PIXELS = 400_000_000
 
 _MEDIA_TYPES = {".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png"}
 _CONVERT = {
@@ -231,6 +233,13 @@ def _read_page(path: Path) -> ImagePage:
         )
     data = path.read_bytes()
     width, height, ppi, basis, rotation = (_jpeg if suffix != ".png" else _png)(data, path.name)
+    if width * height > MAX_IMAGE_PIXELS:
+        raise _diagnostic(
+            "unsupported_image",
+            f"'{path.name}' is {width} x {height} pixels, more than the {MAX_IMAGE_PIXELS:,} "
+            "PageLedger renders a page at. Split it into pages or scale it down first, for "
+            "example: magick page.png -resize 50% page-half.png",
+        )
     return ImagePage(
         name=path.name,
         path=path,
@@ -608,38 +617,15 @@ def _png_mask(chunks: dict[str, Any], name: str) -> list[int] | None:
     )
 
 
-def _unfilter(raw: bytes, height: int, row: int, step: int, name: str) -> bytes:
-    """Undo PNG's per-row filters; ``step`` is bytes per pixel, at least one."""
-    if len(raw) < height * (row + 1):
-        raise _malformed(name, "image data is shorter than its header says")
-    out = bytearray()
-    previous = bytearray(row)
-    for index in range(height):
-        start = index * (row + 1)
-        kind, line = raw[start], bytearray(raw[start + 1 : start + 1 + row])
-        if kind == 1:
-            for i in range(step, row):
-                line[i] = (line[i] + line[i - step]) & 0xFF
-        elif kind == 2:
-            for i in range(row):
-                line[i] = (line[i] + previous[i]) & 0xFF
-        elif kind == 3:
-            for i in range(row):
-                left = line[i - step] if i >= step else 0
-                line[i] = (line[i] + ((left + previous[i]) >> 1)) & 0xFF
-        elif kind == 4:
-            for i in range(row):
-                a = line[i - step] if i >= step else 0
-                b = previous[i]
-                c = previous[i - step] if i >= step else 0
-                p = a + b - c
-                pa, pb, pc = abs(p - a), abs(p - b), abs(p - c)
-                line[i] = (line[i] + (a if pa <= pb and pa <= pc else b if pb <= pc else c)) & 0xFF
-        elif kind:
-            raise _malformed(name, f"unknown row filter {kind}")
-        out += line
-        previous = line
-    return bytes(out)
+def _stored(data: bytes) -> bytes:
+    """``data`` as a zlib stream of uncompressed blocks: the same bytes from any zlib build."""
+    out = bytearray(b"\x78\x01")
+    starts = range(0, len(data), 0xFFFF)
+    for start in starts:
+        block = data[start : start + 0xFFFF]
+        out += bytes([start == starts[-1]]) + struct.pack("<HH", len(block), len(block) ^ 0xFFFF)
+        out += block
+    return bytes(out + struct.pack(">I", zlib.adler32(data)))
 
 
 def _number(value: float) -> bytes:
@@ -688,25 +674,49 @@ def _image_objects(page: ImagePage) -> list[tuple[dict[bytes, bytes], bytes]]:
         if mask:
             entries[b"/Mask"] = b"[" + b" ".join(str(v).encode() for v in mask) + b"]"
         return [(entries, chunks["data"])]
-    # PDF has no image with an alpha channel: split it into a soft mask. Both are
-    # stored unfiltered, so the carrier does not depend on a zlib build.
+    # PDF has no image with an alpha channel: split it into a soft mask. PNG's row
+    # filters predict each sample from the same channel of its neighbours, so both
+    # halves keep the filtered rows and Poppler undoes the filters. Both are stored
+    # uncompressed, so the carrier does not depend on a zlib build.
     sample = depth // 8
-    channels = _PNG_CHANNELS[color]
-    pixel = channels * sample
+    pixel = _PNG_CHANNELS[color] * sample
+    colour_bytes = pixel - sample
+    row = page.width * pixel
+    expected = page.height * (row + 1)
     try:
-        raw = zlib.decompress(chunks["data"])
+        raw = zlib.decompressobj().decompress(chunks["data"], expected + 1)
     except zlib.error as exc:
         raise _malformed(page.name, "compressed data is damaged") from exc
-    pixels = _unfilter(raw, page.height, page.width * pixel, pixel, page.name)
-    colour_bytes = (channels - 1) * sample
-    colour = bytearray(len(pixels) // pixel * colour_bytes)
-    alpha = bytearray(len(pixels) // pixel * sample)
-    for offset in range(colour_bytes):
-        colour[offset::colour_bytes] = pixels[offset::pixel]
-    for offset in range(sample):
-        alpha[offset::sample] = pixels[colour_bytes + offset :: pixel]
-    soft = {**size, b"/ColorSpace": b"/DeviceGray", b"/BitsPerComponent": str(depth).encode()}
-    return [(entries, bytes(colour)), (soft, bytes(alpha))]
+    if len(raw) != expected:
+        longer = "longer" if len(raw) > expected else "shorter"
+        raise _malformed(page.name, f"image data is {longer} than its header says")
+    if max(raw[:: row + 1]) > 4:
+        raise _malformed(page.name, "unknown row filter")
+    colour_row, alpha_row = page.width * colour_bytes, page.width * sample
+    colour = bytearray(page.height * (colour_row + 1))
+    alpha = bytearray(page.height * (alpha_row + 1))
+    for index in range(page.height):
+        start = index * (row + 1)
+        line = raw[start + 1 : start + 1 + row]
+        at, mask_at = index * (colour_row + 1) + 1, index * (alpha_row + 1) + 1
+        colour[at - 1] = alpha[mask_at - 1] = raw[start]
+        for offset in range(colour_bytes):
+            colour[at + offset : at + colour_row : colour_bytes] = line[offset::pixel]
+        for offset in range(sample):
+            alpha[mask_at + offset : mask_at + alpha_row : sample] = line[
+                colour_bytes + offset :: pixel
+            ]
+    parameters = b"<< /Predictor 15 /Colors %d /BitsPerComponent %d /Columns %d >>"
+    entries[b"/Filter"] = b"/FlateDecode"
+    entries[b"/DecodeParms"] = parameters % (_PNG_CHANNELS[color] - 1, depth, page.width)
+    soft = {
+        **size,
+        b"/ColorSpace": b"/DeviceGray",
+        b"/BitsPerComponent": str(depth).encode(),
+        b"/Filter": b"/FlateDecode",
+        b"/DecodeParms": parameters % (1, depth, page.width),
+    }
+    return [(entries, _stored(bytes(colour))), (soft, _stored(bytes(alpha)))]
 
 
 def _dictionary(entries: dict[bytes, bytes]) -> bytes:

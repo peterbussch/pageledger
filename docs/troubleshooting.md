@@ -95,8 +95,8 @@ replace the source only if you can establish it is a valid, authorized copy.
 
 PageLedger reads page images in JPEG and PNG. `unsupported_image` names a file
 it cannot carry faithfully, such as a TIFF, a JPEG 2000 master, an interlaced
-PNG or an image stored mirrored, and the message names a command that converts
-it without loss. Convert the folder, then run the converted files: they are
+PNG, an image stored mirrored or one larger than 400,000,000 pixels, and the
+message names a command that converts it. Convert the folder, then run the converted files: they are
 what PageLedger records. `malformed_image` names a damaged or truncated file;
 replace it with a good copy. Either stops the command before any page is read.
 

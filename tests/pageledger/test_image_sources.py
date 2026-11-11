@@ -17,7 +17,7 @@ import yaml
 from test_image_evidence import image_descriptor
 from test_vision_adapter import endpoint  # noqa: F401 (the fake vision endpoint fixture)
 
-from pageledger import runner
+from pageledger import image_source, runner
 from pageledger.adapters import (
     ExtractionResult,
     PageLedgerDiagnostic,
@@ -27,7 +27,6 @@ from pageledger.adapters import (
 from pageledger.image_source import (
     KIND,
     _png_chunks,
-    _unfilter,
     carrier,
     carrier_sha256,
     manifest_changes,
@@ -307,7 +306,7 @@ def test_the_carrier_holds_each_images_own_bytes(tmp_path):
     assert images[0]._data == (folder / "page-1.jpg").read_bytes()
     assert images[1]["/Filter"] == "/FlateDecode" and images[1]["/DecodeParms"]["/Predictor"] == 15
     assert images[1]._data == _png_chunks((folder / "page-2.png").read_bytes(), "x")["data"]
-    assert "/SMask" in images[2] and "/Filter" not in images[2]
+    assert "/SMask" in images[2] and images[2]["/DecodeParms"]["/Colors"] == 3
     assert images[3]._data == (folder / "page-4.jpg").read_bytes()
     assert reader.pages[3]["/Rotate"] == 90
 
@@ -328,7 +327,7 @@ def _decoded(path):
     chunks = _png_chunks(path.read_bytes(), path.name)
     step = {0: 1, 2: 3, 4: 2, 6: 4}[chunks["color"]]
     row = chunks["width"] * step
-    pixels = _unfilter(zlib.decompress(chunks["data"]), chunks["height"], row, step, path.name)
+    pixels = _unfilter(zlib.decompress(chunks["data"]), chunks["height"], row, step)
     middle = chunks["height"] // 2 * row
     return (
         chunks["width"],
@@ -376,6 +375,25 @@ def _filtered(pixels, row, step, kinds):
     return out
 
 
+def _unfilter(raw, height, row, step):
+    """Undo PNG's row filters, as a reader does."""
+    out, previous = bytearray(), bytearray(row)
+    for index in range(height):
+        start = index * (row + 1)
+        kind, line = raw[start], bytearray(raw[start + 1 : start + 1 + row])
+        for i in range(row):
+            a = line[i - step] if i >= step else 0
+            b, c = previous[i], previous[i - step] if i >= step else 0
+            line[i] = (line[i] + (0, a, b, (a + b) >> 1, _paeth(a, b, c))[kind]) & 0xFF
+        out += line
+        previous = line
+    return bytes(out)
+
+
+def _alpha_png(width, height, pixels, kinds=(1, 2, 3, 4, 0)):
+    return _png_rows(width, height, 6, 8, _filtered(pixels, width * 4, 4, list(kinds)))
+
+
 def test_png_row_filters_decode_to_the_pixels_they_encode(tmp_path):
     width, height, step = 16, 8, 4
     pixels = bytes(
@@ -384,16 +402,69 @@ def test_png_row_filters_decode_to_the_pixels_they_encode(tmp_path):
         for x in range(width)
         for c in range(step)
     )
-    data = _png_rows(width, height, 6, 8, _filtered(pixels, width * step, step, [1, 2, 3, 4, 0]))
+    data = _alpha_png(width, height, pixels)
     chunks = _png_chunks(data, "x")
-    assert _unfilter(zlib.decompress(chunks["data"]), height, width * step, step, "x") == pixels
+    assert _unfilter(zlib.decompress(chunks["data"]), height, width * step, step) == pixels
     (tmp_path / "page.png").write_bytes(data)
     out = tmp_path / "carrier.pdf"
     with out.open("wb") as handle:
         write_carrier(read_image_source(tmp_path / "page.png"), handle)
     image = _pdf(out).pages[0]["/Resources"]["/XObject"]["/Im0"].get_object()
-    assert image._data == bytes(b for i, b in enumerate(pixels) if i % 4 != 3)
-    assert image["/SMask"].get_object()._data == pixels[3::4]
+    mask = image["/SMask"].get_object()
+    assert image["/DecodeParms"]["/Colors"] == 3 and mask["/DecodeParms"]["/Colors"] == 1
+    # Each half keeps PNG's filtered rows; uncompressed, so no zlib build changes the bytes.
+    colour = _unfilter(zlib.decompress(image._data), height, width * 3, 3)
+    assert colour == bytes(b for i, b in enumerate(pixels) if i % 4 != 3)
+    assert _unfilter(zlib.decompress(mask._data), height, width, 1) == pixels[3::4]
+    assert zlib.decompress(image._data) in image._data
+
+
+@pytest.mark.parametrize(
+    ("raw", "what"),
+    [
+        # A 2 x 2 image whose data inflates to 5 MB: refused after 2 rows' worth.
+        (b"\x00" * 5_000_000, "longer"),
+        (b"\x00" * 9, "shorter"),
+        (b"\x05" + b"\x00" * 8 + b"\x00" * 9, "unknown row filter"),
+    ],
+    ids=["bomb", "short", "filter"],
+)
+def test_alpha_png_data_must_match_its_header(tmp_path, raw, what):
+    (tmp_path / "page.png").write_bytes(_png_rows(2, 2, 6, 8, [raw]))
+    source = read_image_source(tmp_path / "page.png")
+    with pytest.raises(PageLedgerDiagnostic, match=what) as error:
+        carrier_sha256(source)
+    assert error.value.code == "malformed_image"
+
+
+def test_an_image_larger_than_any_render_is_refused_from_its_header(tmp_path, monkeypatch):
+    monkeypatch.setattr(image_source, "MAX_IMAGE_PIXELS", 511)
+    (tmp_path / "page.png").write_bytes(png(width=32, height=16))
+    with pytest.raises(PageLedgerDiagnostic, match="32 x 16 pixels.*-resize") as error:
+        read_image_source(tmp_path / "page.png")
+    assert error.value.code == "unsupported_image"
+    monkeypatch.setattr(image_source, "MAX_IMAGE_PIXELS", 512)
+    assert read_image_source(tmp_path / "page.png").pages[0].width == 32
+
+
+@pytest.mark.skipif(shutil.which("pdftoppm") is None, reason="needs Poppler's pdftoppm")
+def test_poppler_renders_each_colour_of_an_alpha_png_in_place(tmp_path):
+    # Bands of red, green, blue and clear, every row filter in turn: samples taken
+    # in the wrong order would mix the channels.
+    bands = [b"\xc8\x1e\x1e\xff", b"\x1e\xc8\x1e\xff", b"\x1e\x1e\xc8\xff", b"\x00\x00\x00\x00"]
+    width, height = 48, 16
+    pixels = b"".join(bands[x // 12] for _ in range(height) for x in range(width))
+    (tmp_path / "page.png").write_bytes(_alpha_png(width, height, pixels))
+    with carrier(read_image_source(tmp_path / "page.png"), [1]) as (path, _):
+        rendered = _render(path, 1, tmp_path / "r")
+    chunks = _png_chunks(rendered.read_bytes(), "r")
+    assert (chunks["width"], chunks["height"]) == (width, height)
+    out = _unfilter(zlib.decompress(chunks["data"]), height, width * 3, 3)
+    middle = height // 2 * width * 3
+    expected = [(200, 30, 30), (30, 200, 30), (30, 30, 200), (255, 255, 255)]
+    for band, colour in enumerate(expected):
+        at = middle + (band * 12 + 6) * 3
+        assert all(abs(a - b) <= 8 for a, b in zip(out[at : at + 3], colour, strict=True)), band
 
 
 def _shapes(folder):
@@ -478,7 +549,7 @@ def test_poppler_renders_the_carrier_with_the_images_pixels(scans, tmp_path):
     chunks = _png_chunks(rendered.read_bytes(), "r")
     assert (chunks["width"], chunks["height"]) == (16, 32)
     # Orientation 6 turns the stored image a quarter clockwise: its red left half is now on top.
-    pixels = _unfilter(zlib.decompress(chunks["data"]), 32, 16 * 3, 3, "r")
+    pixels = _unfilter(zlib.decompress(chunks["data"]), 32, 16 * 3, 3)
     top, bottom = pixels[4 * 48 + 24 : 4 * 48 + 27], pixels[28 * 48 + 24 : 28 * 48 + 27]
     assert top[0] > 150 and top[1] < 80 and tuple(bottom) == (255, 255, 255)
 

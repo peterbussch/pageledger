@@ -168,8 +168,9 @@ numbers and letters without regard to case.
 
 The carrier is a PDF PageLedger writes for the run and deletes afterwards. Each
 page it reads holds that page's image: a JPEG's bytes unchanged, a PNG's
-compressed data unchanged (an image with an alpha channel is decoded and split
-into an image and a soft mask, both uncompressed), with the page size the
+compressed data unchanged (an image with an alpha channel is decompressed and
+split into an image and a soft mask, each keeping PNG's row filters and stored
+in uncompressed deflate blocks, so no zlib build changes the bytes), with the page size the
 image's density gives (JFIF, then EXIF, for a JPEG; `pHYs` for a PNG; 300 pixels
 per inch when none is declared or the declared density is below 20 or above
 4,800) and EXIF rotation as the page's rotation. Pages the run does not read
