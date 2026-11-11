@@ -15,7 +15,7 @@ Try recovery with the built-in text adapter:
 printf 'A first source page.\fA second source page.\n' > sample.txt
 pageledger run sample.txt --adapter text --resumable --out runs/recoverable
 pageledger resume runs/recoverable
-pageledger verify-run runs/recoverable
+pageledger verify runs/recoverable
 ```
 
 This small run will usually finish before you can interrupt it. Resuming a
@@ -30,7 +30,7 @@ request with the adapter or provider before starting any new work; resume does
 not automatically retry an uncertain call.
 
 For document jobs, use `pageledger resume jobs/book` followed by
-`pageledger inspect-job jobs/book` and `pageledger verify-job jobs/book`. See
+`pageledger inspect jobs/book` and `pageledger verify jobs/book`. See
 [document processing](processing-spec.md) for job-level status and review.
 
 ## Files and records
@@ -75,7 +75,7 @@ Once the final manifest exists, the ordinary run artifacts are the record of
 the run.
 Resume rechecks original source bytes and verifies a finalized successful run
 without replaying its historical checkpoint or loading an adapter. Valid later
-`align` changes are preserved. Failed finalized runs are refused. `verify-run` does not
+`align` changes are preserved. Failed finalized runs are refused. `verify` does not
 certify the retained historical recovery records of a finalized run; an
 interrupted run with valid recovery records is still reported as incomplete.
 
@@ -147,8 +147,8 @@ used only when its images hash to it again.
 | Command | With a moved source and a matching index entry |
 | --- | --- |
 | `resume RUN_DIR` | Verifies and reads the indexed file. `checkpoint.json`, provenance and the final manifest keep the recorded path. |
-| `resume JOB_DIR`, `verify-job` | Same for document jobs: `job.json` keeps the recorded path. A stage first started after the move records the path it read; the job binds stages to its source by SHA-256. `verify-job` reports `source_relocated`, or `source_missing` when neither path holds the bytes. |
-| `verify-run` | Reports warning `source_relocated`, with the recorded `source` and the `located` file, instead of `source_missing`. |
+| `resume JOB_DIR`, `verify JOB_DIR` | Same for document jobs: `job.json` keeps the recorded path. A stage first started after the move records the path it read; the job binds stages to its source by SHA-256. `verify` reports `source_relocated`, or `source_missing` when neither path holds the bytes. |
+| `verify RUN_DIR` | Reports warning `source_relocated`, with the recorded `source` and the `located` file, instead of `source_missing`. |
 | `rerun`, `bundle` | Use the indexed file when the recorded path is missing. A rerun records the path it read; a bundle copies the bytes as usual. |
 
 Reports, exports and review sheets still name the recorded path.

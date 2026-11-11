@@ -45,12 +45,12 @@ review warning.
 
 ```bash pageledger-tutorial
 printf 'first page\fsecond page with a replacement character �\n' > sample.txt
-pageledger init-config --out pageledger.yml
+pageledger init --run --out pageledger.yml
 pageledger run sample.txt --config pageledger.yml --out runs/first
-pageledger inspect-run runs/first
+pageledger inspect runs/first
 sed -n '1,20p' runs/first/raw/doc_0001_page_0002.txt
 sed -n '1,80p' runs/first/audit.md
-pageledger verify-run runs/first
+pageledger verify runs/first
 ```
 
 `runs/first/` contains the extracted text, per-page provenance, quality signals,
@@ -62,7 +62,7 @@ Rerun the flagged pages into a new directory and compare the results:
 
 ```bash pageledger-tutorial
 pageledger rerun runs/first --config pageledger.yml --out runs/second
-pageledger compare-runs runs/first runs/second
+pageledger compare runs/first runs/second
 ```
 
 This example uses the same adapter, so its output stays the same. Supply a
@@ -114,20 +114,21 @@ run next. `jobs/book/report.md` lists those pages first, with the text the job
 selected, whether engines agree and any review so far:
 
 ```bash
-pageledger inspect-job jobs/book
-pageledger verify-job jobs/book
+pageledger inspect jobs/book
+pageledger verify jobs/book
 ```
 
-Review those pages in a spreadsheet with `pageledger review-sheet`, record the
-decisions with `review-job`, and write the text out as plain text, Markdown,
-JSONL or TEI with `pageledger export`.
+Review those pages beside their images with `pageledger review jobs/book --out
+book-review` (or in a spreadsheet with `--sheet`), record the decisions with
+`review --apply`, and write the text out as plain text, Markdown, JSONL or TEI
+with `pageledger export`.
 
 To change what a job does, write its configuration to a file, edit it, and
 pass it with `--config`. A job started without `--config` records exactly the
 configuration this file holds, so the two are verified and resumed alike:
 
 ```bash
-pageledger init-config --processing --out processing.yml
+pageledger init --out processing.yml
 pageledger process book.pdf --config processing.yml --pages "1-10" --out jobs/book-sample
 ```
 

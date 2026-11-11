@@ -47,21 +47,21 @@ PY
 ## Process, inspect, and verify a completed job
 
 One command starts the job. Without a config file, `process` uses the
-configuration `init-config --processing` writes for the same options. A
+configuration `init` writes for the same options. A
 plain-text file has no page images, so for a `.txt` source that configuration
 has no OCR stage; for a PDF it would add Tesseract OCR for the pages whose own
 text is missing or looks wrong. The first lines on screen name the
 configuration and the command that writes it out.
 
 `process` writes the job and its child run to disk, then says how many pages
-need a person and what to run next. `inspect-job` reads the document report,
-while `verify-job` checks the source fingerprint (a SHA-256 hash of the file),
+need a person and what to run next. `inspect` reads the document report,
+while `verify` checks the source fingerprint (a SHA-256 hash of the file),
 saved attempts, selected output, and report consistency.
 
 ```bash pageledger-tutorial
 pageledger process sample-document.txt --out jobs/complete
-pageledger inspect-job jobs/complete
-pageledger verify-job jobs/complete
+pageledger inspect jobs/complete
+pageledger verify jobs/complete
 ```
 
 The report shows unknown cost because the local adapter supplies no charge.
@@ -76,12 +76,12 @@ what each setting does and which stages need an OCR engine. The recovery step
 below uses it.
 
 ```bash pageledger-tutorial
-pageledger init-config --processing --engine none --out document-job.yml
+pageledger init --engine none --out document-job.yml
 grep -v '^ *#' document-job.yml
 ```
 
 A job started with this file records the same configuration as the job above,
-so `verify-job`, `resume` and `review-job` treat the two alike.
+so `verify`, `resume` and `review --apply` treat the two alike.
 
 ## Optional: interrupt after saving a response, then resume
 
@@ -95,8 +95,8 @@ CALLS_PATH="$PWD/calls-interrupted.jsonl"
 "$PYTHON" "${PAGELEDGER_TUTORIAL_RECOVERY_HELPER:-run_document_recovery.py}" \
   --source sample-document.txt --config document-job.yml \
   --out jobs/interrupted --calls "$CALLS_PATH"
-pageledger inspect-job jobs/interrupted
-pageledger verify-job jobs/interrupted
+pageledger inspect jobs/interrupted
+pageledger verify jobs/interrupted
 "$PYTHON" - <<'PY'
 import json
 from pathlib import Path
@@ -152,14 +152,14 @@ valid = {
 }
 Path("valid-review.json").write_text(json.dumps(valid), encoding="utf-8")
 PY
-if pageledger review-job jobs/complete --review stale-review.json; then
+if pageledger review jobs/complete --apply stale-review.json; then
   echo "stale receipt unexpectedly accepted" >&2
   exit 1
 fi
 echo DOCUMENT_JOURNEY_STALE_RECEIPT_REJECTED
-pageledger review-job jobs/complete --review valid-review.json
-pageledger inspect-job jobs/complete
-pageledger verify-job jobs/complete
+pageledger review jobs/complete --apply valid-review.json
+pageledger inspect jobs/complete
+pageledger verify jobs/complete
 echo DOCUMENT_JOURNEY_REVIEW_OK
 ```
 
@@ -171,16 +171,16 @@ evidence are separate facts.
 
 Checking a transcript means reading it against the page it came from, line by
 line; with the image beside the text, a dropped line or a supplied word shows
-at once. `review-html` writes a folder you open in a browser, with each page's
+at once. `review --out` writes a folder you open in a browser, with each page's
 image next to its selected text and the other readings compared word by word:
 
 ```bash
-pageledger review-html jobs/complete --out review --images none
+pageledger review jobs/complete --out review --images none
 ```
 
 This synthetic source is a text file, so it has no page images; a PDF's pages
 are rendered with Poppler unless you pass `--images none`. Choose a decision
 under a page, download `review.csv` into the `review` folder in place of the
-blank one, and apply it with `pageledger review-job jobs/complete --review
+blank one, and apply it with `pageledger review jobs/complete --apply
 review/review.csv --reviewer "Your Name"`. Nothing is recorded until you do.
 See [review beside the page image](processing-spec.md#review-beside-the-page-image).

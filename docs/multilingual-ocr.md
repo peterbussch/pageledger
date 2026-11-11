@@ -147,7 +147,7 @@ original evidence:
 ```bash
 pageledger run 1850-review.pdf --config normalized.yml \
     --out runs/review-normalized --pages "1-8,81-88" --adapter-path examples
-pageledger compare-runs runs/review-sample runs/review-normalized
+pageledger compare runs/review-sample runs/review-normalized
 ```
 
 Character rules cannot resolve the n:m cases (міръ "world" and миръ

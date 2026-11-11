@@ -108,7 +108,7 @@ confidence interval, absolute time saved, and end-to-end share.
 All original correctness gates remain binding: preserve the frozen baseline and
 protected inputs; validate schemas, canonical artifact bytes, hashes,
 provenance, ordering, failure behavior, and sole-final-manifest semantics; and
-require both the independent oracle and production `verify-run` checks to pass.
+require both the independent oracle and production `verify` checks to pass.
 No speed result can compensate for a correctness disagreement.
 
 The historical thresholds above describe the first campaign. Any change needs

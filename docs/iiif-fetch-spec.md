@@ -1,6 +1,6 @@
 # IIIF fetch record
 
-`pageledger fetch-iiif` writes `iiif-fetch.json` at the top of a snapshot
+`pageledger fetch` writes `iiif-fetch.json` at the top of a snapshot
 folder. It binds each fetched page image to its hash and to the URLs it came
 from. See the [how-to](iiif.md) and the
 [fetch record schema](../schemas/iiif-fetch.schema.json).

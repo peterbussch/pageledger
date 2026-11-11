@@ -17,7 +17,7 @@ flowchart TD
     Evidence --> Checkpoint[Saved responses for resume]
     Evidence --> Report[Document report and selected transcript]
     Review --> Rerun[New run: rerun]
-    Report --> Human[Human decisions: review-job]
+    Report --> Human[Human decisions: review --apply]
     Evidence --> Bundle[Verified run bundle and replay]
 ```
 
@@ -167,7 +167,7 @@ first-crossing alerts, retry with optional
 exponential backoff, per-page provenance with measured extraction time,
 quality signals, audit/review queues, rerun execution (`pageledger rerun`
 consumes the rerun manifest, enforcing `max_rerun_depth`), and cross-run
-comparison (`pageledger compare-runs`). Cost reports group extracted-page
+comparison (`pageledger compare`). Cost reports group extracted-page
 usage and resolved dollars by adapter and routed page type.
 
 `run.grading.review_below_grade: C` queues pages graded strictly below the
@@ -208,11 +208,11 @@ A completed original run (not a rerun) can be verified, bundled with its source
 bytes, and replayed using a locally available compatible adapter:
 
 ```bash
-pageledger verify-run runs/run-001
+pageledger verify runs/run-001
 pageledger bundle runs/run-001 --out bundles/run-001
 # the bundle contains a source copy and can be relocated independently
 pageledger replay bundles/run-001 --out runs/replayed
-pageledger verify-run runs/replayed
+pageledger verify runs/replayed
 ```
 
 `bundle` validates the baseline, copies source bytes, preserves the unchanged

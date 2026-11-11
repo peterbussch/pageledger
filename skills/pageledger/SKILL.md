@@ -21,9 +21,10 @@ page lists supported workflows and limits; the
 | Task | Command |
 |---|---|
 | Process a document with staged attempts | `pageledger process book.pdf --out jobs/book` (Tesseract, English; `--lang`, `--engine`) or `--config processing.yml` |
-| Write a document-job config to edit | `pageledger init-config --processing --out processing.yml` |
-| Read or verify a document report | `pageledger inspect-job jobs/book`; `pageledger verify-job jobs/book` |
-| Record human review | `pageledger review-job jobs/book --review reviewed-pages.json` |
+| Write a document-job config to edit | `pageledger init --out processing.yml` |
+| Read or verify a document report | `pageledger inspect jobs/book`; `pageledger verify jobs/book` |
+| Show held pages beside their images | `pageledger review jobs/book --out review/` (or `--sheet review.csv` for a spreadsheet) |
+| Record human review | `pageledger review jobs/book --apply reviewed-pages.json` |
 | Settle a model's contested words | `pageledger adjudicate jobs/book --packets DIR`, answer each packet against its page image, then `pageledger adjudicate jobs/book --decisions DIR --reviewer agent:NAME` |
 | Start a resumable run | `pageledger run scan.pdf --adapter pdf_ocr --resumable --out runs/a` |
 | Recover pending work in place | `pageledger resume runs/a` or `pageledger resume jobs/book` |
@@ -40,16 +41,16 @@ page lists supported workflows and limits; the
 | Re-extract flagged pages | `pageledger rerun runs/a --config stronger.yml --out runs/b` |
 | Re-align/regrade without re-extracting | `pageledger align runs/a --schema table-v2.yml` |
 | Preview re-alignment | add `--dry-run` (no run artifacts change) |
-| Diff two runs | `pageledger compare-runs runs/a runs/b` (ranks only comparable source and extractor evidence) |
-| Verify ledger coherence | `pageledger verify-run runs/a` |
+| Diff two runs | `pageledger compare runs/a runs/b` (ranks only comparable source and extractor evidence) |
+| Verify ledger coherence | `pageledger verify runs/a` |
 | Create a portable verified bundle | `pageledger bundle runs/a --out bundles/a --json` |
 | Replay a relocated bundle | `pageledger replay bundles/a --out runs/replayed --json` |
-| Summarize a run | `pageledger inspect-run runs/a` (`--csv` for per-page rows, `--json` for scripts) |
-| Write a starter config | `pageledger init-config --adapter pdf_ocr --out pageledger.yml` |
+| Summarize a run | `pageledger inspect runs/a` (`--csv` for per-page rows, `--json` for scripts) |
+| Write a starter config | `pageledger init --run --adapter pdf_ocr --out pageledger.yml` |
 | Check environment | `pageledger doctor --json` (includes installed OCR languages) |
 
 `run --out` and `rerun --out` must name a new directory; `classify --out` and
-`init-config --out` name files. `--config` and the `run --adapter` shortcut are
+`init --run --out` name files. `--config` and the `run --adapter` shortcut are
 mutually exclusive; no config file is ever read implicitly. `pdf_ocr` needs poppler
 and Tesseract installed and refuses to run if `adapter_options.lang` names
 a missing language pack.
@@ -76,7 +77,7 @@ zero-byte evidence, and editable-install hooks.
    map unchanged to `run --routes`. Classification is explicit; `run` does
    not invoke it automatically.
 2. Run cheap extraction first (`pdf_text` or `pdf_ocr`).
-3. Read the run: `inspect-run` (grade distribution, records
+3. Read the run: `inspect` (grade distribution, records
    normalized), then `quality.jsonl` warnings and grades (`empty_text`,
    `low_confidence`, `historical_orthography`, `instruction_echo`,
    `output_inflation`, and others; grades A–F with
@@ -91,18 +92,18 @@ zero-byte evidence, and editable-install hooks.
 5. `rerun` re-extracts exactly the flagged pages. Either supply a stronger
    plain `run.adapter` config or define `run.adapter_order`; chain entry N is
    used by rerun generation N. Exhausted chains leave pages in review.
-   `compare-runs` ranks improvement only when source and effective extractor
+   `compare` ranks improvement only when source and effective extractor
    identities match. Grade comparisons also require matching PageLedger
    versions, grading policies, grade bases, and schema identities.
-6. Run `verify-run` before publishing or archiving a ledger. It checks
+6. Run `verify` before publishing or archiving a ledger. It checks
    cross-artifact coherence, not OCR correctness.
 7. For transport, run `bundle` on a verified original run (not a rerun or dry run),
-   then run `replay` and `verify-run` on the new run. The bundle includes its
+   then run `replay` and `verify` on the new run. The bundle includes its
    source copy; moving or deleting the original is unnecessary.
    Treat `exact`, `evidence_compared`, and `deterministic_mismatch` as comparison
    outcomes, not accuracy claims.
 8. The project chooses which parent and rerun outputs belong in its corpus.
-   Present the compare-runs results rather than deciding silently.
+   Present the `compare` results rather than deciding silently.
 
 ## Document jobs and recovery
 
@@ -149,7 +150,7 @@ Jobs, image-evidence runs and runs of page images cannot be bundled in this vers
 ## Configuration essentials
 
 One `pageledger.yml` with optional `classify`, plus `taxonomy`, `schema`, and `run` sections
-(`init-config` writes it). The knobs that matter in practice live under
+(`init --run` writes it). The knobs that matter in practice live under
 `run`: either `adapter`/`adapter_options` or generation-indexed
 `adapter_order`; `budget` (`max_pages`, `max_tokens`, `max_usd` caps plus
 capless `warn_pages`, `warn_tokens`, `warn_usd` alerts), `retry`, `pricing`,

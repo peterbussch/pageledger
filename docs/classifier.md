@@ -31,7 +31,7 @@ pageledger run scans/volume.pdf \
   --routes route-map.yml \
   --out runs/volume
 
-pageledger verify-run runs/volume
+pageledger verify runs/volume
 ```
 
 The first command writes `route-map.yml` and
@@ -133,7 +133,7 @@ run:
 
 `review: true` extracts pages of that type and still holds them for a person:
 the route page records `review: true`, and after extraction the page joins the
-review queue with reason `route_review:<type>`. `init-config` uses it for
+review queue with reason `route_review:<type>`. `init --run` uses it for
 `sparse`, `table_likely` and `unknown`, the types whose text most often needs
 checking against the image. Use `default_action: review` instead to queue a
 type without extracting it. `classify` only proposes types; the taxonomy

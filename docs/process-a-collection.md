@@ -20,7 +20,7 @@ layouts and languages. Start with a short range of pages from one file. The
 ```bash
 pageledger process scans/volume.pdf --config processing.yml \
   --pages "1-5,41-45" --out jobs/volume-sample
-pageledger verify-job jobs/volume-sample
+pageledger verify jobs/volume-sample
 ```
 
 Inspect the report, transcript, attempts and retained page evidence. A sample
@@ -37,7 +37,7 @@ artifacts; `process` has no dry-run mode:
 ```bash
 pageledger run scans/volume.pdf --adapter pdf_ocr \
   --out runs/volume-plan --dry-run
-pageledger verify-run runs/volume-plan
+pageledger verify runs/volume-plan
 ```
 
 A dry run writes the route and planning artifacts, but does not call extraction
@@ -46,7 +46,7 @@ Use [Plan time and cost](plan-time-and-cost.md) to estimate from your sample.
 The dry-run directory is a run-planning record, not a document job to resume;
 choose a new output path for the actual process job. `run --adapter pdf_ocr`
 uses the built-in PDF OCR adapter without a YAML config. For the actual job,
-`pageledger init-config --processing --out processing.yml` writes a processing
+`pageledger init --out processing.yml` writes a processing
 config to edit, the same as [`docs/examples/processing.yml`](examples/processing.yml).
 
 ## 3. Set limits from the sample
@@ -74,9 +74,9 @@ Use the tested configuration and a distinct output directory for every source:
 
 ```bash
 pageledger process scans/volume.pdf --config processing.yml --out jobs/volume
-pageledger verify-job jobs/volume
+pageledger verify jobs/volume
 pageledger process scans/letter.pdf --config processing.yml --out jobs/letter
-pageledger verify-job jobs/letter
+pageledger verify jobs/letter
 ```
 
 Do not overwrite an existing output directory. Check `report.md` and
@@ -93,18 +93,18 @@ attempts, and disagreements between engines. Compare selected text with the
 source image or PDF page. Record review decisions with a spreadsheet:
 
 ```bash
-pageledger review-sheet jobs/volume --out reviews/volume.csv
+pageledger review jobs/volume --sheet reviews/volume.csv
 ```
 
 Open the CSV, fill the `decision` and `note` columns, and save it as CSV. Check
 it before recording decisions, then import it:
 
 ```bash
-pageledger review-job jobs/volume --review reviews/volume.csv \
+pageledger review jobs/volume --apply reviews/volume.csv \
   --reviewer "A. Reader" --dry-run
-pageledger review-job jobs/volume --review reviews/volume.csv \
+pageledger review jobs/volume --apply reviews/volume.csv \
   --reviewer "A. Reader"
-pageledger verify-job jobs/volume
+pageledger verify jobs/volume
 ```
 
 The dry run validates the sheet without recording decisions. Review receipts
@@ -119,7 +119,7 @@ Export the reviewed text, then verify the source job again:
 ```bash
 pageledger export jobs/volume --format txt --out exports/volume.txt --reviewed-only
 pageledger export jobs/volume --format tei --out exports/volume.xml --reviewed-only
-pageledger verify-job jobs/volume
+pageledger verify jobs/volume
 ```
 
 Create the `reviews/` and `exports/` parent directories before these commands;

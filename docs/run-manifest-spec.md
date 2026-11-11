@@ -109,12 +109,12 @@ Current writers emit `pages_total`, `pages_extracted`, `pages_skipped`,
 `pages_routed_review`, `pages_quarantined`, `records_normalized` (rows written
 to `normalized/` by the schema aligner), `estimated_cost_usd`, and
 `quality_warning_pages`. `pages_routed_review` remains optional in the schema
-so older schema-0.1 manifests can still be read; `verify-run` warns when the
+so older schema-0.1 manifests can still be read; `verify` warns when the
 field is absent.
 
 Current writers also emit top-level `pageledger_version`. It remains optional
 in the schema only so older schema-0.1 manifests remain readable;
-`verify-run` warns when that generator identity is absent.
+`verify` warns when that generator identity is absent.
 
 Current writers emit `run_depth` on every manifest. For older original runs
 without it, generation 0 can be inferred from `parent_run_id: null`. An older
@@ -302,7 +302,7 @@ Artifacts are written in this order, which matters for interrupted-run recovery:
 If the process is killed during artifact writing, artifacts written earlier
 may survive while later ones do not. The presence of `manifest.json` is the
 canonical signal that PageLedger finished writing every artifact it points to;
-`pageledger verify-run` diagnoses an interrupted or manually altered directory.
+`pageledger verify` diagnoses an interrupted or manually altered directory.
 
 ### Failure scenarios
 

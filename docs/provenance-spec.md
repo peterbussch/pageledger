@@ -127,7 +127,7 @@ born-digital page with a figure, gets no `native_pixels`; nothing is claimed.
   configured unit rates. Missing token usage never becomes a known zero cost.
 - `result.raw_sha256` is optional for compatibility with older schema-0.1
   ledgers whose manifest also predates `pageledger_version`. Current writers
-  always emit it. `verify-run` fails if raw bytes differ or if any digest is
+  always emit it. `verify` fails if raw bytes differ or if any digest is
   absent. Older evidence remains parseable and receives an incomplete-evidence
   warning, but it cannot receive an integrity PASS without a raw digest. This
   detects accidental or local modification; it does not establish

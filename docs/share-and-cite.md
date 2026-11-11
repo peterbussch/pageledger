@@ -17,8 +17,7 @@ For a document job, record `job_id`, source SHA-256, and the SHA-256 of
 `job.json`. Cite the PageLedger version and the relevant page number and
 attempt ID. A job transcript has its own file hash and identifies the job and
 selected page outputs. Cite the transcript hash as well as the job ID when
-quoting it. Verify before sharing with `pageledger verify-run RUN_DIR` or
-`pageledger verify-job JOB_DIR`.
+quoting it. Verify before sharing with `pageledger verify DIR`, for a run or a job.
 
 For an exported text file, cite its hash, job ID, source SHA-256, page number,
 attempt ID, and output SHA-256. The export includes page-level review state and
@@ -37,7 +36,7 @@ Use only identifiers that exist in the artifact. Omit fields that do not apply.
 
 Deposit the source or a stable, permissioned source reference; its checksum;
 the configuration snapshot; and the complete run or job directory. Deposit a
-run directory whole: `verify-run` checks every artifact its manifest declares,
+run directory whole: `verify` checks every artifact its manifest declares,
 including `config-snapshot.yml`, `route-map.yml`, `raw/`, `normalized/`,
 `audit.json`, `audit.md`, `provenance.jsonl`, `quality.jsonl`, `cost.json`,
 `run.log` and `rerun-manifest.yml`, and fails when one is missing (an empty
@@ -71,26 +70,26 @@ A job directory verifies wherever it is. Its `job.json` records the directory
 it was written in as a fact, like the source's path; verification checks the
 files themselves.
 
-1. Verify the job where you wrote it: `pageledger verify-job jobs/book --json > verify-job.json`.
+1. Verify the job where you wrote it: `pageledger verify jobs/book --json > verification.json`.
 2. Copy or archive the whole directory, hidden `.job/` and `attempts/*/.checkpoint/`
    included (for example `tar -czf book-job.tar.gz -C jobs book`). Empty
    directories may be left out; Git and some archive tools drop them.
 3. Record `shasum -a 256 jobs/book/job.json` and the archive's hash with the deposit,
-   alongside `verify-job.json` and the PageLedger version.
+   alongside `verification.json` and the PageLedger version.
 
-A reader who unpacks the deposit anywhere runs `pageledger verify-job book`.
+A reader who unpacks the deposit anywhere runs `pageledger verify book`.
 It passes with warning `job_relocated`, naming the directory the job was
 written in and the one it is in now, and with `source_missing` when the reader
 does not have the source. A reader who has the source can list it in a
 [source index](checkpoint-spec.md#moved-source-files); verification then
 checks its bytes and reports `source_relocated`. A file at the recorded source
-path with other bytes fails verification. `inspect-job`, `export` and
-`review-sheet` work on the copy as they do on the original.
+path with other bytes fails verification. `inspect`, `export` and
+`review --sheet` work on the copy as they do on the original.
 
-A colleague can review the copy with `review-job`, or settle contested spans
+A colleague can review the copy with `review --apply`, or settle contested spans
 with `adjudicate --decisions`, when the source is reachable. The job records
 each change made away from its original directory under `relocations` in
-`job.json`, and the report says so; `verify-job` reports it as
+`job.json`, and the report says so; `verify` reports it as
 `job_changed_elsewhere`. Such a review changes `job.json`, so cite the new hash.
 `resume` works only in the directory the job was written in, so that two
 copies cannot both pay for the same pages: move the job back there to resume it.

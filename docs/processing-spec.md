@@ -15,7 +15,7 @@ simplest job needs no config file:
 pageledger process book.pdf --out jobs/book
 ```
 
-It runs with the configuration `pageledger init-config --processing` writes:
+It runs with the configuration `pageledger init` writes:
 local text, then Tesseract OCR in English, and no image stage. `--lang`,
 `--engine` and `--model-dir` choose the OCR engine and its language the same
 way for both commands (see [the CLI reference](cli.md#process)); a `.txt`
@@ -23,7 +23,7 @@ source gets no OCR stage. The job records that configuration exactly as it
 would record the file, and nothing is read from the working directory.
 
 To change it, write the configuration out with
-`pageledger init-config --processing --out processing.yml` and pass
+`pageledger init --out processing.yml` and pass
 `--config processing.yml`. The file, the repository's
 [processing example](examples/processing.yml), reads without its comments:
 
@@ -47,8 +47,8 @@ Sample the first ten source pages of a PDF:
 
 ```bash
 pageledger process book.pdf --config processing.yml --pages "1-10" --out jobs/book
-pageledger inspect-job jobs/book
-pageledger verify-job jobs/book
+pageledger inspect jobs/book
+pageledger verify jobs/book
 ```
 
 Use an existing PDF with at least ten pages, adjust `--pages`, or omit the flag
@@ -58,7 +58,7 @@ source links, attempts, and unresolved review work. A completed job means its
 configured processing finished; human review may still be needed.
 
 For text files, set `processing.local_ocr` to `null`, as
-`init-config --processing --engine none` does. Form-feed characters separate
+`init --engine none` does. Form-feed characters separate
 pages.
 
 The source can also be an image file or a folder of page images, read as one
@@ -83,20 +83,20 @@ Keep the source, job directory, and adapter environment in place:
 
 ```bash
 pageledger resume jobs/book
-pageledger inspect-job jobs/book
-pageledger verify-job jobs/book
+pageledger inspect jobs/book
+pageledger verify jobs/book
 ```
 
 If the source has moved, add its new path to a
 [source index](checkpoint-spec.md#moved-source-files) rather than editing
-`job.json`; resume and `verify-job` then find it by SHA-256.
+`job.json`; resume and `verify` then find it by SHA-256.
 
 A job resumes only in the directory it was written in, the `root` that
 `job.json` records. Its stage runs are bound to that directory, and an image
 stage writes its evidence there, so `resume` on a moved or copied job stops
 and names the directory to move it back to; nothing is extracted. This also
 keeps two copies of one job from both paying for the same pages.
-`verify-job`, `inspect-job`, `export`, `review-sheet`, `review-job` and
+`verify`, `inspect`, `export`, `review` and
 `adjudicate` work wherever the job is (see [moved jobs](#moved-and-copied-jobs)).
 
 Job recovery checks retained attempts before scheduling pending work. Saved
@@ -108,7 +108,7 @@ its recovery records.
 
 `--adapter-path DIR` on `process` or `resume` loads custom adapters. Use
 `process --review FILE` to supply source-bound human decisions before extraction,
-or `review-job` to record them afterward. All job commands accept `--json`.
+or `review --apply` to record them afterward. All job commands accept `--json`.
 
 ## Policy and configuration
 
@@ -325,7 +325,7 @@ Each trigger that fired is recorded on the page with its stage, the reading it
 judged and the evidence, for example
 `{"trigger": "rough", "stage": "local_ocr", "known_share": 0.89, ...}`. The job
 records the lexicon's provider and package versions, or a word list's hash.
-`verify-job` recomputes the triggers and refuses a job whose lexicon is not the
+`verify` recomputes the triggers and refuses a job whose lexicon is not the
 installed one. The report
 adds the work done at each stage and how many pages each trigger raised.
 
@@ -367,7 +367,7 @@ International, 235,976 lines, many of them rare words); on Debian and Ubuntu the
 terms its sources use) can sit beside a general one: concatenate them. The job
 records the list's resolved path, SHA-256, size in bytes, number of distinct
 words and the matching rule (`nfc-casefold`) under `lexicon` in `job.json`.
-`resume` and `verify-job` read the list again from that path and refuse a job
+`resume` and `verify` read the list again from that path and refuse a job
 whose list is missing or has changed; restore the recorded list to continue.
 
 A word list says nothing about names and abbreviations it does not hold. On the
@@ -500,7 +500,7 @@ The spans are kept in `contested/<page_id>.json` ([schema](../schemas/contested.
 and the page records its hash and counts. A page with an open span is held as
 `contested`. That replaces `engine_disagreement`, `numeric_disagreement` and
 `unconfirmed_model_output` on that page, because the spans say exactly where the
-readings differ. `verify-job` rebuilds the spans from the retained readings and fails if the
+readings differ. `verify` rebuilds the spans from the retained readings and fails if the
 artifact differs. The report counts spans by kind, settlements, and the pages
 they hold.
 
@@ -570,7 +570,7 @@ Only a `high` answer settles a span. When no span on a page is open, the page is
 `adjudicated_text`, and, if any answer changed the text, PageLedger writes
 `editions/<page_id>.txt`: the model's reading with each change applied at its
 offsets. The attempt itself is never edited. The transcript, `document.json` and
-every export use the edition and say so. `verify-job` rebuilds each edition from
+every export use the edition and say so. `verify` rebuilds each edition from
 its receipts and fails if the file differs.
 
 `adjudicated_text` is not `reviewed_text`. It means every word-level difference
@@ -603,7 +603,7 @@ pageledger resume jobs/book --raise-limit max_attempt_pages=200
 
 `resume` checks the retained attempts before it records the raise. Each raise
 is appended to `limits_history` in `job.json` and the report, with its time and
-the previous value, and `verify-job` checks that the history leads from the
+the previous value, and `verify` checks that the history leads from the
 configured limits to the current ones. Limits cannot be lowered. Money and
 token limits are thresholds checked between calls, not reservations: a call
 already under way can take usage past them. Unknown paid usage while a token or
@@ -667,18 +667,18 @@ or prevent deliberate rewriting.
 part of the job's identity: every command that reads a job reads it where it
 is now, and every stage run's `checkpoint.json` must still name `root` plus
 its `attempts/` path, so a stage run taken from another job or tree is
-refused. `verify-job` on a job that is not at `root` checks the same evidence
+refused. `verify` on a job that is not at `root` checks the same evidence
 as in place and adds warning `job_relocated` with `recorded_root` and `root`
-(the current directory). `verify-job` does not read the source's bytes for
+(the current directory). `verify` does not read the source's bytes for
 anything but this check: a missing source is warning `source_missing`, one
 found through the source index is `source_relocated`, and other bytes at the
 recorded path fail verification.
 
-`review-job` and `adjudicate --decisions` work on a job that is not at
+`review --apply` and `adjudicate --decisions` work on a job that is not at
 `root`, and each such change appends `{root, command, at}` to the optional
 `relocations` list, with the directory it was made in. `relocations` is
 copied into `document.json` and shown in `report.md` as a "Changed elsewhere"
-line; `verify-job` reports each entry as `job_changed_elsewhere`. A job
+line; `verify` reports each entry as `job_changed_elsewhere`. A job
 without the field reads and renders as before. `resume` refuses a job that is
 not at `root` (see [Resume an interrupted job](#resume-an-interrupted-job)).
 
@@ -732,7 +732,7 @@ mean its pages have passed human review. A `paused_budget` job continues when
 resumed with a higher limit. A `halted` job keeps its records, and `resume`
 reports it without retrying, except for the bounded local recovery above;
 settle any uncertain paid request with the provider before starting a new job.
-`verify-job` is read-only and binds the report back to validated job and child
+`verify` is read-only and binds the report back to validated job and child
 records.
 
 ## Reports and review
@@ -746,8 +746,8 @@ Reports name the source by its path relative to the job directory. To use the
 text elsewhere, [export it](export.md) as plain text, Markdown, JSONL or TEI.
 
 ```bash
-pageledger review-job jobs/book --review reviewed-pages.json
-pageledger inspect-job jobs/book --json
+pageledger review jobs/book --apply reviewed-pages.json
+pageledger inspect jobs/book --json
 ```
 
 Applying review receipts performs no extraction and retains previous receipts
@@ -763,12 +763,12 @@ deletes, publishes or certifies preservation of source files.
 ### Review in a spreadsheet
 
 ```bash
-pageledger review-sheet jobs/book --out review.csv
-pageledger review-job jobs/book --review review.csv --reviewer "A. Reader" --dry-run
-pageledger review-job jobs/book --review review.csv --reviewer "A. Reader"
+pageledger review jobs/book --sheet review.csv
+pageledger review jobs/book --apply review.csv --reviewer "A. Reader" --dry-run
+pageledger review jobs/book --apply review.csv --reviewer "A. Reader"
 ```
 
-`review-sheet` writes one row per page: a link to the page in the source, its
+`review --sheet` writes one row per page: a link to the page in the source, its
 disposition, the start of its selected text, its review reasons, and empty
 `decision` and `note` columns. Fill those in a spreadsheet and save as CSV. A
 decision is one of:
@@ -781,7 +781,7 @@ decision is one of:
 | `use:ATTEMPT` | Another completed attempt's text, named by its attempt ID from the report |
 
 A blank decision, or a deleted row, leaves the page unreviewed; the note becomes
-the receipt's reason. `review-job` checks the whole sheet before recording
+the receipt's reason. `review --apply` checks the whole sheet before recording
 anything: every row must belong to the job, appear once, hold no spreadsheet
 formula, and still match the saved job records it was written from, which
 `review.csv.binding.json` records beside the sheet. A sheet written before the
@@ -797,14 +797,14 @@ nowhere else. Reading the text beside the image, rather than with the scan open
 in another program, keeps the eye on one line at a time.
 
 ```bash
-pageledger review-html jobs/book --out review/
-pageledger review-html jobs/book --out review-held/ --images held
-pageledger review-html jobs/book --out review-text/ --images none
+pageledger review jobs/book --out review/
+pageledger review jobs/book --out review-held/ --images held
+pageledger review jobs/book --out review-text/ --images none
 ```
 
-`review-html` verifies the job, as `export` does, then writes a new folder:
+`review --out` verifies the job, as `export` does, then writes a new folder:
 `index.html`, a blank `review.csv` with its `review.csv.binding.json` (the same
-files `review-sheet` writes), and with `--images all` (the default) or `held`, a
+files `review --sheet` writes), and with `--images all` (the default) or `held`, a
 JPEG of each page, or only of the pages that need a person, in `images/`.
 Open `index.html` in a browser; it needs no server and loads nothing from the
 network. It lists the pages, those that need a person first, with their state,
@@ -822,13 +822,13 @@ view to store them, until "Forget decisions in this browser" clears them.
 Nothing is recorded in the job until the downloaded `review.csv` is applied:
 
 ```bash
-pageledger review-job jobs/book --review review/review.csv --reviewer "A. Reader" --dry-run
-pageledger review-job jobs/book --review review/review.csv --reviewer "A. Reader"
+pageledger review jobs/book --apply review/review.csv --reviewer "A. Reader" --dry-run
+pageledger review jobs/book --apply review/review.csv --reviewer "A. Reader"
 ```
 
 Save the download in the folder in place of the blank `review.csv`, so that the
 binding is beside it, or download the binding too and keep the two together.
-`review-job` checks the sheet as it checks any review sheet, and refuses it if
+`review --apply` checks the sheet as it checks any review sheet, and refuses it if
 the job has changed since the view was written. Like `report.md`, the view is a
 rendering: it is not evidence, and writing it changes nothing in the job. Page
 images need Poppler's `pdftoppm`; `--images none` writes the view without

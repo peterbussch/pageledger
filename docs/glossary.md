@@ -24,7 +24,7 @@ The links point to the main page describing each term.
 | Folder of page images | A folder of JPEG or PNG files, one per page, read as one document in natural order of file name. | [A folder of page scans](pdf-ocr-first-run.md#9-a-folder-of-page-scans) |
 | Generation | A run's place in a rerun sequence: the original is generation zero, followed by explicit reruns. | [Reruns](cli.md#rerun) |
 | Generative | Output a model writes rather than reads off the page, which can contain text that is not there. PageLedger holds such readings for review. | [Vision adapter](vision-adapter.md) |
-| Grade basis | The kind of information behind a grade: text signals or schema checks. These bases are not interchangeable. | [Comparison](cli.md#compare-runs) |
+| Grade basis | The kind of information behind a grade: text signals or schema checks. These bases are not interchangeable. | [Comparison](cli.md#compare) |
 | Hold | A recorded reason a page or attempt remains unresolved or needs a person. | [Warnings and holds](warnings.md) |
 | Job | A document-level record of staged attempts, selected text, review state, and report. | [Processing](processing-spec.md) |
 | Legacy | An artifact or value written by an earlier version. It may remain readable, but can lack evidence added later. | [Compatibility](run-manifest-spec.md#compatibility-policy) |

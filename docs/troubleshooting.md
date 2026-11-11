@@ -87,7 +87,7 @@ and follow the recovery instructions for that failure; do not assume a halted
 paid request is safe to repeat when its outcome is unknown. See
 [processing and recovery](processing-spec.md).
 
-## `verify-run` or `verify-job` reports a problem
+## `verify` reports a problem
 
 Verification checks whether retained artifacts agree with their manifests and
 hashes. Do not edit generated files to silence a failure. Keep a copy of the
@@ -103,8 +103,8 @@ On macOS, ONNX Runtime (used by the `rapidocr` adapter) has once been seen to
 abort while Python shut down, after a job had completed and written every
 file. The message is `libc++abi: terminating due to uncaught exception of type
 std::__1::system_error: recursive_mutex lock failed`. It could not be
-reproduced in 18 further jobs. If you see it, run `pageledger verify-job` (or
-`verify-run`) on the output: a `pass` means the work is complete and the exit
+reproduced in 18 further jobs. If you see it, run `pageledger verify` on
+the output: a `pass` means the work is complete and the exit
 code came from shutdown. Scripts that call PageLedger should decide from the
 verification, not from the exit code alone.
 

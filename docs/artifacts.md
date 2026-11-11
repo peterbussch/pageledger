@@ -23,8 +23,8 @@ jobs/book/
 └── .job/             # exact child configuration snapshots
 ```
 
-Use `inspect-job` to read the report, `verify-job` to check its retained evidence,
-and `review-job` to apply human review receipts. A job's `completed` status does
+Use `inspect` to read the report, `verify` to check its retained evidence,
+and `review --apply` to apply human review receipts. A job's `completed` status does
 not mean every page has passed review. See [document processing](processing-spec.md)
 and the [report contract](document-report-spec.md).
 
@@ -179,7 +179,7 @@ strings such as `rerun_if:grade_below` and
 confidence, including real confidence from `pageledger classify`; null still
 means the classifier could not make a confident decision or no classifier
 ran.
-`verify-run` regenerates the Markdown rendering in memory and fails when
+`verify` regenerates the Markdown rendering in memory and fails when
 `audit.md` is stale or edited. It also requires and verifies
 `result.raw_sha256` for every provenance line; records from older versions
 that lack it stay readable but fail integrity verification.
@@ -190,7 +190,7 @@ Record human decisions outside the run directory, keyed by `run_id` and
 reviewer/date, and selected downstream output without inventing a new
 PageLedger artifact. Editing `audit.md`, `audit.json`, or `raw/` in place changes
 verified evidence and makes the run fail integrity checks. See the executable
-[first-run review-sheet example](first-run.md#record-review-decisions-outside-the-run).
+[first-run review example](first-run.md#record-review-decisions-outside-the-run).
 
 `rerun-manifest.yml` records what to do next. It is an executable list of flagged
 pages that `pageledger rerun` re-extracts with the config you give it,
@@ -224,12 +224,12 @@ when the preview is applied.
 
 ## Verification
 
-`pageledger verify-run <run-dir>` checks whether the files in a run agree about
+`pageledger verify <run-dir>` checks whether the files in a run agree about
 identifiers, hashes, page counts, output references, quality totals, review and
 rerun queues, adapter chains, and cost. Internal inconsistency is an error;
 missing or changed source files are warnings. It also checks raw-byte hashes and
 that `audit.md` matches `audit.json`. Verification does not judge OCR accuracy
-or replace the build-time schema tests. `compare-runs` also rejects symbolic
+or replace the build-time schema tests. `compare` also rejects symbolic
 links in the files it reads. See the [manifest specification](run-manifest-spec.md)
 for containment and compatibility details.
 

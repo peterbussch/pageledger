@@ -134,11 +134,11 @@ two runs compared:
 
 ```bash pageledger-tutorial
 pageledger rerun runs/document-pdf-text --config pageledger-ocr.yml --out runs/document-rerun
-pageledger compare-runs runs/document-pdf-text runs/document-rerun
+pageledger compare runs/document-pdf-text runs/document-rerun
 ```
 
 The rerun keeps the original page IDs, records the parent run ID, and enforces
-`run.max_rerun_depth`. The two runs used different adapters, so `compare-runs`
+`run.max_rerun_depth`. The two runs used different adapters, so `compare`
 marks their pages `incomparable_adapter` and does not total the warning
 changes, but its page table still shows them: on a scan, pages the text layer
 left empty list `empty_text` as *resolved*. When OCR recovers text from an

@@ -30,7 +30,7 @@ and, from 1.0, [stability](docs/stability.md).
   page in a document job.
 - `no_text_layer`, the `pdf_text` warning for a page of page images. In a document job the local text stage
   records an empty reading and the page goes on to OCR.
-- `pageledger fetch-iiif URL --out DIR` fetches the page images of a IIIF manifest (Presentation API 2 or 3),
+- `pageledger fetch URL --out DIR` fetches the page images of a IIIF manifest (Presentation API 2 or 3),
   an `info.json` or an image service (Image API 2 or 3) into a snapshot folder: one JPEG per canvas, the
   manifest and image information as served, and a fetch record, `iiif-fetch.json`
   ([schema](schemas/iiif-fetch.schema.json), [spec](docs/iiif-fetch-spec.md)), that binds each image's
@@ -38,29 +38,29 @@ and, from 1.0, [stability](docs/stability.md).
   only allows a smaller image the record marks it `below_native` and the command warns. One request at a
   time with a delay, retries that honour `Retry-After`, a byte cap on every response, and `--resume` that
   checks what was fetched and fetches only what is missing. See [the how-to](docs/iiif.md).
-- `pageledger review-html JOB --out DIR` writes a static review view of a verified document job: one
+- `pageledger review JOB --out DIR` writes a static review view of a verified document job: one
   `index.html` to open in a browser, with no server, network or external scripts. It lists the pages, those
   that need a person first, and shows each page's image beside its selected text, the other readings in
   full and compared word by word, what holds it in plain words, the warnings on each reading by code with
   a link to their meaning, and on a contested page its open
-  spans marked in the text. A reviewer chooses decisions from `review-job`'s own vocabulary and downloads
-  them as the `review.csv` that `review-sheet` writes, bound to the job by the same binding file; nothing
-  is recorded until `review-job` applies it. `--images held` renders only the pages that need a person
+  spans marked in the text. A reviewer chooses decisions from `review --apply`'s own vocabulary and downloads
+  them as the `review.csv` that `review --sheet` writes, bound to the job by the same binding file;
+  nothing is recorded until `review --apply` applies it. `--images held` renders only the pages that need a person
   and `--images none` needs no Poppler. The view is a rendering and writes nothing into the job. See
   [review beside the page image](docs/processing-spec.md#review-beside-the-page-image).
 - `pageledger process SOURCE --out DIR` runs without `--config`. The job uses exactly the configuration
-  `init-config --processing` writes for the same options and records it as it would record that file, so
+  `init` writes for the same options and records it as it would record that file, so
   it verifies, resumes and rebuilds like any other job. No file is read from the working directory and
   nothing is detected from the machine: the engine is `pdf_ocr` in English unless `--engine`
   (`pdf_ocr`, `rapidocr`, `indra` or `none`), `--lang` or `--model-dir` say otherwise, and `none` for a
   `.txt` source. Two lines on stderr name the configuration and how to write it out. A missing engine
   package or tool stops the command before the job exists, naming what to install and pointing to
   `pageledger doctor`.
-- `pageledger init-config --processing` writes a commented `processing.yml`: the source's own text, then
+- `pageledger init` writes a commented `processing.yml`: the source's own text, then
   local OCR, `max_image_pages: 0`, and the optional stages as commented blocks with a line each and a link
   to the processing guide. `docs/examples/processing.yml` is now that file.
-- A completed `process` prints how many pages need a person and the next commands (`inspect-job`, then
-  `review-sheet` or `export`). `--json` output and exit codes are unchanged.
+- A completed `process` prints how many pages need a person and the next commands (`inspect`, then
+  `review` or `export`). `--json` output and exit codes are unchanged.
 - RapidOCR warns `multi_column_rows` when rows mode joins at least four detected lines in most visual rows; use `reading_order: columns` for columnar pages. The warning is recorded and graded but does not hold document-job pages.
 - RapidOCR accepts recognizer dictionaries from `inference.yml` (`PostProcess.character_dict`) when `keys.txt` is absent, and records hashes for both model weights and the dictionary used.
 - Document reports state why a configured stage read no pages. `process` also prints a start notice when the configured ladder's maximum possible attempts exceed `max_attempt_pages`.
@@ -115,6 +115,17 @@ and, from 1.0, [stability](docs/stability.md).
 
 ### Changed
 
+- Commands have single-word names, and `pageledger --help` lists them in two groups: the document
+  workflow (`process`, `review`, `export`, `verify`, `inspect`, `adjudicate`, `init`, `fetch`,
+  `doctor`), then the commands for runs. `verify` and `inspect` take a job or a run and tell which from
+  the folder (`job.json`, or `manifest.json` or `checkpoint.json`); their output for each is what
+  `verify-job`/`verify-run` and `inspect-job`/`inspect-run` print. `review` writes the page view
+  (`--out`), the review sheet (`--sheet`, formerly `review-sheet --out`) or records decisions
+  (`--apply`, formerly `review-job --review`). `init` writes the document-job config, `init --run` the
+  run config (formerly `init-config`), and `compare-runs` is `compare`. The earlier names keep working
+  exactly as before, unlisted and without a warning, through 1.x; see
+  [earlier command names](docs/cli.md#earlier-command-names). Messages, the review page and the docs
+  use the new names.
 - A folder that holds JPEG or PNG files is one document, not a set of one-page documents, and every file in
   it must be a page image. A folder without images is read as before.
 - An adapter that reads images itself (`input_types` with `image` and not `pdf`) now gets each page's image file

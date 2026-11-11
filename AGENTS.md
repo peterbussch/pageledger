@@ -27,19 +27,19 @@ scope list.
 
 ```bash
 uv sync --frozen --extra dev --extra pdf && . .venv/bin/activate
-pageledger init-config --out pageledger.yml
+pageledger init --run --out pageledger.yml
 printf 'first page\fsecond page\n' > sample.txt
 pageledger classify sample.txt --config pageledger.yml --out routes.yml --json
 pageledger run sample.txt --config pageledger.yml --routes routes.yml --out runs/demo
-pageledger inspect-run runs/demo
-pageledger verify-run runs/demo
+pageledger inspect runs/demo
+pageledger verify runs/demo
 pageledger doctor --json
 ```
 
 `--dry-run` writes the route map and planning artifacts without extracting.
 Output directories must not already exist. Neither page of this sample is
 flagged, so there is nothing to rerun; the tested first run in `README.md`
-flags a page and continues with `rerun` and `compare-runs`.
+flags a page and continues with `rerun` and `compare`.
 
 ## Test and verify
 

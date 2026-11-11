@@ -1,9 +1,11 @@
 # CLI reference
 
 Use `process` to manage a document job, or `run` for an extraction run with one
-adapter. `rerun` extracts flagged pages into a new run; `resume` recovers pending
-work in place. `classify` prepares routes, and `align` revises structured records
-from retained output.
+adapter. `verify` and `inspect` take either a job or a run. `rerun` extracts
+flagged pages into a new run; `resume` recovers pending work in place.
+`classify` prepares routes, and `align` revises structured records from
+retained output. `pageledger --help` lists the commands in two groups: the
+document workflow first, then the commands for runs.
 
 `pageledger --version` prints the installed release. Invalid command-line
 syntax returns exit code 2. Runtime errors return 1; commands can also return 1
@@ -22,29 +24,27 @@ such as stage, route and disposition are defined in the
 | Command | Synopsis and options | Exit code 0 | Exit code 1 |
 |---|---|---|---|
 | `process` | `process SOURCE [--config FILE | --engine ENGINE --lang LANGS --model-dir DIR] --out DIR [--pages RANGE] [--adapter-path DIR] [--review FILE] [--json]` | Job completed or paused by a limit. | Job halted or failed, or runtime error. |
-| `inspect-job` | `inspect-job JOB_DIR [--json]` | Report read. | Runtime error, or with `--json`, the job is halted or failed. |
-| `verify-job` | `verify-job JOB_DIR [--json]` | Job verifies. | Verification fails or runtime error. |
-| `review-sheet` | `review-sheet JOB_DIR --out FILE [--json]` | Sheet written. | Runtime error. |
-| `review-job` | `review-job JOB_DIR --review FILE [--reviewer NAME] [--dry-run] [--json]` | Decisions checked or recorded. | Job halted/failed or runtime error. |
-| `review-html` | `review-html JOB_DIR --out DIR [--images all|held|none] [--json]` | View written. | The job does not verify, the folder exists, or runtime error. |
-| `adjudicate` | `adjudicate JOB_DIR (--packets DIR [--term TERM]... | --decisions DIR --reviewer NAME [--dry-run]) [--json]` | Packets written, or decisions checked or recorded. | Refused decisions, a halted job (decisions are still recorded), or runtime error. |
+| `review` | `review JOB_DIR (--out DIR [--images all|held|none] | --sheet FILE | --apply FILE [--reviewer NAME] [--dry-run]) [--json]` | View or sheet written, or decisions checked or recorded. | With `--out`, the job does not verify or the folder exists; with `--apply`, the job is halted or failed; or runtime error. |
 | `export` | `export JOB_DIR --format txt|md|jsonl|tei --out FILE [--reviewed-only]` | Verified export written. | Runtime error or refused export. |
+| `verify` | `verify DIR [--json]` | The job or run verifies. | Verification fails, `DIR` is not a job or a run, or runtime error. |
+| `inspect` | `inspect DIR [--json | --csv]` | Report or summary written. | Runtime error, `DIR` is not a job or a run, `--csv` on a job, or with `--json`, the job is halted or failed. `--json` and `--csv` are mutually exclusive (usage error 2). |
+| `adjudicate` | `adjudicate JOB_DIR (--packets DIR [--term TERM]... | --decisions DIR --reviewer NAME [--dry-run]) [--json]` | Packets written, or decisions checked or recorded. | Refused decisions, a halted job (decisions are still recorded), or runtime error. |
+| `init` | `init [--out FILE] [--engine ENGINE] [--lang LANGS] [--model-dir DIR] | init --run [--adapter text|pdf_text|pdf_ocr] [--out FILE]` | Config written or printed. | Runtime error. |
+| `fetch` | `fetch URL --out DIR [--pages RANGE] [--delay SECONDS] [--max-image-bytes N] [--resume] [--json]` | Every selected canvas fetched. | Some canvases missing (the snapshot is `incomplete`), or runtime error. |
+| `doctor` | `doctor [--config FILE] [--json]` | Diagnostics reported; findings do not change the exit code. | Runtime error. |
 | `run` | `run INPUT... (--config FILE | --adapter text|pdf_text|pdf_ocr) --out DIR [--pages RANGE] [--routes FILE] [--resumable] [--dry-run] [--json] [--log-level LEVEL] [--adapter-path DIR]` | Run completed, including partial results without failed or unattempted pages. | Partial run with failed or unattempted pages, or runtime error. |
 | `resume` | `resume RUN_DIR [--adapter-path DIR] [--raise-limit LIMIT=VALUE] [--json]` | Work resumed, paused, or already finalized. | Halted/failed result or runtime error. |
 | `rerun` | `rerun PARENT_DIR --config FILE --out DIR [--dry-run] [--json] [--log-level LEVEL] [--adapter-path DIR]` | Rerun completed. | Any partial execution result or runtime error. |
+| `compare` | `compare RUN_A RUN_B [--json]` | Comparison written, including when changes are unranked. | Runtime error. |
 | `classify` | `classify [INPUT...] --out FILE [--config FILE] [--from-run DIR] [--adapter SPEC] [--adapter-path DIR] [--json]` | Route map written. | Runtime error. |
-| `doctor` | `doctor [--config FILE] [--json]` | Diagnostics reported; findings do not change the exit code. | Runtime error. |
-| `init-config` | `init-config [--out FILE] [--adapter text|pdf_text|pdf_ocr | --processing [--engine ENGINE] [--lang LANGS] [--model-dir DIR]]` | Config written or printed. | Runtime error. |
-| `inspect-run` | `inspect-run RUN_DIR [--json | --csv]` | Summary written. | Runtime error. `--json` and `--csv` are mutually exclusive (usage error 2). |
 | `align` | `align RUN_DIR [--schema FILE] [--json] [--dry-run]` | Alignment applied or previewed. | Runtime error. |
-| `compare-runs` | `compare-runs RUN_A RUN_B [--json]` | Comparison written, including when changes are unranked. | Runtime error. |
-| `verify-run` | `verify-run RUN_DIR [--json]` | Verification passes. | Verification fails or runtime error. |
 | `bundle` | `bundle RUN_DIR --out DIR [--json]` | Bundle written. | Runtime error. |
 | `replay` | `replay BUNDLE_DIR --out DIR [--adapter-path DIR] [--json]` | Outcome is `exact` or `evidence_compared`. | `deterministic_mismatch` or runtime error. |
-| `fetch-iiif` | `fetch-iiif URL --out DIR [--pages RANGE] [--delay SECONDS] [--max-image-bytes N] [--resume] [--json]` | Every selected canvas fetched. | Some canvases missing (the snapshot is `incomplete`), or runtime error. |
 
 Any command-line syntax error, including a missing required argument or an
-unrecognized option, exits 2. `--version` exits 0.
+unrecognized option, exits 2. `--version` exits 0. Commands that earlier
+releases named differently still accept those names; see
+[earlier command names](#earlier-command-names).
 
 ## process
 
@@ -59,13 +59,13 @@ images (see [run](#run) for how a folder is read). `--out` is required, and
 the output directory must be new.
 
 Without `--config`, the job runs with exactly the configuration
-`init-config --processing` writes for the same `--engine`, `--lang` and
-`--model-dir` options (see [init-config](#init-config)) and records it as it
+`init` writes for the same `--engine`, `--lang` and
+`--model-dir` options (see [init](#init)) and records it as it
 would record that file, so the job verifies, resumes and rebuilds like any
 other. No config file is read from the working directory and nothing is
 detected from the machine: the engine is `pdf_ocr` with `--lang eng` unless
 the options say otherwise, and `none` for a `.txt` source. Two lines on
-stderr name the configuration used and the `init-config` command that writes
+stderr name the configuration used and the `init` command that writes
 it out for editing. Before the job directory is created, the engine is loaded
 and its preflight run; a missing package or tool is an error naming what to
 install, and pointing to `pageledger doctor` where the engine's own message
@@ -73,7 +73,7 @@ does not. `--engine`, `--lang` and `--model-dir` together with `--config` are
 a usage error (exit 2).
 
 With `--config`, use the [processing guide](processing-spec.md) to write the
-config, or start from `init-config --processing`.
+config, or start from `init`.
 Document jobs retain checkpoints automatically. Stages use `processing`
 profiles; `run.adapter_order` is reserved for explicit rerun generations and
 is rejected here. So are `run` budget, pricing, grading, rerun and retry
@@ -92,7 +92,7 @@ warning.
 | `--json` | Print the job result as JSON. |
 
 A job that completes also prints, after its status, how many pages need a
-person and the next commands (`inspect-job`, then `review-html` or `export`).
+person and the next commands (`inspect`, then `review` or `export`).
 `--json` output is unchanged.
 
 A job can finish with unresolved pages. `completed` means processing finished,
@@ -101,48 +101,39 @@ A job can finish with unresolved pages. `completed` means processing finished,
 automatically. `process` and `resume` exit 0 for a paused job, which is an
 expected outcome of a configured limit, and 1 for a halted or failed one.
 
-## inspect-job, verify-job, review-sheet and review-job
+## review
 
 ```bash
-pageledger inspect-job jobs/book
-pageledger inspect-job jobs/book --json
-pageledger verify-job jobs/book
-pageledger review-sheet jobs/book --out review.csv
-pageledger review-job jobs/book --review review.csv --reviewer "Name"
-pageledger review-job jobs/book --review review.csv --dry-run
-pageledger review-job jobs/book --review reviewed-pages.json
+pageledger review jobs/book --out review/
+pageledger review jobs/book --out review/ --images held
+pageledger review jobs/book --sheet review.csv
+pageledger review jobs/book --apply review.csv --reviewer "Name" --dry-run
+pageledger review jobs/book --apply review.csv --reviewer "Name"
+pageledger review jobs/book --apply reviewed-pages.json
 ```
 
-`inspect-job` displays `report.md`, or `document.json` with `--json`.
-`verify-job` checks the source, retained attempts, selections, and report, in
-whatever directory the job is now. It reports warnings: `job_relocated` when the
-job is not in the directory it was written in, `job_changed_elsewhere` for a
-review or adjudication recorded on such a copy, and `source_missing` or
-`source_relocated` as `verify-run` does; other bytes at the source's recorded
-path fail. See [deposit a job](share-and-cite.md#deposit-a-job).
-`review-sheet` writes a CSV of the job's pages to fill in with a spreadsheet.
-`review-job` records human decisions from that sheet, or from a JSON file
+`review` does one of three things, chosen by exactly one of `--out`, `--sheet`
+and `--apply`; giving none or more than one is a usage error (exit 2).
+
+`--out DIR` verifies the job, then writes a new folder `DIR` holding
+`index.html`, a reading view of every page with its image beside its text, and
+the blank `review.csv` and binding that `--sheet` writes. Decisions chosen in
+the view are downloaded as that `review.csv` and recorded only by `--apply`.
+`--images` renders a page image for every page (`all`, the default), only the
+pages that need a person (`held`), or none (`none`, which needs no Poppler).
+See [Review beside the page image](processing-spec.md#review-beside-the-page-image).
+
+`--sheet FILE` writes only the CSV of the job's pages, to fill in with a
+spreadsheet, and its binding beside it.
+
+`--apply FILE` records human decisions from that sheet, or from a JSON file
 following the [review receipt contract](document-report-spec.md#human-review-receipt),
 without extracting anything and keeping earlier receipts. Decisions from a sheet
 need `--reviewer NAME` or the `PAGELEDGER_REVIEWER` variable; `--dry-run` checks
 and counts them without recording any. See
 [Review in a spreadsheet](processing-spec.md#review-in-a-spreadsheet).
-All four commands accept `--json`.
-
-## review-html
-
-```bash
-pageledger review-html jobs/book --out review/
-pageledger review-html jobs/book --out review/ --images held
-```
-
-Verifies the job, then writes a new folder `DIR` holding `index.html`, a
-reading view of every page with its image beside its text, and the blank
-`review.csv` and binding that `review-sheet` writes. Decisions chosen in the
-view are downloaded as that `review.csv` and recorded only by `review-job`.
-`--images` renders a page image for every page (`all`, the default), only the
-pages that need a person (`held`), or none (`none`, which needs no Poppler).
-See [Review beside the page image](processing-spec.md#review-beside-the-page-image).
+`--images` goes only with `--out`, and `--reviewer` and `--dry-run` only with
+`--apply` (usage error 2 otherwise). All three modes accept `--json`.
 
 ## export
 
@@ -243,8 +234,8 @@ unchanged; use `cost.json` for the `cost_known`, `cost_usd`, and
 pageledger run book.pdf --adapter pdf_ocr --resumable --out runs/book/
 # After interruption, with the same source files and adapter environment:
 pageledger resume runs/book/
-pageledger inspect-run runs/book/
-pageledger verify-run runs/book/
+pageledger inspect runs/book/
+pageledger verify runs/book/
 ```
 
 Continues an individual run created with `run --resumable`, or a document job
@@ -326,7 +317,7 @@ when both limits are reached. The supplied config
 is authoritative: if it disagrees with the parent's recorded next adapter,
 PageLedger prints an escalation warning and uses the config. Source-integrity
 changes fail closed before the child directory is created. The parent ledger
-must pass `verify-run`, and its executable queue must still match the audit,
+must pass `verify`, and its executable queue must still match the audit,
 routes, config, grades, quarantine, and lineage evidence. `rerun` takes the
 same `--dry-run`, `--json`, `--log-level`, and `--adapter-path` flags as `run`.
 It writes a separate selected-page run and does not choose or assemble a final
@@ -362,10 +353,10 @@ writing any artifact or schema snapshot. Applied alignment stages every
 derived file first and writes `manifest.json` last as the commit indicator;
 the multi-file update is deliberately not described as a transaction.
 
-## compare-runs
+## compare
 
 ```bash
-pageledger compare-runs runs/run-001/ runs/run-002/
+pageledger compare runs/run-001/ runs/run-002/
 ```
 
 Compares shared pages by character and word counts, extraction time, warnings,
@@ -386,14 +377,31 @@ from the retained config or external alignment schema.
 Adapter option values are not copied into the comparison report. Inputs must
 be contained regular files; symbolic links are rejected.
 
-## verify-run
+## verify
 
 ```bash
-pageledger verify-run runs/run-001/
-pageledger verify-run runs/run-001/ --json
+pageledger verify jobs/book
+pageledger verify runs/run-001/
+pageledger verify runs/run-001/ --json
 ```
 
-Checks that the files in a run directory agree with one another: manifest
+Checks a document job or a run, whichever `DIR` is. A folder holding
+`job.json` is a job, written by `process`; a folder holding `manifest.json` or
+`checkpoint.json` is a run, written by `run`, or one stage of a job under its
+`attempts/` folder (`verify jobs/book/attempts/local_ocr` checks that stage's
+run alone). A folder with neither, or with both, is refused with an error that
+names these files (exit 1), as are a file and a missing path. `--json` prints
+the report the job or run check produces; the two have different fields.
+
+For a job, `verify` checks the source, retained attempts, selections, and
+report, in whatever directory the job is now. It reports warnings:
+`job_relocated` when the job is not in the directory it was written in,
+`job_changed_elsewhere` for a review or adjudication recorded on such a copy,
+and `source_missing` or `source_relocated` as for a run; other bytes at the
+source's recorded path fail. See
+[deposit a job](share-and-cite.md#deposit-a-job).
+
+For a run, it checks that the files in the run directory agree with one another: manifest
 declarations, identifiers, hashes, page counts, raw and normalized references,
 quality totals, audit/rerun items, alignment-schema snapshots, and cost totals.
 A missing `raw/` directory is read as an empty one, and a missing
@@ -420,7 +428,7 @@ pageledger bundle RUN_DIR --out BUNDLE_DIR
 pageledger bundle RUN_DIR --out BUNDLE_DIR --json
 ```
 
-Creates a new directory bundle only after `RUN_DIR` passes `verify-run` and is
+Creates a new directory bundle only after `RUN_DIR` passes `verify` and is
 an ordinary, generation-zero execute run. The bundle contains an unchanged
 `baseline/` run (manifest, config, and all declared artifacts), copied source
 files under `sources/`, an inventory with SHA-256 hashes, and
@@ -460,11 +468,11 @@ boundary](capabilities-and-limits.md#verified-replay-boundary).
 See the [command index](#command-index) for exit codes. `--json` includes
 replay `outcome` and structured `error`/`code` fields on failure.
 
-## fetch-iiif
+## fetch
 
 ```bash
-pageledger fetch-iiif https://example.org/iiif/item/manifest.json --out sources/item
-pageledger fetch-iiif https://example.org/iiif/item/manifest.json --out sources/item --resume
+pageledger fetch https://example.org/iiif/item/manifest.json --out sources/item
+pageledger fetch https://example.org/iiif/item/manifest.json --out sources/item --resume
 ```
 
 Fetches the page images of a IIIF Presentation 2 or 3 manifest, an Image API
@@ -483,14 +491,20 @@ prints a summary with `status`, `fetched`, `fetched_now`, `missing`,
 `warnings` and `stopped_by`. See [Fetch page images from a IIIF
 server](iiif.md) for what is fetched and the limits.
 
-## inspect-run
+## inspect
 
 ```bash
-pageledger inspect-run runs/run-001/
-pageledger inspect-run runs/run-001/ --csv > pages.csv
+pageledger inspect jobs/book
+pageledger inspect jobs/book --json
+pageledger inspect runs/run-001/
+pageledger inspect runs/run-001/ --csv > pages.csv
 ```
 
-Summarizes a run directory: status, page counts, warnings, failures,
+Shows a document job or a run, recognized as [verify](#verify) recognizes
+them. For a job, `inspect` displays `report.md`, or `document.json` with
+`--json`; `--csv` is for runs and is refused for a job (exit 1).
+
+For a run, it summarizes the run directory: status, page counts, warnings, failures,
 review-queue size, records normalized, grade distributions grouped by evidence
 basis, cost, and artifact presence. Human output labels each distribution as
 `Grades (signals)`, `Grades (schema)`, or `Grades (unknown)` for older graded
@@ -504,24 +518,16 @@ Human cost wording uses the same evidence distinctions as `run` and `rerun`:
 unknown, known zero/nonzero, or a qualified partial subtotal. The JSON summary
 retains its existing field names for machine consumers.
 
-## init-config
+## init
 
 ```bash
-pageledger init-config --out pageledger.yml
-pageledger init-config --adapter pdf_ocr --out pageledger-ocr.yml
+pageledger init --out processing.yml
+pageledger init --lang rus+eng --out processing.yml
+pageledger init --engine rapidocr --model-dir models/cyrillic-rec --out processing.yml
 ```
 
-Writes a minimal valid config. With `--adapter pdf_ocr` the config
-includes `adapter_options` (`dpi: 300`, `lang: eng`) so the knobs
-non-English collections need are visible from the start.
-
-```bash
-pageledger init-config --processing --out processing.yml
-pageledger init-config --processing --lang rus+eng --out processing.yml
-pageledger init-config --processing --engine rapidocr --model-dir models/cyrillic-rec --out processing.yml
-```
-
-`--processing` writes a commented `processing.yml` for `process` instead: a
+Writes a config to edit, to the screen or to `--out FILE`. By default it is a
+commented `processing.yml` for `process`: a
 local OCR stage after the source's own text, `max_image_pages: 0` so no paid
 stage can run, and the optional stages (`second_ocr`, `local_image`, `image`,
 `second_opinion`, `contest`) as commented blocks, each with one line on what
@@ -536,8 +542,17 @@ it does and a link to its section of the [processing guide](processing-spec.md).
 | `--engine none` | No OCR stage, for text files; the optional stages are left out because they need one. |
 
 `--model-dir` is written as an absolute path. A language or model option the
-engine does not take, `--processing` with `--adapter`, or an engine option
-without `--processing` is a usage error (exit 2).
+engine does not take is a usage error (exit 2).
+
+```bash
+pageledger init --run --out pageledger.yml
+pageledger init --run --adapter pdf_ocr --out pageledger-ocr.yml
+```
+
+`--run` writes a minimal valid config for `run` instead. With `--adapter pdf_ocr`
+the config includes `adapter_options` (`dpi: 300`, `lang: eng`) so the knobs
+non-English collections need are visible from the start. `--adapter` without
+`--run`, or an engine option with it, is a usage error (exit 2).
 
 ## doctor
 
@@ -554,10 +569,32 @@ OCR/VLM keys are present, without printing their values. With `--config`,
 doctor also reports every environment variable that config names through an
 adapter's `env_key`, such as a gateway's own key.
 
+## Earlier command names
+
+Releases before 0.9.0 named some commands differently. Those names still work
+exactly as they did, with the same options, output and exit codes, and will
+keep working through every 1.x release (see [stability](stability.md)); they
+are not listed by `pageledger --help`.
+
+| Earlier name | Now |
+|---|---|
+| `inspect-job JOB_DIR` | `inspect JOB_DIR` |
+| `inspect-run RUN_DIR` | `inspect RUN_DIR` |
+| `verify-job JOB_DIR` | `verify JOB_DIR` |
+| `verify-run RUN_DIR` | `verify RUN_DIR` |
+| `review-sheet JOB_DIR --out FILE` | `review JOB_DIR --sheet FILE` |
+| `review-job JOB_DIR --review FILE` | `review JOB_DIR --apply FILE` |
+| `init-config` | `init --run` |
+| `init-config --processing` | `init` |
+| `compare-runs RUN_A RUN_B` | `compare RUN_A RUN_B` |
+
+An earlier name takes only its own kind of folder: `verify-run` on a job
+reports what it would report on a run with no `manifest.json`.
+
 ## Configuration
 
 The recommended starting point is one `pageledger.yml` with optional
-`classify`, plus `taxonomy`, `schema`, and `run` sections; `init-config` writes
+`classify`, plus `taxonomy`, `schema`, and `run` sections; `init --run` writes
 the minimal form and
 [`examples/pageledger.yml`](examples/pageledger.yml) is a commented copy.
 

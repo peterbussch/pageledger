@@ -11,7 +11,7 @@ generative and holds its pages for review as `unconfirmed_model_output`. A
 plain `run` holds every such page in the review queue of `audit.json`; a
 document job holds it until a clean reading from another engine agrees with it
 or a person confirms it. After a plain run, `pageledger rerun` with another
-engine reads the held pages again, and `compare-runs` compares the two runs
+engine reads the held pages again, and `compare` compares the two runs
 page by page.
 
 ## Plug in a model

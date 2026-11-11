@@ -15,8 +15,8 @@ any minor release.
 
 | Surface | The promise | Checked by |
 |---|---|---|
-| Commands | Every command, positional argument and option in [the CLI reference](cli.md) keeps its name. An option does not become required, lose an allowed value, or become exclusive with another existing option. | `cli.json` snapshot of the argparse parser |
-| Exit codes | 0 for success, 1 for a runtime error or a failed result as [the command index](cli.md#command-index) describes, 2 for a usage error. | `test_exit_codes`: `--version`, usage errors, and `verify-run` passing and failing |
+| Commands | Every command, positional argument and option in [the CLI reference](cli.md) keeps its name. An option does not become required, lose an allowed value, or become exclusive with another existing option. The [earlier command names](cli.md#earlier-command-names) (`inspect-job`, `inspect-run`, `verify-job`, `verify-run`, `review-job`, `review-sheet`, `init-config`, `compare-runs`) keep working exactly as they did before 0.9, without a warning, through every 1.x release. | `cli.json` snapshot of the argparse parser; `tests/pageledger/test_cli_names.py` |
+| Exit codes | 0 for success, 1 for a runtime error or a failed result as [the command index](cli.md#command-index) describes, 2 for a usage error. | `test_exit_codes`: `--version`, usage errors, and `verify` and `verify-run` passing and failing |
 | Configuration | Every key in [the configuration table](cli.md#configuration) is still accepted and means what it meant: a 0.8 config file loads without warnings and compiles to the same processing policy, because a job records that policy. | `config-keys.json`, `config-0.8.yml` and its effective values |
 | Adapter protocol | A custom adapter written to [the protocol](adapter-protocol.md) keeps working: no new required attribute, `extract(source, *, page_id, page_number, action, prompt=None)` is called exactly so, and `ExtractionResult` keeps its fields with no new required one. Built-in adapter names (`text`, `pdf_text`, `pdf`, `pdf_ocr`, `vision`, `rapidocr`, `indra`, `alto`) keep resolving. | a strict adapter run through `classify`, `run`, `run --resumable` and `process`; `adapter-protocol.json` |
 | Artifacts | The run files in [the artifact list](artifacts.md) and a job's `job.json`, `document.json`, `report.md` and `transcript.md` keep their names, and each JSON Schema in `schemas/` only grows: no field removed or renamed, no type narrowed, no allowed value removed, nothing newly required. Artifacts keep `schema_version: "0.1"`, which is the 1.0 artifact contract. | `schemas/` snapshots; run file names in `taxonomies.json`; a new job's `job.json`, `document.json`, `report.md` and `transcript.md`; artifacts from 0.5.2, 0.6.0 and 0.7.0 validate against the current schemas |
@@ -63,17 +63,17 @@ The suite holds a run and a document job written by each of 0.5.2, 0.6.0 and
 0.7.0 from PyPI (`tests/fixtures/stability/releases/`, with the commands that
 wrote them).
 
-- **Runs** from all three verify with the current `verify-run` after being
+- **Runs** from all three verify with the current `verify` after being
   moved to another directory: with warning `source_missing` when the source is
   gone, or `source_relocated` when a [source index](checkpoint-spec.md) finds it.
   They are copied as Git checks them out, without their empty `normalized/`
-  directory; `verify-run` reads a missing empty directory as empty.
-- **Jobs** from all three verify with the current `verify-job` after being
+  directory; `verify` reads a missing empty directory as empty.
+- **Jobs** from all three verify with the current `verify` after being
   copied to another directory, with warnings `job_relocated` (naming the
   directory `job.json` recorded and the one the job is in now) and
   `source_missing` or `source_relocated`. A copy with a changed raw page, a
   changed `report.md` or a removed stage run fails. A copy reviewed with the
-  current `review-job` verifies, records where it was reviewed, and fails
+  current `review --apply` verifies, records where it was reviewed, and fails
   once its receipt is changed. See
   [share and cite](share-and-cite.md#deposit-a-job) for depositing a job.
 - `tests/pageledger/test_processing.py` also rebuilds jobs shaped as 0.5 and

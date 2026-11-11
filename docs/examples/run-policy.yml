@@ -1,7 +1,7 @@
 # fragment: an example PageLedger run policy, not a complete config.
 #
 # Paste the sections you need into one pageledger.yml. `--config` loads one
-# file and does not merge these examples. `pageledger init-config` makes a
+# file and does not merge these examples. `pageledger init --run` makes a
 # complete starting config including taxonomy.page_types.
 
 schema_version: "0.1"  # Config file format version.

@@ -10,7 +10,7 @@ used across the reference.
 |---|---|---|
 | Extract pages | `text`, `pdf_text`, `pdf_ocr`, `rapidocr`, `indra`, `vision` and `alto` (a library's ALTO OCR); custom adapters use the adapter protocol. | Select the extractor, configure it, and judge its output. |
 | Route pages | `classify` assigns structural types and writes a route map and text-free sidecar. | Review decisions; domain labels require a classifier hook. |
-| Process a document | `process` manages local text, OCR and optional image stages with shared limits and retained attempts. | Supply stage config (or start from the one `init-config --processing` writes), adapter code and credentials where needed. |
+| Process a document | `process` manages local text, OCR and optional image stages with shared limits and retained attempts. | Supply stage config (or start from the one `init` writes), adapter code and credentials where needed. |
 | Review and export | Job reports, source-bound review receipts, review sheets and verified `txt`, `md`, `jsonl`, or `tei` exports. | A human makes and records review decisions. |
 | Align structured output | Schema alignment supports `markdown_table`, `json`, and `csv` output. | Produce structured output and declare columns/checks. Plain text is not aligned. |
 | Compare or replay | Compare-runs reports page differences; bundles and replay check transport and recorded identities. | Comparison is conditional; replay does not reproduce external services or certify accuracy. |
@@ -65,8 +65,8 @@ come from another model family than the reader. See
 
 | Supported | What to rely on | Limit |
 |---|---|---|
-| Job reports, human review receipts, review sheets, `verify-job`, and verified `txt`, `md`, `jsonl`, or `tei` exports. | A receipt binds a human decision to the page and selected output; exports preserve page boundaries and review state. A job verifies, exports and can be reviewed after its directory is moved or copied, and records changes made away from where it was written. | A person makes the review decision. Verification and export do not certify transcription accuracy. See [review](processing-spec.md#review-in-a-spreadsheet), [report and receipt](document-report-spec.md), and [export](export.md). |
-| A static HTML review view (`review-html`): each page's image beside its selected text, other readings compared word by word, open contested spans marked, and decisions downloaded as a review sheet. | The view embeds the rows and binding `review-sheet` writes, so `review-job` checks its decisions like any sheet's. | A rendering, not evidence: decisions count only once `review-job` applies them. Page images come from PDFs through Poppler's `pdftoppm`. Decisions in progress stay in one browser's storage. See [review beside the page image](processing-spec.md#review-beside-the-page-image). |
+| Job reports, human review receipts, review sheets, `verify`, and verified `txt`, `md`, `jsonl`, or `tei` exports. | A receipt binds a human decision to the page and selected output; exports preserve page boundaries and review state. A job verifies, exports and can be reviewed after its directory is moved or copied, and records changes made away from where it was written. | A person makes the review decision. Verification and export do not certify transcription accuracy. See [review](processing-spec.md#review-in-a-spreadsheet), [report and receipt](document-report-spec.md), and [export](export.md). |
+| A static HTML review view (`review --out`): each page's image beside its selected text, other readings compared word by word, open contested spans marked, and decisions downloaded as a review sheet. | The view embeds the rows and binding `review --sheet` writes, so `review --apply` checks its decisions like any sheet's. | A rendering, not evidence: decisions count only once `review --apply` applies them. Page images come from PDFs through Poppler's `pdftoppm`. Decisions in progress stay in one browser's storage. See [review beside the page image](processing-spec.md#review-beside-the-page-image). |
 
 ### Align structured output
 
@@ -79,7 +79,7 @@ and [CLI alignment](cli.md#align).
 
 | Supported | What to rely on | Limit |
 |---|---|---|
-| `compare-runs`, verified bundles and replay. | Comparisons show changes; replay records the locally available extractor and compares output bytes. | Directional comparisons require matching identities. Replay does not recreate external services or certify accuracy. See [comparison](cli.md#compare-runs) and [the replay boundary](#verified-replay-boundary). |
+| `compare`, verified bundles and replay. | Comparisons show changes; replay records the locally available extractor and compares output bytes. | Directional comparisons require matching identities. Replay does not recreate external services or certify accuracy. See [comparison](cli.md#compare) and [the replay boundary](#verified-replay-boundary). |
 
 ### Recover interrupted work
 
@@ -91,7 +91,7 @@ as `outcome_unknown`. See [checkpoint specification](checkpoint-spec.md).
 
 | Supported | What to rely on | Limit |
 |---|---|---|
-| `fetch-iiif` for Presentation API 2 and 3 manifests and Image API 2 and 3 services. | A snapshot folder of page JPEGs at native size or the largest the server allows, with a record binding each file's hash to its URLs; `--resume` checks what is there and fetches only what is missing. | No authentication, JPEG only, whole images only (no regions), no ALTO or other OCR discovered from the manifest. The snapshot must be kept for its record to mean anything. See [the IIIF how-to](iiif.md#limits). |
+| `fetch` for Presentation API 2 and 3 manifests and Image API 2 and 3 services. | A snapshot folder of page JPEGs at native size or the largest the server allows, with a record binding each file's hash to its URLs; `--resume` checks what is there and fetches only what is missing. | No authentication, JPEG only, whole images only (no regions), no ALTO or other OCR discovered from the manifest. The snapshot must be kept for its record to mean anything. See [the IIIF how-to](iiif.md#limits). |
 
 ## Adapter-supported, user-supplied
 
@@ -261,7 +261,7 @@ the commands.
   child output, or remove unresolved pages from human review.
 - Reruns re-extract listed pages; they do not merge results. Combining
   parent and rerun outputs into one corpus is the project's decision, and
-  `pageledger compare-runs` shows per-page differences for making it.
+  `pageledger compare` shows per-page differences for making it.
 - PageLedger does not make OCR or VLM output correct. It cannot calibrate
   confidence across unrelated extractors, guarantee accuracy, or make a
   right-to-left, mixed-script, tabular, or handwritten collection work
@@ -274,15 +274,15 @@ the commands.
 - Replay and bundle limits are described in the
   [verified replay boundary](#verified-replay-boundary).
 - A run recorded before PageLedger hashed raw output stays readable, but it
-  cannot pass `verify-run`, so it cannot be bundled or replayed. See
+  cannot pass `verify`, so it cannot be bundled or replayed. See
   [verification](artifacts.md#verification).
 - Source custody, licensing, privacy and legal review remain with the project.
 - A document job resumes only in the directory it was written in; move it
   back there to resume it. Verifying, exporting and reviewing work anywhere.
   See [share and cite](share-and-cite.md#deposit-a-job).
-- `verify-job` checks the source only when it can reach it: without the source
+- `verify` checks a job's source only when it can reach it: without the source
   (or a source index entry for it) it passes with warning `source_missing`, as
-  `verify-run` does. The job's own evidence is checked either way.
+  it does for a run. The job's own evidence is checked either way.
 
 ## Tested scale and documents
 

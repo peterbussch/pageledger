@@ -9,7 +9,7 @@ under evaluation. Provide the link to [the document first-run tutorial](../docum
 and no additional walkthrough. Ask them to:
 
 1. create the synthetic source and configuration;
-2. run `process`, `inspect-job`, and `verify-job`;
+2. run `process`, `inspect`, and `verify`;
 3. explain what `completed` means and whether it implies review;
 4. run the interruption and resume section;
 5. apply the review record tied to a page and output, then identify the still-pending pages.

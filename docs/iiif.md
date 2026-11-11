@@ -9,7 +9,7 @@ checked and cited against the exact bytes it was made from; fetching the
 images once and keeping them, with a record of where each came from, gives you
 those bytes.
 
-`pageledger fetch-iiif` makes that copy. It writes a *snapshot* folder: one
+`pageledger fetch` makes that copy. It writes a *snapshot* folder: one
 JPEG per canvas, the manifest and image information as the server sent them,
 and a fetch record (`iiif-fetch.json`) that binds each file's SHA-256 hash to
 the URLs it came from.
@@ -17,7 +17,7 @@ the URLs it came from.
 ## Fetch an item
 
 ```bash
-pageledger fetch-iiif https://example.org/iiif/item/manifest.json --out sources/item
+pageledger fetch https://example.org/iiif/item/manifest.json --out sources/item
 ```
 
 The URL can be a Presentation API 2 or 3 manifest, an Image API 2 or 3
@@ -26,7 +26,7 @@ The URL can be a Presentation API 2 or 3 manifest, an Image API 2 or 3
 position in the manifest:
 
 ```bash
-pageledger fetch-iiif https://example.org/iiif/item/manifest.json --pages "1-8,81" --out sources/item
+pageledger fetch https://example.org/iiif/item/manifest.json --pages "1-8,81" --out sources/item
 ```
 
 The snapshot looks like this:
@@ -61,7 +61,7 @@ a record with status `incomplete` that lists each missing canvas and why.
 Run the same command with `--resume`:
 
 ```bash
-pageledger fetch-iiif https://example.org/iiif/item/manifest.json --out sources/item --resume
+pageledger fetch https://example.org/iiif/item/manifest.json --out sources/item --resume
 ```
 
 Resuming first checks every image already fetched against its recorded hash,
@@ -102,4 +102,4 @@ pixels than the archive holds.
 
 The fetch record's fields are described in the
 [fetch record specification](iiif-fetch-spec.md). For every option and exit
-code, see [`fetch-iiif`](cli.md#fetch-iiif).
+code, see [`fetch`](cli.md#fetch).

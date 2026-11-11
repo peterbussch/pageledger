@@ -49,17 +49,17 @@ run:
 YAML
 
 pageledger run sample.txt --config pageledger.yml --out runs/first
-pageledger inspect-run runs/first
-pageledger inspect-run runs/first --csv > pages.csv
+pageledger inspect runs/first
+pageledger inspect runs/first --csv > pages.csv
 
 sed -n '1,5p' runs/first/raw/doc_0001_page_0002.txt
 sed -n '1,80p' runs/first/audit.md
 grep 'replacement_characters' pages.csv
-pageledger verify-run runs/first
-pageledger inspect-run runs/first --json
+pageledger verify runs/first
+pageledger inspect runs/first --json
 ```
 
-Among other lines, the run and `inspect-run` print:
+Among other lines, the run and `inspect` print:
 
 ```text
 Pages: 3 extracted / 3 total
@@ -69,7 +69,7 @@ Review queue: 1
 Grades (signals): A=2 B=1 C=0 D=0 F=0
 ```
 
-and `verify-run` ends with `Run verification: PASS`.
+and `verify` ends with `Run verification: PASS`.
 
 `quality.jsonl` contains observable signals, not a correctness verdict.
 Likewise, an A signals grade means the configured heuristics did not fire; it
@@ -89,11 +89,11 @@ does any extraction. The parent `rerun-manifest.yml` selects only page 2.
 
 ```bash pageledger-tutorial
 pageledger rerun runs/first --config pageledger.yml --out runs/second
-pageledger compare-runs runs/first runs/second
-pageledger verify-run runs/second
+pageledger compare runs/first runs/second
+pageledger verify runs/second
 ```
 
-`compare-runs` reports, among other lines:
+`compare` reports, among other lines:
 
 ```text
 Pages compared: 1 (only in A: 2, only in B: 0)
@@ -104,7 +104,7 @@ Warnings resolved in B: 0
 This deliberately uses the same deterministic adapter on unchanged source, so
 the result and warning remain unchanged. In a real project you might supply a
 stronger adapter, but PageLedger does not assume a rerun is better and does not
-assemble a corrected corpus automatically. Use `compare-runs`, inspect the
+assemble a corrected corpus automatically. Use `compare`, inspect the
 evidence, and explicitly select an output for downstream work.
 
 ## Record review decisions outside the run
@@ -134,13 +134,13 @@ with Path("review/decisions.csv").open("w", newline="", encoding="utf-8") as han
     ])
 PY
 
-pageledger verify-run runs/first
-pageledger verify-run runs/second
+pageledger verify runs/first
+pageledger verify runs/second
 test -f review/decisions.csv
 ```
 
 
-For document jobs, use [review-job](processing-spec.md#reports-and-review) to
+For document jobs, use [`review --apply`](processing-spec.md#reports-and-review) to
 record source-bound human decisions. The CSV above is for ordinary runs.
 
 Do not edit `audit.md`, `audit.json`, or raw files inside a verified run to keep
@@ -160,7 +160,7 @@ mkdir relocated
 mv first-bundle relocated/first-bundle
 mv sample.txt relocated/original-source.moved
 pageledger replay relocated/first-bundle --out runs/replayed
-pageledger verify-run runs/replayed
+pageledger verify runs/replayed
 ```
 
 An exact replay proves equality under PageLedger's documented deterministic

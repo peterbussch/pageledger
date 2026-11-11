@@ -28,7 +28,7 @@ reviewed as text or blank. For meanings and suggested actions, see the
 | `limits` | The job's recorded execution limits |
 | `stage_accounting` | Optional configured-stage attempt counts; a stage with zero pages includes why it did not run. Absent from older reports, which still verify with their original fields. |
 | `links` | Nullable `article` and `custody` references supplied by the job |
-| `relocations` | Optional. Each `review-job` or `adjudicate --decisions` change made to the job outside the directory it was written in: `root` (where it was made), `command`, and `at`. Rendered as a "Changed elsewhere" line. Absent until such a change. |
+| `relocations` | Optional. Each `review --apply` or `adjudicate --decisions` change made to the job outside the directory it was written in: `root` (where it was made), `command` (`review-job`, the earlier name of `review --apply`, or `adjudicate`), and `at`. Rendered as a "Changed elsewhere" line. Absent until such a change. |
 | `source_retention` | Explicit source capture, preservation, removal eligibility, and removal state |
 | `next_action` | One human-readable action for the document |
 | `counts` | `source_pages`, `selected_pages`, `processed_pages`, `selected_outputs`, and `unresolved_pages` |
@@ -187,8 +187,8 @@ reviewer's identity. Set the page, reason, and timestamp to the review performed
 Then apply and verify it:
 
 ```bash
-pageledger review-job jobs/book --review reviewed-pages.json
-pageledger verify-job jobs/book
+pageledger review jobs/book --apply reviewed-pages.json
+pageledger verify jobs/book
 ```
 
 `reviewed_text` always requires a completed artifact and its matching output

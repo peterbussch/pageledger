@@ -291,8 +291,8 @@ reported as `alto_geometry_mismatch` (see [warnings](warnings.md)).
 
 The model string names the file, its SHA-256 and the software the file
 declares, for example `alto; file 0001.xml sha256:…; software ABBYY FineReader
-8.0`, so a changed file is a different reading. `verify-run` and `verify-job`
-check the recorded text against that record but do not read the ALTO file
+8.0`, so a changed file is a different reading. `verify`
+checks the recorded text against that record but do not read the ALTO file
 again: it lies outside the source and the run, so keep the folder with the run
 if the reading must be checked later, and compare its digest by hand.
 
