@@ -643,10 +643,15 @@ adapter's `env_key`, such as a gateway's own key.
 
 ## Earlier command names
 
-Releases before 0.9.0 named some commands differently. Those names still work
-exactly as they did, with the same options, output and exit codes, and will
-keep working through every 1.x release (see [stability](stability.md)); they
-are not listed by `pageledger --help`.
+Releases before 0.9.0 named some commands differently. Those names still work,
+with the same options, the same output and the same exit codes, and will keep
+working through every 1.x release (see [stability](stability.md)); they are not
+listed by `pageledger --help`. On a job and a run written by 0.8.0, each printed
+what 0.8.0 printed, with two additions: the JSON result of `verify-job` has a
+`warnings` list (empty when there is nothing to report), and `review-sheet` also
+writes `review-decisions.txt`, a guide to the decisions, beside the sheet. They
+follow 0.9's rules where those changed what a command accepts: a moved job
+verifies, with a warning, where 0.8 refused it.
 
 | Earlier name | Now |
 |---|---|
