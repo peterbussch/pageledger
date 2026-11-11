@@ -64,6 +64,20 @@ def _pages(job):
     return read_record(job / "job.json")["pages"]
 
 
+def test_a_sheet_with_0_8_s_cells_still_applies(job, tmp_path):
+    sheet = _sheet(job, tmp_path / "review.csv")
+
+    def as_0_8_wrote_it(rows):
+        for row in rows:
+            row.update(disposition="coverage_defect", review_reasons="coverage_defect")
+            row.update(attempt_summary="local_text:doc_0001_page_0001: words (9 characters)")
+            row.update(decision="accept")
+
+    _edit(sheet, as_0_8_wrote_it)
+    result = review_job(job, sheet, reviewer="A. Reader")
+    assert result["decisions"] == {"reviewed_text": 2}
+
+
 def test_a_filled_in_sheet_records_decisions_and_leaves_blank_rows_unreviewed(job, tmp_path):
     sheet = _sheet(job, tmp_path / "review.csv")
     assert sheet.read_bytes().startswith(b"\xef\xbb\xbf")
@@ -73,7 +87,13 @@ def test_a_filled_in_sheet_records_decisions_and_leaves_blank_rows_unreviewed(jo
         "scans/source.txt#page=1",
         "scans/source.txt#page=2",
     ]
-    assert rows[1]["review_reasons"] == "coverage_defect"
+    # The cells a person reads lead with words; the code, or the reading's ID, comes last.
+    assert rows[1]["review_reasons"] == (
+        "Text may be missing or damaged in the reading (coverage_defect)"
+    )
+    assert rows[1]["disposition"] == rows[1]["review_reasons"]
+    assert rows[0]["attempt_summary"].startswith("The engine local_text: ")
+    assert rows[0]["attempt_summary"].endswith("; local_text:doc_0001_page_0001)")
 
     _edit(sheet, lambda rows: rows[0].update(decision="accept", note="Checked against the scan"))
     result = review_job(job, sheet, reviewer="A. Reader")

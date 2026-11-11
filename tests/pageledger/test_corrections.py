@@ -269,7 +269,7 @@ def test_dry_run_reports_the_change_and_warns_of_a_likely_wrong_page(job, tmp_pa
     out = capsys.readouterr().out
     assert code == 0
     assert out.startswith("Checked, and nothing recorded (dry run): 1 page: 1 corrected.\n")
-    assert "Correction of page 1, from local_text:doc_0001_page_0001:" in out
+    assert "Correction of page 1, from the engine local_text:" in out
     assert "Warning: the correction of page 1 changes more than half the words" in out
     assert _pages(job)[0]["review"] is None
     assert not (job / "corrections").exists()
@@ -496,7 +496,10 @@ def test_txt_and_md_exports_carry_the_corrected_text_and_say_so(corrected, tmp_p
         first = content.split("Page 2")[0]
         assert TEXT in first and WRONG not in first
         assert "Correction: corrections/doc_0001_page_0001-" in first
-        assert "the text as A. Reader corrected it on 20" in first
+        assert "Text from: a person's correction by A. Reader of the engine local_text (" in first
+        assert "Corrected reading: local_text:doc_0001_page_0001, " in first
+        assert "Attempt:" not in first and "Output SHA-256" not in first
+        assert "corrected the text; their note: fixed" in first
         assert "1 word changed, 0 added, 0 removed" in first
         assert "Correction SHA-256: " in first
 

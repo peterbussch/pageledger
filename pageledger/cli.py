@@ -1763,8 +1763,9 @@ def _print_review_result(job: Path, result: dict, *, dry_run: bool) -> None:
     pages = "page" if total == 1 else "pages"
     verb = "Checked, and nothing recorded (dry run)" if dry_run else "Recorded"
     print(f"{verb}: {total} {pages}: {', '.join(parts)}." if parts else f"{verb}: no decisions.")
+    report = json.loads((job / "document.json").read_text(encoding="utf-8"))
     for item in result.get("corrections", []):
-        page, start = item["page_number"], item["from"]
+        page, start = item["page_number"], _started_from(report, item)
         print(f"Correction of page {page}, from {start}: {describe(item['words'])}")
         if item["large"]:
             print(
@@ -1791,6 +1792,23 @@ def _print_review_result(job: Path, result: dict, *, dry_run: bool) -> None:
     else:
         print("No page needs a person now.")
         print(f"Next: {export_command(job)}")
+
+
+def _started_from(report: dict, item: dict) -> str:
+    """The reading a correction started from, named as the report names it."""
+    from .document_report import reader_name
+
+    start = item["from"]
+    edition = start.startswith("the edition of ")
+    attempt_id = start.removeprefix("the edition of ")
+    page = next((p for p in report["pages"] if p["page_number"] == item["page_number"]), None)
+    attempt = next(
+        (a for a in (page or {}).get("attempts", []) if a["attempt_id"] == attempt_id), None
+    )
+    if attempt is None:
+        return start
+    name = reader_name(report, attempt)
+    return f"the edition of {name}" if edition else name
 
 
 def _print_language_advice(job: Path, args: argparse.Namespace) -> None:

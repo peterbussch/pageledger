@@ -17,12 +17,13 @@ from .document_report import (
     _link,
     is_pending,
     needs_person,
+    reader_name,
     relative_path,
     verify_document_report,
 )
 from .image_source import page_target
 from .processing import verify_job
-from .wording import HOLDS, REVIEWED, warning, warning_code
+from .wording import CORRECTION, HOLDS, REVIEWED, warning, warning_code
 
 FORMATS = ("txt", "md", "jsonl", "tei")
 # Where a page stands, in the JSONL `state` and the TEI `@ana` categories.
@@ -32,6 +33,8 @@ STATES = {
     "unreviewed": "Nothing held this page, and no person has checked it.",
     "reviewed": "A person reviewed this page.",
 }
+# The reason a review records when the reviewer wrote no note.
+_SHEET_REASON = "Review sheet decision: "
 TEI = "http://www.tei-c.org/ns/1.0"
 _XML_ID = "{http://www.w3.org/XML/1998/namespace}id"
 # Characters XML 1.0 cannot carry; OCR engines emit some of them.
@@ -151,8 +154,10 @@ def _engine(attempt: dict) -> str:
     return f"{attempt['adapter']} ({attempt['model']})" if attempt["model"] else attempt["adapter"]
 
 
-def _facts(page: dict) -> list[tuple[str, str]]:
+def _facts(report: dict, page: dict) -> list[tuple[str, str]]:
     """The review state and attempt identity shown above a page's text."""
+    if "correction" in page:
+        return _corrected_facts(report, page)
     review, attempt = page["review"], page["attempt"]
     facts = [
         ("Disposition", _disposition_label(page["disposition"])),
@@ -171,18 +176,36 @@ def _facts(page: dict) -> list[tuple[str, str]]:
             ("Edition", f"{page['edition']['path']}, the attempt with adjudicated changes")
         )
         facts.append(("Edition SHA-256", page["edition"]["sha256"]))
-    if "correction" in page:
-        correction = page["correction"]
-        facts.append(
-            (
-                "Correction",
-                f"{correction['path']}, the text as {correction['reviewer']} corrected it on "
-                f"{correction['reviewed_at']} from {correction['from_path']} "
-                f"({describe(correction['words'])})",
-            )
-        )
-        facts.append(("Correction SHA-256", correction["sha256"]))
     return facts
+
+
+def _corrected_facts(report: dict, page: dict) -> list[tuple[str, str]]:
+    """A corrected page's text is the person's: say so first, and name the reading it
+    corrected, with that reading's identity, after it."""
+    review, attempt, correction = page["review"], page["attempt"], page["correction"]
+    note = review["reason"]
+    decided = "corrected the text" + (
+        "" if note.startswith(_SHEET_REASON) else f"; their note: {note}"
+    )
+    shown = next(p for p in report["pages"] if p["page_id"] == page["page_id"])
+    reading = next(a for a in shown["attempts"] if a["attempt_id"] == attempt["attempt_id"])
+    return [
+        ("Disposition", _disposition_label(page["disposition"])),
+        ("Review", f"{review['reviewer']}, {review['reviewed_at']}: {decided}"),
+        (
+            "Text from",
+            f"{CORRECTION} by {correction['reviewer']} of {reader_name(report, reading)} "
+            f"({describe(correction['words'])})",
+        ),
+        (
+            "Correction",
+            f"{correction['path']}, made on {correction['reviewed_at']} from "
+            f"{correction['from_path']}",
+        ),
+        ("Correction SHA-256", correction["sha256"]),
+        ("Corrected reading", f"{attempt['attempt_id']}, {_engine(attempt)}"),
+        ("Corrected reading SHA-256", attempt["output_sha256"]),
+    ]
 
 
 def _heading(report: dict) -> tuple[str, str]:
@@ -197,7 +220,7 @@ def _txt(report: dict, pages: list[dict], source: str) -> str:
     lines = [title, f"SHA-256 {report['source']['sha256']}", job, ""]
     for page in pages:
         lines.append(f"--- Page {page['page_number']} ---")
-        lines += [f"{label}: {' '.join(value.split())}" for label, value in _facts(page)]
+        lines += [f"{label}: {' '.join(value.split())}" for label, value in _facts(report, page)]
         if page["text"] is not None:
             lines += ["", page["text"]]
         lines.append("")
@@ -211,7 +234,7 @@ def _md(report: dict, pages: list[dict], source: str) -> str:
         path, fragment = page_target(report["source"], page["page_number"])
         target = source + quote(path) + fragment
         lines += [f"## Page {page['page_number']}", "", f"- {_link('Source page', target)}"]
-        lines += [f"- {label}: {_escape(value)}" for label, value in _facts(page)]
+        lines += [f"- {label}: {_escape(value)}" for label, value in _facts(report, page)]
         if page["text"] is not None:
             lines += ["", page["text"]]
         lines.append("")

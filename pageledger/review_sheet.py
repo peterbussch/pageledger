@@ -11,10 +11,10 @@ from pathlib import Path
 
 from . import corrections
 from .checkpoint import atomic_bytes
-from .document_report import _artifact_bytes, _engines, empty_reading, relative_path
+from .document_report import _artifact_bytes, _engines, empty_reading, reader_name, relative_path
 from .image_source import page_target
 from .runner import _utc_now
-from .wording import DECISION_GROUPS, reading_name
+from .wording import CORRECTION, DECISION_GROUPS, HOLDS, REVIEWED, sentence
 
 # Beside every sheet: the decisions it takes, and the readings each page can use.
 GUIDE = "review-decisions.txt"
@@ -74,9 +74,11 @@ def write_review_sheet(job: dict, sheet: Path, root: Path) -> dict:
                 "row_id": row_id,
                 "page_number": str(page["page_number"]),
                 "source_page": source + "".join(page_target(job["source"], page["page_number"])),
-                "disposition": page["disposition"],
-                "attempt_summary": _summary(root, page, _selected(page)),
-                "review_reasons": "; ".join(page["review_reasons"]),
+                "disposition": _state(page),
+                "attempt_summary": _summary(root, job, page, _selected(page)),
+                "review_reasons": "; ".join(
+                    f"{HOLDS.get(code, code)} ({code})" for code in page["review_reasons"]
+                ),
                 "decision": "",
                 "note": "",
             }
@@ -127,15 +129,13 @@ def _guide(job: dict, sheet: Path, root: Path) -> str:
                 lines.append(
                     f"  {'':<15} Save your corrected text in FILE, a text file beside the sheet."
                 )
-    engines = _engines(job)
-    images = job["source"].get("kind") == "page_images"
     offered = []
     for page in job["pages"]:
         for attempt in page["attempts"]:
             usable = _completed(page, attempt["attempt_id"]) and not empty_reading(attempt)
             if not usable or attempt["attempt_id"] == page["selected_attempt"]:
                 continue
-            name = reading_name(attempt["stage"], engines.get(attempt["stage"]), images=images)
+            name = _name(job, attempt)
             offered.append(f"  Page {page['page_number']}: use:{attempt['attempt_id']} ({name})")
     lines += ["", "Other readings each page can use instead of its selected text:"]
     lines += offered or ["  none"]
@@ -481,20 +481,36 @@ def _output_sha256(page: dict, attempt: dict) -> str:
     return attempt["raw_sha256"]
 
 
-def _summary(root: Path, page: dict, attempt: dict | None) -> str:
+def _name(job: dict, attempt: dict) -> str:
+    """A reading named by what made it, as the report and the review view name it."""
+    return reader_name({"engines": _engines(job), "source": job["source"]}, attempt)
+
+
+def _state(page: dict) -> str:
+    """Where the page stands, in words, with its code last."""
+    code = page["disposition"]
+    words = REVIEWED.get(code) if page.get("review") is not None else HOLDS.get(code)
+    return f"{words or code} ({code})"
+
+
+def _summary(root: Path, job: dict, page: dict, attempt: dict | None) -> str:
+    """The selected text's first words, after what made it; its reading's ID comes last."""
     if attempt is None:
         return "No selected text"
-    text, label = attempt["text"], attempt["attempt_id"]
+    text, label = attempt["text"], sentence(_name(job, attempt))
+    detail = attempt["attempt_id"]
     edition = page.get("edition")
     corrected = _corrected(page)
     if corrected is not None:
         artifact = corrected["correction"]["artifact"]
         text = (root / artifact).read_text(encoding="utf-8")
-        label = f"{label}, corrected in {artifact}"
+        label = f"{sentence(CORRECTION)} of {_name(job, attempt)}"
+        detail = f"{detail}, corrected in {artifact}"
     elif edition and edition["base_attempt"] == attempt["attempt_id"]:
         text = (root / edition["artifact"]).read_text(encoding="utf-8")
-        label = f"{label}, edition {edition['artifact']}"
-    return f"{label}: {' '.join(text.split()[:12])} ({len(text)} characters)"
+        label += ", with its settled differences applied"
+        detail = f"{detail}, edition {edition['artifact']}"
+    return f"{label}: {' '.join(text.split()[:12])} ({len(text)} characters; {detail})"
 
 
 def _binding(job: dict, page: dict) -> dict:
