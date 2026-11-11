@@ -512,8 +512,16 @@ def _text_quality_warnings(metrics: dict[str, Any]) -> list[str]:
 # broken word. The 2026-11 dogfood's split-word layer ("Сырны й комбина т") had 11-16%
 # such tokens; its 12 correct pages had at most 0.7%.
 _ONE_LETTER_WORDS = frozenset("абвжикосуяійзўАБВЖИКОСУЯІЙЗЎ")
-# Letters with their combining marks, so a stressed "е́хать" stays one word.
-_LETTERS = re.compile(r"[^\W\d_](?:[^\W\d_]|[\u0300-\u036f])*")
+# Combining marks: the general ones (a stress, "е́хать") and Cyrillic's own (the titlo of a
+# Church Slavonic numeral or abbreviation, "а҃", "Бг҃ъ").
+_MARKS = "\u0300-\u036f\u0483-\u0489"
+# Letters with their combining marks, so a marked letter stays part of its word.
+_LETTERS = re.compile(rf"[^\W\d_](?:[^\W\d_]|[{_MARKS}])*")
+_CYRILLIC_TOKEN = re.compile(rf"[\u0400-\u04ff{_MARKS}]+")
+# A lone small letter a space after a number or млн/млрд/тыс/трлн on the same line, or
+# joined to a unit by · or /, is a unit ("5 м", "млн т", "кВт·ч"), not a piece of a word:
+# a Soviet production table writes one in every row. A letter inside a number ("6,6т") is not.
+_UNIT_BEFORE = re.compile(r"(?:(?:\d|(?<![^\W\d_])(?:млн|млрд|тыс|трлн)\.?)[^\S\n]+|[·/])\Z", re.I)
 _SPLIT_MIN_TOKENS = 50
 _SPLIT_MIN_SHARE = 0.10
 # A lower-case letter then a capital Ъ or Ь: no word of either Russian orthography is
@@ -526,25 +534,33 @@ _CAPITAL_SIGN_MIN_SHARE = 0.01
 # them, and fewer lines of numbers than half of those, is a table whose values the
 # reading lost: the 1880 gazetteer layer kept 34 row labels and almost none of 20 columns.
 # A leader is four dots or more, or three spaced ones; "..." is an ellipsis, which
-# dialogue ends lines with.
+# dialogue ends lines with. A page number in roman numerals after one is a value.
+# A blank form (labels, leaders, nothing after them) cannot be told from this by its
+# text, and is held too: a person accepting it costs less than releasing a lost table.
 _LEADER = re.compile(r"\.{4,}|\.(?: \.){2,}")
 _LEADERS_MIN = 10
+_ROMAN = re.compile(
+    r"(?=[ivxlcdm])m{0,3}(?:cm|cd|d?c{0,3})(?:xc|xl|l?x{0,3})(?:ix|iv|v?i{0,3})", re.I
+)
 
 
 def _misread_warnings(text: str) -> list[str]:
     """Defects of a reading a page's metrics do not show: broken words, impossible
     capitals, and table labels whose values are missing."""
     found = []
-    tokens = [
-        (m.group(), m.end())
-        for m in _LETTERS.finditer(text)
-        if all("\u0400" <= char <= "\u04ff" or "\u0300" <= char <= "\u036f" for char in m.group())
-    ]
+    tokens = [m for m in _LETTERS.finditer(text) if _CYRILLIC_TOKEN.fullmatch(m.group())]
     if len(tokens) >= _SPLIT_MIN_TOKENS:
         stray = sum(
             1
-            for token, end in tokens
-            if len(token) == 1 and token not in _ONE_LETTER_WORDS and text[end : end + 1] != "."
+            for m in tokens
+            if len(m.group()) == 1
+            and m.group() not in _ONE_LETTER_WORDS
+            and text[m.end() : m.end() + 1] != "."
+            and not (
+                m.group().islower()
+                and _UNIT_BEFORE.search(text, 0, m.start())
+                and not text[m.end() : m.end() + 1].isdecimal()
+            )
         )
         if stray >= _SPLIT_MIN_SHARE * len(tokens):
             found.append("split_words")
@@ -555,7 +571,8 @@ def _misread_warnings(text: str) -> list[str]:
     unfinished = 0
     for line in lines:
         leaders = list(_LEADER.finditer(line))
-        if leaders and not any(char.isdigit() for char in line[leaders[-1].end() :]):
+        value = line[leaders[-1].end() :].strip() if leaders else ""
+        if leaders and not any(char.isdigit() for char in value) and not _ROMAN.fullmatch(value):
             unfinished += 1
     numeric = sum(
         1 for line in lines if any(c.isdigit() for c in line) and not any(c.isalpha() for c in line)

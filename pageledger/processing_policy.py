@@ -87,9 +87,10 @@ _WARNING_HOLDS = {
     "model_commentary": "coverage_defect",
     "script_mismatch": "coverage_defect",
     "historical_letters_lost": "coverage_defect",
-    # Only a job that reads pages in tiles (processing.tiling) records these.
+    # Only a job that reads pages in tiles (processing.tiling) records these two.
     "tile_edge_cut": "coverage_defect",
     "tile_failed": "coverage_defect",
+    # Any reading of a page written by 0.9 can carry these (quality._misread_warnings).
     "split_words": "coverage_defect",
     "labels_without_values": "coverage_defect",
     "capital_sign_in_word": "coverage_defect",

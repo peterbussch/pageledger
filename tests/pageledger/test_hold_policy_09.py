@@ -234,6 +234,27 @@ def test_a_layer_that_splits_off_the_last_letter_of_words_is_flagged():
     assert _misread_warnings(ukrainian) == [] and _misread_warnings(belarusian) == []
 
 
+def test_units_after_numbers_and_church_slavonic_marks_are_not_split_words():
+    # A Soviet production table writes a unit of one letter in every row.
+    table = "\n".join(
+        [
+            "Электроэнергия, млрд кВт·ч 48,3 91,2 170,2 292,3",
+            *(f"{name}, млн т 31,1 37,9 70,8 147,9" for name in ("Нефть", "Уголь", "Сталь")),
+            "Ткани хлопчатобумажные, млрд м 3,9 3,8 5,1 6,0",
+            *(f"Продукт номер {n}, млн т 1,{n}" for n in range(12)),
+        ]
+    )
+    assert _misread_warnings(table) == []
+    units = " ".join(["Высота стены 5 м и ширина 3 м, вес 4 т, время 2 ч, объём 7 л."] * 8)
+    assert _misread_warnings(units) == []
+    # A titlo over a numeral or an abbreviation is a mark on the letter, not a letter.
+    slavonic = " ".join(["Бг҃ъ ѿ нбсе призрѣ̀ на сыны̀ гл҃ава а҃ стїхъ в҃ г҃ д҃ є҃ ѕ҃ з҃ и҃ ѳ҃ і҃"] * 4)
+    assert _misread_warnings(slavonic) == []
+    # Letters a misreading put inside numbers, or after a number on the next line, still count.
+    garbled = " ".join(["Сырны й комбина т 6,6т 18.69т,6 2.377\nМ е л е н к"] * 10)
+    assert "split_words" in _misread_warnings(garbled)
+
+
 def test_a_capital_hard_sign_inside_a_lower_case_word_is_flagged():
     misread = " ".join(["благочестивЪйшихЪ золотниковЪ мЪсто городъ"] * 15)
     assert "capital_sign_in_word" in _misread_warnings(misread)
@@ -253,6 +274,16 @@ def test_table_labels_whose_values_are_missing_are_flagged():
     # Dialogue ending its lines in an ellipsis is not a table.
     dialogue = "\n".join("— Ты еще Салтычиху вспомни..." for _ in range(20))
     assert _misread_warnings(dialogue) == []
+    # A table of contents numbered in roman numerals has its values.
+    contents = "\n".join(
+        f"Глава {n}. О предмете номер {n} ........ {roman}"
+        for n, roman in enumerate("i ii iii iv v vi vii viii ix x xi XII".split(), 1)
+    )
+    assert _misread_warnings(contents) == []
+    # A blank form reads like a table whose values were lost, and is held the same way.
+    fields = "Фамилия Имя Отчество Год Место Национальность Язык Образование Профессия Адрес"
+    form = "\n".join(f"{label} ...................." for label in fields.split())
+    assert _misread_warnings(form) == ["labels_without_values"]
 
 
 # ---------------------------------------------------------------------------

@@ -320,6 +320,11 @@ and, from 1.0, [stability](docs/stability.md).
 - An image page that failed transiently just as `max_image_pages` was reached keeps its one retry: after
   `resume --raise-limit` the retry is requested before any unread page. It used to be lost, leaving the page
   held as `provider_failure` while later pages got both a read and a retry.
+- `split_words` no longer holds a correct Soviet production table, whose rows end in units of one letter
+  ("млн т", "кВт·ч"), or Church Slavonic text, whose numerals and abbreviations carry a titlo; and
+  `labels_without_values` no longer holds a table of contents numbered in roman numerals. A blank form with
+  dot leaders is still held by `labels_without_values`: its text cannot tell it from a table that lost its
+  values.
 - `review --apply` refuses a plain JSON receipt that decides a page a person corrected, unless the receipt
   carries that correction. An older receipt naming the machine reading used to replace the correction without
   a warning, and `export` then gave the uncorrected text as reviewed. Review sheets and decisions files were
