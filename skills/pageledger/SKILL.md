@@ -5,11 +5,15 @@ description: This skill should be used when the user asks to "OCR these scans", 
 
 # PageLedger
 
-PageLedger is a page-denominated run ledger for document extraction. It
-does not extract anything itself: it routes pages to an adapter
-(Tesseract, a cloud VLM, anything wrapped in the protocol), enforces
-page/token/dollar budgets, and records provenance, quality signals, cost,
-review queues, and rerun plans as plain files in a run directory.
+PageLedger reads documents into text page by page and records how each page
+was read. It does not extract anything itself: it calls an adapter
+(Tesseract, RapidOCR, Indra, a library's ALTO, a vision model, anything
+wrapped in the protocol), enforces page/token/dollar limits, and records
+provenance, quality signals, holds, review decisions and cost as plain files.
+`process` makes a *job* for one document, with the pages that need a person
+listed; `run` and its siblings make *runs*, for building and testing
+pipelines. Commands have single-word names; the earlier hyphenated names are
+hidden aliases ([earlier command names](../../docs/cli.md#earlier-command-names)).
 
 Use `pageledger --version` to check the installed release. The
 [`docs/capabilities-and-limits.md`](../../docs/capabilities-and-limits.md)
@@ -20,16 +24,18 @@ page lists supported workflows and limits; the
 
 | Task | Command |
 |---|---|
-| Process a document with staged attempts | `pageledger process book.pdf --out jobs/book` (Tesseract, English; `--lang`, `--engine`) or `--config processing.yml` |
+| Process a document with staged readings | `pageledger process book.pdf --out jobs/book` (Tesseract, English; `--lang`, `--engine`) or `--config processing.yml`. The source can be a PDF, a UTF-8 text file, one JPEG/PNG or a folder of them (one document) |
+| Copy a library's IIIF item to process it | `pageledger fetch MANIFEST_URL --out sources/item`, then `pageledger process sources/item --out jobs/item` ([IIIF](../../docs/iiif.md)) |
 | Write a job config to edit | `pageledger init --out processing.yml` |
 | Read or verify a document report | `pageledger inspect jobs/book`; `pageledger verify jobs/book` |
 | Show held pages beside their images | `pageledger review jobs/book --out review/` (or `--sheet review.csv` for a spreadsheet) |
-| Record human review | `pageledger review jobs/book --apply reviewed-pages.json` |
+| Record human review | `pageledger review jobs/book --apply review/review.json --reviewer "Name"` (the file the review view downloads; a filled sheet or a JSON receipt also works; `--dry-run` checks first) |
+| Write the text out | `pageledger export jobs/book --format txt\|md\|jsonl\|tei --out FILE` (`--reviewed-only` for pages a person reviewed) |
 | Settle a model's contested words | `pageledger adjudicate jobs/book --packets DIR`, answer each packet against its page image, then `pageledger adjudicate jobs/book --decisions DIR --reviewer agent:NAME` |
 | Start a resumable run | `pageledger run scan.pdf --adapter pdf_ocr --resumable --out runs/a` |
 | Recover pending work in place | `pageledger resume runs/a` or `pageledger resume jobs/book` |
 | OCR a scan, no config | `pageledger run scan.pdf --adapter pdf_ocr --out runs/a` |
-| OCR a folder of page images (JPEG/PNG, one document) | `pageledger run scans/ --adapter pdf_ocr --out runs/a` |
+| OCR a folder of page images (JPEG/PNG, one document) | `pageledger process scans/ --out jobs/scans`, or `pageledger run scans/ --adapter pdf_ocr --out runs/a` |
 | Read pages with a vision model | a config with `run.adapter: vision`, `base_url` and `model`; try `--pages 1` first ([vision adapter](../../docs/vision-adapter.md)) |
 | Born-digital PDF | `pageledger run doc.pdf --adapter pdf_text --out runs/a` (needs `pageledger[pdf]`) |
 | Sample pages first | add `--pages "1-10,50-60"` (page ids keep source numbering) |
@@ -112,7 +118,7 @@ optional image stages under a shared budget. The `processing` section defines
 `local_text`, `local_ocr`, `image`, and optional `second_opinion`, and two
 optional rungs between OCR and the image stage: `second_ocr` (a second literal
 engine) and `local_image` (a vision model on this machine). Under hold
-policy 0.8 a local OCR reading that nothing else confirms climbs to
+policy 0.8 and later a local OCR reading that nothing else confirms climbs to
 `second_ocr` (trigger `uncorroborated`), so configure one when OCR text
 should not be accepted on one engine's word. Local text is
 required; other stages can be disabled with `null`. Image stages require a
@@ -121,10 +127,24 @@ positive `processing.limits.max_image_pages`, and `local_image` its own
 `max_tokens`, and `max_cost_usd`. See
 [the processing guide](../../docs/processing-spec.md) for a complete config.
 
-Jobs retain all attempts and publish `document.json`, `report.md`, and
-`transcript.md`. A clean later attempt may supply the transcript while an earlier
-review hold remains. Only source/output-bound human receipts establish reviewed
-text; never create a receipt claiming a human review that did not happen.
+Jobs retain every reading and publish `document.json`, `report.md`, and
+`transcript.md`; `report.md` opens with how many pages need a person and why,
+and the next command. New jobs record hold policy 0.9, under which an earlier
+OCR in a PDF's text layer (or a library's ALTO, read with the `alto` adapter)
+is a witness beside the job's own OCR, not the page's text. Only
+source/output-bound human receipts establish reviewed text; never create a
+receipt, a correction or a review decision claiming a human review that did
+not happen. A person's corrected text is kept as a new reading
+(`correct:FILE` in a sheet, or the review view's text box); never edit a
+reading or `job.json` by hand.
+
+Dense pages can be read by `vision` in tiles (`processing.tiling`, bounded by
+`max_image_requests`); see [read dense pages in tiles](../../docs/processing-spec.md#read-dense-pages-in-tiles).
+A job folder can be moved or deposited: `verify`, `inspect`, `export`,
+`review` and `adjudicate` work where it is (warnings `job_relocated`,
+`job_changed_elsewhere`, `source_missing`), but `resume` works only in the
+folder it was written in. A job that did not finish fails `verify` with reason
+`unfinished`; run `resume`.
 
 With `processing.contest`, a model's reading is compared with the OCR and each
 difference becomes a span; open spans hold the page as `contested`. When you
@@ -133,7 +153,8 @@ misprints, use `high` confidence only when the image is plain, and name yourself
 truthfully in `--reviewer` (`agent:...` for an agent, never a person's name).
 Do not adjudicate a reading made by your own model family. Choose the rule set
 by script: `ru-print-0.2` for Russian, `latin-print-0.1` for Latin-script print
-(with a `wordlist` lexicon for rule G). On a large job, `--packets DIR --term
+(with a `wordlist` lexicon, `processing.lexicon: {provider: wordlist, path:
+FILE}`, for rule G). On a large job, `--packets DIR --term
 WORD` sends only the spans near named terms; the rest stay open.
 
 `process` retains checkpoints automatically; individual runs require
@@ -145,7 +166,8 @@ file has moved, do not edit `job.json` or checkpoints: add a
 `~/.config/pageledger/source-index.tsv`). See the
 [processing specification](../../docs/processing-spec.md) for jobs and the
 [checkpoint specification](../../docs/checkpoint-spec.md) for individual runs.
-Jobs, image-evidence runs and runs of page images cannot be bundled in this version.
+Jobs, image-evidence runs and runs of page images cannot be bundled in this
+version; a job is shared as its folder ([share and cite](../../docs/share-and-cite.md)).
 
 ## Configuration essentials
 
@@ -177,7 +199,7 @@ domain types belong in a hook.
 - Confidence values are signals, not calibrated probabilities.
 - Core stays PyYAML-only (`pypdf` behind the `[pdf]` extra). Domain
   taxonomies, provider pricing catalogs, header dictionaries, CV heuristics,
-  exporters (TEI/PAGE/ALTO/GIS), dashboards, and ensemble
+  exporters other than `export`'s txt/md/jsonl/TEI, dashboards, and ensemble
   voting stay out of core.
 - Grades are deterministic summaries, never calibrated accuracy;
   do not compare grades across adapters or drop the basis label.
@@ -190,7 +212,9 @@ domain types belong in a hook.
 
 | Need | Read |
 |---|---|
-| Jobs and review | `docs/processing-spec.md`, `docs/document-report-spec.md` |
+| Jobs and review | `docs/processing-spec.md`, `docs/document-report-spec.md`, `docs/warnings.md` (every hold and warning in plain words) |
+| An error message | `docs/troubleshooting.md` |
+| What stays stable from 1.0 | `docs/stability.md` |
 | Recovery and image input evidence | `docs/checkpoint-spec.md`, `docs/image-evidence-spec.md` |
 | Exact scope of this version | `docs/capabilities-and-limits.md` |
 | Classifier signals, hooks, and evidence | `docs/classifier.md` |
