@@ -10,7 +10,7 @@ from pageledger.adapters import PdfTextAdapter, _pdf_page_reading
 from pageledger.checkpoint import read_record
 from pageledger.processing import verify_job
 from pageledger.processing_policy import assess_page, yat_words
-from pageledger.quality import _misread_warnings
+from pageledger.quality import _content_coverage_metrics, _misread_warnings
 
 LADDER = ("local_text", "local_ocr", "second_ocr", "local_image", "image", "second_opinion")
 LAYER = ["ocr_text_layer"]
@@ -524,6 +524,69 @@ def test_no_climb_is_recorded_toward_a_stage_the_job_does_not_run():
 # ---------------------------------------------------------------------------
 # Jobs: 0.9 is recorded, and a job written under 0.8 rebuilds as it was
 # ---------------------------------------------------------------------------
+
+
+# ---------------------------------------------------------------------------
+# A typeset layer held only for a few flagged characters (simplicity audit, document A)
+# ---------------------------------------------------------------------------
+
+# A page of ordinary French whose layer carries three letters of a foreign script, as a
+# LaTeX layer's archive citations did; and the OCR of it in the wrong language.
+TYPESET = " ".join(["Les impôts de la Commission furent levés à la tête du district."] * 40)
+FLAGGED = TYPESET + " Vseobሀsሀcaja perepis, ሀc. 1, d. 148."
+GARBLED = TYPESET.replace("ô", "é").replace("ê", "é")
+
+
+def _typeset(layer_text=FLAGGED, warnings=("foreign_script_characters",), ratio=0.89):
+    layer = _attempt("a1", "local_text", layer_text, warnings=list(warnings))
+    ocr = _attempt("a2", "local_ocr", GARBLED)
+    return _page(layer, ocr, comparisons=[_compared("a1", "a2", ratio)])
+
+
+def test_a_typeset_layer_with_a_few_stray_characters_stays_selected_and_held():
+    result = assess_page(_typeset(), ocr_layer_climbs=True, corroborate=True, witnesses=True)
+    assert result["selected_attempt"] == "a1"
+    # Held, so a person sees the flagged characters with the OCR beside them; no climb.
+    assert result["disposition"] == "coverage_defect"
+    assert result["review_reasons"] == ["coverage_defect"]
+    assert result["next_action"] == "review" and result["triggers"] == []
+    # Hold policy 0.8 replaced the typeset text with the OCR, as it always had.
+    before = assess_page(_typeset(), ocr_layer_climbs=True, corroborate=True)
+    assert (before["selected_attempt"], before["disposition"]) == ("a2", "coverage_defect")
+
+
+def test_a_kept_typeset_layer_that_the_ocr_contradicts_is_held_but_buys_no_reader():
+    page = _typeset(ratio=0.3)
+    result = assess_page(page, escalate_on=("hold", "disagreement"), stages=LADDER, witnesses=True)
+    assert result["selected_attempt"] == "a1"
+    assert "engine_disagreement" in result["review_reasons"]
+    assert result["next_action"] == "review"
+
+
+@pytest.mark.parametrize(
+    "layer_text,warnings",
+    [
+        # Flagged characters past 1% of the letters: the layer's map failed, not a citation.
+        (TYPESET + " " + "ሀ" * 60, ("foreign_script_characters",)),
+        # Any other hold says the layer itself is unusable.
+        (FLAGGED, ("foreign_script_characters", "fragmented_text")),
+        (FLAGGED, ("foreign_script_characters", "replacement_characters")),
+        # An earlier OCR is a witness under the 0.9 rules, not typeset text.
+        (FLAGGED, ("foreign_script_characters", "ocr_text_layer")),
+        # A warning that does not flag single characters.
+        (TYPESET, ("joined_text",)),
+    ],
+)
+def test_a_clean_re_reading_still_replaces_a_layer_that_is_not_merely_flagged(layer_text, warnings):
+    result = assess_page(_typeset(layer_text, warnings), witnesses=True)
+    assert result["selected_attempt"] == "a2"
+
+
+def test_a_caron_beside_its_letter_is_not_a_foreign_script():
+    # pdfTeX writes "č" in some fonts as a spacing caron then "c".
+    cited = TYPESET + " GARF, f. 102, ˇc. 1; Vseobˇsˇcaja perepis; uˇcreˇzdenii."
+    assert _content_coverage_metrics(cited, [])["foreign_script_count"] == 0
+    assert _content_coverage_metrics(FLAGGED, [])["foreign_script_count"] == 3
 
 
 def _kiev_job(setup):  # noqa: F811

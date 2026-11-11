@@ -295,7 +295,11 @@ the commands.
   judge Cyrillic text only.
 - Born-digital text layers carry their own defects. Mid-word space
   artifacts («С анкционная» for «Санкционная») pass every shape heuristic;
-  they come from the source PDF, not from extraction.
+  they come from the source PDF, not from extraction. A typeset layer held only
+  for a few stray characters (`foreign_script_characters`,
+  `private_use_characters`) stays the selected text in jobs written by 0.9, and
+  the page stays held for a person; jobs written by 0.8 and earlier selected the
+  OCR reading instead, and rebuild that way.
 - Struck-through or overstamped text (e.g. classification portion
   markings on declassified documents) is silently dropped or garbled by
   OCR without any warning firing. Dropped text is invisible to shape

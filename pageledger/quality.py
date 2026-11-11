@@ -307,8 +307,10 @@ def _content_coverage_metrics(text: str, tokens: list[str]) -> dict[str, Any]:
 # any other script, in small numbers, are a symbol font read through the wrong map:
 # a 2019 paper's formulas came out as Ethiopic, Oriya, Tamil and Syriac letters.
 _HOME_SCRIPTS = ("LATIN", "CYRILLIC", "GREEK", "COMBINING", "MODIFIER")
-# Letters in Latin-1 whose names do not say Latin: µ (micro), ª and º (ordinals).
-_HOME_SIGNS = frozenset("µªº")
+# Letters in Latin-1 whose names do not say Latin: µ (micro), ª and º (ordinals); and ˇ
+# (caron), the one spacing modifier letter not named MODIFIER, which a LaTeX layer writes
+# beside the letter for "č" ("ˇc").
+_HOME_SIGNS = frozenset("µªºˇ")
 
 
 def _foreign_script(char: str) -> bool:

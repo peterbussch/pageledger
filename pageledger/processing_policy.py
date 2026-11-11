@@ -533,6 +533,8 @@ def assess_page(
     clean = [item for item in usable if not holds_by_id[item["attempt_id"]]]
     # With every reading held, the best supported one is shown, not the first.
     fallback = _ranked(usable, holds_by_id) if witnesses else usable
+    # A typeset layer held only for a few flagged characters stays the page's text.
+    typeset = _kept_typeset_layer(usable, holds_by_id, holds_for) if witnesses else None
     if (
         text_refutes_blank
         and "blank_candidate" in reasons
@@ -550,6 +552,8 @@ def assess_page(
     if contest is not None and readers:
         # A contested job's text is the reader's, checked word by word against OCR.
         selected = _select(readers, readers, escalate_on, roughness, rough_below)
+    elif typeset is not None:
+        selected = typeset
     else:
         selected = _select(clean, fallback, escalate_on, roughness, rough_below)
     if not selected or holds_for is not _WARNING_HOLDS:
@@ -575,11 +579,13 @@ def assess_page(
             ]
     else:
         selected_comparisons = selected_clean_comparisons(page, selected["attempt_id"], holds_for)
-    # A layer's objection holds the page for a person but buys no further reading.
+    # A layer's objection holds the page for a person but buys no further reading, and
+    # neither does a re-reading's objection to a kept typeset layer: the page is held.
+    witness_only = set_aside | ({typeset["attempt_id"]} if typeset is not None else set())
     climbing = [
         item
         for item in selected_comparisons
-        if not {item["left_attempt"], item["right_attempt"]} & set_aside
+        if not {item["left_attempt"], item["right_attempt"]} & witness_only
     ]
     if any(item["agreement_ratio"] < ENGINE_AGREEMENT_THRESHOLD for item in selected_comparisons):
         reasons.append("engine_disagreement")
@@ -930,6 +936,50 @@ def _compare_with_layer(
         if any(_warning_code(w) == _DELTA for w in item.get("warnings") or []):
             kept = [w for w in item["warnings"] if _warning_code(w) != _DELTA]
             holds_by_id[item["attempt_id"]] = _attempt_holds({**item, "warnings": kept}, holds_for)
+
+
+# Warnings that flag single characters of a reading, and the share of its letters they may
+# touch while a typeset layer stays selected (hold policy 0.9). A born-digital French book
+# (2026-11 simplicity audit) carried 6 and 12 stray carons, 0.2% and 0.4% of its letters;
+# a layer whose symbol font failed throughout is far past 1%, and goes to OCR.
+_CHARACTER_WARNINGS = frozenset({"foreign_script_characters", "private_use_characters"})
+TYPESET_FLAGGED_SHARE = 0.01
+
+
+def _kept_typeset_layer(
+    readings: list[dict], holds_by_id: dict[str, list[str]], holds_for: dict[str, str]
+) -> dict | None:
+    """A typeset text layer held only for a few flagged characters, or None.
+
+    A layer that is not an earlier OCR is the most exact reading a page has. When all that
+    holds it is a character-level warning touching at most ``TYPESET_FLAGGED_SHARE`` of its
+    letters, it stays selected and held, and a re-reading of the page image is its witness,
+    not its replacement: OCR in the wrong language read "impôts" as "impéts" on the page
+    whose only flaw was a stray caron. Any other hold (empty, fragmented or joined text,
+    replacement characters, lost letters) still lets a clean re-reading take over.
+    """
+    from .quality import _foreign_script, _private_use_count
+
+    for item in readings:
+        held = holds_by_id[item["attempt_id"]]
+        codes = {_warning_code(w) for w in item.get("warnings") or []}
+        if (
+            item.get("stage") != "local_text"
+            or not held
+            or "ocr_text_layer" in codes
+            or not codes & _CHARACTER_WARNINGS
+            or held != _attempt_holds(item, holds_for)
+        ):
+            continue
+        rest = [w for w in item["warnings"] if _warning_code(w) not in _CHARACTER_WARNINGS]
+        if _attempt_holds({**item, "warnings": rest}, holds_for):
+            continue
+        text = item.get("text") or ""
+        letters = sum(char.isalpha() for char in text)
+        flagged = sum(map(_foreign_script, text)) + _private_use_count(text)
+        if letters and flagged <= TYPESET_FLAGGED_SHARE * letters:
+            return item
+    return None
 
 
 def _layer_holds(

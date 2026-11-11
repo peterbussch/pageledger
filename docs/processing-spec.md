@@ -462,6 +462,25 @@ aside once local OCR had read the page. Under 0.9:
   where the layer won because the two good readings carried the warning), the
   OCR is selected and the page held for their disagreement.
 
+**A typeset layer held only for a few stray characters stays the page's text.**
+A text layer that is not an earlier OCR is the most exact reading a page can
+have. When its only holds come from `foreign_script_characters` or
+`private_use_characters`, and the characters those warnings count are at most 1%
+of its letters, it stays selected and the page stays held (`coverage_defect`), so
+a person sees those characters with the OCR beside them. The OCR it was sent to
+is a witness: its disagreement adds `engine_disagreement` but buys no further
+reading. Any other hold on the layer (empty, fragmented or joined text,
+replacement characters, lost letters, a symbol font that failed on more than 1%
+of the letters) still lets a clean OCR reading take over, as before. Every
+earlier hold policy, 0.8 included, selected the OCR: in a born-digital French
+book read with the default English OCR (2026-11 simplicity audit), two pages whose
+layer carried 6 and 12 stray carons (0.2% and 0.4% of their letters) were given the
+OCR's "impéts" and "4 la téte" and a printer's slug line, though the two readings
+agreed on 89% of their words. The 1% line sits well above those pages and well
+below the 10% at which `foreign_script_characters` stops calling the letters
+stray. Since 0.9, `pdf_text` also no longer counts the spacing caron (ˇ) as a
+foreign letter, so a new job does not hold those pages at all.
+
 **A literal reading that lost the pre-reform letters another kept is held.**
 When one literal reading of a page (a text layer or an OCR engine, not a model)
 spells ten or more words with ѣ, any literal reading with under a quarter as many

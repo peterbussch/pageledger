@@ -157,8 +157,11 @@ The contract
   every reading is held, the best supported one is shown. A reading that never
   finished raises no hold, `suspicious_embedded_text_delta` measured against an
   earlier OCR layer holds neither reading, and no climb is recorded toward a
-  stage the job does not have. Jobs written under earlier policies rebuild
-  unchanged. See [hold policy 0.9](docs/processing-spec.md#hold-policy-09).
+  stage the job does not have. A typeset text layer held only for a few stray
+  characters (at most 1% of its letters) stays the selected text, held, with
+  the OCR as a witness; earlier policies replaced it with the OCR. Jobs written
+  under earlier policies rebuild unchanged. See
+  [hold policy 0.9](docs/processing-spec.md#hold-policy-09).
   `pdf_text` marks these layers `ocr_text_layer` in plain runs too, so more of
   their pages enter the review queue.
 - **New jobs write report format 0.9:** `report.md` opens with what happened
@@ -202,6 +205,10 @@ The contract
 
 ### Fixed
 
+- `foreign_script_characters` no longer counts the spacing caron (ˇ) that some
+  LaTeX fonts write beside a letter for "č": a born-digital page citing archives
+  in transliteration was held and sent to OCR. See
+  [warnings](docs/warnings.md#quality-warnings).
 - One timeout of the `vision` adapter halted a job. The page is now asked for
   once more and, if that fails, held as `provider_failure` while the job goes
   on, as 0.8 promised; a tiled page keeps the tiles already read. See
