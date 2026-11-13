@@ -1105,6 +1105,13 @@ mean its pages have passed human review. A `paused_budget` job continues when
 resumed with a higher limit. A `halted` job keeps its records, and `resume`
 reports it without retrying, except for the bounded local recovery above;
 settle any uncertain paid request with the provider before starting a new job.
+A stage that stops before its page plan is written (its adapter cannot be
+loaded, or its folder cannot be made) has read and sent nothing. It is recorded
+with status `not_started`, the job halts with the reason in `next_action`, and
+`resume` plans its pages again under a new stage named `<stage_id>-restart-N`.
+A review applied to an interrupted job leaves it to `resume`, unless a decision
+falls on a page whose stage was cut off mid-way: then the job halts with
+`review_changed_plan`.
 `verify` is read-only and binds the report back to validated job and child
 records.
 

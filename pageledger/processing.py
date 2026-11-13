@@ -7,6 +7,7 @@ import functools
 import hashlib
 import json
 import math
+import re
 import shlex
 from collections import Counter
 from collections.abc import Callable, Iterator
@@ -65,9 +66,13 @@ _progress: ContextVar[Progress | None] = ContextVar("pageledger_progress", defau
 
 
 def _tell(event: dict) -> None:
+    """Report progress; a listener that fails (a closed pipe) is dropped, never the job."""
     listener = _progress.get()
     if listener is not None:
-        listener(event)
+        try:
+            listener(event)
+        except Exception:
+            _progress.set(None)
 
 
 def _starting(job: dict, stage: dict) -> None:
@@ -372,6 +377,35 @@ def _stage_checkpoint(job: dict, root: Path, stage: dict) -> Checkpoint:
     )
 
 
+def _read_review_file(path: Path) -> Any:
+    """A JSON review file, or a plain sentence when it is missing or is not JSON."""
+    try:
+        text = path.expanduser().read_text(encoding="utf-8")
+    except FileNotFoundError:
+        raise ValueError(f"Review file not found: {path}") from None
+    except UnicodeDecodeError:
+        raise ValueError(f"Review file {path} is not UTF-8 text") from None
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"Review file {path} is not valid JSON: {exc}") from None
+
+
+def _check_pages_within(expression: str, count: int) -> None:
+    """Name the first page past the end before a long --pages range is expanded."""
+    past = []
+    for part in expression.split(","):
+        found = re.fullmatch(r"\s*(\d+)(?:-(\d+))?\s*", part)
+        if found is None:
+            continue  # The parser names what is wrong with it.
+        start = int(found.group(1))
+        end = int(found.group(2) or start)
+        if end > count and start <= end:
+            past.append(max(start, count + 1))
+    if past:
+        raise ValueError(f"Page {min(past)} is past the end: the source has {count} pages.")
+
+
 def _review_decisions(job: dict, review: dict) -> None:
     from .processing_policy import validate_review
 
@@ -442,7 +476,7 @@ def _process_run_settings(data: dict) -> list[str]:
     run_section = data.get("run") or {}
     for key, guidance in _PROCESS_RUN_GUIDANCE.items():
         if key in run_section:
-            raise ValueError(f"run.{key} is ignored by process; {guidance}")
+            raise ValueError(f"process does not use run.{key}; {guidance}")
     warnings = []
     if "adapter" in run_section:
         warnings.append(
@@ -554,6 +588,8 @@ def _process(
     except Exception as exc:
         count, annotations = None, {"status": "unknown", "count": None}
         container_error = f"source_container_invalid:{type(exc).__name__}"
+    if pages is not None and count is not None:
+        _check_pages_within(pages, count)
     selected = (
         runner._parse_pages_expression(pages)
         if pages is not None
@@ -580,18 +616,6 @@ def _process(
             }
         )
     root = out_dir.expanduser().resolve()
-    from .checkpoint import _sync_directory
-
-    ancestors = []
-    ancestor = root
-    while not ancestor.exists():
-        ancestors.append(ancestor)
-        ancestor = ancestor.parent
-    root.mkdir(parents=True, exist_ok=False)
-    for directory in reversed(ancestors):
-        _sync_directory(directory.parent)
-    (root / ".job").mkdir()
-    (root / "attempts").mkdir()
     job = {
         "schema_version": "0.1",
         "job_id": f"job_{uuid4().hex}",
@@ -644,7 +668,20 @@ def _process(
         for n in selected
     ]
     if review_path is not None:
-        _review_decisions(job, json.loads(review_path.read_text(encoding="utf-8")))
+        # A review file that does not fit the job is refused before the job's folder exists.
+        _review_decisions(job, _read_review_file(review_path))
+    from .checkpoint import _sync_directory
+
+    ancestors = []
+    ancestor = root
+    while not ancestor.exists():
+        ancestors.append(ancestor)
+        ancestor = ancestor.parent
+    root.mkdir(parents=True, exist_ok=False)
+    for directory in reversed(ancestors):
+        _sync_directory(directory.parent)
+    (root / ".job").mkdir()
+    (root / "attempts").mkdir()
     with writer_lock(root):
         if container_error:
             job["status"] = "halted"
@@ -666,15 +703,27 @@ def _escalation(job: dict) -> tuple[tuple[str, ...], Any, float | None]:
     lexicon = _job_lexicon(job)
     if lexicon.identity != job.get("lexicon"):
         raise ValueError(
-            f"This job judged words with {job.get('lexicon')}; the installed lexicon is "
-            f"{lexicon.identity}. Install the recorded version, or restore the recorded "
-            "word list, to verify or resume it."
+            f"This job judged words with {_lexicon_name(job.get('lexicon'))}; the installed "
+            f"lexicon is {_lexicon_name(lexicon.identity)}. Install the recorded version, or "
+            "restore the recorded word list, to verify or resume it."
         )
     return (
         tuple(policy.get("escalate_on", ("hold",))),
         # Selection, triggers and their history judge the same readings repeatedly.
         functools.lru_cache(maxsize=None)(lambda text: roughness(text, lexicon)),
         lexicon_config.get("rough_below"),
+    )
+
+
+def _lexicon_name(identity: Any) -> str:
+    """A recorded lexicon in words: the list and its checksum, or the dictionary's versions."""
+    if not isinstance(identity, dict):
+        return "no lexicon"
+    if identity.get("provider") == "wordlist":
+        return f"the word list {identity.get('path')} (SHA-256 {str(identity.get('sha256'))[:12]}…)"
+    return (
+        f"{identity.get('provider')} {identity.get('version')} with dictionary "
+        f"{identity.get('dictionary')}"
     )
 
 
@@ -842,6 +891,11 @@ def _refresh(job: dict, root: Path, *, materialize: bool = True, check_source: b
         page.pop("edition", None)
     for stage in job["stages"]:
         child = _safe(root, stage["run_path"])
+        if stage["status"] == "not_started":
+            # It stopped before its page plan was durable, so it read and sent nothing.
+            if (child / "checkpoint.json").exists():
+                raise ValueError(f"Stage {stage['stage_id']} is recorded as never started")
+            continue
         if not child.exists():
             if stage["status"] not in {"planned", "running"}:
                 raise ValueError("Completed child run is missing")
@@ -1183,12 +1237,14 @@ def _plan_stage(
     stage_id = stage if first_text_batch else f"{stage}-{numbers[0]:04d}"
     if retry:
         stage_id += "-retry-1"
-    existing = {item["stage_id"] for item in job["stages"]}
+    existing = {item["stage_id"]: item for item in job["stages"]}
     if stage_id in existing:
         original = stage_id
+        # A stage that never started is not retried: its pages start afresh.
+        again = "restart" if existing[original]["status"] == "not_started" else "retry"
         suffix = 1
         while stage_id in existing:
-            stage_id = f"{original}-retry-{suffix}"
+            stage_id = f"{original}-{again}-{suffix}"
             suffix += 1
     profile = job["policy"][stage]
     options = dict(profile["adapter_options"])
@@ -1617,7 +1673,25 @@ def _execute_stages(
         )
 
     halt(*failed[0])
-    if not (_safe(root, failed[0][0]["run_path"]) / "checkpoint.json").exists():
+    unstarted = [
+        (stage, error)
+        for stage, error in failed
+        if not (_safe(root, stage["run_path"]) / "checkpoint.json").exists()
+    ]
+    for stage, _ in unstarted:
+        stage["status"] = "not_started"
+    if unstarted and unstarted[0][0] is failed[0][0]:
+        stage, error = failed[0]
+        # An OS error says what went wrong without its errno; the path is the job's own.
+        said = error.strerror if isinstance(error, OSError) and error.strerror else str(error)
+        job["next_action"] = (
+            f"The {stage['stage']} stage could not start: {said.rstrip('.')}. Nothing "
+            "was read or sent for its pages. Put that right, then run: "
+            "pageledger resume JOB_DIR"
+        )
+        # Stages that finished before it are recorded, so the report shows them.
+        _refresh(job, root)
+        _publish(job, root)
         return False
     _refresh(job, root)
     actions = [(stage, error, _failure_action(job, root, stage)) for stage, error in failed]
@@ -1668,7 +1742,8 @@ def _owed_retries(job: dict, root: Path) -> list[dict]:
     retried = {
         (stage["stage"], tuple(stage["pages"]))
         for stage in job["stages"]
-        if "-retry-" in stage["stage_id"]
+        # A retry that could not start sent nothing: the retry is still owed.
+        if "-retry-" in stage["stage_id"] and stage["status"] != "not_started"
     }
     reviewed = {page["page_number"] for page in job["pages"] if page.get("review")}
     return [
@@ -1739,18 +1814,28 @@ def _continue(job: dict, root: Path, adapter_path: Path | None) -> dict:
                 batch.append(numbers)
             groups = groups[len(batch) :]
             if batch:
-                planned = (
-                    _plan_stage(job, root, name, numbers, tiles=plans.get(numbers[0]))
-                    for numbers in batch
-                )
+                started: list[list[int]] = []
+                planned = _planning(job, root, name, batch, plans, started)
                 if not _execute_stages(job, root, planned, adapter_path, concurrent):
                     return _publish(job, root)
+                # A failure that lets the job go on stops new starts in its batch; the
+                # pages never started still go to this stage.
+                groups = [numbers for numbers in batch if numbers not in started] + groups
             if stop:
                 _stop_for_budget(job, stop)
                 return _publish(job, root)
     job["status"] = "completed"
     job["next_action"] = _review_next_action(job)
     return _publish(job, root)
+
+
+def _planning(
+    job: dict, root: Path, name: str, batch: list[list[int]], plans: dict, started: list
+) -> Iterator[dict]:
+    """Plan each group of a batch when it starts, noting it in `started`."""
+    for numbers in batch:
+        started.append(numbers)
+        yield _plan_stage(job, root, name, numbers, tiles=plans.get(numbers[0]))
 
 
 def _batching(job: dict, stage: str) -> tuple[int, int]:
@@ -1813,6 +1898,14 @@ def _resume_job(
         if raise_limits:
             _raise_limits(job, raise_limits)
         if job["status"] == "halted" and str(job.get("halt_reason")).startswith("attempt_stopped:"):
+            stopped_id = str(job["halt_reason"]).split(":")[1]
+            if any(
+                stage["stage_id"] == stopped_id and stage["status"] == "not_started"
+                for stage in job["stages"]
+            ):
+                # Nothing was sent: its pages are planned again from where they stand.
+                job.update(status="processing", halt_reason=None)
+                return _continue(job, root, adapter_path)
             stopped = [stage for stage in job["stages"] if stage["status"] == "halted"]
             if stopped and _retry_local(job, root, stopped[-1], adapter_path):
                 return _continue(job, root, adapter_path)
@@ -1830,6 +1923,8 @@ def review_job(
     With dry_run, every decision is checked and counted but nothing is recorded.
     """
     root = job_dir.expanduser().resolve()
+    if not review_path.expanduser().is_file():
+        raise ValueError(f"Review file not found: {review_path}")
     with writer_lock(root):
         job = _load(root)
         located = _source_warnings(job, root)
@@ -1838,7 +1933,7 @@ def review_job(
         if review_path.suffix.lower() == ".csv":
             review, corrected = read_review_sheet(job, review_path, reviewer, root)
         else:
-            review = json.loads(review_path.read_text(encoding="utf-8"))
+            review = _read_review_file(review_path)
             if isinstance(review, dict) and "bindings" in review:
                 review, corrected = read_review_decisions(job, review_path, review, reviewer, root)
             elif reviewer:
@@ -1882,7 +1977,20 @@ def review_job(
         warnings = located + _blank_over_text(job, review)
         _note_relocation(job, root, "review-job")
         _refresh(job, root, check_source=False)
-        if job["status"] == "processing":
+        unfinished = {
+            number
+            for stage in job["stages"]
+            if stage["status"] in {"planned", "running"}
+            for number in stage["pages"]
+        }
+        decided = {
+            page["page_number"]
+            for page in job["pages"]
+            if any(item["page_id"] == page["page_id"] for item in review["decisions"])
+        }
+        # An interrupted job goes on with resume unless a decision falls on a page
+        # whose stage was cut off mid-way.
+        if job["status"] == "processing" and unfinished & decided:
             job.update(
                 status="halted",
                 halt_reason="review_changed_plan",

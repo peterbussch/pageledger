@@ -1090,11 +1090,13 @@
                 "pattern": "^[0-9a-f]{64}$"
               },
               "status": {
+                "description": "not_started: the stage stopped before its page plan was durable, so it read and sent nothing; resume plans its pages again under a -restart- stage.",
                 "enum": [
                   "planned",
                   "running",
                   "completed",
-                  "halted"
+                  "halted",
+                  "not_started"
                 ]
               },
               "tiles": {"type": "object", "description": "The tile plan of a stage that reads its page in tiles; the plan itself is in the stage's configuration.", "properties": {"plan_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}, "count": {"type": "integer", "minimum": 1}, "layout_attempt": {"type": ["string", "null"]}}, "required": ["plan_sha256", "count", "layout_attempt"], "additionalProperties": false}

@@ -1551,7 +1551,7 @@ def test_process_rejects_run_controls_it_would_ignore(setup, key, value):
     data = yaml.safe_load(setup[1].read_text())
     data["run"][key] = value
     setup[1].write_text(yaml.safe_dump(data))
-    with pytest.raises(ValueError, match=rf"run\.{key} is ignored by process"):
+    with pytest.raises(ValueError, match=rf"process does not use run\.{key}"):
         launch(setup)
     assert not setup[2].exists()
 
@@ -1747,7 +1747,8 @@ def _failing_image(monkeypatch, fails):
 
 
 def test_a_timed_out_image_page_is_read_again_once(setup, monkeypatch):
-    _batched(setup)
+    # The retry is one more image request; the pages after it in its batch are still read.
+    _batched(setup, max_image_pages=7)
     _failing_image(monkeypatch, {2: 1})
     assert launch(setup)["status"] == "completed"
     page = read_record(setup[2] / "job.json")["pages"][1]
@@ -1756,6 +1757,10 @@ def test_a_timed_out_image_page_is_read_again_once(setup, monkeypatch):
         "completed",
     ]
     assert page["attempts"][-1]["attempt_id"] == "image-0002-retry-1:doc_0001_page_0002"
+    assert all(
+        any(a["stage"] == "image" and a["outcome"] == "completed" for a in page["attempts"])
+        for page in read_record(setup[2] / "job.json")["pages"]
+    )
     assert verify_job(setup[2])["status"] == "pass"
 
 
@@ -1877,7 +1882,8 @@ def test_a_bad_batch_is_refused(batch):
 def _with_second_opinion(setup, monkeypatch, code, fails):
     from pageledger.adapters import AdapterFailure
 
-    _batched(setup, max_image_pages=20)
+    # Every page is read, and the retry is one more attempt on top.
+    _batched(setup, max_image_pages=20, max_attempt_pages=30)
     data = yaml.safe_load(setup[1].read_text())
     data["processing"]["second_opinion"] = {"adapter": "second_opinion"}
     setup[1].write_text(yaml.safe_dump(data))
