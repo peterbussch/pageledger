@@ -1199,7 +1199,8 @@ pageledger review jobs/book --apply review/review.csv --reviewer "A. Reader"
 The [review view](#review-beside-the-page-image) instead downloads a decisions
 file, `review.json` ([schema](../schemas/review-decisions.schema.json)): the
 sheet's bindings and the rows with a decision, each with `row_id`,
-`page_number`, `decision` and `note`. A row whose decision is `correct` carries
+`page_number` (as text, as the view writes it, or as a number), `decision` and
+`note`. A row whose decision is `correct` carries
 the corrected text in `text`, and may name in `from` the attempt whose own
 reading it starts from; without `from` it starts from the selected text. Rows
 in a decisions file may also use `correct:FILE`, relative to the file's
