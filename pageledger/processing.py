@@ -21,7 +21,7 @@ from uuid import uuid4
 import yaml
 
 from . import adjudication, corrections, processing_policy, runner
-from .adapters import PageLedgerDiagnostic
+from .adapters import PageLedgerDiagnostic, check_named_code, named_by_record
 from .checkpoint import (
     Checkpoint,
     atomic_bytes,
@@ -1894,9 +1894,13 @@ def _resume_job(
     job_dir: Path, adapter_path: Path | None, raise_limits: dict[str, int | float] | None
 ) -> dict:
     root = job_dir.expanduser().resolve()
-    with writer_lock(root):
+    with writer_lock(root), named_by_record("job", root, adapter_path):
         job = _load(root)
         _refuse_relocated_resume(job, root)
+        # A job folder may come from anyone: code it names runs only from --adapter-path,
+        # and is refused before anything in the job changes.
+        for spec in _named_code(job, root):
+            check_named_code(spec, "job", root, adapter_path)
         # Refuse changes in any retained attempt before starting a pending one.
         _refresh(job, root)
         if raise_limits:
@@ -1916,6 +1920,20 @@ def _resume_job(
         if job["status"] != "processing":
             return _publish(job, root)
         return _continue(job, root, adapter_path)
+
+
+def _named_code(job: dict, root: Path) -> list[str]:
+    """The ``module:object`` adapters this job would import if resumed, as its files name them."""
+    policy = job["policy"]
+    names = [policy[name]["adapter"] for name in ladder(policy) if policy[name] is not None]
+    for stage in job["stages"]:
+        configs = [_safe(root, stage["config_path"])]
+        snapshot = _safe(root, stage["run_path"]) / "config-snapshot.yml"
+        if snapshot.is_file():
+            configs.append(snapshot)
+        for path in configs:
+            names += load_config(path, validate_adapter=False).named_code
+    return sorted({name for name in names if ":" in name})
 
 
 def review_job(
@@ -2137,6 +2155,17 @@ def _derived(page: dict) -> tuple:
     )
 
 
+def _named_code_caution(job: dict, root: Path) -> str:
+    named = _named_code(job, root)
+    if not named:
+        return ""
+    return (
+        f" It names its own adapter code ({', '.join(named)}), which resume runs only from "
+        "a folder given with --adapter-path; give one only if you trust where this job "
+        "came from."
+    )
+
+
 def verify_job(job_dir: Path) -> dict:
     root = job_dir.expanduser().resolve()
     try:
@@ -2150,7 +2179,8 @@ def verify_job(job_dir: Path) -> dict:
                 "job_id": job["job_id"],
                 "out_dir": str(root),
                 "error": "This job did not finish: it was interrupted, or it is still running. "
-                f"Run `pageledger resume {shlex.quote(str(root))}` to finish it, then verify again.",
+                f"Run `pageledger resume {shlex.quote(str(root))}` to finish it, then verify again."
+                + _named_code_caution(job, root),
             }
         warnings = _location_warnings(job, root)
         before = [_derived(p) for p in job["pages"]]

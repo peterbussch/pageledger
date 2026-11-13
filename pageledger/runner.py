@@ -24,7 +24,9 @@ from .adapters import (
     PageLedgerDiagnostic,
     PdfTextAdapter,
     adapter_page_count,
+    check_named_code,
     load_adapter,
+    named_by_record,
     native_page_pixels,
     ocr_pdf_page_count,
     paginate,
@@ -361,17 +363,22 @@ def resume(run_dir: Path, *, adapter_path: Path | None = None) -> dict[str, Any]
         checkpoint.require_resumable()
         assert checkpoint.job is not None
         job = checkpoint.job
+        snapshot = root / "config-snapshot.yml"
+        # The snapshot came with the run folder: code it names runs only from --adapter-path.
+        for spec in load_config(snapshot, validate_adapter=False).named_code:
+            check_named_code(spec, "run", root, adapter_path)
         # The checkpoint keeps the recorded paths as source identity; reads go
         # wherever the verified bytes are now (the source index may relocate them).
-        return _run(
-            inputs=[checkpoint.sources[item["path"]] for item in job["inputs"]],
-            config_path=root / "config-snapshot.yml",
-            out_dir=root,
-            dry_run=False,
-            log_level=job["log_level"],
-            adapter_path=adapter_path,
-            _checkpoint=checkpoint,
-        )
+        with named_by_record("run", root, adapter_path):
+            return _run(
+                inputs=[checkpoint.sources[item["path"]] for item in job["inputs"]],
+                config_path=snapshot,
+                out_dir=root,
+                dry_run=False,
+                log_level=job["log_level"],
+                adapter_path=adapter_path,
+                _checkpoint=checkpoint,
+            )
 
 
 def _run(**arguments: Any) -> dict[str, Any]:

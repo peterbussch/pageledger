@@ -1054,7 +1054,7 @@ def test_replay_blocks_implicit_bundle_adapter_import_before_execution(
     try:
         with pytest.raises(ReplayError) as error:
             replay_bundle(bundle_dir, tmp_path / "never-created")
-        assert error.value.code in {"extractor_identity_mismatch", "incompatible_environment"}
+        assert error.value.code == "adapter_not_trusted"
         assert not marker.exists()
         assert sys.path == active_path
     finally:

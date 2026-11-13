@@ -1441,6 +1441,75 @@ def _load_custom_adapter(spec: str, opts: dict[str, Any] | None = None) -> Any:
     return adapter
 
 
+class UntrustedCode(ValueError):
+    """A job, run or bundle read from disk names code the user has not allowed."""
+
+
+# While a record read from disk is continued (resume, replay), every module:object it
+# leads PageLedger to import must live in the --adapter-path folder the user named.
+# Process-wide rather than a contextvar, so a job's worker threads see it too.
+_RECORDS: list[tuple[str, Path, Path | None]] = []
+
+
+@contextmanager
+def named_by_record(what: str, record: Path, adapter_path: Path | None) -> Iterator[None]:
+    """Hold custom code that ``record`` (a job, run or bundle) names to ``adapter_path``."""
+    _RECORDS.append((what, record.expanduser().resolve(), adapter_path))
+    try:
+        yield
+    finally:
+        _RECORDS.pop()
+
+
+def check_named_code(spec: str, what: str, record: Path, adapter_path: Path | None) -> None:
+    """Refuse a ``module:object`` that a record names unless its module is in the folder
+    the user passed as --adapter-path, and not in the record itself. Built-in adapter
+    names pass. Nothing is imported."""
+    if ":" not in spec:
+        return
+    module_name = spec.split(":", 1)[0]
+    top = module_name.split(".")[0]
+    folder = adapter_path.expanduser().resolve() if adapter_path is not None else None
+    if folder is not None and top and _module_inside(top, folder, record.resolve()):
+        return
+    where = f"; it is not in the --adapter-path folder {folder}" if folder is not None else ""
+    raise UntrustedCode(
+        f"This {what} names its own adapter, {spec}, which would run Python code from "
+        f"outside PageLedger{where}. PageLedger runs such code only from a folder you name: "
+        f"if you trust where this {what} came from and that code, pass --adapter-path "
+        f"with the folder that holds {module_name}."
+    )
+
+
+def _module_inside(top: str, folder: Path, record: Path) -> bool:
+    """Whether importing the top-level module ``top`` loads it from inside ``folder``."""
+    entry = str(folder)
+    added = entry not in sys.path
+    if added:
+        sys.path.insert(0, entry)
+    try:
+        found = importlib.util.find_spec(top)
+    except (ImportError, ValueError):
+        return False
+    finally:
+        if added:
+            sys.path.remove(entry)
+    if found is None:
+        return False
+    places = (
+        [found.origin]
+        if found.origin and found.has_location
+        else list(found.submodule_search_locations or [])
+    )
+    if not places:
+        return False
+    for place in places:
+        resolved = Path(place).resolve()
+        if not resolved.is_relative_to(folder) or resolved.is_relative_to(record):
+            return False
+    return True
+
+
 def _import_object(spec: str, *, description: str) -> Any:
     """Import a ``module.path:object`` without deciding how to construct it."""
     if ":" not in spec:
@@ -1448,10 +1517,18 @@ def _import_object(spec: str, *, description: str) -> Any:
     module_name, object_path = spec.split(":", 1)
     if not module_name or not object_path:
         raise ValueError(f"{description} specs must use module.path:object")
+    for record in _RECORDS:
+        check_named_code(spec, *record)
     try:
         module = importlib.import_module(module_name)
     except Exception as exc:
-        raise ValueError(f"Could not import {description.lower()} module '{module_name}'") from exc
+        raise ValueError(
+            f"Could not import {description.lower()} module '{module_name}': "
+            f"{type(exc).__name__}: {exc}"
+        ) from exc
+    # The import may have resolved elsewhere on sys.path; check what actually loaded.
+    for record in _RECORDS:
+        check_named_code(spec, *record)
 
     candidate: Any = module
     try:

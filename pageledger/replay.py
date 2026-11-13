@@ -60,6 +60,7 @@ sys.argv = ["pageledger._replay_worker", *worker_args]
 runpy.run_module("pageledger._replay_worker", run_name="__main__")
 """
 _WORKER_SAFE_ERROR_CODES = {
+    "adapter_not_trusted",
     "adapter_path_inside_bundle",
     "artifact_declaration_missing",
     "artifact_declarations_invalid",
@@ -85,6 +86,7 @@ _WORKER_SAFE_ERROR_CODES = {
     "extractor_identity_mismatch",
     "extractor_invalid",
     "extractor_missing",
+    "image_evidence_unsupported",
     "incompatible_environment",
     "inventory_duplicate",
     "inventory_invalid",
@@ -666,7 +668,7 @@ def _replay_bundle_in_process(
 
     if trusted_path is not None:
         sys.path.insert(0, str(trusted_path))
-    from .adapters import load_adapter
+    from .adapters import UntrustedCode, check_named_code, load_adapter, named_by_record
     from .aligner import align_run
     from .compare import compare_runs
     from .config import load_config
@@ -683,7 +685,13 @@ def _replay_bundle_in_process(
     if adapter_name is None:
         raise ReplayError("extractor_identity_mismatch", "Bundle config has no effective adapter")
     try:
-        adapter = load_adapter(adapter_name, adapter_options)
+        # A bundle may come from anyone: code it names runs only from --adapter-path.
+        for spec in config.named_code:
+            check_named_code(spec, "bundle", root, trusted_path)
+        with named_by_record("bundle", root, trusted_path):
+            adapter = load_adapter(adapter_name, adapter_options)
+    except UntrustedCode as exc:
+        raise ReplayError("adapter_not_trusted", str(exc)) from exc
     except ReplayError:
         raise
     except Exception as exc:

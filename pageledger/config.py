@@ -144,6 +144,13 @@ class PageLedgerConfig:
         return normalized
 
     @property
+    def named_code(self) -> list[str]:
+        """Every adapter or hook this config names, built-in or ``module:object``."""
+        names = [entry["adapter"] for entry in self.adapter_order or []]
+        names += [self.adapter_name, self.classify_adapter, self.classify_hook]
+        return [name for name in names if name]
+
+    @property
     def classify_adapter(self) -> str | None:
         return _optional_nonempty_string(
             _walk(self.data, "classify", "adapter"),
