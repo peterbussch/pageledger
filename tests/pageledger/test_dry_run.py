@@ -19,6 +19,7 @@ import pageledger.runner as runner_module
 from pageledger.adapters import ExtractionResult
 from pageledger.cli import main
 from pageledger.runner import AdapterExecutionError, BudgetExceededError, run
+from pageledger.verify import verify_run
 
 
 class CostlyAdapter:
@@ -1415,6 +1416,77 @@ run:
     with pytest.raises(BudgetExceededError, match="Budget exceeded before extraction"):
         run(inputs=[source], config_path=config, out_dir=out_dir, dry_run=False)
 
+    assert not out_dir.exists()
+
+
+BUDGET_CONFIG = """
+schema_version: "0.1"
+taxonomy:
+  page_types:
+    prose:
+      default_action: transcribe_text
+run:
+  adapter: {adapter}
+  budget:
+{budget}
+"""
+
+
+def _budget_run(tmp_path, budget, *, adapter="text", dry_run=False, monkeypatch=None):
+    source = tmp_path / "five.txt"
+    source.write_text("one\ftwo\fthree\ffour\ffive", encoding="utf-8")
+    config = tmp_path / "pageledger.yml"
+    config.write_text(BUDGET_CONFIG.format(adapter=adapter, budget=budget), encoding="utf-8")
+    out_dir = tmp_path / "run"
+    return source, config, out_dir
+
+
+class _PaidTextAdapter(adapters_module.TextAdapter):
+    """A text adapter that declares no local capability and reports no tokens or cost."""
+
+    name = "paid-text"
+    capabilities = ("embedded_text",)
+
+
+@pytest.mark.parametrize("cap", ["max_usd: 0.000001", "max_tokens: 1"])
+def test_a_cap_on_unreported_usage_stops_before_the_next_request(tmp_path, monkeypatch, cap):
+    monkeypatch.setattr(runner_module, "load_adapter", lambda *args: _PaidTextAdapter())
+    source, config, out_dir = _budget_run(tmp_path, f"    {cap}")
+    with pytest.raises(BudgetExceededError, match="cannot be checked before doc_0001_page_0002"):
+        run(inputs=[source], config_path=config, out_dir=out_dir, dry_run=False)
+    assert [path.name for path in (out_dir / "raw").iterdir()] == ["doc_0001_page_0001.txt"]
+    log = [json.loads(line) for line in (out_dir / "run.log").read_text().splitlines()]
+    assert log[-1]["status"] == "budget_exceeded" and log[-1]["level"] == "ERROR"
+    assert log[-1]["page_id"] == "doc_0001_page_0002"
+
+
+def test_a_local_adapter_with_no_usage_is_not_stopped_by_a_dollar_cap(tmp_path):
+    source, config, out_dir = _budget_run(tmp_path, "    max_usd: 0.000001")
+    result = run(inputs=[source], config_path=config, out_dir=out_dir, dry_run=False)
+    assert result["summary"]["pages_extracted"] == 5
+
+
+def test_a_budget_stop_before_the_first_page_is_logged(tmp_path):
+    source, config, out_dir = _budget_run(
+        tmp_path, "    max_usd: 0\n  pricing:\n    cost_per_page: 1"
+    )
+    with pytest.raises(BudgetExceededError, match="Budget reached before doc_0001_page_0001"):
+        run(inputs=[source], config_path=config, out_dir=out_dir, dry_run=False)
+    log = [json.loads(line) for line in (out_dir / "run.log").read_text().splitlines()]
+    assert [entry["status"] for entry in log] == ["budget_exceeded"]
+    assert verify_run(out_dir)["status"] == "pass"
+
+
+def test_max_pages_counts_only_pages_the_adapter_reads(tmp_path):
+    source, config, out_dir = _budget_run(tmp_path, "    max_pages: 2")
+    result = run(inputs=[source], config_path=config, out_dir=out_dir, dry_run=True)
+    assert result["summary"]["pages_extracted"] == 0
+
+
+def test_misspelt_budget_key_is_refused(tmp_path):
+    source, config, out_dir = _budget_run(tmp_path, "    max_dollars: 0.5")
+    with pytest.raises(ValueError, match="run.budget has no key 'max_dollars'"):
+        run(inputs=[source], config_path=config, out_dir=out_dir, dry_run=False)
     assert not out_dir.exists()
 
 

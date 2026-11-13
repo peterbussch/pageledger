@@ -49,6 +49,26 @@ _KNOWN_RUN_KEYS = frozenset(
     }
 )
 
+_BUDGET_KEYS = frozenset(
+    {
+        "max_pages",
+        "max_tokens",
+        "max_usd",
+        "warn_pages",
+        "warn_tokens",
+        "warn_usd",
+        "warn_at_percent",
+        "unknown_usage",
+    }
+)
+_SECTION_KEYS = {
+    "run.retry": frozenset({"max_retries", "backoff"}),
+    "run.grading": frozenset({"review_below_grade", "thresholds"}),
+    "classify": frozenset(
+        {"adapter", "adapter_options", "hook", "hook_options", "min_confidence", "thresholds"}
+    ),
+}
+
 _INTEGER_STRING = re.compile(r"-?(?:0|[1-9][0-9]*)\Z")
 _NUMBER_STRING = re.compile(r"-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?\Z")
 
@@ -236,6 +256,17 @@ class PageLedgerConfig:
         )
 
     @property
+    def budget_unknown_usage(self) -> str:
+        """What a run does when a page leaves a capped unit (tokens, dollars) unknown:
+        ``stop`` before the next request (the default), or ``continue``."""
+        value = _walk(self.data, "run", "budget", "unknown_usage")
+        if value is None:
+            return "stop"
+        if not isinstance(value, str) or value not in {"stop", "continue"}:
+            raise ValueError("run.budget.unknown_usage must be stop or continue")
+        return str(value)
+
+    @property
     def budget_warn_pages(self) -> int | None:
         return _nonneg_number(
             _walk(self.data, "run", "budget", "warn_pages"),
@@ -283,7 +314,7 @@ class PageLedgerConfig:
         if value is None:
             return "none"
         backoff = str(value)
-        if backoff not in {"none", "exponential"}:
+        if not isinstance(backoff, str) or backoff not in {"none", "exponential"}:
             raise ValueError("run.retry.backoff must be 'none' or 'exponential'")
         return backoff
 
@@ -292,7 +323,7 @@ class PageLedgerConfig:
         value = _walk(self.data, "run", "on_page_error")
         if value is None:
             return "stop"
-        if value not in {"stop", "continue"}:
+        if not isinstance(value, str) or value not in {"stop", "continue"}:
             raise ValueError("run.on_page_error must be 'stop' or 'continue'")
         return value
 
@@ -424,6 +455,7 @@ def _validate_config(config: PageLedgerConfig, *, validate_adapter: bool) -> Non
     for prop in (
         "max_rerun_depth",
         "budget_max_usd",
+        "budget_unknown_usage",
         "budget_warn_pages",
         "budget_warn_tokens",
         "budget_warn_usd",
@@ -451,8 +483,14 @@ def _validate_config(config: PageLedgerConfig, *, validate_adapter: bool) -> Non
         "quarantine_rules",
     ):
         getattr(config, prop)
-    if validate_adapter and config.adapter_name is not None:
-        load_adapter(config.adapter_name, config.adapter_options)
+    if validate_adapter:
+        for name, options in (
+            [(entry["adapter"], entry["adapter_options"]) for entry in config.adapter_order]
+            if config.adapter_order is not None
+            else [(config.adapter_name, config.adapter_options)]
+        ):
+            if name is not None:
+                load_adapter(name, options)
     if validate_adapter and config.classify_adapter is not None:
         load_adapter(config.classify_adapter, config.classify_adapter_options)
     if validate_adapter and config.classify_hook is not None:
@@ -474,6 +512,13 @@ def _validate_mapping_sections(data: dict[str, Any]) -> None:
     for key in ("adapter_options", "hook_options", "thresholds"):
         if key in classify and not isinstance(classify[key], dict):
             raise ValueError(f"classify.{key} must be a mapping")
+    # A misspelt budget key would silently drop a spending limit, so it is refused.
+    unknown = sorted(str(key) for key in run.get("budget") or {} if key not in _BUDGET_KEYS)
+    if unknown:
+        raise ValueError(
+            f"run.budget has no key {unknown[0]!r}; the keys it takes are "
+            + ", ".join(sorted(_BUDGET_KEYS))
+        )
 
 
 def _validate_dataset_citation(data: dict[str, Any]) -> None:
@@ -495,11 +540,20 @@ def _validate_language(data: dict[str, Any]) -> None:
     unknown = sorted(set(language) - {"script", "orthography"})
     if unknown:
         raise ValueError(f"language.{unknown[0]} is not supported")
-    if language.get("script") not in {"Cyrillic", "Latin", "Greek", "Arabic", "Devanagari"}:
+    script = language.get("script")
+    if not isinstance(script, str) or script not in {
+        "Cyrillic",
+        "Latin",
+        "Greek",
+        "Arabic",
+        "Devanagari",
+    }:
         raise ValueError(
             "language.script must be one of: Cyrillic, Latin, Greek, Arabic, Devanagari"
         )
-    if "orthography" in language and language["orthography"] != "prereform":
+    if "orthography" in language and not (
+        isinstance(language["orthography"], str) and language["orthography"] == "prereform"
+    ):
         raise ValueError("language.orthography must be 'prereform'")
 
 
@@ -552,6 +606,10 @@ def _warn_unknown_run_keys(config: PageLedgerConfig) -> None:
     for key in run:
         if key not in _KNOWN_RUN_KEYS:
             config.warnings.append(f"Unknown run key '{key}' — ignored by schema_version 0.1")
+    for name, known in _SECTION_KEYS.items():
+        for key in _mapping_at(config.data, *name.split(".")):
+            if key not in known:
+                config.warnings.append(f"Unknown {name} key '{key}' — ignored")
 
 
 def _warn_impossible_budget(config: PageLedgerConfig) -> None:

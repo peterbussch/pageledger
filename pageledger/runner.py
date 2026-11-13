@@ -570,6 +570,7 @@ def _run_pages(
     extraction_seconds_values: list[float] = []
     budget_alerts: list[dict[str, Any]] = []
     alerted_budget_units: set[str] = set()
+    unknown_capped: set[str] = set()
     failure_error: RuntimeError | None = None
     halt_reason: str | None = None
     attempted_page_ids: set[str] = set()
@@ -718,7 +719,12 @@ def _run_pages(
                     f"The parent run routed pages to '{action}', which the rerun's adapter "
                     f"'{getattr(adapter, 'name', None)}' does not support"
                 )
-    preflight_error = _preflight_budget_error(config=config, pages_total=pages_total)
+    # Only pages routed to the adapter count against max_pages; skip and review routes
+    # (and a dry run, which extracts nothing) cost nothing.
+    pages_to_extract = sum(
+        not dry_run and _requires_adapter(page["action"]) for _, page in planned_pages
+    )
+    preflight_error = _preflight_budget_error(config=config, pages_total=pages_to_extract)
     if preflight_error is not None:
         raise BudgetExceededError(preflight_error)
 
@@ -829,19 +835,40 @@ def _run_pages(
         new_adapter_call = _checkpoint is None or _checkpoint.records[page_id]["state"] == "pending"
         if new_adapter_call:
             # Saved results still need replay at the cap; only new calls stop.
-            for unit, cap, current in _budget_caps(
-                config,
-                pages_total=pages_extracted,
-                tokens_total=tokens_total,
-                estimated_cost_usd=estimated_cost_usd,
-            ):
-                if current >= cap:
-                    failure_error = BudgetExceededError(
-                        f"Budget reached before {page_id}: {unit}={current} max_{unit}={cap}"
+            stop = next(
+                (
+                    f"Budget reached before {page_id}: {unit}={current} max_{unit}={cap}"
+                    for unit, cap, current in _budget_caps(
+                        config,
+                        pages_total=pages_extracted,
+                        tokens_total=tokens_total,
+                        estimated_cost_usd=estimated_cost_usd,
                     )
-                    halt_reason = "budget"
-                    break
-            if halt_reason == "budget":
+                    if current >= cap
+                ),
+                None,
+            )
+            if stop is None and unknown_capped:
+                unit = sorted(unknown_capped)[0]
+                stop = (
+                    f"Budget cannot be checked before {page_id}: the adapter did not report "
+                    f"the {unit} an earlier page used, so max_{unit} cannot be enforced"
+                )
+            if stop is not None:
+                failure_error = BudgetExceededError(stop)
+                halt_reason = "budget"
+                log_entries.append(
+                    {
+                        "schema_version": config.schema_version,
+                        "timestamp": _utc_now(),
+                        "level": "ERROR",
+                        "run_id": run_id,
+                        "page_id": page_id,
+                        "adapter": adapter.name,
+                        "status": "budget_exceeded",
+                        "error": stop,
+                    }
+                )
                 break
         attempted_page_ids.add(page_id)
         page_prompt = cast(str | None, page.get("prompt"))
@@ -938,6 +965,13 @@ def _run_pages(
             assert page_cost_basis is not None
             cost_bases.add(page_cost_basis)
             estimated_cost_usd = _round_cost(estimated_cost_usd + page_cost)
+        # A cap on a unit the adapter does not report cannot hold; an adapter that
+        # declares itself local costs nothing to call again.
+        if "local" not in adapter_capabilities and config.budget_unknown_usage == "stop":
+            if config.budget_max_tokens is not None and not isinstance(page_tokens, int):
+                unknown_capped.add("tokens")
+            if config.budget_max_usd is not None and page_cost is None:
+                unknown_capped.add("usd")
         usage_entries.append(usage)
         budget_error = _budget_error(
             config=config,

@@ -142,3 +142,19 @@ def test_noncanonical_numeric_strings_are_rejected(tmp_path: Path, yaml_text: st
 def test_dataset_citation_values_must_be_strings(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="dataset_citation.label must be a string"):
         _load(tmp_path, "dataset_citation: {label: true}\n")
+
+
+def test_misspelt_retry_grading_and_classify_keys_warn(tmp_path: Path) -> None:
+    config = _load(
+        tmp_path,
+        """
+run:
+  retry: {max_retry: 3}
+  grading: {review_below: C}
+classify:
+  min_confidance: 0.9
+""",
+    )
+    for name, key in (("run.retry", "max_retry"), ("run.grading", "review_below")):
+        assert any(f"Unknown {name} key '{key}'" in item for item in config.warnings)
+    assert any("Unknown classify key 'min_confidance'" in item for item in config.warnings)

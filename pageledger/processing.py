@@ -1270,11 +1270,13 @@ def _plan_stage(
         "on_page_error": "stop",
         "retry": {"max_retries": 0},
     }
-    budget = {"max_pages": len(numbers)}
+    budget: dict[str, Any] = {"max_pages": len(numbers)}
     for key, unit in (("max_tokens", "tokens"), ("max_cost_usd", "known_cost_usd")):
         if job["limits"][key] is not None:
             child_key = "max_usd" if key == "max_cost_usd" else key
             budget[child_key] = max(0, job["limits"][key] - job["usage"][unit])
+            # The job itself decides what unknown usage stops (only paid stages).
+            budget["unknown_usage"] = "continue"
     config["run"]["budget"] = budget
     config_path = f".job/{stage_id}.yml"
     encoded = yaml.safe_dump(config, sort_keys=True, allow_unicode=True).encode("utf-8")
