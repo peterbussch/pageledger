@@ -10,7 +10,7 @@ from pathlib import Path
 import pytest
 import yaml
 from jsonschema import validate
-from test_processing import TEXT, StageAdapter
+from test_processing import TEXT, StageAdapter, setup  # noqa: F401
 
 from pageledger import runner
 from pageledger.checkpoint import read_record
@@ -246,3 +246,45 @@ def test_cli_writes_a_sheet_and_reports_the_decisions(job, tmp_path, capsys):
     arguments = ["review-job", str(job), "--review", str(sheet), "--reviewer", "A. Reader"]
     assert main([*arguments, "--dry-run"]) == 0
     assert capsys.readouterr().out.startswith("Status: checked\nDecisions: reviewed_text 1\n")
+
+
+def _published(root: Path) -> dict:
+    return json.loads((root / "document.json").read_text())["pages"][0]["selected_output"]
+
+
+def test_after_a_person_chose_a_reading_s_own_text_its_edition_stays_unpublished(
+    setup,  # noqa: F811
+    monkeypatch,
+    tmp_path,
+):
+    from test_processing import _adjudicated, _review
+
+    from pageledger.export import export_job
+
+    page = _adjudicated(setup, monkeypatch, tmp_path)
+    base, witness = page["edition"]["base_attempt"], page["contested"]["witness_attempt"]
+    _review(setup, tmp_path, f"use:{witness}")
+    out = tmp_path / "witness.jsonl"
+    export_job(setup[2], out, format="jsonl")
+    assert "edition" not in json.loads(out.read_text().splitlines()[0])
+    _review(setup, tmp_path, f"use:{base}")
+    raw = _published(setup[2])
+    assert not raw.get("edition")
+    sheet = tmp_path / "fresh.csv"
+    create_review_sheet(setup[2], sheet)
+    summary = next(csv.DictReader(sheet.read_text(encoding="utf-8-sig").splitlines()))
+    assert "settled differences" not in summary["attempt_summary"]
+    # Accepting the text shown keeps that text, not the edition.
+    _review(setup, tmp_path, "accept")
+    assert _published(setup[2])["sha256"] == raw["sha256"]
+    # A correction typed from it starts from it.
+    bindings = json.loads(binding_path(sheet).read_text())["bindings"]
+    decisions = tmp_path / "corrected.json"
+    typed = raw["text"].replace("Работа", "Робота", 1)
+    row = {"row_id": "p0001", "page_number": "1", "decision": "correct", "text": typed}
+    decisions.write_text(json.dumps({"schema_version": "0.1", "bindings": bindings, "rows": [row]}))
+    review_job(setup[2], decisions, reviewer="person:test")
+    correction = _published(setup[2])["correction"]
+    assert correction["from_sha256"] == raw["sha256"]
+    assert correction["words"]["changed"] == 1
+    assert verify_job(setup[2])["status"] == "pass"

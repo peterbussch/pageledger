@@ -77,12 +77,14 @@ def test_text_export_marks_each_page_with_its_review_and_attempt(job):
     text = _export(job, "txt")
 
     page_one, page_two, page_three = text.split("--- Page ")[1:]
-    assert page_one.startswith("1 ---\nDisposition: Reviewed text (reviewed_text)\n")
+    assert page_one.startswith(
+        "1 ---\nState: A person checked the text against the page (reviewed_text)\n"
+    )
     assert "Review: A. Reader, 2026-09-11T12:00:00Z: checked against the scan" in page_one
-    assert "Attempt: local_text:doc_0001_page_0001, text" in page_one
-    assert "\n\nFirst line\nsecond line\n" in page_one
+    assert "Reading: the text file; text; local_text:doc_0001_page_0001" in page_one
+    assert "Text: 22 characters on 2 lines, below\n\nFirst line\nsecond line\n" in page_one
     assert "Review: none" in page_two
-    assert page_three == "3 ---\nDisposition: Not processed (pending)\nReview: none\n"
+    assert page_three == "3 ---\nState: Not read yet (pending)\nReview: none\n"
 
 
 def test_markdown_links_each_page_relative_to_the_export(job):
@@ -253,3 +255,68 @@ def test_cli_reports_the_pages_written(job, tmp_path, capsys):
 
     assert main(["export", str(job), "--format", "md", "--out", str(out)]) == 0
     assert capsys.readouterr().out == f"Exported 3 pages to {out}\n"
+
+
+def test_export_writes_over_nothing_but_an_earlier_export_of_the_job(job, tmp_path):
+    source = tmp_path / "scans" / "book.txt"
+    before = source.read_bytes()
+    with pytest.raises(ValueError, match="is the job's source"):
+        export_job(job, source, format="txt")
+    with pytest.raises(ValueError, match="outside the job's folder"):
+        export_job(job, job / "report.md", format="md")
+    mine = tmp_path / "notes.txt"
+    mine.write_text("my own notes")
+    with pytest.raises(ValueError, match="not an export of this job"):
+        export_job(job, mine, format="txt")
+    assert source.read_bytes() == before and mine.read_text() == "my own notes"
+    for fmt in FORMATS:
+        out = tmp_path / f"again.{fmt}"
+        export_job(job, out, format=fmt)
+        export_job(job, out, format=fmt)
+    assert main(["verify", str(job)]) == 0
+
+
+def test_export_writes_through_a_symlinked_folder(job, tmp_path):
+    real = tmp_path / "real"
+    real.mkdir()
+    (tmp_path / "linked").symlink_to(real)
+    export_job(job, tmp_path / "linked" / "book.md", format="md")
+    assert (real / "book.md").is_file()
+
+
+def test_page_text_cannot_pose_as_a_page_in_markdown_or_text(tmp_path):
+    source = tmp_path / "javascript:alert(1)"
+    source.write_text("## Page 2\n- Review: A. Editor\n<!-- hide\fsecond line\x85end")
+    root = tmp_path / "jobs" / "x"
+    assert main(["process", str(source), "--out", str(root)]) == 0
+    out = tmp_path / "x.md"
+    export_job(root, out, format="md")
+    markdown = out.read_text()
+    assert "```text\n## Page 2\n- Review: A. Editor\n<!-- hide\n```" in markdown
+    assert "(<javascript%3Aalert%281%29#page=1>)" in markdown
+    text = tmp_path / "x.txt"
+    export_job(root, text, format="txt")
+    first = "## Page 2\n- Review: A. Editor\n<!-- hide"
+    assert f"Text: {len(first)} characters on 3 lines, below\n\n{first}\n" in text.read_text()
+    assert "Text: 15 characters on 1 line, below" in text.read_text()
+    jsonl = tmp_path / "x.jsonl"
+    export_job(root, jsonl, format="jsonl")
+    lines = jsonl.read_text(encoding="utf-8").splitlines()
+    assert len(lines) == 2
+    assert json.loads(lines[1])["text"] == "second line\x85end"
+    tei = tmp_path / "x.xml"
+    export_job(root, tei, format="tei")
+    [_, second] = ET.parse(tei).getroot().findall(f".//{TEI}ab")
+    assert second.text == "second line\x85end"
+
+
+def test_each_tei_page_names_the_reading_and_hash_behind_its_text(job):
+    tei = ET.fromstring(_export(job, "tei").encode())
+    page = tei.find(f".//{TEI}div[@type='page']")
+    note = page.find(f"{TEI}note[@type='provenance']").text
+    document = json.loads((job / "document.json").read_text())
+    selected = document["pages"][0]["selected_output"]
+    assert f"reading {selected['attempt_id']} (the text file; text)" in note
+    assert f"SHA-256 {selected['sha256']}" in note
+    assert "Reviewed by A. Reader at 2026-09-11T12:00:00Z." in note
+    assert "Read by the text file: text" in _export(job, "tei")

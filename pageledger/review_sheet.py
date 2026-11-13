@@ -11,7 +11,14 @@ from pathlib import Path
 
 from . import corrections
 from .checkpoint import atomic_bytes
-from .document_report import _artifact_bytes, _engines, empty_reading, reader_name, relative_path
+from .document_report import (
+    _artifact_bytes,
+    _engines,
+    edition_published,
+    empty_reading,
+    reader_name,
+    relative_path,
+)
 from .image_source import page_target
 from .runner import _utc_now
 from .wording import CORRECTION, DECISION_GROUPS, HOLDS, REVIEWED, sentence
@@ -475,9 +482,9 @@ def _corrected(page: dict) -> dict | None:
 
 
 def _output_sha256(page: dict, attempt: dict) -> str:
-    edition = page.get("edition")
-    if edition and edition["base_attempt"] == attempt["attempt_id"]:
-        return edition["sha256"]
+    """The hash of the text the page publishes for the attempt: its edition or its own."""
+    if edition_published(page, attempt["attempt_id"]):
+        return page["edition"]["sha256"]
     return attempt["raw_sha256"]
 
 
@@ -506,7 +513,7 @@ def _summary(root: Path, job: dict, page: dict, attempt: dict | None) -> str:
         text = (root / artifact).read_text(encoding="utf-8")
         label = f"{sentence(CORRECTION)} of {_name(job, attempt)}"
         detail = f"{detail}, corrected in {artifact}"
-    elif edition and edition["base_attempt"] == attempt["attempt_id"]:
+    elif edition and edition_published(page, attempt["attempt_id"]):
         text = (root / edition["artifact"]).read_text(encoding="utf-8")
         label += ", with its settled differences applied"
         detail = f"{detail}, edition {edition['artifact']}"

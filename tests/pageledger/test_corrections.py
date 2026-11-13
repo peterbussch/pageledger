@@ -506,7 +506,8 @@ def test_txt_and_md_exports_carry_the_corrected_text_and_say_so(corrected, tmp_p
         assert TEXT in first and WRONG not in first
         assert "Correction: corrections/doc_0001_page_0001-" in first
         assert "Text from: a person's correction by A. Reader of the engine local_text (" in first
-        assert "Corrected reading: local_text:doc_0001_page_0001, " in first
+        assert "; local_text:doc_0001_page_0001" in first.split("Reading: ", 1)[1]
+        assert "Corrected from SHA-256: " in first
         assert "Attempt:" not in first and "Output SHA-256" not in first
         assert "corrected the text; their note: fixed" in first
         assert "1 word changed, 0 added, 0 removed" in first

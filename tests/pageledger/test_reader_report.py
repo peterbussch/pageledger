@@ -471,7 +471,8 @@ def test_tei_and_jsonl_carry_the_hold_and_the_warnings(setup, tmp_path):  # noqa
     [hold] = pages[1].findall(f"{TEI}note[@type='hold']")
     assert hold.get("n") == "coverage_defect"
     assert hold.text == "Text may be missing or damaged in the reading."
-    assert not pages[0].findall(f"{TEI}note")
+    assert not pages[0].findall(f"{TEI}note[@type='hold']")
+    assert not pages[0].findall(f"{TEI}note[@type='warning']")
     categories = tei.findall(f".//{TEI}classDecl/{TEI}taxonomy/{TEI}category")
     assert len(categories) == 4
     xmllint = shutil.which("xmllint")

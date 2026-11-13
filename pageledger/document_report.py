@@ -581,10 +581,6 @@ def _held_for(page: dict) -> list[str]:
     return list(dict.fromkeys(page.get("review_reasons") or [page["disposition"]]))
 
 
-def _decision_of(page: dict) -> dict:
-    return next(item for item in page["review"]["decisions"] if item["page_id"] == page["page_id"])
-
-
 def _layer(attempt: dict) -> bool:
     return any(warning_code(item) == "ocr_text_layer" for item in attempt.get("warnings") or [])
 
@@ -819,7 +815,7 @@ def summary_lines(report: dict) -> list[str]:
         ]
     for code, items in _grouped(clean, lambda page: [page["disposition"]]):
         lines.append(f"- {hold_in_words(items[0], code)}: {_pages(items)}.")
-    for code, items in _grouped(reviewed, lambda page: [_decision_of(page)["disposition"]]):
+    for code, items in _grouped(reviewed, lambda page: [_decision(page)["disposition"]]):
         lines.append(f"- {REVIEWED.get(code, code)}: {_pages(items)}.")
     for stage, items in _grouped(pending, lambda page: [str(page.get("next_action"))]):
         lines.append(f"- {_waiting_for(report, stage)}: {_pages(items)}.")
@@ -853,7 +849,7 @@ def _next_step(report: dict, held: list[dict]) -> str | None:
     if status != "completed":
         return None
     if any(
-        _decision_of(page)["disposition"] == "source_defect"
+        _decision(page)["disposition"] == "source_defect"
         for page in report["pages"]
         if page.get("review")
     ):
@@ -956,7 +952,7 @@ def _held_cell(report: dict, page: dict) -> str:
 def _review_cell(page: dict) -> str:
     if page.get("review") is None:
         return "not checked"
-    decision = _decision_of(page)
+    decision = _decision(page)
     return (
         f"{REVIEWED.get(decision['disposition'], decision['disposition'])}: "
         f"{_plain(decision['reviewer'])}, {_escape(decision['reviewed_at'])}, "
@@ -1190,7 +1186,7 @@ def _page_record(report: dict, page: dict) -> list[str]:
     if page.get("review_reasons"):
         line += "; held for " + ", ".join(f"`{reason}`" for reason in page["review_reasons"])
     if page.get("review") is not None:
-        decision = _decision_of(page)
+        decision = _decision(page)
         line += f"; reviewed as `{decision['disposition']}`"
         if decision["selected_attempt"] is None:
             line += " from the source alone"
@@ -1612,6 +1608,17 @@ def _decision(page: dict) -> dict:
     return next(item for item in page["review"]["decisions"] if item["page_id"] == page["page_id"])
 
 
+def edition_published(page: dict, attempt_id: str) -> bool:
+    """Whether the page's text is its edition: the attempt's reading with its settled
+    spans applied, unless a person reviewed the attempt's own text instead."""
+    edition = page.get("edition")
+    if edition is None or edition["base_attempt"] != attempt_id:
+        return False
+    if page.get("review") is None:
+        return True
+    return _decision(page)["output_sha256"] in (None, edition["sha256"])
+
+
 def build_document_report(
     job: dict,
     root: Path,
@@ -1712,20 +1719,7 @@ def build_document_report(
                 "text": text,
             }
             edition = page.get("edition")
-            reviewed = None
-            if page.get("review") is not None:
-                reviewed = next(
-                    item["output_sha256"]
-                    for item in page["review"]["decisions"]
-                    if item["page_id"] == page["page_id"]
-                )
-            # The selected attempt with its settled spans applied, unless a person
-            # reviewed the attempt's own text instead. The attempt is unchanged.
-            if (
-                edition is not None
-                and edition["base_attempt"] == chosen["attempt_id"]
-                and reviewed in (None, edition["sha256"])
-            ):
+            if edition_published(page, chosen["attempt_id"]):
                 content = _artifact_bytes(root, edition["artifact"], edition["sha256"])
                 page["selected_output"].update(
                     path=edition["artifact"],

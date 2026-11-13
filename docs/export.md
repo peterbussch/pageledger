@@ -20,20 +20,33 @@ without text, in every format: the reviewer did not accept the machine text as
 the page. Links to the source are relative to the exported file, so an export
 never contains an absolute path such as your home folder.
 
+`--out` must be outside the job's folder and must not be the job's source. An
+existing file is replaced only when it is an earlier export of the same job;
+any other file is left alone and the export is refused.
+
 ## Text and Markdown
 
 A heading names the source file, its SHA-256 and the job. Each page then
-states its disposition, its review (reviewer, time and reason, or "none"), the
-reading and engine that produced the text, and the text's SHA-256, followed by
-the text exactly as the engine returned it. A page whose text a person
-corrected says so first: its review line says who corrected the text (or
-accepted it as corrected) and when, with their note; a `Text from` line says
-whose correction of which reading the text is (by the engine's name) and how
+states where it stands (`State`, in the report's words with its code), its
+review (reviewer, time and reason, or "none"), and the reading that produced
+the text: what made it as the report names it (for a PDF whose text layer is an
+earlier OCR, "the PDF's own text (an earlier OCR)"), its engine and its ID, then
+its SHA-256. A page whose text is an edition (a reading with its settled
+contested spans applied) names the edition and its SHA-256 as well. A page
+whose text a person corrected says so first: its review line says who
+corrected the text (or accepted it as corrected) and when, with their note; a
+`Text from` line says whose correction of which reading the text is and how
 many words changed; a `Correction` line names the corrected text's file and the
-file it was corrected from, with the corrected text's SHA-256; and `Corrected
-reading` lines give the reading's ID, engine and SHA-256. The text that follows
-is the person's. Markdown also links each
-page to the source page.
+file it was corrected from, with the corrected text's SHA-256 and the SHA-256
+of the text it was corrected from; and `Reading` lines give the reading
+beneath it. The text that follows is the person's.
+
+In the text format, a `Text` line gives the page text's length in characters
+and lines, and the text follows after one empty line, exactly as recorded: a
+line in the text that looks like a page heading cannot be taken for one. In
+Markdown, each page links to the source page, and its text is in a fenced code
+block, as in [the transcript](document-report-spec.md#report-format-09), so
+that nothing in it is read as Markdown or HTML.
 
 ## JSONL
 
@@ -77,7 +90,9 @@ page, shown here across several lines:
 it), `unreviewed` (nothing held it and no person checked it) or `reviewed`.
 `review_reasons` lists the page's hold reasons and `warnings` the warning codes
 on the reading the text comes from; see [warnings](warnings.md#in-plain-words).
-The three fields were added in 0.9.
+The three fields were added in 0.9. `edition` is present only when the page's
+text is the edition. The line separators U+2028, U+2029 and U+0085 are written
+as `\u` escapes, so that each record is one line for any tool.
 
 `review` is the page's decision from its
 [review receipt](document-report-spec.md#human-review-receipt), or null. A page
@@ -100,7 +115,8 @@ A minimal TEI P5 document, which PageLedger's tests validate against the TEI
 All schema of TEI P5 4.12.0:
 
 - `sourceDesc` names the source file and its SHA-256; `encodingDesc` lists the
-  engines behind the exported text and how many pages a person reviewed.
+  readings behind the exported text, by what made them and their engine, and
+  how many pages a person reviewed.
 - Each page starts with `<pb n="12" facs="../scans/book.pdf#page=12"/>` (for
   a folder of page images, `facs="../scans/page-12.jpg"`),
   followed by `<div type="page" subtype="reviewed">` or
@@ -114,7 +130,12 @@ All schema of TEI P5 4.12.0:
   per warning on its reading, each in plain words. A TEI reader can so tell
   the pages the job distrusts from those nothing held, though both are
   `subtype="unreviewed"`.
-- The text is in `<ab>`, with `<lb/>` between lines. A page without text
+- A page with text has a `<note type="provenance">` naming the reading (or
+  edition or correction) its text comes from, with its ID, engine and the
+  SHA-256 of the text before characters XML cannot carry were left out, and
+  the reviewer and time when a person reviewed it.
+- The text is in `<ab>`, with `<lb/>` at each line break (LF, CR or CRLF);
+  other separators such as U+2028 are kept as characters. A page without text
   holds `<gap reason="…"/>` naming its disposition, such as `pending`,
   `provider_failure` or, for a page a person reviewed as not text,
   `unreadable` or `reviewed_blank`.
