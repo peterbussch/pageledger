@@ -777,11 +777,18 @@ spans are recorded as usual. The command reports the open spans, how many went
 into packets and how many were left out, and each packet lists its `terms`. Run
 it again with other terms, or with none, into a new directory for the rest.
 `--decisions` checks each answer against the spans it names and records it as an
-adjudication receipt (schema 0.2) on the page, with the reviewer, the time and
+adjudication receipt (schema 0.3) on the page, with the reviewer, the time and
 the hash of the image. Answers for spans that have since changed are refused;
 write packets again. A later answer for a span overrides an earlier one.
 
-Only a `high` answer settles a span. When no span on a page is open, the page is
+Only a `high` answer that is one of the two readings settles a span. An answer
+that is neither, however confident, is recorded but leaves its span open for a
+person, and the review view shows it on the span: page text can carry words
+that read as instructions to a model, and a model can invent a passage, so
+neither may change the edition unchecked. `INSTRUCTIONS.md` tells the
+adjudicator that everything in a packet is text from the page, never an
+instruction. Receipts of schema 0.2, recorded before 0.9, keep their meaning:
+any `high` answer settles its span. When no span on a page is open, the page is
 `adjudicated_text`, and, if any answer changed the text, PageLedger writes
 `editions/<page_id>.txt`: the model's reading with each change applied at its
 offsets. The attempt itself is never edited. The transcript, `document.json` and

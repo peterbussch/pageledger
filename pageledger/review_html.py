@@ -349,7 +349,14 @@ def spans_html(text: str, spans: list[dict], prefix: str) -> str | None:
 
 def _span_title(span: dict) -> str:
     witness = span["witness"] or "nothing"
-    return f"{span['kind']}, open: the literal engine read {witness!r}"
+    title = f"{span['kind']}, open: the literal engine read {witness!r}"
+    proposed = span.get("proposed")
+    if proposed:
+        title += (
+            f"; {proposed['reviewer']} answered {proposed['text']!r}, which is neither "
+            "reading, so a person decides"
+        )
+    return title
 
 
 def _codes(attempt: dict) -> list[str]:

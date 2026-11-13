@@ -750,7 +750,7 @@
                 "items": {
                   "type": "object",
                   "properties": {
-                    "schema_version": {"const": "0.2"},
+                    "schema_version": {"enum": ["0.2", "0.3"], "description": "0.3 since 0.9: a high answer that is neither reading settles nothing; 0.2 receipts keep their meaning."},
                     "source_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
                     "page_id": {"type": "string", "minLength": 1},
                     "page_number": {"type": "integer", "minimum": 1},
