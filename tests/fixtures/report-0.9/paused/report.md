@@ -27,7 +27,7 @@ For pages not finished, the text and holds are those so far: the stages still to
 
 Everything below is in document.json, of which this report is a rendering. The codes in backticks are explained in [PageLedger's warnings](https://github.com/peterbussch/pageledger/blob/v0.9.0/docs/warnings.md).
 
-- Job: `job_4cbe2ef749c9411d87b33da02a9bc69f`, created 2026-11-13T23:22:47Z; hold policy 0.9; report format 0.9.
+- Job: `job_d1b9b00d068b47978aa2cf5157cbe65f`, created 2026-11-13T23:48:23Z; hold policy 0.9; report format 0.9.
 - Source: [../source.txt][source]
 - Source SHA-256: `b6f60e4092685ffd893a508ab3704696bc506e06c79c4d28fb679bf692a306c9`
 - Read by: the `local_text` stage, the engine local_text (`local_text`); the `local_ocr` stage, the engine local_ocr (`local_ocr`); the `image` stage, the engine image (`image`).
@@ -85,7 +85,7 @@ PageLedger records what it knows of the source file; it does not preserve or rem
 
 ### Files
 
-- Transcript: [transcript.md](<transcript.md>), SHA-256 `f2fedbf0999d02fb729a39e956da590b7a05a8c76fc0f4f807d0101806848279`
+- Transcript: [transcript.md](<transcript.md>), SHA-256 `a67896345e3bd51024ec44e10478b93f8a46290e4ac61a1af7c9b97ba518aec1`
 - Next action recorded by the job: Reached max_image_pages (1). Review the retained results, or continue with: pageledger resume JOB_DIR --raise-limit max_image_pages=N
   - JOB_DIR stands for this job's folder.
 

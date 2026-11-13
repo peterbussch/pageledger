@@ -41,14 +41,15 @@ HOLDS = {
 # A blank candidate whose selected reading has text, when nothing else holds the page:
 # an empty reading raised the hold, and no reading without a hold of its own has
 # confirmed the text. BLANK_SCAN is the same when the empty reading is a scan's
-# missing text layer, and BLANK_SHORT when no reading was empty (a reading too short
-# to trust raised it). Where another reason holds the page, the blank hold is not shown.
+# missing text layer. When no reading was empty, BLANK_SHORT says a reading had only a
+# few characters, and BLANK_JUDGED that an engine judged the page blank. Where another reason holds the page, the blank hold is not shown.
 BLANK_WITH_TEXT = (
     "An earlier reading was empty, and no reading without a hold of its own confirms the "
     "page's text"
 )
 BLANK_SCAN = "The page is a scan with no text of its own, and no other reading confirms the OCR"
 BLANK_SHORT = "Very little text was read, and nothing else confirms it: the page may be blank"
+BLANK_JUDGED = "An engine judged the page blank, though a reading of it has text"
 
 # What is wrong with a reading, by the cause of its hold (a warning or classification
 # code, or a rule of the job's own). Each is a clause, without a full stop, that reads

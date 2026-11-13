@@ -1,1 +1,0 @@
-```code``` and [a link](http://example.org) <b>bold</b>

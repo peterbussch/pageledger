@@ -154,7 +154,7 @@ exports are not available.
 ## Citing an export
 
 Cite the source by its file name and SHA-256, and the text by job ID, page
-number, attempt ID and output SHA-256; for a corrected page, add the
-correction's SHA-256. A job that verifies shows that the text is exactly what
+number, reading ID and its SHA-256 (the `Reading` lines, or `attempt` in JSONL); for
+an edition or a corrected page, add the edition's or the correction's SHA-256. A job that verifies shows that the text is exactly what
 the recorded engine returned, or what the named reviewer typed, and what a
 reviewer approved; it does not show that the transcription is accurate.

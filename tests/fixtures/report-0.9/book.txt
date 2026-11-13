@@ -1,5 +1,0 @@
-Opening words of the book.
-## Page 2
-- Review: A. Editor
-<!-- hidden
-iv```code``` and [a link](http://example.org) <b>bold</b>

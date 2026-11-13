@@ -23,14 +23,14 @@ Pages that need a person come first. The review view (`pageledger review .` in t
 | Page | Held for | Selected text | Review |
 | --- | --- | --- | --- |
 | 2 | Very little text was read, and nothing else confirms it: the page may be blank. | [The text file](<attempts/local_text/raw/doc_0001_page_0002.txt>) | not checked |
-| 1 | The text file has very little text. | [A person's correction](<corrections/doc_0001_page_0001-dd291b879eceade37f8b6abbd2a242e694051de619ab0deb15f70d911fb46475.txt>) of the text file: 2 words changed, 0 added, 8 removed | A person checked the text against the page: A. Person, 2026-11-13T23:22:48Z, “Review sheet decision: correct:p1.txt” |
-| 3 | The text file has many unusual symbols, often from a damaged text layer. | [The text file](<attempts/local_text/raw/doc_0001_page_0003.txt>) | A person checked the text against the page: A. Person, 2026-11-13T23:22:48Z, “Review sheet decision: accept” |
+| 1 | The text file has very little text. | [A person's correction](<corrections/doc_0001_page_0001-dd291b879eceade37f8b6abbd2a242e694051de619ab0deb15f70d911fb46475.txt>) of the text file: 2 words changed, 0 added, 8 removed | A person checked the text against the page: A. Person, 2026-11-13T23:48:23Z, “Review sheet decision: correct:p1.txt” |
+| 3 | The text file has many unusual symbols, often from a damaged text layer. | [The text file](<attempts/local_text/raw/doc_0001_page_0003.txt>) | A person checked the text against the page: A. Person, 2026-11-13T23:48:23Z, “Review sheet decision: accept” |
 
 ## For the record
 
 Everything below is in document.json, of which this report is a rendering. The codes in backticks are explained in [PageLedger's warnings](https://github.com/peterbussch/pageledger/blob/v0.9.0/docs/warnings.md).
 
-- Job: `job_dbe0b4f320c144528c7b440c5250c872`, created 2026-11-13T23:22:48Z; hold policy 0.9; report format 0.9.
+- Job: `job_1fe37a9ea95c417ca3c2de51c8738934`, created 2026-11-13T23:48:23Z; hold policy 0.9; report format 0.9.
 - Source: [../../book.txt][source]
 - Source SHA-256: `008f52e0d55142a405da902ec254abb7be8de5e9f62d8fb8e0343918e121f5cc`
 - Read by: the `local_text` stage, the text file (`text`).
@@ -44,7 +44,7 @@ Each page's number in the source, its state and every hold the job recorded; the
 - Page 1: `reviewed_text`; held for `coverage_defect`; reviewed as `reviewed_text`.
   - Hold: `coverage_defect` from `sparse` on `local_text:doc_0001_page_0001`: the text file has very little text.
   - The text file: [local_text:doc_0001_page_0001](<attempts/local_text/raw/doc_0001_page_0001.txt>) completed, selected.
-  - Selected text: a [correction](<corrections/doc_0001_page_0001-dd291b879eceade37f8b6abbd2a242e694051de619ab0deb15f70d911fb46475.txt>) of `local_text:doc_0001_page_0001` by A. Person at 2026-11-13T23:22:48Z.
+  - Selected text: a [correction](<corrections/doc_0001_page_0001-dd291b879eceade37f8b6abbd2a242e694051de619ab0deb15f70d911fb46475.txt>) of `local_text:doc_0001_page_0001` by A. Person at 2026-11-13T23:48:23Z.
 - Page 2: `blank_candidate`; held for `blank_candidate`.
   - Hold: `blank_candidate` from `blank` on `local_text:doc_0001_page_0002`: the text file judged the page blank.
   - The text file: [local_text:doc_0001_page_0002](<attempts/local_text/raw/doc_0001_page_0002.txt>) completed, `short_text`, selected.
@@ -78,7 +78,7 @@ PageLedger records what it knows of the source file; it does not preserve or rem
 
 ### Files
 
-- Transcript: [transcript.md](<transcript.md>), SHA-256 `6af86dc7dfded883363abe40949ea20fc2cc0f70f47fb242f4dfac5abab1451f`
+- Transcript: [transcript.md](<transcript.md>), SHA-256 `d74263721364d6b06b56e79175fe014756a4c0f8290c5ef5c8cd4b306f85a8d2`
 - Next action recorded by the job: Check the pages against the source, those that need a person first, and record decisions with pageledger review.
 
 [source]: <../../book.txt>

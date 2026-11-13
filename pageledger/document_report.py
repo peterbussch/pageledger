@@ -33,6 +33,7 @@ from .processing_policy import (
 from .wording import (
     ADVICE,
     ANOTHER_READING,
+    BLANK_JUDGED,
     BLANK_SCAN,
     BLANK_SHORT,
     BLANK_WITH_TEXT,
@@ -625,7 +626,8 @@ def hold_in_words(page: dict, reason: str) -> str:
             return BLANK_SCAN
         if any(empty_reading(attempt) for attempt in page["attempts"]):
             return BLANK_WITH_TEXT
-        return BLANK_SHORT
+        codes = {warning_code(w) for a in page["attempts"] for w in a.get("warnings") or []}
+        return BLANK_SHORT if "short_text" in codes else BLANK_JUDGED
     return HOLDS.get(reason) or REVIEWED.get(reason) or reason
 
 

@@ -222,7 +222,13 @@ def read_review_sheet(
             )
         )
     # Spreadsheet programs can save rows that are wholly empty below the data.
-    rows = [row for row in rows if any(value != "" for value in row.values())]
+    # Numbered as the spreadsheet numbers them, the header being row 1.
+    numbered = [
+        (number, row)
+        for number, row in enumerate(rows, start=2)
+        if any(value != "" for value in row.values())
+    ]
+    rows = [row for _, row in numbered]
     pages = {_row_id(page): page for page in job["pages"]}
     expected_binding = binding_path(sheet)
     if expected_binding.is_file():
@@ -252,7 +258,7 @@ def read_review_sheet(
         or not isinstance(binding.get("bindings"), dict)
     ):
         raise ValueError(f"Review sheet binding is invalid: {binding_file}")
-    for number, row in enumerate(rows, start=2):
+    for number, row in numbered:
         if None in row or None in row.values():
             raise ValueError(f"Row {number} of the review sheet does not have {len(FIELDS)} cells")
         for column in ("decision", "note"):

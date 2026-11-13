@@ -139,7 +139,9 @@ nothing else holds the page; the record still lists it. It then reads: An earlie
 reading was empty, and no reading without a hold of its own confirms the page's text.
 When the empty reading is the page's own text on a scanned PDF or a page image, it
 reads: The page is a scan with no text of its own, and no other reading confirms the
-OCR.
+OCR. When no reading was empty, it reads: Very little text was read, and nothing
+else confirms it: the page may be blank (a reading had fewer than ten characters);
+or else: An engine judged the page blank, though a reading of it has text.
 
 Where the job recorded what caused a hold (report format 0.9), the hold is said by its
 cause instead: which reading, by its name, and what is wrong with it, in the words of the

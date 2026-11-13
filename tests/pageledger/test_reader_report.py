@@ -872,3 +872,12 @@ def test_from_inside_the_job_the_suggested_export_goes_beside_it(tmp_path, monke
     assert export_command(".") == "pageledger export . --out ../book.md"
     monkeypatch.chdir(tmp_path)
     assert export_command("jobs/book") == "pageledger export jobs/book --out book.md"
+
+
+def test_a_page_an_engine_judged_blank_is_not_said_to_have_little_text(tmp_path):
+    job = job_fixture(tmp_path)
+    page = job["pages"][0]
+    page["attempts"][0]["warnings"] = ["blank"]
+    page.update(disposition="blank_candidate", review_reasons=["blank_candidate"])
+    rendered = render_document_report(build_document_report(job, tmp_path))
+    assert f"  - {wording.BLANK_JUDGED}: 1 page (1)." in rendered

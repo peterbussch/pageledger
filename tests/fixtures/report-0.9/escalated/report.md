@@ -24,7 +24,7 @@ Pages that need a person come first. The review view (`pageledger review .` in t
 
 Everything below is in document.json, of which this report is a rendering. The codes in backticks are explained in [PageLedger's warnings](https://github.com/peterbussch/pageledger/blob/v0.9.0/docs/warnings.md).
 
-- Job: `job_fb105424d86f47ddbdbd0bb5a13383ae`, created 2026-11-13T23:22:47Z; hold policy 0.9; report format 0.9.
+- Job: `job_8755bac0843d4d45a2824296e9a5b64e`, created 2026-11-13T23:48:22Z; hold policy 0.9; report format 0.9.
 - Source: [../source.txt][source]
 - Source SHA-256: `b6f60e4092685ffd893a508ab3704696bc506e06c79c4d28fb679bf692a306c9`
 - Read by: the `local_text` stage, the engine local_text (`local_text`); the `local_ocr` stage, the engine local_ocr (`local_ocr`); the `image` stage, the engine image (`image`).
@@ -85,7 +85,7 @@ PageLedger records what it knows of the source file; it does not preserve or rem
 
 ### Files
 
-- Transcript: [transcript.md](<transcript.md>), SHA-256 `08c4f75f943e084906a421ca5bb25fe82826c9745ec46d4b802c180d94e221f7`
+- Transcript: [transcript.md](<transcript.md>), SHA-256 `b87c6a63df0e33a7b95ccc7d5791c2dbbc05da207d67233e8048466f6fa3d025`
 - Next action recorded by the job: Check the pages against the source, those that need a person first, and record decisions with pageledger review.
 
 [source]: <../source.txt>
