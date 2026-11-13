@@ -381,9 +381,14 @@ def _render_queue(title: str, queue: list[dict[str, Any]]) -> list[str]:
     ]
     for item in queue:
         lines.append(
-            f"| {item.get('page_id', '')} | {item.get('page_number', '')}"
-            f" | {item.get('type', '')} | {item.get('action', '')}"
-            f" | {item.get('reason', '')}"
+            f"| {_cell(item.get('page_id', ''))} | {item.get('page_number', '')}"
+            f" | {_cell(item.get('type', ''))} | {_cell(item.get('action', ''))}"
+            f" | {_cell(item.get('reason', ''))}"
             f" | {format_grade(item.get('grade'), item.get('grade_basis'))} |"
         )
     return lines
+
+
+def _cell(value: Any) -> str:
+    """A table cell that a `|` or a line break in a user-named type cannot split."""
+    return str(value).replace("|", "\\|").replace("\r", " ").replace("\n", " ")

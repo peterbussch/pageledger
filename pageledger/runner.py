@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import functools
 import hashlib
 import json
 import math
@@ -170,6 +171,28 @@ def _make_log_entry(
     }
 
 
+def _check_evidence_in_context(
+    result: Any,
+    *,
+    root: Path,
+    source_sha256: str | None,
+    readable: Path,
+    page_number: int,
+    prompt_sha256: str,
+) -> None:
+    """Image evidence must belong to this run, source page and prompt."""
+    if getattr(result, "input_evidence", None) is not None:
+        from .image_evidence import validate_input_evidence
+
+        validate_input_evidence(
+            result.input_evidence,
+            root=root,
+            source_sha256=source_sha256 or _sha256_path(readable),
+            page_number=page_number,
+            prompt_sha256=prompt_sha256,
+        )
+
+
 def _extract_adapter_page(
     *,
     adapter: Any,
@@ -180,8 +203,10 @@ def _extract_adapter_page(
     run_id: str,
     log_entries: list[dict[str, Any]],
     phase_clock: _PhaseClock,
+    check_result: Callable[[Any], None] | None = None,
 ) -> tuple[Any | None, float | None, str, int, AdapterExecutionError | None]:
-    """Extract and validate one page, preserving retry evidence."""
+    """Extract and validate one page, preserving retry evidence. ``check_result`` adds
+    checks that need the run's context, so their failure is this page's failure."""
     page_id = page["page_id"]
     extraction_started_at = _utc_now()
     attempt = 1
@@ -243,6 +268,8 @@ def _extract_adapter_page(
     phase_clock.switch("result_validation")
     try:
         _validate_extraction_result(adapter.name, result)
+        if check_result is not None:
+            check_result(result)
     except Exception as exc:
         adapter_error = AdapterExecutionError(
             adapter=adapter.name,
@@ -880,6 +907,14 @@ def _run_pages(
             reading = carrier_paths.get(source, page_image.path)
             reading_sha256 = read_sha256(input_entries_by_path[source], page["page_number"])
 
+        check_evidence = functools.partial(
+            _check_evidence_in_context,
+            root=out_dir,
+            source_sha256=reading_sha256,
+            readable=readable,
+            page_number=cast(int, page["page_number"]),
+            prompt_sha256=prompt_hash,
+        )
         phase_clock.switch("adapter_call")
         try:
             extract = _extract_adapter_page
@@ -888,6 +923,7 @@ def _run_pages(
                 "run_id": run_id,
                 "log_entries": log_entries,
                 "phase_clock": phase_clock,
+                "check_result": check_evidence,
             }
             if _checkpoint is not None:
                 extract = _checkpoint.extract
@@ -920,16 +956,7 @@ def _run_pages(
                 break
             continue
         assert result is not None
-        if getattr(result, "input_evidence", None) is not None:
-            from .image_evidence import validate_input_evidence
-
-            validate_input_evidence(
-                result.input_evidence,
-                root=out_dir,
-                source_sha256=reading_sha256 or _sha256_path(readable),
-                page_number=page["page_number"],
-                prompt_sha256=prompt_hash,
-            )
+        check_evidence(result)
         consecutive_failures = 0
         phase_clock.switch("raw_artifact")
         raw_artifact = Path("raw") / f"{page_id}.{_artifact_extension(result.format)}"

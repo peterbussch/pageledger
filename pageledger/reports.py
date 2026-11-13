@@ -162,18 +162,30 @@ def run_pages_csv(run_dir: Path) -> str:
             else page_provenance.get("usage", {}).get("cost_usd")
         )
         writer.writerow(
-            {
-                "page_id": quality["page_id"],
-                "page_number": quality["page_number"],
-                "adapter": quality["adapter"],
-                "character_count": quality["character_count"],
-                "word_count": quality["word_count"],
-                "confidence": quality.get("confidence"),
-                "warnings": ";".join(quality["warnings"]),
-                "grade": quality.get("grade"),
-                "grade_basis": quality.get("grade_basis"),
-                "cost_usd": page_cost,
-                "extraction_seconds": page_provenance.get("extraction_seconds"),
-            }
+            _no_formulas(
+                {
+                    "page_id": quality["page_id"],
+                    "page_number": quality["page_number"],
+                    "adapter": quality["adapter"],
+                    "character_count": quality["character_count"],
+                    "word_count": quality["word_count"],
+                    "confidence": quality.get("confidence"),
+                    "warnings": ";".join(quality["warnings"]),
+                    "grade": quality.get("grade"),
+                    "grade_basis": quality.get("grade_basis"),
+                    "cost_usd": page_cost,
+                    "extraction_seconds": page_provenance.get("extraction_seconds"),
+                }
+            )
         )
     return buffer.getvalue()
+
+
+def _no_formulas(row: dict[str, Any]) -> dict[str, Any]:
+    """Keep adapter-written text from being read as a spreadsheet formula."""
+    return {
+        key: "'" + value
+        if isinstance(value, str) and value[:1] in ("=", "+", "-", "@", "\t", "\r")
+        else value
+        for key, value in row.items()
+    }

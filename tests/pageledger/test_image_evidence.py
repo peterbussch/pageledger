@@ -318,3 +318,32 @@ def test_circular_evidence_is_rejected_as_invalid_input(tmp_path):
     evidence["renderer"]["parameters"]["cycle"] = evidence
     with pytest.raises(ValueError, match="Image evidence"):
         validate_input_evidence(evidence)
+
+
+def test_evidence_for_the_wrong_page_fails_that_page_not_the_run(tmp_path, monkeypatch):
+    from pageledger import runner
+    from pageledger.adapters import ExtractionResult, TextAdapter
+
+    out = tmp_path / "run"
+
+    class WrongPage(TextAdapter):
+        def extract(self, source, *, page_id, page_number, action, prompt=None):
+            out.mkdir(exist_ok=True)
+            evidence = image_descriptor(out, source, page_number + 1, prompt or "")
+            return ExtractionResult(
+                "text", "text", None, evidence["model"], [], {"pages": 1}, input_evidence=evidence
+            )
+
+    monkeypatch.setattr(runner, "load_adapter", lambda *args: WrongPage())
+    source = tmp_path / "doc.txt"
+    source.write_text("one\ftwo", encoding="utf-8")
+    config = tmp_path / "config.yml"
+    config.write_text(
+        "schema_version: '0.1'\ntaxonomy:\n  page_types:\n    prose:\n"
+        "      default_action: transcribe_text\nrun:\n  adapter: text\n"
+        "  on_page_error: continue\n",
+        encoding="utf-8",
+    )
+    result = runner.run(inputs=[source], config_path=config, out_dir=out, dry_run=False)
+    assert result["summary"]["pages_failed"] == 2
+    assert (out / "manifest.json").is_file()

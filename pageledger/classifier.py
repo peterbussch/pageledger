@@ -102,6 +102,14 @@ def merge_classify_thresholds(value: Any) -> dict[str, int | float]:
     return merged
 
 
+def _ratio_in_range(value: Any) -> bool:
+    return (
+        not isinstance(value, (int, float))
+        or isinstance(value, bool)
+        or (math.isfinite(value) and 0 <= value <= 1)
+    )
+
+
 def structural_signals(
     text: str,
     *,
@@ -403,6 +411,11 @@ def _classify_inputs(
                     prompt=None,
                 )
                 _validate_extraction_result(adapter.name, result)
+                signals = structural_signals(
+                    _quality_text(result.content),
+                    result_format=result.format,
+                    confidence_detail=result.confidence_detail,
+                )
             except Exception as exc:
                 signals = structural_signals("", result_format=None, confidence_detail=None)
                 decision = ClassificationResult(
@@ -413,11 +426,6 @@ def _classify_inputs(
             else:
                 result_format = result.format
                 model = result.model
-                signals = structural_signals(
-                    _quality_text(result.content),
-                    result_format=result.format,
-                    confidence_detail=result.confidence_detail,
-                )
                 builtin = classify_signals(
                     signals,
                     config.classify_thresholds,
@@ -584,12 +592,15 @@ def _classify_from_run(
                 confidence_detail = (
                     quality.get("confidence_detail") if quality is not None else None
                 )
+                if not isinstance(confidence_detail, dict) or not _ratio_in_range(
+                    confidence_detail.get("below_60_ratio")
+                ):
+                    # An out-of-range ratio is not evidence; the page is still classified.
+                    confidence_detail = None
                 signals = structural_signals(
                     text,
                     result_format=result_format if isinstance(result_format, str) else None,
-                    confidence_detail=(
-                        confidence_detail if isinstance(confidence_detail, dict) else None
-                    ),
+                    confidence_detail=confidence_detail,
                 )
                 builtin = classify_signals(
                     signals,

@@ -419,6 +419,7 @@ def test_compare_cross_adapter_changes_are_unranked(tmp_path):
     rendered = render_comparison(report)
     assert "Warning changes: not assessed (0 comparable pages)" in rendered
     assert "Grade changes: not assessed (0 grade-comparable pages)" in rendered
+    assert "Pages with warning or grade changes" not in rendered
 
 
 def test_compare_same_adapter_different_model_is_unranked(tmp_path):

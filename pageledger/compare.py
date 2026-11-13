@@ -259,7 +259,9 @@ def render_comparison(report: dict[str, Any]) -> str:
         lines.extend(
             [
                 "",
-                "Pages with warning or grade changes:",
+                "Pages with warning or grade changes:"
+                if grade_comparable_pages
+                else "Pages, side by side (grades not compared):",
                 "| page_id | extraction | grade | chars A→B | grade A→B | resolved | introduced |",
                 "|---|---|---|---|---|---|---|",
             ]
