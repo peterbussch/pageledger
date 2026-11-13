@@ -1736,6 +1736,12 @@ def _reading_line(source: Path, engine: str, options: dict | None) -> str:
     kind = source_kind(source)
     if kind == "text":
         how = "the text of each page, as it is"
+        try:
+            if b"\r" in source.read_bytes():
+                # Read as text, Windows and old Mac line endings become LF, as in corrections.
+                how += ", with its line endings made plain newlines"
+        except OSError:
+            pass
     elif kind == KIND:
         how = f"{ocr}, page by page" if ocr else "the page images, without OCR"
     else:

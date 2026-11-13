@@ -889,3 +889,12 @@ def test_a_view_without_images_is_found_up_to_date_when_asked_for_again(
     code, out, err = _cli(capsys, "review", str(job), "--images", "none")
     assert code == 0, err
     assert "up to date" in out
+
+
+def test_the_opening_line_says_when_line_endings_are_made_plain(tmp_path: Path) -> None:
+    notes = tmp_path / "notes.txt"
+    notes.write_bytes(b"first line\r\nsecond\rthird\n")
+    assert cli._reading_line(notes, "none", None) == (
+        "Reading notes.txt: the text of each page, as it is, with its line endings made "
+        "plain newlines. Nothing is sent anywhere."
+    )
