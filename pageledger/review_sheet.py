@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import csv
+import hashlib
 import io
 import json
 import os
@@ -25,6 +26,7 @@ from .wording import CORRECTION, DECISION_GROUPS, HOLDS, REVIEWED, sentence
 
 # Beside every sheet: the decisions it takes, and the readings each page can use.
 GUIDE = "review-decisions.txt"
+_GUIDE_TITLE = "How to fill in {}"
 
 FIELDS = (
     "row_id",
@@ -56,6 +58,8 @@ DECISION_FIELDS = frozenset({"row_id", "page_number", "decision", "note", "text"
 # _CELL_PREFIXES.
 _FORMULA_PREFIXES = ("=", "+", "@", "\t", "\r")
 _CELL_PREFIXES = ("=", "+", "-", "@", "\t", "\r")
+# Cell separators of a CSV saved in another locale or format.
+_SEPARATORS = ((";", "semicolons"), ("\t", "tabs"))
 
 
 def binding_path(sheet: Path) -> Path:
@@ -68,6 +72,16 @@ def write_review_sheet(job: dict, sheet: Path, root: Path) -> dict:
     ``root`` is where the job is now, which may not be where it was written.
     """
     sheet = sheet.expanduser().resolve()
+    root = root.resolve()
+    if sheet.is_relative_to(root):
+        raise ValueError(f"Write the review sheet outside the job's folder, not to {sheet}")
+    for path in (sheet, binding_path(sheet)):
+        if path.exists() or path.is_symlink():
+            raise ValueError(
+                f"{path} already exists; a filled-in sheet would be lost. Name another "
+                "sheet, or remove it first"
+            )
+    guide = _guide_path(sheet)
     sheet.parent.mkdir(parents=True, exist_ok=True)
     source = relative_path(job["source"]["path"], sheet.parent)
     if source.startswith(_CELL_PREFIXES):
@@ -99,8 +113,33 @@ def write_review_sheet(job: dict, sheet: Path, root: Path) -> dict:
     atomic_bytes(sheet, buffer.getvalue().encode("utf-8-sig"))
     binding = json.dumps({"schema_version": "0.1", "bindings": bindings}, indent=2) + "\n"
     atomic_bytes(binding_path(sheet), binding.encode("utf-8"))
-    atomic_bytes(sheet.parent / GUIDE, _guide(job, sheet, root).encode("utf-8"))
-    return {"out": str(sheet), "binding": str(binding_path(sheet)), "rows": len(rows)}
+    atomic_bytes(guide, _guide(job, sheet, root).encode("utf-8"))
+    return {
+        "out": str(sheet),
+        "binding": str(binding_path(sheet)),
+        "guide": str(guide),
+        "rows": len(rows),
+    }
+
+
+def _guide_path(sheet: Path) -> Path:
+    """Where the sheet's guide goes: review-decisions.txt, unless that file is another
+    sheet's guide or someone's own file, which are left as they are."""
+    for name in (GUIDE, f"{sheet.stem}-decisions.txt"):
+        path = sheet.parent / name
+        if not path.exists() and not path.is_symlink():
+            return path
+        try:
+            with path.open(encoding="utf-8") as stream:
+                first = stream.readline().rstrip("\n")
+        except (OSError, UnicodeError):
+            continue
+        if path.is_file() and not path.is_symlink() and first == _GUIDE_TITLE.format(sheet.name):
+            return path
+    raise ValueError(
+        f"{sheet.parent} already holds {GUIDE} and {sheet.stem}-decisions.txt; write the "
+        "sheet in another folder"
+    )
 
 
 def _guide(job: dict, sheet: Path, root: Path) -> str:
@@ -110,18 +149,20 @@ def _guide(job: dict, sheet: Path, root: Path) -> str:
         '--reviewer "YOUR NAME"'
     )
     lines = [
-        f"How to fill in {sheet.name}",
+        _GUIDE_TITLE.format(sheet.name),
         "",
         "Type one decision in each row's decision column, and a note if you like: the note",
-        "is recorded as the reason. A row left empty leaves its page unreviewed. Then, in",
-        "this folder, apply the sheet:",
+        "is recorded as the reason. A row left empty leaves its page unreviewed. In a",
+        'spreadsheet program, save the sheet as "CSV UTF-8 (comma delimited)": another kind',
+        "of CSV can lose letters outside English or use semicolons. Then, in this folder,",
+        "apply the sheet:",
         "",
         f"  {command}",
         "",
         "Add --dry-run to check it first without recording anything. Keep",
         f"{binding_path(sheet).name} beside the sheet: it ties each row to the page's text",
-        "as it was when the sheet was written, and the sheet is refused if the job has",
-        "changed since.",
+        "and its review as they were when the sheet was written, and a row is refused if",
+        "the page has changed since.",
         "",
         "The decisions, and what each records:",
     ]
@@ -139,7 +180,7 @@ def _guide(job: dict, sheet: Path, root: Path) -> str:
     offered = []
     for page in job["pages"]:
         for attempt in page["attempts"]:
-            usable = _completed(page, attempt["attempt_id"]) and not empty_reading(attempt)
+            usable = _completed(page, attempt["attempt_id"]) and not _empty(attempt)
             if not usable or attempt["attempt_id"] == page["selected_attempt"]:
                 continue
             name = _name(job, attempt)
@@ -161,10 +202,27 @@ def read_review_sheet(
     try:
         reader = csv.DictReader(io.StringIO(sheet.read_text(encoding="utf-8-sig"), newline=""))
         rows = list(reader)
-    except (OSError, UnicodeError, csv.Error) as exc:
+    except UnicodeError as exc:
+        raise ValueError(
+            f"The review sheet is not UTF-8 ({exc}). Save it from the spreadsheet as "
+            '"CSV UTF-8 (comma delimited)" and apply it again'
+        ) from exc
+    except (OSError, csv.Error) as exc:
         raise ValueError(f"Cannot read the review sheet: {exc}") from exc
     if reader.fieldnames != list(FIELDS):
-        raise ValueError(f"Review sheet columns must be: {', '.join(FIELDS)}")
+        header = ",".join(reader.fieldnames or [])
+        saved = next((name for mark, name in _SEPARATORS if mark in header), None)
+        raise ValueError(
+            f"Review sheet columns must be: {', '.join(FIELDS)}"
+            + (
+                f". This sheet separates them with {saved}: save it from the spreadsheet "
+                'as "CSV UTF-8 (comma delimited)"'
+                if saved
+                else ""
+            )
+        )
+    # Spreadsheet programs can save rows that are wholly empty below the data.
+    rows = [row for row in rows if any(value != "" for value in row.values())]
     pages = {_row_id(page): page for page in job["pages"]}
     expected_binding = binding_path(sheet)
     if expected_binding.is_file():
@@ -264,7 +322,8 @@ def _receipt(
             raise ValueError(f"Duplicate review row: {row_id}")
         seen.add(row_id)
         page = pages[row_id]
-        if bindings[row_id] != _binding(job, page) or row["page_number"] != str(
+        decided = bool(row["decision"].strip()) or row.get("text") is not None
+        if not _bound(bindings[row_id], _binding(job, page), decided) or row["page_number"] != str(
             page["page_number"]
         ):
             raise ValueError(
@@ -331,7 +390,7 @@ def _binding_matches_rows(
         if (
             page is None
             or row_id in seen
-            or bindings.get(row_id) != _binding(job, page)
+            or not _bound(bindings.get(row_id), _binding(job, page), False)
             or row.get("page_number") != str(page["page_number"])
         ):
             return False
@@ -488,6 +547,12 @@ def _output_sha256(page: dict, attempt: dict) -> str:
     return attempt["raw_sha256"]
 
 
+def _empty(attempt: dict) -> bool:
+    """A reading with no text at all. A reading of symbols alone, such as `* * *`, is
+    warned empty of letters and digits, but a person can still choose it."""
+    return empty_reading(attempt) and not (attempt.get("text") or "").strip()
+
+
 def _name(job: dict, attempt: dict) -> str:
     """A reading named by what made it, as the report and the review view name it."""
     return reader_name({"engines": _engines(job), "source": job["source"]}, attempt)
@@ -535,4 +600,27 @@ def _binding(job: dict, page: dict) -> dict:
         "page_number": page["page_number"],
         "selected_attempt": None if selected is None else selected["attempt_id"],
         "output_sha256": shown,
+        "review_sha256": _review_sha256(page),
     }
+
+
+def _review_sha256(page: dict) -> str | None:
+    """The page's review decision as the row saw it, so that a sheet written before a
+    later review cannot silently replace it."""
+    review = page.get("review")
+    if review is None:
+        return None
+    decision = next(item for item in review["decisions"] if item["page_id"] == page["page_id"])
+    canonical = json.dumps(decision, sort_keys=True, ensure_ascii=False).encode("utf-8")
+    return hashlib.sha256(canonical).hexdigest()
+
+
+def _bound(written: object, now: dict, decided: bool) -> bool:
+    """Whether a row's binding still fits its page. The review it saw counts only for a
+    row with a decision; a binding written before 0.9 records no review."""
+    if not isinstance(written, dict):
+        return False
+    if not decided or "review_sha256" not in written:
+        now = {key: value for key, value in now.items() if key != "review_sha256"}
+        written = {key: value for key, value in written.items() if key != "review_sha256"}
+    return written == now

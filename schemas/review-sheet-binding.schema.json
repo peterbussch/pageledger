@@ -49,6 +49,18 @@
                 "type": "null"
               }
             ]
+          },
+          "review_sha256": {
+            "description": "Since 0.9. The SHA-256 of the page's review decision when the row was written (its JSON with sorted keys), or null when the page had none. A row with a decision is refused once the page has been reviewed again. Absent from bindings written before 0.9, whose rows are not checked for it.",
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [

@@ -948,6 +948,9 @@ def _review(setup, tmp_path, decision):
     from pageledger.processing import create_review_sheet
 
     sheet = tmp_path / "review.csv"
+    # A fresh sheet each time: review --sheet does not write over one.
+    sheet.unlink(missing_ok=True)
+    (tmp_path / "review.csv.binding.json").unlink(missing_ok=True)
     create_review_sheet(setup[2], sheet)
     rows = list(csv.DictReader(sheet.read_text(encoding="utf-8-sig").splitlines()))
     rows[0]["decision"] = decision

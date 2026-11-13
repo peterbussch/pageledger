@@ -30,12 +30,14 @@ from .adjudication import settle
 from .checkpoint import atomic_bytes, file_digest, writer_lock
 from .corrections import describe
 from .document_report import (
+    AGREEMENT_CAVEAT,
     _artifact_bytes,
+    _attempt,
     _image_name,
+    _lower,
     _short_comparison,
     empty_reading,
-    held_in_words,
-    is_pending,
+    held_words,
     needs_person,
     reader_name,
     relative_path,
@@ -73,6 +75,7 @@ _NO_POPPLER = (
     "or write the view without images with --images none"
 )
 HOW_TO = "review-and-correct.md"
+_DATA_OPEN = '<script type="application/json" id="review-data">'
 
 
 def render_page_image(source: Path, page_number: int, target: Path) -> bool:
@@ -156,36 +159,35 @@ def view_state(job_dir: Path, out: Path) -> str:
     """Whether a folder holds a review view of the job as it is now: "current", "stale"
     (written for the job before it last changed), or "other" (not a review view of it).
 
-    The view is current when the sheet `review` would write now has the same rows,
-    but for the reviewer's columns and the source's path from the folder, and the
-    same bindings.
+    The view records the job's document.json as it was written from. Any change to the job, its status, readings or reviews, changes
+    document.json; a newer PageLedger that only words things differently does not.
     """
     out = Path(out).expanduser()
-    sheet, binding = out / SHEET, binding_path(out / SHEET)
-    if not all(path.is_file() for path in (out / "index.html", sheet, binding)):
+    page = out / "index.html"
+    if not all(path.is_file() for path in (page, out / SHEET, binding_path(out / SHEET))):
         return "other"
     root = Path(job_dir).expanduser().resolve()
-    with writer_lock(root):
-        job = _load(root)
-        _refresh(job, root, materialize=False)
     try:
-        written = json.loads(binding.read_text(encoding="utf-8"))
-        ids = {item.get("job_id") for item in written["bindings"].values()}
-    except (OSError, ValueError, KeyError, AttributeError):
+        job_id = json.loads((root / "document.json").read_bytes())["job_id"]
+        written = _view_record(page)
+    except (OSError, ValueError, KeyError, TypeError):
         return "other"
-    if ids != {job["job_id"]}:
+    if written is None or written.get("job_id") != job_id:
         return "other"
-    with tempfile.TemporaryDirectory(prefix="pageledger-review-") as scratch:
-        fresh = Path(write_review_sheet(job, Path(scratch) / SHEET, root)["out"])
-        same = binding_path(fresh).read_bytes() == binding.read_bytes()
-        same = same and _rows(fresh) == _rows(sheet)
-    return "current" if same else "stale"
+    current = written.get("document_sha256") == file_digest(root / "document.json")
+    return "current" if current else "stale"
 
 
-def _rows(sheet: Path) -> list[dict]:
-    with sheet.open(encoding="utf-8-sig", newline="") as stream:
-        kept = ("source_page", "decision", "note")
-        return [{k: v for k, v in row.items() if k not in kept} for row in csv.DictReader(stream)]
+def _view_record(page: Path) -> dict | None:
+    """What a view records of the job it was written from, or None for an older view."""
+    html_text = page.read_text(encoding="utf-8")
+    start = html_text.find(_DATA_OPEN)
+    end = html_text.find("</script>", start)
+    if start < 0 or end < 0:
+        return None
+    data = json.loads(html_text[start + len(_DATA_OPEN) : end])
+    view = data.get("view") if isinstance(data, dict) else None
+    return view if isinstance(view, dict) else None
 
 
 def _write_view(root: Path, out: Path, job: dict, source: Path, written: dict, images: str) -> dict:
@@ -217,7 +219,11 @@ def _write_view(root: Path, out: Path, job: dict, source: Path, written: dict, i
             pictures[page["page_id"]] = name
             rendered += 1
     view = _View(root, out, report, source, pictures)
-    document = view.render(rows, binding, language=_language(job))
+    written_from = {
+        "job_id": report["job_id"],
+        "document_sha256": file_digest(root / "document.json"),
+    }
+    document = view.render(rows, binding, language=_language(job), written_from=written_from)
     atomic_bytes(out / "index.html", document.encode("utf-8"))
     return {
         "status": "written",
@@ -371,7 +377,9 @@ class _View:
         self.root, self.out, self.report = root, out, report
         self.source, self.pictures = source, pictures
 
-    def render(self, rows: list[dict], binding: str, *, language: str | None) -> str:
+    def render(
+        self, rows: list[dict], binding: str, *, language: str | None, written_from: dict
+    ) -> str:
         self.lang = f' lang="{_e(language)}"' if language else ""
         report = self.report
         ordered = sorted(
@@ -384,6 +392,8 @@ class _View:
             "rows": rows,
             "binding": binding,
             "texts": {_row_id(page): self._starts(page) for page in report["pages"]},
+            # The job as the view was written from it, for `review` to tell a stale view.
+            "view": written_from,
         }
         embedded = (
             json.dumps(data, ensure_ascii=False)
@@ -480,7 +490,7 @@ class _View:
         facts = [
             ("Held for", _e(_why(page, self.report, every=True))),
             ("Selected text", _e(self._selected(page))),
-            ("Engines agree", _e(_short_comparison(page, self.report))),
+            ("Engines agree", _e(_agreement(page, self.report))),
             ("Review", _e(_review(page))),
         ]
         # A page with no comparison the job weighed has nothing to say here.
@@ -656,7 +666,7 @@ class _View:
         selected = page["selected_output"]
         starts = {} if selected is None else {"": selected["text"]}
         for attempt in page["attempts"]:
-            if not _usable(attempt):
+            if not self._usable(attempt):
                 continue
             if (
                 selected is not None
@@ -672,7 +682,21 @@ class _View:
         return starts
 
     def _attempt(self, page: dict, attempt_id: str) -> dict:
-        return next(a for a in page["attempts"] if a["attempt_id"] == attempt_id)
+        return _attempt(page, attempt_id)
+
+    def _usable(self, attempt: dict) -> bool:
+        """A reading a person can choose or start a correction from: finished, kept,
+        and with some text."""
+        return (
+            attempt["outcome"] == "completed"
+            and attempt["raw_artifact"] is not None
+            and not self._empty(attempt)
+        )
+
+    def _empty(self, attempt: dict) -> bool:
+        """No text at all. A reading of symbols alone, such as `* * *`, is warned empty
+        of letters and digits, but is shown, and a person can choose it."""
+        return empty_reading(attempt) and not (self._reading(attempt) or "").strip()
 
     def _reading(self, attempt: dict) -> str | None:
         if attempt["raw_artifact"] is None:
@@ -696,7 +720,7 @@ class _View:
             if text is None:
                 blocks.append(f"<p>{_e(summary)}: no text was kept.</p>")
                 continue
-            if empty_reading(attempt):
+            if self._empty(attempt):
                 blocks.append(f"<p>{_e(summary)}: empty, with no letters or digits.</p>")
                 continue
             parts = [f"<details><summary>{_e(summary)}</summary>"]
@@ -736,7 +760,7 @@ class _View:
         others = [
             attempt
             for attempt in page["attempts"]
-            if _usable(attempt) and attempt["attempt_id"] != page["selected_attempt"]
+            if self._usable(attempt) and attempt["attempt_id"] != page["selected_attempt"]
         ]
         groups = []
         for title, choices in DECISION_GROUPS:
@@ -796,13 +820,12 @@ _STATUS = {
 _OUTCOMES = {"failed": "failed", "unknown": "no result was saved"}
 
 
-def _usable(attempt: dict) -> bool:
-    """A reading a person can choose or start a correction from: finished, kept, not empty."""
-    return (
-        attempt["outcome"] == "completed"
-        and attempt["raw_artifact"] is not None
-        and not empty_reading(attempt)
-    )
+def _agreement(page: dict, report: dict) -> str:
+    """The comparison the job weighed; agreement is said not to prove the text."""
+    said = _short_comparison(page, report)
+    if said.endswith("of words agree"):
+        said += f" ({_lower(AGREEMENT_CAVEAT).removesuffix('.')})"
+    return said
 
 
 def _imageless(attempt: dict) -> bool:
@@ -811,15 +834,9 @@ def _imageless(attempt: dict) -> bool:
 
 
 def _why(page: dict, report: dict, *, every: bool = False) -> str:
-    """What holds the page, in plain words, as the report's page table says it; ``every``
-    gives all its causes, as the page's own section does."""
-    pending = is_pending(page, report)
-    if not page["review_reasons"] and not needs_person(page, report):
-        return "not finished yet" if pending else "nothing"
-    held = held_in_words(report, page, every=every, more="on the page")
-    if pending:
-        return "Not finished yet. Held so far: " + held
-    return held
+    """What holds the page, in the report's page table's words; ``every`` gives all its
+    causes, as the page's own section does."""
+    return held_words(report, page, every=every, more="on the page")
 
 
 def _state(page: dict) -> str:
@@ -879,7 +896,7 @@ def _document(title: str, body: str, embedded: str) -> str:
         '<meta name="color-scheme" content="light dark">\n'
         f"<title>Review: {_e(title)}</title>\n<style>{_CSS}</style>\n</head>\n<body>\n"
         f"<main>\n{body}\n</main>\n"
-        f'<script type="application/json" id="review-data">{embedded}</script>\n'
+        f"{_DATA_OPEN}{embedded}</script>\n"
         f"<script>{_SCRIPT}</script>\n</body>\n</html>\n"
     )
 

@@ -817,3 +817,56 @@ def test_the_sheet_carries_a_guide_to_its_decisions(job, tmp_path):
     # The sheet itself is as released versions wrote it.
     with open(result["out"], encoding="utf-8-sig", newline="") as stream:
         assert next(csv.reader(stream)) == list(review_html.FIELDS)
+
+
+def test_a_view_of_an_unfinished_job_is_stale_once_the_job_moves_on(setup, tmp_path):  # noqa: F811
+    from pageledger.processing import resume_job
+    from pageledger.review_html import view_state
+
+    data = yaml.safe_load(setup[1].read_text())
+    data["processing"]["limits"]["max_image_pages"] = 1
+    setup[1].write_text(yaml.safe_dump(data))
+    launch(setup)
+    view = tmp_path / "view"
+    write_review_html(setup[2], view, images="none")
+    assert view_state(setup[2], view) == "current"
+    # A damaged sheet beside the view does not stop the answer.
+    (view / "review.csv").write_text('"unterminated\n', encoding="utf-8")
+    assert view_state(setup[2], view) == "current"
+    resume_job(setup[2], raise_limits={"max_image_pages": 3})
+    assert view_state(setup[2], view) == "stale"
+    # A view that records nothing of the job it was written from is not taken for its view.
+    page = view / "index.html"
+    page.write_text(page.read_text().replace('"view": {', '"old": {'))
+    assert view_state(setup[2], view) == "other"
+
+
+def test_a_reading_of_symbols_alone_can_be_chosen_and_corrected(tmp_path, monkeypatch):
+    source = tmp_path / "scans" / "source.txt"
+    source.parent.mkdir()
+    source.write_text(TEXT)
+    config = tmp_path / "config.yml"
+    stages = {stage: {"adapter": stage} for stage in ("local_text", "local_ocr")}
+    config.write_text(yaml.safe_dump({"schema_version": "0.1", "processing": stages}))
+
+    def adapter(name, *args, **kwargs):
+        stage = StageAdapter()
+        object.__setattr__(stage, "stage", name)
+        object.__setattr__(stage, "defective", {1})
+        object.__setattr__(stage, "texts", {"local_ocr": "* * *\n❧ ❧"})
+        return stage
+
+    monkeypatch.setattr(runner, "load_adapter", adapter)
+    from pageledger.processing import process
+
+    root = tmp_path / "job"
+    process(source=source, config_path=config, out_dir=root)
+    page = read_record(root / "job.json")["pages"][0]
+    ocr = next(a for a in page["attempts"] if a["stage"] == "local_ocr")
+    assert "empty_text" in ocr["warnings"] and ocr["attempt_id"] != page["selected_attempt"]
+    write_review_html(root, tmp_path / "view", images="none")
+    document = (tmp_path / "view" / "index.html").read_text(encoding="utf-8")
+    assert f'value="use:{ocr["attempt_id"]}"' in document
+    assert "* * *" in _embedded(document)["texts"]["p0001"][ocr["attempt_id"]]
+    guide = (tmp_path / "view" / "review-decisions.txt").read_text()
+    assert f"use:{ocr['attempt_id']}" in guide

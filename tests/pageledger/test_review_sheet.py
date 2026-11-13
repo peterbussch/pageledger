@@ -278,6 +278,8 @@ def test_after_a_person_chose_a_reading_s_own_text_its_edition_stays_unpublished
     _review(setup, tmp_path, "accept")
     assert _published(setup[2])["sha256"] == raw["sha256"]
     # A correction typed from it starts from it.
+    sheet = tmp_path / "after.csv"
+    create_review_sheet(setup[2], sheet)
     bindings = json.loads(binding_path(sheet).read_text())["bindings"]
     decisions = tmp_path / "corrected.json"
     typed = raw["text"].replace("Работа", "Робота", 1)
@@ -288,3 +290,72 @@ def test_after_a_person_chose_a_reading_s_own_text_its_edition_stays_unpublished
     assert correction["from_sha256"] == raw["sha256"]
     assert correction["words"]["changed"] == 1
     assert verify_job(setup[2])["status"] == "pass"
+
+
+def test_a_sheet_is_never_written_over_nor_into_the_job(job, tmp_path):
+    root = job
+    sheet = tmp_path / "out" / "review.csv"
+    create_review_sheet(root, sheet)
+    filled = sheet.read_bytes()
+    with pytest.raises(ValueError, match="already exists"):
+        create_review_sheet(root, sheet)
+    assert sheet.read_bytes() == filled
+    with pytest.raises(ValueError, match="outside the job's folder"):
+        create_review_sheet(root, root / "report.md")
+    assert verify_job(root)["status"] == "pass"
+
+
+def test_a_second_sheet_or_a_person_s_file_keeps_its_own_guide(job, tmp_path):
+    root = job
+    folder = tmp_path / "shared"
+    folder.mkdir()
+    (folder / "review-decisions.txt").write_text("my own notes")
+    create_review_sheet(root, folder / "a.csv")
+    assert (folder / "review-decisions.txt").read_text() == "my own notes"
+    assert (folder / "a-decisions.txt").read_text().startswith("How to fill in a.csv\n")
+    create_review_sheet(root, tmp_path / "b" / "b.csv")
+    create_review_sheet(root, tmp_path / "b" / "c.csv")
+    assert (tmp_path / "b" / "review-decisions.txt").read_text().startswith("How to fill in b.csv")
+    assert (tmp_path / "b" / "c-decisions.txt").read_text().startswith("How to fill in c.csv")
+
+
+def _fill(sheet: Path, decisions: dict[str, str], extra: str = "") -> None:
+    rows = list(csv.DictReader(sheet.read_text(encoding="utf-8-sig").splitlines()))
+    for row in rows:
+        row["decision"] = decisions.get(row["row_id"], "")
+    with sheet.open("w", encoding="utf-8-sig", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=list(FIELDS), quoting=csv.QUOTE_ALL)
+        writer.writeheader()
+        writer.writerows(rows)
+        handle.write(extra)
+
+
+def test_an_older_sheet_cannot_replace_a_later_review(job, tmp_path):
+    root = job
+    older, later = tmp_path / "older.csv", tmp_path / "later.csv"
+    create_review_sheet(root, older)
+    create_review_sheet(root, later)
+    _fill(later, {"p0001": "blank"})
+    review_job(root, later, reviewer="B. Later")
+    _fill(older, {"p0001": "accept"})
+    with pytest.raises(ValueError, match="no longer matches"):
+        review_job(root, older, reviewer="A. Older")
+    # A row the older sheet leaves empty does not stand in its way.
+    _fill(older, {"p0002": "accept"})
+    review_job(root, older, reviewer="A. Older")
+    pages = read_record(root / "job.json")["pages"]
+    assert [page["disposition"] for page in pages] == ["reviewed_blank", "reviewed_text"]
+
+
+def test_empty_spreadsheet_rows_are_skipped_and_other_separators_named(job, tmp_path):
+    root = job
+    sheet = tmp_path / "s.csv"
+    create_review_sheet(root, sheet)
+    _fill(sheet, {"p0001": "accept"}, extra=",,,,,,,\n,,,,,,,\n")
+    assert review_job(root, sheet, reviewer="A. Reader", dry_run=True)["status"] == "checked"
+    sheet.write_text(sheet.read_text(encoding="utf-8-sig").replace(",", ";"), encoding="utf-8")
+    with pytest.raises(ValueError, match="separates them with semicolons"):
+        review_job(root, sheet, reviewer="A. Reader")
+    sheet.write_bytes("row_id,page_number\nЖ".encode("cp1251"))
+    with pytest.raises(ValueError, match="CSV UTF-8"):
+        review_job(root, sheet, reviewer="A. Reader")

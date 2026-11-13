@@ -1155,7 +1155,13 @@ the receipt's reason. `review --apply` checks the whole sheet before recording
 anything: every row must belong to the job, appear once, hold no spreadsheet
 formula, and still match the saved job records it was written from, which
 `review.csv.binding.json` records beside the sheet. A sheet written before the
-job's records changed is refused; write a new one. `--dry-run` checks and
+job's records changed is refused; write a new one. So is a decided row of a
+sheet written before its page was last reviewed, so that an older sheet cannot
+silently replace a later review; its empty rows do not count. Rows a
+spreadsheet program saved with every cell empty are skipped. `review --sheet`
+does not write over an existing sheet or binding, nor into the job's folder;
+it writes its guide as `review-decisions.txt`, or as `NAME-decisions.txt` when
+the folder already holds another sheet's guide or a file of that name. `--dry-run` checks and
 counts the decisions without recording them. Both warn (`blank_with_text`) when
 a page recorded as blank has a selected reading of 50 or more words: in the
 2026-11 dogfood a page reviewed as blank carried 1,295 words of OCR. Check the

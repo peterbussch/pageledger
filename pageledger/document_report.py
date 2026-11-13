@@ -937,16 +937,20 @@ def _selected_cell(report: dict, page: dict) -> str:
     return _link(sentence(name), selected["path"])
 
 
-def _held_cell(report: dict, page: dict) -> str:
-    more = "in the record below"
+def held_words(report: dict, page: dict, *, every: bool = False, more: str) -> str:
+    """What holds a page, as the page table says it and the review view repeats it."""
     if is_pending(page, report):
         cell = sentence(_waiting_for(report, page.get("next_action"))) + "."
         if page.get("review_reasons"):
-            cell += " Held so far: " + held_in_words(report, page, more=more)
-        return _plain(cell)
+            cell += " Held so far: " + held_in_words(report, page, every=every, more=more)
+        return cell
     if not page.get("review_reasons") and not needs_person(page, report):
         return "nothing"
-    return _plain(held_in_words(report, page, more=more))
+    return held_in_words(report, page, every=every, more=more)
+
+
+def _held_cell(report: dict, page: dict) -> str:
+    return _plain(held_words(report, page, more="in the record below"))
 
 
 def _review_cell(page: dict) -> str:
