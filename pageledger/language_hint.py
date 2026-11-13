@@ -78,21 +78,25 @@ def language_names(lang: str) -> str:
     return names[0] if len(names) == 1 else f"{', '.join(names[:-1])} and {names[-1]}"
 
 
-def advice(job_dir: Path, retry: str | None = None) -> list[str]:
+def advice(job_dir: Path, retry: str | None = None, *, from_config: bool = True) -> list[str]:
     """Lines to print after a job when its OCR language looks wrong.
 
     `retry` is the command to run again, with {lang} where the language goes;
     without it, the job's language came from a config file, and the advice names
-    the setting there.
+    the setting there. When it is not known whether a config file was given (after
+    resume), `from_config` is False and the advice names both ways.
     """
     try:
-        return _advice(job_dir, retry)
+        return _advice(job_dir, retry, from_config)
     except (Exception, KeyboardInterrupt):
         # An interrupt here comes after the job finished: skip the advice, not the summary.
         return []
 
 
-def _advice(job_dir: Path, retry: str | None) -> list[str]:
+_SETTING = "processing.local_ocr.adapter_options.lang"
+
+
+def _advice(job_dir: Path, retry: str | None, from_config: bool = True) -> list[str]:
     job = read_record(job_dir / "job.json")
     ocr = job["policy"].get("local_ocr")
     if not ocr or ocr["adapter"] != "pdf_ocr":
@@ -100,7 +104,12 @@ def _advice(job_dir: Path, retry: str | None) -> list[str]:
     lang = str(ocr["adapter_options"].get("lang", "eng"))
     codes = lang.split("+")
     pages = json.loads((job_dir / "document.json").read_text(encoding="utf-8"))["pages"]
-    lines = []
+    lines: list[str] = []
+    orthography = "rus" in codes and any(
+        "historical_orthography" in item.get("warnings", [])
+        for page in pages
+        for item in page["attempts"]
+    )
     read = [
         page
         for page in pages
@@ -115,14 +124,23 @@ def _advice(job_dir: Path, retry: str | None) -> list[str]:
         if page.get("review") is None and "low_confidence" in page["review_reasons"]
     ]
     if read and 2 * len(unsure) > len(read):
-        change = (
-            "run it again with --lang and that language's code"
-            if retry
-            else "set lang (processing.local_ocr.adapter_options.lang) in the config to its code"
-        )
+        if retry:
+            change = "run it again with --lang and that language's code"
+        elif from_config:
+            change = f"set lang ({_SETTING}) in the config to its code"
+        else:
+            change = (
+                "run process again with --lang and that language's code, or, if the job "
+                f"used a config file, set lang ({_SETTING}) there"
+            )
         lines.append(
             f"OCR was unsure of many words on {len(unsure)} of the {len(read)} pages it read."
         )
+    if lines and orthography:
+        # The language is right; the stock model cannot write the old letters.
+        lines += _orthography(retry)
+        return lines
+    if lines:
         script = _script(job, [page["page_number"] for page in unsure[:2]])
         known = all(any(code in members for members in _SCRIPTS.values()) for code in codes)
         written = {name for name, members in _SCRIPTS.items() if set(codes) & set(members)}
@@ -138,26 +156,31 @@ def _advice(job_dir: Path, retry: str | None) -> list[str]:
             if retry:
                 lines.append(f"Try --lang {suggested}:")
                 lines.append(f"  {retry.format(lang=suggested)}")
+            elif from_config:
+                lines.append(f"Try {suggested}: set lang ({_SETTING}) in the config.")
             else:
                 lines.append(
-                    f"Try {suggested}: set lang (processing.local_ocr.adapter_options.lang) "
-                    "in the config."
+                    f"Try {suggested}: run process again with --lang {suggested}, or, if the "
+                    f"job used a config file, set lang ({_SETTING}) there."
                 )
         else:
             lines.append(f"That can mean the language given ({lang}) is not the document's.")
             lines.append(f"If so, {change}.")
         lines.append("`pageledger doctor` lists the languages installed.")
-    orthography = any(
-        "historical_orthography" in item.get("warnings", [])
-        for page in pages
-        for item in page["attempts"]
-    )
-    if orthography and "rus" in codes:
-        lines += [
-            "Some pages are in pre-1918 Russian spelling.",
-            "Tesseract's stock rus model cannot write ѣ, і, ѳ or ѵ; the community orus model can.",
-            f"How to install it: {ORUS_RECIPE}",
-        ]
+    if orthography:
+        lines += _orthography(retry)
+    return lines
+
+
+def _orthography(retry: str | None) -> list[str]:
+    lines = [
+        "Some pages are in pre-1918 Russian spelling.",
+        "Tesseract's stock rus model cannot write ѣ, і, ѳ or ѵ. The community orus model "
+        "keeps them, though it made more errors overall in our test: check a sample.",
+        f"How to install it: {ORUS_RECIPE}",
+    ]
+    if retry:
+        lines.append(f"Then: {retry.format(lang='orus')}")
     return lines
 
 
@@ -170,6 +193,14 @@ def _script(job: dict, numbers: list[int]) -> str | None:
 
     if "osd" not in (_tesseract_installed_langs(tesseract) or ()):
         return None
+    try:
+        return _detected(job, numbers, tesseract)
+    except (OSError, ValueError, KeyError, IndexError, subprocess.SubprocessError):
+        # Script detection is a hint: without it, the advice still stands.
+        return None
+
+
+def _detected(job: dict, numbers: list[int], tesseract: str) -> str | None:
     source = job["source"]
     path = Path(source["path"])
     seen = set()
@@ -183,7 +214,7 @@ def _script(job: dict, numbers: list[int]) -> str | None:
                     ["pdftoppm", "-r", "150", "-gray", "-f", str(number), "-l", str(number)]
                     + ["-singlefile", str(path), str(stem)],
                     capture_output=True,
-                    timeout=60,
+                    timeout=30,
                     check=True,
                 )
                 image = stem.with_suffix(".pgm")
@@ -201,7 +232,7 @@ def _osd(tesseract: str, image: Path) -> str | None:
         [tesseract, str(image), "stdout", "--psm", "0", "-l", "osd"],
         capture_output=True,
         text=True,
-        timeout=60,
+        timeout=30,
     )
     script = re.search(r"^Script: (\w+)", proc.stdout, re.MULTILINE)
     sure = re.search(r"^Script confidence: ([\d.]+)", proc.stdout, re.MULTILINE)

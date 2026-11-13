@@ -81,7 +81,7 @@ def test_commented_optional_stages_are_valid_when_uncommented(tmp_path: Path, na
     processing["limits"]["max_image_pages"] = 5
     path = tmp_path / "uncommented.yml"
     path.write_text(yaml.safe_dump(data), encoding="utf-8")
-    assert _validated(path)["contest"] == {"rules": "ru-print-0.2"}
+    assert _validated(path)["contest"] == {"rules": "ru-print-0.3"}
 
 
 def test_written_config_follows_the_source_for_local_text(tmp_path: Path) -> None:
@@ -406,9 +406,44 @@ def test_language_advice_without_a_sure_script_and_for_pre_reform_spelling(
     out = tmp_path / "jobs" / "grodno"
     assert main(["process", str(source), "--lang", "rus", "--out", str(out)]) == 0
     text = capsys.readouterr().out
-    assert "If so, run it again with --lang and that language's code." in text
+    # The language is right; only the advice about the old letters is given.
+    assert "is not the document's" not in text and "If so" not in text
     assert "Some pages are in pre-1918 Russian spelling." in text
+    assert "it made more errors overall in our test: check a sample." in text
     assert "engine-recipes.md#tesseract-with-the-community-orus-model" in text
+    assert f"Then: pageledger process {source} --lang orus --out {out}-orus" in text
+
+
+def test_language_advice_stands_when_script_detection_fails(tmp_path, monkeypatch, capsys):
+    from pageledger import language_hint
+
+    def broken(job, numbers, tesseract):
+        raise OSError("pdftoppm failed")
+
+    monkeypatch.setattr(language_hint.shutil, "which", lambda name: f"/bin/{name}")
+    monkeypatch.setattr(
+        "pageledger.adapters._tesseract_installed_langs", lambda path: {"eng", "osd"}
+    )
+    monkeypatch.setattr(language_hint, "_detected", broken)
+    assert language_hint._script({"source": {}}, [1]) is None
+
+
+def test_language_advice_after_resume_names_both_ways_to_change_the_language(
+    tmp_path, monkeypatch, capsys
+):
+    from pageledger import language_hint
+
+    source = _hello_pdf(tmp_path)
+    _ocr_reads(monkeypatch, "Hallo Welt", ["low_confidence"])
+    monkeypatch.setattr(language_hint, "_script", lambda job, numbers: None)
+    out = tmp_path / "jobs" / "j"
+    assert main(["process", str(source), "--lang", "deu", "--out", str(out)]) == 0
+    capsys.readouterr()
+    lines = language_hint.advice(out, None, from_config=False)
+    assert lines[2] == (
+        "If so, run process again with --lang and that language's code, or, if the job "
+        "used a config file, set lang (processing.local_ocr.adapter_options.lang) there."
+    )
 
 
 def test_a_missing_language_leads_with_the_sentence_and_ends_with_its_code(

@@ -23,7 +23,7 @@ from .aligner import align_run
 from .classifier import classify
 from .compare import compare_runs, render_comparison
 from .corrections import describe
-from .doctor import build_doctor_report
+from .doctor import NOT_LANGUAGES, build_doctor_report
 from .export import FORMATS, export_job
 from .grading import GRADES, grade_basis_label
 from .replay import bundle_run, replay_bundle
@@ -80,6 +80,8 @@ def _config_template(adapter: str) -> str:
 OCR_ENGINES = ("pdf_ocr", "rapidocr", "indra", "none")
 DEFAULT_OCR_LANG = "eng"
 _SPEC = "https://github.com/peterbussch/pageledger/blob/main/docs/processing-spec.md"
+# The docs of this release, for messages: a pip install has no docs/ folder.
+_DOCS = f"https://github.com/peterbussch/pageledger/blob/v{__version__}/docs/"
 
 PROCESSING_HEADER = f"""\
 # A PageLedger document job, as written by `pageledger init`.
@@ -164,7 +166,7 @@ def _ocr_options(engine: str, lang: str | None, model_dir: str | None) -> str:
         if model_dir is None:
             raise _UsageError(
                 "rapidocr needs --model-dir, a PP-OCRv5 recognizer directory with "
-                "inference.onnx and keys.txt (see docs/engine-recipes.md)"
+                f"inference.onnx and keys.txt (see {_DOCS}engine-recipes.md)"
             )
         return f"      rec_model_dir: {json.dumps(_absolute(model_dir))}\n"
     options = "      mode: ocr\n"
@@ -229,7 +231,7 @@ class _UsageError(Exception):
     """A combination of options that argparse cannot express; exits 2 like other usage errors."""
 
 
-TUTORIAL = "https://github.com/peterbussch/pageledger/blob/main/docs/document-first-run.md"
+TUTORIAL = f"{_DOCS}document-first-run.md"
 
 # What `pageledger --help` lists, in order, and what each command's own --help
 # opens with: (one-line summary, a sentence or two, an example).
@@ -1846,7 +1848,8 @@ def _print_language_advice(job: Path, args: argparse.Namespace) -> None:
     retry = None
     if args.command == "process" and args.config is None:
         retry = _retry_command(args)
-    lines = advice(job, retry)
+    # After resume, the config the job was made with may have been a passing one.
+    lines = advice(job, retry, from_config=args.command == "process")
     if lines:
         print("\n" + "\n".join(lines))
 
@@ -2096,17 +2099,15 @@ def _doctor_summary(report: dict, *, details: bool = True) -> list[str]:
         )
         lines.append(f"  Read {drawn} with {version} OCR.")
         languages = report["ocr_languages"]
-        if languages["available"]:
-            installed = languages["languages"]
-            common = [code for code in _COMMON_LANGUAGES if code in installed]
+        installed = [code for code in languages["languages"] if code not in NOT_LANGUAGES]
+        if languages["available"] and installed:
+            # The common ones first; with none of them, the first few installed.
+            shown = [code for code in _COMMON_LANGUAGES if code in installed] or installed[:6]
+            more = len(installed) > len(shown)
             lines.append(
                 f"  Languages for --lang ({len(installed)} installed): "
-                + ", ".join(common)
-                + (
-                    (", and more, listed below." if details else ", and more.")
-                    if len(installed) > len(common)
-                    else "."
-                )
+                + ", ".join(shown)
+                + ((", and more, listed below." if details else ", and more.") if more else ".")
             )
     else:
         lines.append(
@@ -2125,7 +2126,7 @@ def _doctor_summary(report: dict, *, details: bool = True) -> list[str]:
         )
     if missing:
         lines.append(
-            f"  Not installed, optional: {', '.join(missing)}. See docs/engine-recipes.md."
+            f"  Not installed, optional: {', '.join(missing)}. See {_DOCS}engine-recipes.md"
         )
     return lines
 
@@ -2162,7 +2163,13 @@ def _cmd_doctor(args: argparse.Namespace) -> int:
             )
         else:
             print(f"OCR languages: unavailable ({ocr_langs['explanation']})")
-        for name, info in report["cloud_environment"].items():
-            status = "set" if info["set"] else "missing"
+        keys = report["cloud_environment"].items()
+        if args.config is not None:
+            # Only the keys this config needs; the others are beside the point.
+            keys = [(name, info) for name, info in keys if info.get("named_by_config")]
+            if not keys:
+                print(f"API keys: {args.config.name} names none (no env_key).")
+        for name, info in keys:
+            status = "set" if info["set"] else "not set"
             print(f"Env {name}: {status} ({info['explanation']})")
     return 0

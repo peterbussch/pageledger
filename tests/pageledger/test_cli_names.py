@@ -14,6 +14,7 @@ import pytest
 from test_stability import _copy_release
 
 from pageledger import cli
+from pageledger._version import __version__
 from pageledger.cli import main
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -549,10 +550,21 @@ def test_doctor_opens_with_what_process_can_do() -> None:
         "What process can do on this machine:",
         "  Read the text a PDF carries (pypdf).",
         "  Read page images and scanned PDFs with Tesseract 5.5.2 OCR.",
-        "  Languages for --lang (4 installed): eng, rus, deu, and more, listed below.",
+        "  Languages for --lang (3 installed): eng, rus, deu.",
         "  Other OCR engines ready (choose one with pageledger init): RapidOCR.",
-        "  Not installed, optional: Indra OCR. See docs/engine-recipes.md.",
+        "  Not installed, optional: Indra OCR. See "
+        f"https://github.com/peterbussch/pageledger/blob/v{__version__}/docs/engine-recipes.md",
     ]
+
+
+def test_doctor_lists_installed_languages_not_tesseract_s_own_data() -> None:
+    report = _doctor_report()
+    report["ocr_languages"]["languages"] = ["equ", "frk", "osd", "san", "tam"]
+    assert cli._doctor_summary(report, details=False)[3] == (
+        "  Languages for --lang (3 installed): frk, san, tam."
+    )
+    report["ocr_languages"]["languages"] = ["osd"]
+    assert not any("--lang" in line for line in cli._doctor_summary(report))
 
 
 def test_doctor_says_what_is_missing_for_ocr() -> None:
@@ -746,3 +758,26 @@ def test_an_interrupted_review_view_leaves_nothing(
     code, _, err = _cli(capsys, "review", str(job), "--images", "none")
     assert code == 130 and "No review view was written" in err
     assert not (tmp_path / "job-review").exists()
+
+
+def test_doctor_names_a_missing_or_broken_config_in_a_sentence(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    missing = tmp_path / "nothere.yml"
+    assert main(["doctor", "--config", str(missing)]) == 1
+    assert capsys.readouterr().err == f"pageledger: error: Config file not found: {missing}\n"
+    broken = tmp_path / "broken.yml"
+    broken.write_text("processing: [\n", encoding="utf-8")
+    assert main(["doctor", "--config", str(broken)]) == 1
+    assert "Could not parse config YAML in" in capsys.readouterr().err
+
+
+def test_doctor_with_a_config_lists_only_the_keys_it_names(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    config = tmp_path / "processing.yml"
+    config.write_text("processing:\n  local_ocr: {adapter: pdf_ocr}\n", encoding="utf-8")
+    assert main(["doctor", "--config", str(config)]) == 0
+    out = capsys.readouterr().out
+    assert "API keys: processing.yml names none (no env_key)." in out
+    assert "OPENAI_API_KEY" not in out and "Env " not in out

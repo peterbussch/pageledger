@@ -1973,7 +1973,8 @@ def test_doctor_reports_the_keys_a_config_names(monkeypatch, tmp_path, capsys):
     assert main(["doctor", "--config", str(config)]) == 0
     out = capsys.readouterr().out
     assert "Env OMNIROUTE_API_KEY: set" in out
-    assert "Env SECOND_ROUTE_KEY: missing" in out
+    assert "Env SECOND_ROUTE_KEY: not set" in out
+    assert "GOOGLE_API_KEY" not in out
     assert "do-not-print-me" not in out
 
 

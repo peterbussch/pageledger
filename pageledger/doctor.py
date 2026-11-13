@@ -15,6 +15,8 @@ import yaml
 
 from ._version import __version__
 
+# Tesseract's own data, not languages a page can be read in: script detection and math.
+NOT_LANGUAGES = frozenset({"osd", "equ"})
 EXTERNAL_COMMANDS = {
     "pdftoppm": (
         ["-v"],
@@ -74,13 +76,12 @@ def build_doctor_report(config_path: Path | None = None) -> dict[str, Any]:
         for name, explanation in CLOUD_ENV_EXPLANATIONS.items()
     }
     if config_path is not None:
-        for name in sorted(
-            _env_keys(yaml.safe_load(Path(config_path).read_text(encoding="utf-8")))
-        ):
+        for name in sorted(_env_keys(_read_config(Path(config_path)))):
             cloud[name] = {
                 "set": bool(os.environ.get(name)),
                 "value": "<redacted>",
                 "explanation": f"Named by env_key in {Path(config_path).name}.",
+                "named_by_config": True,
             }
     return {
         "pageledger_version": __version__,
@@ -98,6 +99,20 @@ def build_doctor_report(config_path: Path | None = None) -> dict[str, Any]:
         "ocr_languages": _ocr_languages_report(),
         "cloud_environment": cloud,
     }
+
+
+def _read_config(path: Path) -> Any:
+    """The config's YAML, or a plain sentence when it is missing or does not parse."""
+    try:
+        text = path.expanduser().read_text(encoding="utf-8")
+    except FileNotFoundError:
+        raise ValueError(f"Config file not found: {path}") from None
+    except UnicodeDecodeError:
+        raise ValueError(f"Config file {path} is not UTF-8 text") from None
+    try:
+        return yaml.safe_load(text)
+    except yaml.YAMLError as exc:
+        raise ValueError(f"Could not parse config YAML in {path}: {exc}") from None
 
 
 def _env_keys(value: Any) -> set[str]:
@@ -120,7 +135,7 @@ def _ocr_languages_report() -> dict[str, Any]:
         "languages": sorted(langs) if langs else [],
         "source": "tesseract --list-langs",
         "explanation": (
-            "Installed Tesseract language packs; values for run.adapter_options.lang."
+            "Installed Tesseract language packs; all but osd and equ are values for --lang."
             if langs is not None
             else "Tesseract is missing or its language listing failed."
         ),
@@ -148,7 +163,8 @@ def _command_version(path: str, args: list[str]) -> str | None:
             [path, *args],
             text=True,
             capture_output=True,
-            timeout=5,
+            # A tool's first run after install can take a while to answer.
+            timeout=15,
             check=False,
         )
     except (OSError, subprocess.TimeoutExpired):
