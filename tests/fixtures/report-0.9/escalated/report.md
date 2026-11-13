@@ -5,7 +5,7 @@ Finished: 3 pages read; 2 need a person.
 Source: [source.txt][source]; 3 of its 3 pages selected, 3 read.
 
 - Need a person: 2 pages (2-3):
-  - The engine local_text may be missing text; so do the engine local_ocr and the engine image: 2 pages (2-3).
+  - The engine local_text may be missing text; the same is true of the engine local_ocr and the engine image: 2 pages (2-3).
 - Text selected and nothing held the page; no person has checked it: 1 page (1).
 
 Next: in this job's folder, `pageledger review .` writes the review view, where you check the 2 pages that need a person and record what you decide.
@@ -16,15 +16,15 @@ Pages that need a person come first. The review view (`pageledger review .` in t
 
 | Page | Held for | Selected text | Review |
 | --- | --- | --- | --- |
-| 2 | The engine local_text may be missing text; so do the engine local_ocr and the engine image. | [The engine local_text](<attempts/local_text/raw/doc_0001_page_0002.txt>) | not checked |
-| 3 | The engine local_text may be missing text; so do the engine local_ocr and the engine image. | [The engine local_text](<attempts/local_text/raw/doc_0001_page_0003.txt>) | not checked |
+| 2 | The engine local_text may be missing text; the same is true of the engine local_ocr and the engine image. | [The engine local_text](<attempts/local_text/raw/doc_0001_page_0002.txt>) | not checked |
+| 3 | The engine local_text may be missing text; the same is true of the engine local_ocr and the engine image. | [The engine local_text](<attempts/local_text/raw/doc_0001_page_0003.txt>) | not checked |
 | 1 | nothing | [The engine local_text](<attempts/local_text/raw/doc_0001_page_0001.txt>) | not checked |
 
 ## For the record
 
-Everything below is in document.json, of which this report is a rendering. The codes in backticks are explained in PageLedger's docs/warnings.md.
+Everything below is in document.json, of which this report is a rendering. The codes in backticks are explained in [PageLedger's warnings](https://github.com/peterbussch/pageledger/blob/v0.9.0/docs/warnings.md).
 
-- Job: `job_c6b65e2e7315407c89da81b205b948c8`, created 2026-11-13T23:17:32Z; hold policy 0.9; report format 0.9.
+- Job: `job_fb105424d86f47ddbdbd0bb5a13383ae`, created 2026-11-13T23:22:47Z; hold policy 0.9; report format 0.9.
 - Source: [../source.txt][source]
 - Source SHA-256: `b6f60e4092685ffd893a508ab3704696bc506e06c79c4d28fb679bf692a306c9`
 - Read by: the `local_text` stage, the engine local_text (`local_text`); the `local_ocr` stage, the engine local_ocr (`local_ocr`); the `image` stage, the engine image (`image`).
@@ -71,7 +71,7 @@ Readings sent on to the next stage for a reason other than a hold, by trigger (a
 - Calls to an image model: 2.
 - Tokens: 70.
 - Cost: unknown: not every engine reported a cost.
-- Limits: max_image_pages 2, max_attempt_pages 10.
+- Limits: max_attempt_pages 10, max_image_pages 2.
 - PDF annotations (notes and links attached to pages): none (0). Counting them says nothing about whether the body text or its citations were extracted completely.
 
 ### Source custody
@@ -85,7 +85,7 @@ PageLedger records what it knows of the source file; it does not preserve or rem
 
 ### Files
 
-- Transcript: [transcript.md](<transcript.md>), SHA-256 `9e68a647a46c32ebf0b5953fdf017d9d93f0a7e2549cdd70fc9c66f001b1f5c0`
+- Transcript: [transcript.md](<transcript.md>), SHA-256 `08c4f75f943e084906a421ca5bb25fe82826c9745ec46d4b802c180d94e221f7`
 - Next action recorded by the job: Check the pages against the source, those that need a person first, and record decisions with pageledger review.
 
 [source]: <../source.txt>

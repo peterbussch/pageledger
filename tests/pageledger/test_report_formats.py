@@ -1,4 +1,9 @@
-"""Jobs written in an earlier report format keep verifying, byte for byte, after the wording moves on."""
+"""Jobs in report format 0.9 render and verify byte for byte.
+
+The fixtures pin the current wording of report.md and transcript.md: a change to
+it shows here first. Regenerate them only for a deliberate change, which needs a
+new report format once 0.9 has been released.
+"""
 
 from __future__ import annotations
 

@@ -1,4 +1,4 @@
-# Transcript: job_e90ea2b3190e464d818b3984c13d77dd
+# Transcript: job_2de5c00e418049babb5a2c68e029b87e
 
 Source SHA-256: `b6f60e4092685ffd893a508ab3704696bc506e06c79c4d28fb679bf692a306c9`
 
@@ -8,5 +8,7 @@ Source SHA-256: `b6f60e4092685ffd893a508ab3704696bc506e06c79c4d28fb679bf692a306c
 
 [Selected reading: the engine local_text](<attempts/local_text/raw/doc_0001_page_0001.txt>)
 
+```text
 Бѣлоконскій служилъ въ мѣстѣ Бѣлоконскій служилъ въ мѣстѣ Бѣлоконскій служилъ въ мѣстѣ Бѣлоконскій служилъ въ мѣстѣ Бѣлоконскій служилъ въ мѣстѣ Бѣлоконскій служилъ въ мѣстѣ Бѣлоконскій служилъ въ мѣстѣ Бѣлоконскій служилъ въ мѣстѣ
+```
 

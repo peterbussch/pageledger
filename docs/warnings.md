@@ -190,7 +190,7 @@ with what to do about it.
 | `fragmented_text` | Many words are unusually short, as if broken into pieces. | |
 | `handwriting` | An engine judged the page to be handwriting. | |
 | `historical_letters_lost` | The job expects pre-reform spelling, but the reading lacks its letters (ѣ, і, final ъ). | |
-| `historical_orthography` | The text has pre-reform Russian spelling (letters such as ѣ and і), which an engine trained on modern spelling cannot write. | Stock OCR models for modern Russian, such as Tesseract `rus`, cannot write ѣ, і, ѳ or ѵ, so their readings drop or garble these letters. For pre-1918 print, read the pages with a model that writes them, such as `orus` (see docs/engine-recipes.md). |
+| `historical_orthography` | The text has pre-reform Russian spelling (letters such as ѣ and і), which an engine trained on modern spelling cannot write. | Stock OCR models for modern Russian, such as Tesseract `rus`, cannot write ѣ, і, ѳ or ѵ, so their readings drop or garble these letters. For pre-1918 print, try a model that writes them on a few pages first, such as the community `orus` model: in PageLedger's test it kept more of these letters, but made more errors overall ([engine recipes](https://github.com/peterbussch/pageledger/blob/v0.9.0/docs/engine-recipes.md#tesseract-with-the-community-orus-model-macos-and-linux)). |
 | `illustration` | An engine judged the page to be an illustration. | |
 | `instruction_echo` | The reading holds a chat-template marker: a model may have returned its own instructions. | |
 | `joined` | Words appear run together. | |
@@ -282,7 +282,7 @@ wrote a capital Ъ or Ь inside words, …"). Most are warning or classification
 | `source_defect` | found the source page damaged or incomplete |
 | `sparse` | has very little text |
 | `split_words` | has many words broken by stray spaces |
-| `suspicious_embedded_text_delta` | is far longer or shorter than another reading of the page |
+| `suspicious_embedded_text_delta` | is far longer or shorter than the PDF's own text |
 | `suspicious_symbol_density` | has many unusual symbols, often from a damaged text layer |
 | `tile_edge_cut` | has a line of text cut by a tile's edge, which may be read twice or not at all |
 | `tile_failed` | lacks the text of one or more tiles the model would not read |

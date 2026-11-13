@@ -8,6 +8,11 @@ it up in docs/warnings.md, whose "In plain words" section repeats this table
 
 from __future__ import annotations
 
+# The docs of the release that introduced the report's wording. A report links here
+# rather than to the installed version's, so that its bytes stay the same after an
+# upgrade, and a reader without a checkout can follow the link.
+DOCS = "https://github.com/peterbussch/pageledger/blob/v0.9.0/docs/"
+
 # Why a page is held for a person, and the states a page is in before review.
 # Each is a clause, without a full stop, that reads after a page number or a count.
 HOLDS = {
@@ -36,12 +41,14 @@ HOLDS = {
 # A blank candidate whose selected reading has text, when nothing else holds the page:
 # an empty reading raised the hold, and no reading without a hold of its own has
 # confirmed the text. BLANK_SCAN is the same when the empty reading is a scan's
-# missing text layer. Where another reason holds the page, the blank hold is not shown.
+# missing text layer, and BLANK_SHORT when no reading was empty (a reading too short
+# to trust raised it). Where another reason holds the page, the blank hold is not shown.
 BLANK_WITH_TEXT = (
     "An earlier reading was empty, and no reading without a hold of its own confirms the "
     "page's text"
 )
 BLANK_SCAN = "The page is a scan with no text of its own, and no other reading confirms the OCR"
+BLANK_SHORT = "Very little text was read, and nothing else confirms it: the page may be blank"
 
 # What is wrong with a reading, by the cause of its hold (a warning or classification
 # code, or a rule of the job's own). Each is a clause, without a full stop, that reads
@@ -98,7 +105,7 @@ CAUSES = {
     "source_defect": "found the source page damaged or incomplete",
     "sparse": "has very little text",
     "split_words": "has many words broken by stray spaces",
-    "suspicious_embedded_text_delta": "is far longer or shorter than another reading of the page",
+    "suspicious_embedded_text_delta": "is far longer or shorter than the PDF's own text",
     "suspicious_symbol_density": "has many unusual symbols, often from a damaged text layer",
     "tile_edge_cut": "has a line of text cut by a tile's edge, which may be read twice or not at all",
     "tile_failed": "lacks the text of one or more tiles the model would not read",
@@ -123,10 +130,13 @@ UNCONFIRMED_ADVICE = (
     "For a whole book of such pages, add a second OCR engine (`second_ocr` in the config; "
     "`pageledger init` writes it as a commented block), so that a second reading can confirm "
     "the first.",
-    'Why these pages are held: docs/processing-spec.md, under Hold policy 0.9, "What holding '
-    "for the layer's warnings costs\".",
+    f"Why these pages are held: [Hold policy 0.9]({DOCS}processing-spec.md#hold-policy-09), "
+    'under "What holding for the layer\'s warnings costs".',
 )
-ANOTHER_READING = "the selected text is {selected}; {name}, another reading of the page, {flaw}"
+ANOTHER_READING = (
+    "the selected text is {selected}; {name}, another reading of the page, {flaw}, so it "
+    "cannot confirm the selected text"
+)
 
 # A person's review decision.
 REVIEWED = {
@@ -244,8 +254,11 @@ ADVICE = {
     "alto_missing": "Check the adapter's `name` template against the files' real names.",
     "historical_orthography": (
         "Stock OCR models for modern Russian, such as Tesseract `rus`, cannot write ѣ, і, ѳ "
-        "or ѵ, so their readings drop or garble these letters. For pre-1918 print, read the "
-        "pages with a model that writes them, such as `orus` (see docs/engine-recipes.md)."
+        "or ѵ, so their readings drop or garble these letters. For pre-1918 print, try a "
+        "model that writes them on a few pages first, such as the community `orus` model: in "
+        "PageLedger's test it kept more of these letters, but made more errors overall ("
+        f"[engine recipes]({DOCS}engine-recipes.md"
+        "#tesseract-with-the-community-orus-model-macos-and-linux))."
     ),
     "multi_column_rows": (
         "Check the line order against the page; for RapidOCR set `reading_order: columns` "

@@ -318,7 +318,7 @@ first (the opening, "Worth knowing" and the page table):
   it, in the words of [warnings.md](warnings.md#what-is-wrong-with-a-reading):
   "Tesseract OCR (rus) wrote a capital Ъ or Ь inside words, as OCR for modern
   Russian does with pre-1918 letters". The same flaw on other readings follows the
-  selected one's ("; so does the engine …"). A flaw on a reading that is not the
+  selected one's ("; the same is true of the engine …"). A flaw on a reading that is not the
   selected text says which text was selected: for an earlier OCR layer, whose
   own warnings hold the page only while nothing confirms the selected reading,
   "the selected text is Tesseract OCR (eng); the PDF's own text (an earlier OCR),
@@ -405,7 +405,13 @@ Its sections, in order:
 
 `transcript.md` of a format 0.9 job names each page's selected reading the same
 way ("Selected reading: Tesseract OCR (rus)"), and a page without selected text
-by its state in words. Older formats keep their transcript as written.
+by its state in words. It puts each page's text in a fenced code block
+(`` ```text ``), so that nothing in the text is read as Markdown or HTML: a line
+such as `## Page 2` or `<!--` in a page stays text. The fence is three backticks,
+or one more than the longest run of backticks in the text, and exactly one line
+break is added before the closing fence: the page's text is everything between
+the two fence lines but that last line break. Older formats keep their
+transcript as written.
 
 A page **needs a person** when no one has reviewed it, it is not waiting for a
 stage, and it has a hold reason or no selected text. A page is **not finished**

@@ -5,7 +5,7 @@ Paused at a limit. Reached max_image_pages (1). Review the retained results, or 
 Source: [source.txt][source]; 3 of its 3 pages selected, 3 read.
 
 - Need a person: 1 page (2):
-  - The engine local_text may be missing text; so do the engine local_ocr and the engine image: 1 page (2).
+  - The engine local_text may be missing text; the same is true of the engine local_ocr and the engine image: 1 page (2).
 - Text selected and nothing held the page; no person has checked it: 1 page (1).
 - Not finished: waiting for the engine image: 1 page (3).
 
@@ -17,17 +17,17 @@ Pages that need a person come first. The review view (`pageledger review .` in t
 
 | Page | Held for | Selected text | Review |
 | --- | --- | --- | --- |
-| 2 | The engine local_text may be missing text; so do the engine local_ocr and the engine image. | [The engine local_text](<attempts/local_text/raw/doc_0001_page_0002.txt>) | not checked |
-| 3 | Not finished: waiting for the engine image. Held so far: The engine local_text may be missing text; so does the engine local_ocr. | [The engine local_text](<attempts/local_text/raw/doc_0001_page_0003.txt>) | not checked |
+| 2 | The engine local_text may be missing text; the same is true of the engine local_ocr and the engine image. | [The engine local_text](<attempts/local_text/raw/doc_0001_page_0002.txt>) | not checked |
+| 3 | Not finished: waiting for the engine image. Held so far: The engine local_text may be missing text; the same is true of the engine local_ocr. | [The engine local_text](<attempts/local_text/raw/doc_0001_page_0003.txt>) | not checked |
 | 1 | nothing | [The engine local_text](<attempts/local_text/raw/doc_0001_page_0001.txt>) | not checked |
 
 For pages not finished, the text and holds are those so far: the stages still to run may select another reading, and add or settle holds.
 
 ## For the record
 
-Everything below is in document.json, of which this report is a rendering. The codes in backticks are explained in PageLedger's docs/warnings.md.
+Everything below is in document.json, of which this report is a rendering. The codes in backticks are explained in [PageLedger's warnings](https://github.com/peterbussch/pageledger/blob/v0.9.0/docs/warnings.md).
 
-- Job: `job_cd39b54c65974630aec8fc127565b389`, created 2026-11-13T23:17:33Z; hold policy 0.9; report format 0.9.
+- Job: `job_4cbe2ef749c9411d87b33da02a9bc69f`, created 2026-11-13T23:22:47Z; hold policy 0.9; report format 0.9.
 - Source: [../source.txt][source]
 - Source SHA-256: `b6f60e4092685ffd893a508ab3704696bc506e06c79c4d28fb679bf692a306c9`
 - Read by: the `local_text` stage, the engine local_text (`local_text`); the `local_ocr` stage, the engine local_ocr (`local_ocr`); the `image` stage, the engine image (`image`).
@@ -71,7 +71,7 @@ Readings sent on to the next stage for a reason other than a hold, by trigger (a
 - Calls to an image model: 1.
 - Tokens: 60.
 - Cost: unknown: not every engine reported a cost.
-- Limits: max_image_pages 1, max_attempt_pages 10.
+- Limits: max_attempt_pages 10, max_image_pages 1.
 - PDF annotations (notes and links attached to pages): none (0). Counting them says nothing about whether the body text or its citations were extracted completely.
 
 ### Source custody
@@ -85,7 +85,8 @@ PageLedger records what it knows of the source file; it does not preserve or rem
 
 ### Files
 
-- Transcript: [transcript.md](<transcript.md>), SHA-256 `5473c55370b17553249e95f5d8e2870c52b92fec51a05cac27173bbf52081e6d`
+- Transcript: [transcript.md](<transcript.md>), SHA-256 `f2fedbf0999d02fb729a39e956da590b7a05a8c76fc0f4f807d0101806848279`
 - Next action recorded by the job: Reached max_image_pages (1). Review the retained results, or continue with: pageledger resume JOB_DIR --raise-limit max_image_pages=N
+  - JOB_DIR stands for this job's folder.
 
 [source]: <../source.txt>

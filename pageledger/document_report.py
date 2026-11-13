@@ -6,6 +6,7 @@ import copy
 import hashlib
 import json
 import os
+import re
 import shlex
 from collections import Counter
 from collections.abc import Callable
@@ -33,10 +34,12 @@ from .wording import (
     ADVICE,
     ANOTHER_READING,
     BLANK_SCAN,
+    BLANK_SHORT,
     BLANK_WITH_TEXT,
     CAUSES,
     CORRECTION,
     COULD_CONFIRM,
+    DOCS,
     HOLDS,
     NOT_CONFIRMED,
     ONLY_OTHER,
@@ -62,6 +65,8 @@ _STAGE_LABELS = {
     "image": "Image extraction",
     "second_opinion": "Second opinion",
 }
+
+AGREEMENT_CAVEAT = "Engine agreement is evidence, not proof: engines can share a mistake."
 
 # Warnings that hold nothing and would otherwise go unseen in the report.
 _NOTED_WARNINGS = ("multi_column_rows", "render_upsampled")
@@ -181,6 +186,22 @@ def _escape(text: str) -> str:
     )
 
 
+def _plain(text: str) -> str:
+    """Text from outside PageLedger (a file name, a reviewer's note, a model's name) in
+    the reader's format: also no raw HTML, so that a `<!--` in it hides nothing."""
+    return _escape(text).replace("<", "\\<")
+
+
+def fenced(text: str) -> str:
+    """Page text as a Markdown code block, so that nothing in it is read as Markdown or
+    HTML. The fence is longer than any run of backticks in the text, and exactly one
+    line break is added before the closing fence: the text is everything between the
+    two fence lines but that last line break."""
+    longest = max((len(run) for run in re.findall("`+", text)), default=0)
+    fence = "`" * max(3, longest + 1)
+    return f"{fence}text\n{text}\n{fence}\n"
+
+
 def render_transcript(report: dict) -> str:
     """Serialize the transcript without trimming or normalizing extraction text."""
     chunks = [
@@ -221,7 +242,9 @@ def _transcript_page(report: dict, page: dict) -> str:
         name = f"{CORRECTION} of {name}"
     elif selected.get("edition"):
         name += ", with its settled differences applied"
-    return _link(f"Selected reading: {name}", selected["path"]) + f"\n\n{selected['text']}\n\n"
+    return (
+        _link(f"Selected reading: {name}", selected["path"]) + f"\n\n{fenced(selected['text'])}\n"
+    )
 
 
 def _stage_label(stage: str) -> str:
@@ -602,7 +625,11 @@ def shown_holds(page: dict) -> list[str]:
 def hold_in_words(page: dict, reason: str) -> str:
     """A hold or page state in plain words, without its code."""
     if reason == "blank_candidate" and _has_text(page):
-        return BLANK_SCAN if _scan(page) else BLANK_WITH_TEXT
+        if _scan(page):
+            return BLANK_SCAN
+        if any(empty_reading(attempt) for attempt in page["attempts"]):
+            return BLANK_WITH_TEXT
+        return BLANK_SHORT
     return HOLDS.get(reason) or REVIEWED.get(reason) or reason
 
 
@@ -669,7 +696,7 @@ def held_for(report: dict, page: dict) -> list[tuple[str, str]]:
                 names = [reader_name(report, _attempt(page, o["attempt_id"])) for o in same]
                 names = list(dict.fromkeys(names))
                 if names:
-                    after += f"; so {'does' if len(names) == 1 else 'do'} {_joined(names)}"
+                    after += f"; the same is true of {_joined(names)}"
             flaws.append((before, CAUSES[item["cause"]], after))
         if flaws:
             framed += [(reason, *flaw) for flaw in flaws]
@@ -773,7 +800,7 @@ def summary_lines(report: dict) -> list[str]:
     total = counts["source_pages"]
     selected = counts["selected_pages"]
     of = f"{selected} of its {total} pages" if total is not None else f"{selected} pages"
-    source = f"[{_escape(name)}][source]"
+    source = f"[{_plain(name)}][source]"
     lines = [
         _status_line(report, _HERE),
         "",
@@ -788,7 +815,7 @@ def summary_lines(report: dict) -> list[str]:
             + (", for these reasons (a page can have more than one):" if several else ":")
         )
         lines += [
-            f"  - {_escape(sentence(_group_words(key)))}: {_pages(items)}." for key, items in groups
+            f"  - {_plain(sentence(_group_words(key)))}: {_pages(items)}." for key, items in groups
         ]
     for code, items in _grouped(clean, lambda page: [page["disposition"]]):
         lines.append(f"- {hold_in_words(items[0], code)}: {_pages(items)}.")
@@ -908,7 +935,7 @@ def _selected_cell(report: dict, page: dict) -> str:
     correction = selected.get("correction")
     if correction is not None:
         made = corrections.describe(correction["words"])
-        return f"{_link(sentence(CORRECTION), selected['path'])} of {name}: {made}"
+        return f"{_link(sentence(CORRECTION), selected['path'])} of {_plain(name)}: {made}"
     if selected.get("edition"):
         return f"{_link(sentence(name), selected['path'])}, with its settled differences applied"
     return _link(sentence(name), selected["path"])
@@ -920,10 +947,10 @@ def _held_cell(report: dict, page: dict) -> str:
         cell = sentence(_waiting_for(report, page.get("next_action"))) + "."
         if page.get("review_reasons"):
             cell += " Held so far: " + held_in_words(report, page, more=more)
-        return _escape(cell)
+        return _plain(cell)
     if not page.get("review_reasons") and not needs_person(page, report):
         return "nothing"
-    return _escape(held_in_words(report, page, more=more))
+    return _plain(held_in_words(report, page, more=more))
 
 
 def _review_cell(page: dict) -> str:
@@ -932,8 +959,8 @@ def _review_cell(page: dict) -> str:
     decision = _decision_of(page)
     return (
         f"{REVIEWED.get(decision['disposition'], decision['disposition'])}: "
-        f"{_escape(decision['reviewer'])}, {_escape(decision['reviewed_at'])}, "
-        f"“{_escape(decision['reason'])}”"
+        f"{_plain(decision['reviewer'])}, {_escape(decision['reviewed_at'])}, "
+        f"“{_plain(decision['reason'])}”"
     )
 
 
@@ -961,6 +988,12 @@ def _page_table(report: dict) -> list[str]:
             f"{_review_cell(page)} |"
         )
     lines.append("")
+    if any(
+        item["agreement_ratio"] >= ENGINE_AGREEMENT_THRESHOLD
+        for page in report["pages"]
+        for item in _counted(page, report)
+    ):
+        lines += [AGREEMENT_CAVEAT, ""]
     if pending:
         lines += [
             "For pages not finished, the text and holds are those so far: the stages still to "
@@ -983,10 +1016,17 @@ def _notes(report: dict) -> list[str]:
         }
         for code in codes:
             found.setdefault(code, []).append(page)
+    # A render already past the scan's own pixels gains nothing from more: its advice is
+    # render_upsampled's, not render_dpi_capped's.
+    upsampled = {id(page) for page in found.get("render_upsampled", [])}
     lines = []
     for code, pages in sorted(found.items(), key=lambda item: (-len(item[1]), item[0])):
         line = f"- On {_pages(pages)} (`{_escape(code)}`): {warning_words(code)}"
-        if code in ADVICE:
+        if code == "render_dpi_capped" and upsampled:
+            rest = [page for page in pages if id(page) not in upsampled]
+            if rest:
+                line += f" What to do, on {_pages(rest)}: {ADVICE[code]}"
+        elif code in ADVICE:
             line += f" What to do: {ADVICE[code]}"
         lines.append(line)
     return lines
@@ -1224,7 +1264,7 @@ def _engines_line(report: dict) -> list[str]:
         return []
     images = report["source"].get("kind") == "page_images"
     read = [
-        f"the `{stage}` stage, {reading_name(stage, engine, images=images)} "
+        f"the `{stage}` stage, {_plain(reading_name(stage, engine, images=images))} "
         f"(`{_escape(engine['adapter'])}`)"
         for stage, engine in engines.items()
     ]
@@ -1240,11 +1280,11 @@ def _record_lines(report: dict) -> list[str]:
         "## For the record",
         "",
         "Everything below is in document.json, of which this report is a rendering. The codes "
-        "in backticks are explained in PageLedger's docs/warnings.md.",
+        f"in backticks are explained in [PageLedger's warnings]({DOCS}warnings.md).",
         "",
         f"- Job: `{_escape(report['job_id'])}`, created {report['created_at']}; hold policy "
         f"{report.get('hold_policy', 'none recorded')}; report format {report['report_format']}.",
-        f"- Source: [{_escape(source['path'])}][source]",
+        f"- Source: [{_plain(source['path'])}][source]",
         f"- Source SHA-256: `{source['sha256']}`",
         *(f"- {line}" for line in _snapshot_lines(source)),
         *_engines_line(report),
@@ -1321,6 +1361,11 @@ def _record_lines(report: dict) -> list[str]:
         f"- Transcript: {_link('transcript.md', report['transcript']['path'])}, SHA-256 "
         f"`{report['transcript']['sha256']}`",
         f"- Next action recorded by the job: {_escape(report['next_action'])}",
+        *(
+            [f"  - {JOB_DIR} stands for this job's folder."]
+            if JOB_DIR in report["next_action"]
+            else []
+        ),
         "",
         # Where [source] links go: the source's path, written out once.
         f"[source]: <{quote(quote(source['path'], safe='/'), safe='/:#?=&%')}>",
@@ -1331,7 +1376,7 @@ def _record_lines(report: dict) -> list[str]:
 
 def _render_for_reader(report: dict) -> str:
     name = Path(report["source"]["path"]).name
-    lines = [f"# {_escape(name)}: document job report", "", *summary_lines(report), ""]
+    lines = [f"# {_plain(name)}: document job report", "", *summary_lines(report), ""]
     notes = _notes(report)
     unconfirmed = [
         page
@@ -1460,7 +1505,7 @@ def render_document_report(report: dict) -> str:
             )
         lines.append(row)
     if format_06:
-        lines.extend(["", "Engine agreement is evidence, not proof: engines can share a mistake."])
+        lines.extend(["", AGREEMENT_CAVEAT])
     lines.extend(["", "Attempt evidence:", ""])
     for page in report["pages"]:
         for attempt in page["attempts"]:

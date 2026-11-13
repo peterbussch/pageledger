@@ -133,7 +133,7 @@ def test_an_all_held_job_groups_its_pages_by_reason(setup):  # noqa: F811
     report = _report(setup)
     assert "- Need a person: 2 pages (1-2):" in report
     assert (
-        "  - The engine local_text may be missing text; so do the engine local_ocr and the engine image: 2 pages (1-2)."
+        "  - The engine local_text may be missing text; the same is true of the engine local_ocr and the engine image: 2 pages (1-2)."
         in report
     )
     # A text source has no page images, and the next step does not promise them.
@@ -142,7 +142,7 @@ def test_an_all_held_job_groups_its_pages_by_reason(setup):  # noqa: F811
         "check the 2 pages that need a person and record what you decide." in report
     )
     assert _row(report, 1).startswith(
-        "\n| 1 | The engine local_text may be missing text; so do the engine local_ocr and the engine image. |"
+        "\n| 1 | The engine local_text may be missing text; the same is true of the engine local_ocr and the engine image. |"
     )
     assert "retained review concern" not in report
     assert verify_job(setup[2])["status"] == "pass"
@@ -234,7 +234,7 @@ def test_process_ends_with_where_the_job_is_and_one_next_command(setup, capsys):
         "Finished: 3 pages read; 2 need a person.",
         f"The job is in {out}.",
         "Why they need a person:",
-        "  2 pages: the engine local_text may be missing text; so do the engine "
+        "  2 pages: the engine local_text may be missing text; the same is true of the engine "
         "local_ocr and the engine image.",
         f"Next: pageledger review {out} shows those pages for checking.",
         f"Text out: pageledger export {out} --out job.md",
@@ -296,7 +296,7 @@ def test_the_kiev_page_names_the_lost_letters_and_what_was_compared(setup):  # n
         "itself." in entry
     )
     assert "- On 1 page (1) (`historical_orthography`):" in report
-    assert "such as `orus` (see docs/engine-recipes.md)" in report
+    assert "the community `orus` model" in report and "made more errors overall" in report
     assert "retained review concern" not in report and "not compared" not in report
     document = _document(setup)
     [cause] = document["pages"][0]["hold_causes"]
@@ -682,7 +682,7 @@ def test_a_reviewed_page_keeps_the_holds_its_review_settled(setup, tmp_path):  #
     report = _report(setup)
     row = _row(report, 2)
     assert (
-        "| The engine local_text may be missing text; so do the engine local_ocr and the engine image. |"
+        "| The engine local_text may be missing text; the same is true of the engine local_ocr and the engine image. |"
         in row
     )
     assert (
@@ -705,7 +705,8 @@ def test_pages_left_by_a_paused_job_show_their_text_so_far(setup):  # noqa: F811
     row = _row(_report(setup), 3)
     assert (
         "| 3 | Not finished: waiting for the engine image. Held so far: The engine local_text "
-        "may be missing text; so does the engine local_ocr. | [The engine local_text](<" in row
+        "may be missing text; the same is true of the engine local_ocr. | [The engine local_text](<"
+        in row
     )
     assert "Waiting for the `image` stage." in _entry(_report(setup), 3)
     assert "For pages not finished, the text and holds are those so far" in _report(setup)
@@ -766,7 +767,7 @@ def test_a_hold_is_said_by_its_cause_and_the_reading_it_is_on():
     assert [text for _hold, text in held_for(report, page)] == [
         f"Tesseract OCR (eng) {wording.CAUSES['letters_lost']} and was unsure of many words",
         "the selected text is Tesseract OCR (eng); the PDF's own text, another reading of the "
-        f"page, {wording.CAUSES['fragmented_text']}",
+        f"page, {wording.CAUSES['fragmented_text']}, so it cannot confirm the selected text",
     ]
     page["review_reasons"].append("engine_disagreement")
     assert len(held_for(report, page)) == 3
@@ -798,3 +799,64 @@ def test_an_earlier_ocr_s_flaw_says_nothing_confirms_the_selected_text():
             "count and nothing confirms the selected text",
         )
     ]
+
+
+def test_a_short_reading_held_as_blank_does_not_claim_an_empty_one(tmp_path):
+    job = job_fixture(tmp_path, text="iv")
+    page = job["pages"][0]
+    page["attempts"][0]["warnings"] = ["short_text"]
+    page.update(disposition="blank_candidate", review_reasons=["blank_candidate"])
+    rendered = render_document_report(build_document_report(job, tmp_path))
+    assert f"  - {wording.BLANK_SHORT}: 1 page (1)." in rendered
+    assert "was empty" not in rendered
+
+
+def test_a_render_past_the_scan_is_not_told_to_render_larger(tmp_path):
+    job = job_fixture(tmp_path)
+    attempt = job["pages"][0]["attempts"][0]
+    attempt["warnings"] = ["render_dpi_capped", "render_upsampled"]
+    rendered = render_document_report(build_document_report(job, tmp_path))
+    capped = next(line for line in rendered.splitlines() if "`render_dpi_capped`" in line)
+    assert "max_render_pixels" not in capped
+    attempt["warnings"] = ["render_dpi_capped"]
+    rendered = render_document_report(build_document_report(job, tmp_path))
+    assert "max_render_pixels" in rendered
+
+
+def test_agreement_is_said_to_be_evidence_not_proof(tmp_path):
+    job = job_fixture(tmp_path)
+    _compared(job["pages"][0], 0.91)
+    job["hold_policy"] = "0.9"
+    rendered = render_document_report(build_document_report(job, tmp_path))
+    assert "Engine agreement is evidence, not proof" in rendered.split("## For the record")[0]
+
+
+def test_names_and_notes_from_outside_hide_nothing_in_the_report(tmp_path):
+    job = job_fixture(tmp_path)
+    job["source"]["path"] = "/documents/a<!-- hidden.pdf"
+    rendered = render_document_report(build_document_report(job, tmp_path))
+    assert "<!--" not in rendered.replace("\\<!--", "")
+    assert rendered.startswith("# a\\<!-- hidden.pdf: document job report")
+
+
+def test_the_transcript_fences_page_text_so_it_cannot_pose_as_a_page(tmp_path):
+    from pageledger.document_report import fenced, render_transcript
+
+    text = "## Page 2\n<!-- hide\n````\nend"
+    job = job_fixture(tmp_path, text=text)
+    transcript = render_transcript(build_document_report(job, tmp_path))
+    assert f"`````text\n{text}\n`````\n" in transcript
+    # The text is everything between the fence lines but the last line break.
+    block = fenced(text)
+    assert block.split("\n", 1)[1].rsplit("\n", 2)[0] == text
+    assert fenced("plain") == "```text\nplain\n```\n"
+
+
+def test_a_paused_job_s_record_says_what_job_dir_stands_for(setup):  # noqa: F811
+    data = yaml.safe_load(setup[1].read_text())
+    data["processing"]["limits"]["max_image_pages"] = 1
+    setup[1].write_text(yaml.safe_dump(data))
+    launch(setup)
+    report = _report(setup)
+    assert "pageledger resume JOB_DIR" in report
+    assert "  - JOB_DIR stands for this job's folder." in report

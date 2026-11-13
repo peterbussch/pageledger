@@ -1,7 +1,7 @@
 {
   "schema_version": "0.1",
-  "job_id": "job_cee245ab830541a4b62ade69e61f37d1",
-  "created_at": "2026-11-13T23:17:33Z",
+  "job_id": "job_dbe0b4f320c144528c7b440c5250c872",
+  "created_at": "2026-11-13T23:22:48Z",
   "source": {
     "annotations": {
       "count": 0,
@@ -66,7 +66,7 @@
           "attempt_id": "local_text:doc_0001_page_0001",
           "stage": "local_text",
           "run_path": "attempts/local_text",
-          "run_id": "run-20261113T231733212867Z",
+          "run_id": "run-20261113T232248111081Z",
           "page_id": "doc_0001_page_0001",
           "page_number": 1,
           "source_sha256": "008f52e0d55142a405da902ec254abb7be8de5e9f62d8fb8e0343918e121f5cc",
@@ -124,7 +124,7 @@
             },
             "reason": "Review sheet decision: correct:p1.txt",
             "reviewer": "A. Person",
-            "reviewed_at": "2026-11-13T23:17:33Z"
+            "reviewed_at": "2026-11-13T23:22:48Z"
           }
         ]
       },
@@ -151,7 +151,7 @@
               },
               "reason": "Review sheet decision: correct:p1.txt",
               "reviewer": "A. Person",
-              "reviewed_at": "2026-11-13T23:17:33Z"
+              "reviewed_at": "2026-11-13T23:22:48Z"
             }
           ]
         }
@@ -184,7 +184,7 @@
             "removed": 8
           },
           "reviewer": "A. Person",
-          "reviewed_at": "2026-11-13T23:17:33Z",
+          "reviewed_at": "2026-11-13T23:22:48Z",
           "reason": "Review sheet decision: correct:p1.txt"
         }
       },
@@ -196,7 +196,7 @@
           "attempt_id": "local_text:doc_0001_page_0002",
           "stage": "local_text",
           "run_path": "attempts/local_text",
-          "run_id": "run-20261113T231733212867Z",
+          "run_id": "run-20261113T232248111081Z",
           "page_id": "doc_0001_page_0002",
           "page_number": 2,
           "source_sha256": "008f52e0d55142a405da902ec254abb7be8de5e9f62d8fb8e0343918e121f5cc",
@@ -264,7 +264,7 @@
           "attempt_id": "local_text:doc_0001_page_0003",
           "stage": "local_text",
           "run_path": "attempts/local_text",
-          "run_id": "run-20261113T231733212867Z",
+          "run_id": "run-20261113T232248111081Z",
           "page_id": "doc_0001_page_0003",
           "page_number": 3,
           "source_sha256": "008f52e0d55142a405da902ec254abb7be8de5e9f62d8fb8e0343918e121f5cc",
@@ -314,7 +314,7 @@
             "output_sha256": "9f6fa299e152405be56d69581ca8ee3ffc265ac2d3684e68920d2fbdf9ebff96",
             "reason": "Review sheet decision: accept",
             "reviewer": "A. Person",
-            "reviewed_at": "2026-11-13T23:17:33Z"
+            "reviewed_at": "2026-11-13T23:22:48Z"
           }
         ]
       },
@@ -331,7 +331,7 @@
               "output_sha256": "9f6fa299e152405be56d69581ca8ee3ffc265ac2d3684e68920d2fbdf9ebff96",
               "reason": "Review sheet decision: accept",
               "reviewer": "A. Person",
-              "reviewed_at": "2026-11-13T23:17:33Z"
+              "reviewed_at": "2026-11-13T23:22:48Z"
             }
           ]
         }
@@ -369,6 +369,6 @@
   },
   "transcript": {
     "path": "transcript.md",
-    "sha256": "5a000020a797660242573aa494680262806d77ec43096fdfe227d4defa4f7554"
+    "sha256": "6af86dc7dfded883363abe40949ea20fc2cc0f70f47fb242f4dfac5abab1451f"
   }
 }

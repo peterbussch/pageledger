@@ -10,10 +10,10 @@
       "schema_version": "0.1"
     },
     "config_sha256": "59e8bc5ec2ff9fdcb92d01455490b2ee41156c6bca34cd9aba0234e73d27a1fe",
-    "created_at": "2026-11-13T23:17:33Z",
+    "created_at": "2026-11-13T23:22:48Z",
     "halt_reason": null,
     "hold_policy": "0.9",
-    "job_id": "job_cee245ab830541a4b62ade69e61f37d1",
+    "job_id": "job_dbe0b4f320c144528c7b440c5250c872",
     "limits": {
       "max_attempt_pages": null,
       "max_cost_usd": null,
@@ -25,7 +25,7 @@
       "custody": null
     },
     "next_action": "Check the pages against the source, those that need a person first, and record decisions with pageledger review.",
-    "package_sha256": "235473586e49999f356d3f08b1733c932414df29f4f0c53c497545a5f82c5cee",
+    "package_sha256": "cf5e11a30441f68aaca3a7c556a3437941e7255d8dc20235b2a026cbf1ec114e",
     "pages": [
       {
         "attempts": [
@@ -51,7 +51,7 @@
             "page_number": 1,
             "raw_artifact": "attempts/local_text/raw/doc_0001_page_0001.txt",
             "raw_sha256": "67be9670ddbcdd8deb07c368d0258bec4c9e6bb7bc179f632fd620ae98170b75",
-            "run_id": "run-20261113T231733212867Z",
+            "run_id": "run-20261113T232248111081Z",
             "run_path": "attempts/local_text",
             "source_sha256": "008f52e0d55142a405da902ec254abb7be8de5e9f62d8fb8e0343918e121f5cc",
             "stage": "local_text",
@@ -87,7 +87,7 @@
               "page_id": "doc_0001_page_0001",
               "page_number": 1,
               "reason": "Review sheet decision: correct:p1.txt",
-              "reviewed_at": "2026-11-13T23:17:33Z",
+              "reviewed_at": "2026-11-13T23:22:48Z",
               "reviewer": "A. Person",
               "selected_attempt": "local_text:doc_0001_page_0001"
             }
@@ -114,7 +114,7 @@
                 "page_id": "doc_0001_page_0001",
                 "page_number": 1,
                 "reason": "Review sheet decision: correct:p1.txt",
-                "reviewed_at": "2026-11-13T23:17:33Z",
+                "reviewed_at": "2026-11-13T23:22:48Z",
                 "reviewer": "A. Person",
                 "selected_attempt": "local_text:doc_0001_page_0001"
               }
@@ -154,7 +154,7 @@
             "page_number": 2,
             "raw_artifact": "attempts/local_text/raw/doc_0001_page_0002.txt",
             "raw_sha256": "0ab306823035661bb8dba21cc25352319fe2a28eccdad81eaaaf7356ead6bf19",
-            "run_id": "run-20261113T231733212867Z",
+            "run_id": "run-20261113T232248111081Z",
             "run_path": "attempts/local_text",
             "source_sha256": "008f52e0d55142a405da902ec254abb7be8de5e9f62d8fb8e0343918e121f5cc",
             "stage": "local_text",
@@ -207,7 +207,7 @@
             "page_number": 3,
             "raw_artifact": "attempts/local_text/raw/doc_0001_page_0003.txt",
             "raw_sha256": "9f6fa299e152405be56d69581ca8ee3ffc265ac2d3684e68920d2fbdf9ebff96",
-            "run_id": "run-20261113T231733212867Z",
+            "run_id": "run-20261113T232248111081Z",
             "run_path": "attempts/local_text",
             "source_sha256": "008f52e0d55142a405da902ec254abb7be8de5e9f62d8fb8e0343918e121f5cc",
             "stage": "local_text",
@@ -235,7 +235,7 @@
               "page_id": "doc_0001_page_0003",
               "page_number": 3,
               "reason": "Review sheet decision: accept",
-              "reviewed_at": "2026-11-13T23:17:33Z",
+              "reviewed_at": "2026-11-13T23:22:48Z",
               "reviewer": "A. Person",
               "selected_attempt": "local_text:doc_0001_page_0003"
             }
@@ -252,7 +252,7 @@
                 "page_id": "doc_0001_page_0003",
                 "page_number": 3,
                 "reason": "Review sheet decision: accept",
-                "reviewed_at": "2026-11-13T23:17:33Z",
+                "reviewed_at": "2026-11-13T23:22:48Z",
                 "reviewer": "A. Person",
                 "selected_attempt": "local_text:doc_0001_page_0003"
               }
@@ -289,7 +289,7 @@
       },
       "second_opinion": null
     },
-    "root": "/private/var/folders/3y/gvdgv5z14v38t7g0l6jg19qh0000gn/T/pytest-of-peterbusscher/pytest-2004/test_text_job0/jobs/book",
+    "root": "/private/var/folders/3y/gvdgv5z14v38t7g0l6jg19qh0000gn/T/pytest-of-peterbusscher/pytest-2022/test_text_job0/jobs/book",
     "schema_version": "0.1",
     "selected_pages": [
       1,
@@ -302,7 +302,7 @@
         "status": "none"
       },
       "page_count": 3,
-      "path": "/private/var/folders/3y/gvdgv5z14v38t7g0l6jg19qh0000gn/T/pytest-of-peterbusscher/pytest-2004/test_text_job0/book.txt",
+      "path": "/private/var/folders/3y/gvdgv5z14v38t7g0l6jg19qh0000gn/T/pytest-of-peterbusscher/pytest-2022/test_text_job0/book.txt",
       "sha256": "008f52e0d55142a405da902ec254abb7be8de5e9f62d8fb8e0343918e121f5cc"
     },
     "source_retention": {
@@ -340,5 +340,5 @@
     }
   },
   "schema_version": "0.1",
-  "sha256": "486d6490fa88920b6ee9a5e386993503f6d7702ed6d30267badc5b37897f56f7"
+  "sha256": "2f70153e300f7b2e86205a972bb4cff4d5f8e2aa9f2c2d66ff915d46b0a2a39a"
 }

@@ -1,7 +1,7 @@
 {
   "schema_version": "0.1",
-  "job_id": "job_e90ea2b3190e464d818b3984c13d77dd",
-  "created_at": "2026-11-13T23:17:32Z",
+  "job_id": "job_2de5c00e418049babb5a2c68e029b87e",
+  "created_at": "2026-11-13T23:22:47Z",
   "source": {
     "path": "../source.txt",
     "sha256": "b6f60e4092685ffd893a508ab3704696bc506e06c79c4d28fb679bf692a306c9",
@@ -27,9 +27,9 @@
     "paid_tokens_known": true
   },
   "limits": {
-    "max_image_pages": 2,
-    "max_attempt_pages": 10,
     "max_tokens": null,
+    "max_attempt_pages": 10,
+    "max_image_pages": 2,
     "max_cost_usd": null
   },
   "links": {
@@ -83,7 +83,7 @@
           "attempt_id": "local_text:doc_0001_page_0001",
           "stage": "local_text",
           "run_path": "attempts/local_text",
-          "run_id": "run-20261113T231732884979Z",
+          "run_id": "run-20261113T232247797978Z",
           "page_id": "doc_0001_page_0001",
           "page_number": 1,
           "source_sha256": "b6f60e4092685ffd893a508ab3704696bc506e06c79c4d28fb679bf692a306c9",
@@ -116,7 +116,7 @@
           "attempt_id": "local_ocr-0001:doc_0001_page_0001",
           "stage": "local_ocr",
           "run_path": "attempts/local_ocr-0001",
-          "run_id": "run-20261113T231732902435Z",
+          "run_id": "run-20261113T232247816384Z",
           "page_id": "doc_0001_page_0001",
           "page_number": 1,
           "source_sha256": "b6f60e4092685ffd893a508ab3704696bc506e06c79c4d28fb679bf692a306c9",
@@ -235,6 +235,6 @@
   },
   "transcript": {
     "path": "transcript.md",
-    "sha256": "93f4590ff56fcac24453354d3b099c9384f6657d8c53a01d1a6163b1a753b636"
+    "sha256": "45e71634082828d28eb5255ee37887a116b57770420079dfb6cc97464fdd8335"
   }
 }

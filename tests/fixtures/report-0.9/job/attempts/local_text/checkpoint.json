@@ -1,7 +1,7 @@
 {
   "payload": {
     "config_sha256": "0a4aea46f02fcdfd066849e6f52d3b40e9c89c7b0e286a3da1d180525f6fe16b",
-    "config_source_path": "/private/var/folders/3y/gvdgv5z14v38t7g0l6jg19qh0000gn/T/pytest-of-peterbusscher/pytest-2004/test_text_job0/jobs/book/.job/local_text.yml",
+    "config_source_path": "/private/var/folders/3y/gvdgv5z14v38t7g0l6jg19qh0000gn/T/pytest-of-peterbusscher/pytest-2022/test_text_job0/jobs/book/.job/local_text.yml",
     "documents": [
       {
         "page_count": 3,
@@ -34,7 +34,7 @@
             "type": "prose"
           }
         ],
-        "source": "/private/var/folders/3y/gvdgv5z14v38t7g0l6jg19qh0000gn/T/pytest-of-peterbusscher/pytest-2004/test_text_job0/book.txt",
+        "source": "/private/var/folders/3y/gvdgv5z14v38t7g0l6jg19qh0000gn/T/pytest-of-peterbusscher/pytest-2022/test_text_job0/book.txt",
         "source_sha256": "008f52e0d55142a405da902ec254abb7be8de5e9f62d8fb8e0343918e121f5cc"
       }
     ],
@@ -54,7 +54,7 @@
         ]
       },
       "name": "text",
-      "package_sha256": "235473586e49999f356d3f08b1733c932414df29f4f0c53c497545a5f82c5cee",
+      "package_sha256": "cf5e11a30441f68aaca3a7c556a3437941e7255d8dc20235b2a026cbf1ec114e",
       "profile": {
         "adapter": {
           "code_sha256": "87bd910c3912441ae221729c64d598cba2ce1932fb5626dec3a0d82ae2634fb4",
@@ -64,10 +64,10 @@
         },
         "materials": [],
         "pageledger": {
-          "code_sha256": "235473586e49999f356d3f08b1733c932414df29f4f0c53c497545a5f82c5cee",
+          "code_sha256": "cf5e11a30441f68aaca3a7c556a3437941e7255d8dc20235b2a026cbf1ec114e",
           "version": "0.9.0"
         },
-        "profile_sha256": "528b26b404c487ad4fded803f0ccff29d2f552857faa328a2a7f206f32c5cf8c",
+        "profile_sha256": "4539ab585afb3af1240e579fe3ce591d6591b2ac60e6d6ea8dad35b8ab9923ba",
         "profile_version": "0.1",
         "runtime": {
           "filesystem_encoding": "utf-8",
@@ -86,17 +86,17 @@
       {
         "page_count": 3,
         "pages": "1,2,3",
-        "path": "/private/var/folders/3y/gvdgv5z14v38t7g0l6jg19qh0000gn/T/pytest-of-peterbusscher/pytest-2004/test_text_job0/book.txt",
+        "path": "/private/var/folders/3y/gvdgv5z14v38t7g0l6jg19qh0000gn/T/pytest-of-peterbusscher/pytest-2022/test_text_job0/book.txt",
         "sha256": "008f52e0d55142a405da902ec254abb7be8de5e9f62d8fb8e0343918e121f5cc"
       }
     ],
     "log_level": "INFO",
-    "root": "/private/var/folders/3y/gvdgv5z14v38t7g0l6jg19qh0000gn/T/pytest-of-peterbusscher/pytest-2004/test_text_job0/jobs/book/attempts/local_text",
+    "root": "/private/var/folders/3y/gvdgv5z14v38t7g0l6jg19qh0000gn/T/pytest-of-peterbusscher/pytest-2022/test_text_job0/jobs/book/attempts/local_text",
     "route_warnings": [],
     "routing": null,
-    "run_id": "run-20261113T231733212867Z",
-    "started_at": "2026-11-13T23:17:33Z"
+    "run_id": "run-20261113T232248111081Z",
+    "started_at": "2026-11-13T23:22:48Z"
   },
   "schema_version": "0.1",
-  "sha256": "707f5494febe1fa9816d1e09bcc6d7e216df63e1a9d7c86f0b08cbb21fe00b93"
+  "sha256": "7ec2a9d9c9cd3de6815153fc75787ec537e1654f6aad4791768907cb33da72cb"
 }
