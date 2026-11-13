@@ -225,7 +225,7 @@ def test_a_deposited_copy_is_reviewed_without_its_source(setup, tmp_path, capsys
     # Other bytes at the recorded path are another document, and are refused.
     source.write_text("another document")
     with pytest.raises(ValueError, match="Document job source changed or is missing"):
-        _accept_first_page(copy, tmp_path)
+        _accept_first_page(copy, tmp_path / "again")
 
 
 def test_a_deposited_copy_is_adjudicated_without_its_source(setup, monkeypatch, tmp_path, capsys):  # noqa: F811
