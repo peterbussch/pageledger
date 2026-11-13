@@ -365,6 +365,10 @@ def test_init_writes_to_a_file(tmp_path: Path, capsys: pytest.CaptureFixture[str
     code, out, err = _cli(capsys, "init", "--out", str(path))
     assert code == 0 and out == "" and err == f"Wrote {path}\n"
     assert path.read_text(encoding="utf-8").startswith("# A PageLedger document job")
+    path.write_text("# edited by hand\n", encoding="utf-8")
+    code, out, err = _cli(capsys, "init", "--out", str(path))
+    assert code == 1 and "already exists" in err
+    assert path.read_text(encoding="utf-8") == "# edited by hand\n"
 
 
 # -- help --------------------------------------------------------------------

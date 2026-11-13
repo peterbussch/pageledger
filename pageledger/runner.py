@@ -270,6 +270,9 @@ def _extract_adapter_page(
     return result, extraction_seconds, extraction_started_at, attempt, None
 
 
+_PAGE_ID = re.compile(r"doc_\d{4,}_page_\d{4,}")
+
+
 def run(
     *,
     inputs: list[Path],
@@ -573,6 +576,7 @@ def _run_pages(
     consecutive_failures = 0
 
     prompt = config.default_prompt
+    parent_routes: dict[str, dict[str, Any]] = {}
     imported_by_source = {
         Path(document["source"]): document
         for document in (imported_routes or {}).get("documents", [])
@@ -614,6 +618,9 @@ def _run_pages(
                     declared_page_count if declared_page_count is not None else count_pages(source)
                 )
                 planned = [(item["page_id"], int(item["page_number"])) for item in selected]
+                parent_routes.update(
+                    (item["page_id"], item["route"]) for item in selected if item.get("route")
+                )
                 if any(page_number > page_count for _, page_number in planned):
                     raise ValueError(
                         f"Rerun selection exceeds the recorded source page count for {source}"
@@ -621,6 +628,10 @@ def _run_pages(
             if imported_routes is None:
                 routed_pages = []
                 for page_id, page_number in planned:
+                    parent_route = parent_routes.get(page_id)
+                    if parent_route is not None and not dry_run:
+                        routed_pages.append(_rerun_route(config, parent_route))
+                        continue
                     action = "review" if dry_run else config.default_action
                     reason = _route_reason(action=action, dry_run=dry_run)
                     page = {
@@ -700,6 +711,13 @@ def _run_pages(
                 adapter is None or not adapter.supports(page["action"])
             ):
                 raise ValueError("Recovery adapter does not support a saved planned action")
+    if parent_routes and not dry_run:
+        for action in sorted({page["action"] for _, page in planned_pages}):
+            if _requires_adapter(action) and (adapter is None or not adapter.supports(action)):
+                raise ValueError(
+                    f"The parent run routed pages to '{action}', which the rerun's adapter "
+                    f"'{getattr(adapter, 'name', None)}' does not support"
+                )
     preflight_error = _preflight_budget_error(config=config, pages_total=pages_total)
     if preflight_error is not None:
         raise BudgetExceededError(preflight_error)
@@ -1387,6 +1405,26 @@ def rerun(
 
     parent_route_path = parent / parent_manifest["artifacts"]["route_map"]
     parent_route = yaml.safe_load(parent_route_path.read_text(encoding="utf-8"))
+    # Page ids name output files, so each must be one the parent routed, in PageLedger's
+    # own form; the rerun keeps that routing (type, action, prompt, review hold).
+    parent_pages = {
+        page["page_id"]: page
+        for document in parent_route.get("documents", [])
+        for page in document.get("pages", [])
+        if isinstance(page, dict)
+    }
+    routed_items = []
+    for item in items:
+        page_id = item.get("page_id") if isinstance(item, dict) else None
+        if (
+            not isinstance(page_id, str)
+            or not _PAGE_ID.fullmatch(page_id)
+            or page_id not in parent_pages
+            or parent_pages[page_id].get("page_number") != item.get("page_number")
+        ):
+            raise ValueError(f"Rerun manifest names a page the parent run did not route: {item}")
+        routed_items.append({**item, "route": parent_pages[page_id]})
+    items = routed_items
     parent_inputs = parent_manifest.get("inputs", [])
     recorded_inputs: dict[str, dict[str, Any]] = {}
     for index, document in enumerate(parent_route.get("documents", [])):
@@ -1496,6 +1534,42 @@ def _group_selection(page_selection: list[dict[str, Any]]) -> dict[Path, list[di
     if not grouped:
         raise ValueError("Page selection is empty")
     return grouped
+
+
+def _rerun_route(config: Any, parent: dict[str, Any]) -> dict[str, Any]:
+    """A rerun page keeps the parent's routing; a page the parent never typed (a dry run's
+    review) takes the supplied config's default, as a fresh run would."""
+    if parent.get("reason") == "no_classifier_available":
+        action = config.default_action
+        page = {
+            "page_id": parent["page_id"],
+            "page_number": parent["page_number"],
+            "type": config.default_review_type,
+            "confidence": None,
+            "action": action,
+            "reason": _route_reason(action=action, dry_run=False),
+        }
+        if config.default_prompt is not None:
+            page["prompt"] = config.default_prompt
+    else:
+        page = {
+            key: parent[key]
+            for key in (
+                "page_id",
+                "page_number",
+                "type",
+                "confidence",
+                "action",
+                "reason",
+                "prompt",
+            )
+            if key in parent
+        }
+    if _requires_adapter(page["action"]) and (
+        parent.get("review") is True or config.review_after_extraction(page["type"])
+    ):
+        page["review"] = True
+    return page
 
 
 def _route_reason(*, action: str, dry_run: bool) -> str:

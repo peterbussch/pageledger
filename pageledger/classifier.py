@@ -287,6 +287,15 @@ def classify(
         raise ValueError("classify requires input paths or --from-run")
     if from_run is not None and probe_adapter is not None:
         raise ValueError("--adapter cannot be combined with --from-run")
+    out = out_path.expanduser()
+    if out.is_dir():
+        raise ValueError(f"Classification output is a directory: {out_path}")
+    if not out.parent.exists():
+        raise ValueError(f"Classification output directory does not exist: {out.parent}")
+    # A route map is often edited by hand before a run; never replace one.
+    for existing in (out, out.with_name(f"{out.stem}.evidence.jsonl")):
+        if existing.exists() or existing.is_symlink():
+            raise ValueError(f"{existing} already exists; choose another --out or move it away")
     _apply_adapter_path(adapter_path)
     config = (
         load_config(config_path, validate_adapter=False)
@@ -341,10 +350,6 @@ def classify(
         classifier=classifier_identity,
     )
     out = out_path.expanduser()
-    if out.exists() and out.is_dir():
-        raise ValueError(f"Classification output is a directory: {out_path}")
-    if not out.parent.exists():
-        raise ValueError(f"Classification output directory does not exist: {out.parent}")
     evidence_path = out.with_name(f"{out.stem}.evidence.jsonl")
     write_yaml(out, route_map)
     write_jsonl(evidence_path, evidence)

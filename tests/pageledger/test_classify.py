@@ -589,3 +589,15 @@ def test_review_flag_must_be_boolean(tmp_path: Path) -> None:
     )
     with pytest.raises(ValueError, match=r"taxonomy.page_types.prose.review"):
         load_config(config)
+
+
+@pytest.mark.parametrize("existing", ["routes.yml", "routes.evidence.jsonl"])
+def test_classify_never_replaces_an_existing_route_map(tmp_path: Path, existing: str) -> None:
+    source = tmp_path / "doc.txt"
+    source.write_text("a page of ordinary prose text for the classifier\n", encoding="utf-8")
+    (tmp_path / existing).write_text("# reviewed by hand\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="already exists"):
+        classify(
+            inputs=[source], config_path=_write_config(tmp_path), out_path=tmp_path / "routes.yml"
+        )
+    assert (tmp_path / existing).read_text(encoding="utf-8") == "# reviewed by hand\n"

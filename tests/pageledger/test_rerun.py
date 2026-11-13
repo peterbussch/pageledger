@@ -505,3 +505,82 @@ def test_rerun_cli_roundtrip(tmp_path):
     assert exit_code == 0
     manifest = json.loads((rerun_out / "manifest.json").read_text(encoding="utf-8"))
     assert manifest["parent_run_id"] is not None
+
+
+def test_rerun_refuses_a_page_id_that_would_leave_the_output_folder(tmp_path):
+    import pytest
+
+    from pageledger.verify import verify_run
+
+    source = tmp_path / "one.txt"
+    source.write_text("one page only\n", encoding="utf-8")
+    parent = _run([source], MINIMAL, tmp_path, dry_run=True)
+    for name in ("route-map.yml", "audit.json", "audit.md", "rerun-manifest.yml"):
+        path = parent / name
+        text = path.read_text(encoding="utf-8").replace("doc_0001_page_0001", "../../escaped")
+        path.write_text(text, encoding="utf-8")
+    assert verify_run(parent)["status"] == "pass"
+    with pytest.raises(ValueError, match="did not route"):
+        _do_rerun(parent, tmp_path)
+    assert not (tmp_path / "escaped.txt").exists()
+    assert not (tmp_path / "rerun-out").exists()
+
+
+ROUTED = """\
+schema_version: "0.1"
+taxonomy:
+  page_types:
+    prose:
+      default_action: transcribe_text
+      prompt: "prose prompt"
+    sparse:
+      default_action: transcribe_text
+      prompt: "sparse prompt"
+      review: true
+    blank:
+      default_action: skip
+    table_likely:
+      default_action: transcribe_text
+      review: true
+    unknown:
+      default_action: review
+run:
+  adapter: text
+"""
+
+
+def test_rerun_keeps_each_page_routed_type_prompt_and_hold(tmp_path):
+    from pageledger.classifier import classify
+    from pageledger.runner import run
+
+    source = tmp_path / "five.txt"
+    source.write_text(
+        "alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu xi omicron "
+        "pi rho sigma tau upsilon phi chi psi omega one two\fpage two text here with words "
+        "enough to be prose: lorem ipsum dolor sit amet consectetur adipiscing elit sed do "
+        "eiusmod tempor incididunt ut labore et dolore\fpage three\fpage four\fpage five\n",
+        encoding="utf-8",
+    )
+    config = tmp_path / "routed.yml"
+    config.write_text(ROUTED, encoding="utf-8")
+    routes = tmp_path / "routes.yml"
+    classify(inputs=[source], config_path=config, out_path=routes)
+    parent = tmp_path / "parent"
+    run(inputs=[source], config_path=config, out_dir=parent, dry_run=False, routes_path=routes)
+    parent_route = yaml.safe_load((parent / "route-map.yml").read_text(encoding="utf-8"))
+    sparse = {
+        page["page_id"]: page
+        for page in parent_route["documents"][0]["pages"]
+        if page["type"] == "sparse"
+    }
+    assert sparse
+    result, child = _do_rerun(parent, tmp_path, config_text=ROUTED)
+    child_route = yaml.safe_load((child / "route-map.yml").read_text(encoding="utf-8"))
+    for page in child_route["documents"][0]["pages"]:
+        if page["page_id"] in sparse:
+            assert page["type"] == "sparse"
+            assert page["prompt"] == "sparse prompt"
+            assert page["review"] is True
+    audit = json.loads((child / "audit.json").read_text(encoding="utf-8"))
+    held = {item["page_id"] for item in audit["review_queue"]}
+    assert set(sparse) <= held
