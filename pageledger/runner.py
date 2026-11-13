@@ -344,7 +344,7 @@ def resume(run_dir: Path, *, adapter_path: Path | None = None) -> dict[str, Any]
             verification = verify_run(root)
             if verification["status"] != "pass":
                 raise ValueError("Finalized run verification failed; refusing resume")
-            manifest = json.loads((root / "manifest.json").read_text())
+            manifest = json.loads((root / "manifest.json").read_text(encoding="utf-8"))
             if (
                 manifest["run_id"] != job.get("run_id")
                 or job.get("root") != str(root)
@@ -1538,9 +1538,15 @@ def _adapter_names_match(recorded: Any, configured: str | None) -> bool:
     return aliases.get(recorded, recorded) == aliases.get(configured, configured)
 
 
-def _parse_pages_expression(expression: str) -> list[int]:
-    """Parse a page selection like ``1-8,81,100-110`` into sorted numbers."""
-    numbers: set[int] = set()
+# No source PageLedger reads has this many pages; a larger --pages number is a typo,
+# refused before a range of that size is built.
+MAX_PAGE_NUMBER = 1_000_000
+
+
+def _parse_pages_expression(expression: str, page_count: int | None = None) -> list[int]:
+    """Parse a page selection like ``1-8,81,100-110`` into sorted numbers, refusing a
+    page past ``page_count`` (when known) before any range is expanded."""
+    ranges: list[tuple[int, int]] = []
     for part in expression.split(","):
         part = part.strip()
         match = re.fullmatch(r"(\d+)(?:-(\d+))?", part)
@@ -1550,6 +1556,14 @@ def _parse_pages_expression(expression: str) -> list[int]:
         end = int(match.group(2)) if match.group(2) else start
         if start < 1 or end < start:
             raise ValueError(f"--pages: invalid range '{part}'")
+        ranges.append((start, end))
+    highest = max(end for _, end in ranges)
+    if page_count is not None and highest > page_count:
+        raise ValueError(f"--pages selects page {highest} but the source has {page_count} pages")
+    if highest > MAX_PAGE_NUMBER:
+        raise ValueError(f"--pages: page {highest} is past the end of any source")
+    numbers: set[int] = set()
+    for start, end in ranges:
         numbers.update(range(start, end + 1))
     return sorted(numbers)
 
@@ -1785,6 +1799,10 @@ def _validate_extraction_result(adapter_name: str, result: Any) -> None:
         raise ValueError(f"Adapter '{adapter_name}' warnings must be a list")
     if not all(isinstance(warning, str) for warning in result.warnings):
         raise ValueError(f"Adapter '{adapter_name}' warnings must contain only strings")
+    _require_json_serializable(
+        f"Adapter '{adapter_name}' model and warnings must be valid Unicode text",
+        [result.model, result.warnings],
+    )
     confidence_detail = getattr(result, "confidence_detail", None)
     if confidence_detail is not None and not isinstance(confidence_detail, dict):
         raise ValueError(f"Adapter '{adapter_name}' confidence_detail must be a mapping or null")
@@ -1840,7 +1858,8 @@ def _canonical_usage(usage: dict[str, Any]) -> dict[str, Any]:
 
 def _require_json_serializable(message: str, value: Any) -> None:
     try:
-        json.dumps(value, allow_nan=False)
+        # Records are written as UTF-8, so a lone surrogate must fail here, not at save.
+        json.dumps(value, allow_nan=False, ensure_ascii=False).encode("utf-8")
     except (TypeError, ValueError) as exc:
         raise ValueError(message) from exc
 

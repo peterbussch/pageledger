@@ -604,3 +604,55 @@ def test_saved_page_at_exact_budget_cap_replays_without_next_request(job, monkey
         runner.resume(out)
     assert adapter.calls == [1]
     assert verify_run(out)["status"] == "pass"
+
+
+def _interrupted(job):
+    def interrupt(completed_phase, _duration):
+        if completed_phase == "page_log_control":
+            raise KeyboardInterrupt
+
+    with pytest.raises(KeyboardInterrupt):
+        launch(job, _phase_observer=interrupt)
+
+
+def test_a_cut_short_temporary_is_cleared_on_resume(job):
+    _interrupted(job)
+    leftover = job[2] / "raw" / ".pending-x1y2z3"
+    leftover.write_text("partial", encoding="utf-8")
+    assert runner.resume(job[2])["status"] == "completed"
+    assert not leftover.exists()
+    assert verify_run(job[2])["status"] == "pass"
+
+
+def test_a_checkpoint_its_schema_rejects_is_refused(job):
+    from pageledger.checkpoint import digest
+
+    _interrupted(job)
+    path = job[2] / "checkpoint.json"
+    envelope = json.loads(path.read_text(encoding="utf-8"))
+    envelope["payload"]["log_level"] = "LOUD"
+    envelope["sha256"] = digest(envelope["payload"])
+    path.write_text(json.dumps(envelope), encoding="utf-8")
+    with pytest.raises(ValueError, match="Invalid recovery job identity"):
+        runner.resume(job[2])
+
+
+def test_a_lone_surrogate_is_a_failed_reading_not_a_stranded_request(job):
+    original = CountingAdapter.extract
+
+    def surrogate(self, source, **kwargs):
+        result = original(self, source, **kwargs)
+        return ExtractionResult(
+            content="caf\udce9",
+            format="text",
+            confidence=None,
+            model=None,
+            warnings=[],
+            usage=result.usage,
+        )
+
+    job[3].extract = surrogate.__get__(job[3])
+    with pytest.raises(RuntimeError):
+        launch(job)
+    record = json.loads((job[2] / ".checkpoint/pages/doc_0001_page_0001.json").read_text())
+    assert record["payload"]["state"] == "failed"

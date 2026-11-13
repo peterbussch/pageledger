@@ -988,7 +988,9 @@ def test_a_tampered_copy_of_an_old_job_fails(
 ) -> None:
     job = _copy_release(version, "job", tmp_path)
     tamper(job)
-    assert verify_job(job) == {"status": "fail", "out_dir": str(job), "error": error}
+    result = verify_job(job)
+    assert result == {"status": "fail", "out_dir": str(job), "error": result["error"]}
+    assert result["error"].startswith(error)
 
 
 @pytest.mark.parametrize("version", RELEASE_VERSIONS)

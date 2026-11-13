@@ -2111,3 +2111,18 @@ def test_doctor_ocr_languages_unavailable_without_tesseract(monkeypatch):
 
     assert report["ocr_languages"]["available"] is False
     assert report["ocr_languages"]["languages"] == []
+
+
+def test_a_huge_pages_range_is_refused_before_it_is_built(tmp_path):
+    source, config, out_dir = _budget_run(tmp_path, "    max_pages: 10")
+    with pytest.raises(ValueError, match="past the end"):
+        run(
+            inputs=[source],
+            config_path=config,
+            out_dir=out_dir,
+            dry_run=True,
+            pages="1-10000000000",
+        )
+    assert runner_module._parse_pages_expression("2-3,1", 5) == [1, 2, 3]
+    with pytest.raises(ValueError, match="selects page 9 but the source has 5 pages"):
+        runner_module._parse_pages_expression("1-9", 5)

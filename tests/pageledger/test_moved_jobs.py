@@ -106,7 +106,8 @@ def test_tampering_with_a_moved_job_still_fails(setup, tmp_path):  # noqa: F811
     for change, error in (
         (
             lambda copy: (copy / raw).write_text("changed"),
-            "Recovery output changed or completed output is missing",
+            "Recovery output changed or completed output is missing: "
+            f"{raw.split('/', 1)[1]} does not match its recorded SHA-256, or is gone",
         ),
         (
             lambda copy: (copy / "report.md").write_text("changed"),

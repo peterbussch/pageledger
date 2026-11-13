@@ -60,6 +60,13 @@ def file_digest(path: Path) -> str:
     return hasher.hexdigest()
 
 
+def _confidence(value: Any) -> bool:
+    """A routed page's confidence: null, or a finite number from 0 to 1."""
+    return value is None or (
+        type(value) in {int, float} and math.isfinite(value) and 0 <= value <= 1
+    )
+
+
 def _valid_images(source: dict[str, Any]) -> bool:
     """A page-image input lists one image per page whose manifest hash is its identity."""
     images, carrier = source.get("images"), source.get("carrier")
@@ -252,6 +259,8 @@ class Checkpoint:
 
     def validate(self, *, sources: bool = True) -> None:
         """Validate all pages before any adapter request or artifact reconstruction."""
+        from .runner import _artifact_extension
+
         job = self.job
         required = {
             "run_id",
@@ -283,6 +292,8 @@ class Checkpoint:
                 )
             )
             or job["root"] != str(self.recorded_root)
+            or job["log_level"] not in {"DEBUG", "INFO", "WARNING", "ERROR"}
+            or not re.fullmatch(r"[0-9a-f]{64}", job["config_sha256"])
             or not isinstance(job["identity"], dict)
             or set(job["identity"])
             != {"name", "version", "code_sha256", "package_sha256", "profile", "metadata"}
@@ -339,6 +350,9 @@ class Checkpoint:
                     or page["page_number"] in numbers
                     or page["page_id"] in expected
                     or not isinstance(page.get("action"), str)
+                    or not isinstance(page.get("type"), str)
+                    or not isinstance(page.get("reason"), str)
+                    or not _confidence(page.get("confidence"))
                 ):
                     raise ValueError("Invalid recovery page inventory")
                 self.page_path(page["page_id"])
@@ -348,7 +362,7 @@ class Checkpoint:
             from .runner import _parse_pages_expression
 
             planned_numbers = (
-                set(_parse_pages_expression(source["pages"]))
+                set(_parse_pages_expression(source["pages"], source["page_count"]))
                 if "pages" in source
                 else set(range(1, source["page_count"] + 1))
             )
@@ -436,8 +450,7 @@ class Checkpoint:
                 seconds = record["extraction_seconds"]
                 if type(seconds) not in {int, float} or seconds < 0:
                     raise ValueError("Invalid saved extraction duration")
-                extension = "txt" if result.format == "text" else result.format
-                relative = f"raw/{page_id}.{extension}"
+                relative = f"raw/{page_id}.{_artifact_extension(result.format)}"
                 raw = self.root / relative
                 raw_expected.add(raw.name)
                 text = (
@@ -470,7 +483,7 @@ class Checkpoint:
                             normalized.is_symlink()
                             or not normalized.is_file()
                             or alignment is None
-                            or json.loads(normalized.read_text()) != alignment
+                            or json.loads(normalized.read_text(encoding="utf-8")) != alignment
                         ):
                             raise ValueError("Normalized response evidence changed")
                         normalized_expected.add(normalized.name)
@@ -502,7 +515,7 @@ class Checkpoint:
                         normalized = self.root / "normalized" / f"{page_id}.json"
                         if normalized.is_symlink() or not normalized.is_file():
                             raise ValueError("Missing or unsafe normalized completion")
-                        if json.loads(normalized.read_text()) != alignment:
+                        if json.loads(normalized.read_text(encoding="utf-8")) != alignment:
                             raise ValueError("Normalized completion changed")
                         normalized_expected.add(normalized.name)
             self.records[page_id] = record
@@ -552,15 +565,26 @@ class Checkpoint:
             )
         return result
 
-    @staticmethod
-    def _check_file(path: Path, expected: str) -> None:
+    def _check_file(self, path: Path, expected: str) -> None:
         try:
             if path.is_symlink() or file_digest(path) != expected:
                 raise ValueError("output changed")
         except (OSError, ValueError) as exc:
-            raise ValueError("Recovery output changed or completed output is missing") from exc
+            where = f"{self.root.name}/{path.relative_to(self.root)}"
+            raise ValueError(
+                "Recovery output changed or completed output is missing: "
+                f"{where} does not match its recorded SHA-256, or is gone"
+            ) from exc
 
     def require_resumable(self) -> None:
+        # A write cut short leaves its own .pending- temporary, never referenced by any
+        # record; recovery ignores it but verify would not, so it goes before work resumes.
+        pages = self.root / ".checkpoint" / "pages"
+        for directory in (self.root, self.root / "raw", self.root / "normalized", pages):
+            if directory.is_dir() and not directory.is_symlink():
+                for leftover in directory.glob(".pending-*"):
+                    if leftover.is_file() and not leftover.is_symlink():
+                        leftover.unlink()
         for page_id, record in self.records.items():
             if record["state"] == "started":
                 self.save(page_id, {**record, "state": "outcome_unknown"})
@@ -654,8 +678,11 @@ class Checkpoint:
                     cost = partial["usage"].get("cost_usd")
                     if cost is not None and cost < 0:
                         raise ValueError("Negative partial cost")
-                except (OSError, ValueError, TypeError, AttributeError):
-                    error["code"] = "IMAGE_EVIDENCE_INVALID"
+                except (OSError, ValueError, TypeError, AttributeError) as invalid:
+                    # The partial is dropped either way; only bad image evidence renames the
+                    # failure, so another invalid partial keeps the adapter's own diagnosis.
+                    if str(invalid).startswith("Image evidence invalid"):
+                        error["code"] = "IMAGE_EVIDENCE_INVALID"
                 else:
                     failed["partial_result"] = partial
                     failed["extraction_seconds"] = round(time.perf_counter() - started, 3)
