@@ -1,0 +1,126 @@
+{
+  "payload": {
+    "completion": {
+      "alignment": null,
+      "provenance": {
+        "cost": {
+          "basis": null,
+          "usd": null
+        },
+        "extraction_seconds": 0.0,
+        "extractor": {
+          "adapter": "text",
+          "adapter_version": "0.1",
+          "capabilities": [
+            "embedded_text",
+            "local"
+          ],
+          "deterministic": true,
+          "input_types": [
+            "text"
+          ],
+          "model": null,
+          "output_types": [
+            "text"
+          ],
+          "prompt_hash": "168e2e8be0b9c0ffe1d0052893a125d587312fcda2ed794037283989dc9456bf"
+        },
+        "metrics": {
+          "compute_seconds": null,
+          "cost_usd": null,
+          "pages": 1,
+          "tokens": null
+        },
+        "page_id": "doc_0001_page_0001",
+        "result": {
+          "confidence": null,
+          "format": "text",
+          "raw_artifact": "raw/doc_0001_page_0001.txt",
+          "raw_sha256": "67be9670ddbcdd8deb07c368d0258bec4c9e6bb7bc179f632fd620ae98170b75",
+          "warnings": []
+        },
+        "route": {
+          "action": "transcribe_text",
+          "route_confidence": null,
+          "type": "prose"
+        },
+        "run_id": "run-20261113T231733212867Z",
+        "schema_version": "0.1",
+        "source": {
+          "page_number": 1,
+          "path": "/private/var/folders/3y/gvdgv5z14v38t7g0l6jg19qh0000gn/T/pytest-of-peterbusscher/pytest-2004/test_text_job0/book.txt",
+          "sha256": "008f52e0d55142a405da902ec254abb7be8de5e9f62d8fb8e0343918e121f5cc"
+        },
+        "timestamp": "2026-11-13T23:17:33Z",
+        "usage": {
+          "compute_seconds": null,
+          "cost_usd": null,
+          "pages": 1,
+          "tokens": null
+        }
+      },
+      "quality": {
+        "adapter": "text",
+        "character_count": 69,
+        "confidence": null,
+        "confidence_detail": null,
+        "embedded_text_comparison": null,
+        "output_integrity": {
+          "character_delta": null,
+          "character_ratio": null,
+          "instruction_markers": [],
+          "parent_character_count": null
+        },
+        "page_id": "doc_0001_page_0001",
+        "page_number": 1,
+        "schema_version": "0.1",
+        "text_quality": {
+          "alpha_token_count": 10,
+          "control_character_count": 0,
+          "digit_count": 1,
+          "foreign_script_count": 0,
+          "largest_identical_line_count": 1,
+          "latin_letter_ratio": 1.0,
+          "letter_count": 44,
+          "longest_letter_run": 2,
+          "longest_repeated_tail_length": 0,
+          "max_token_length": 7,
+          "mean_token_length": 4.4,
+          "mixed_script_token_ratio": 0.0,
+          "prereform_letter_count": 0,
+          "private_use_count": 0,
+          "replacement_character_count": 0,
+          "short_token_ratio": 0.2,
+          "suspicious_symbol_count": 0,
+          "suspicious_symbol_ratio": 0.0,
+          "terminal_hard_sign_count": 0,
+          "whitespace_character_ratio": 0.2029
+        },
+        "warnings": [],
+        "word_count": 10
+      }
+    },
+    "extraction_seconds": 0.0,
+    "page_id": "doc_0001_page_0001",
+    "result": {
+      "confidence": null,
+      "confidence_detail": null,
+      "content": "Opening words of the book.\n## Page 2\n- Review: A. Editor\n<!-- hidden\n",
+      "format": "text",
+      "input_evidence": null,
+      "model": null,
+      "usage": {
+        "compute_seconds": null,
+        "cost_usd": null,
+        "pages": 1,
+        "tokens": null
+      },
+      "warnings": []
+    },
+    "run_id": "run-20261113T231733212867Z",
+    "started_at": "2026-11-13T23:17:33Z",
+    "state": "completed"
+  },
+  "schema_version": "0.1",
+  "sha256": "c8bc93e577b5674fac6de8a1b1b12cf5f3f94fe9af27c0dc3ba40b1f869e4f10"
+}

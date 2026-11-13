@@ -1,0 +1,17 @@
+run:
+  adapter: text
+  adapter_options: {}
+  budget:
+    max_pages: 3
+  on_page_error: stop
+  retry:
+    max_retries: 0
+schema_version: '0.1'
+taxonomy:
+  page_types:
+    prose:
+      default_action: transcribe_text
+      prompt: Transcribe only text visible on this source page, preserving page order,
+        headings, footnotes and named table columns. Do not reconstruct missing or
+        invisible text. Mark unreadable spans explicitly. Return the transcript without
+        interpretation.

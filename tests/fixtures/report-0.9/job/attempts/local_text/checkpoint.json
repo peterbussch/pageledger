@@ -1,0 +1,102 @@
+{
+  "payload": {
+    "config_sha256": "0a4aea46f02fcdfd066849e6f52d3b40e9c89c7b0e286a3da1d180525f6fe16b",
+    "config_source_path": "/private/var/folders/3y/gvdgv5z14v38t7g0l6jg19qh0000gn/T/pytest-of-peterbusscher/pytest-2004/test_text_job0/jobs/book/.job/local_text.yml",
+    "documents": [
+      {
+        "page_count": 3,
+        "pages": [
+          {
+            "action": "transcribe_text",
+            "confidence": null,
+            "page_id": "doc_0001_page_0001",
+            "page_number": 1,
+            "prompt": "Transcribe only text visible on this source page, preserving page order, headings, footnotes and named table columns. Do not reconstruct missing or invisible text. Mark unreadable spans explicitly. Return the transcript without interpretation.",
+            "reason": "configured_adapter",
+            "type": "prose"
+          },
+          {
+            "action": "transcribe_text",
+            "confidence": null,
+            "page_id": "doc_0001_page_0002",
+            "page_number": 2,
+            "prompt": "Transcribe only text visible on this source page, preserving page order, headings, footnotes and named table columns. Do not reconstruct missing or invisible text. Mark unreadable spans explicitly. Return the transcript without interpretation.",
+            "reason": "configured_adapter",
+            "type": "prose"
+          },
+          {
+            "action": "transcribe_text",
+            "confidence": null,
+            "page_id": "doc_0001_page_0003",
+            "page_number": 3,
+            "prompt": "Transcribe only text visible on this source page, preserving page order, headings, footnotes and named table columns. Do not reconstruct missing or invisible text. Mark unreadable spans explicitly. Return the transcript without interpretation.",
+            "reason": "configured_adapter",
+            "type": "prose"
+          }
+        ],
+        "source": "/private/var/folders/3y/gvdgv5z14v38t7g0l6jg19qh0000gn/T/pytest-of-peterbusscher/pytest-2004/test_text_job0/book.txt",
+        "source_sha256": "008f52e0d55142a405da902ec254abb7be8de5e9f62d8fb8e0343918e121f5cc"
+      }
+    ],
+    "identity": {
+      "code_sha256": "87bd910c3912441ae221729c64d598cba2ce1932fb5626dec3a0d82ae2634fb4",
+      "metadata": {
+        "capabilities": [
+          "embedded_text",
+          "local"
+        ],
+        "deterministic": true,
+        "input_types": [
+          "text"
+        ],
+        "output_types": [
+          "text"
+        ]
+      },
+      "name": "text",
+      "package_sha256": "235473586e49999f356d3f08b1733c932414df29f4f0c53c497545a5f82c5cee",
+      "profile": {
+        "adapter": {
+          "code_sha256": "87bd910c3912441ae221729c64d598cba2ce1932fb5626dec3a0d82ae2634fb4",
+          "module": "pageledger.adapters",
+          "name": "text",
+          "version": "0.1"
+        },
+        "materials": [],
+        "pageledger": {
+          "code_sha256": "235473586e49999f356d3f08b1733c932414df29f4f0c53c497545a5f82c5cee",
+          "version": "0.9.0"
+        },
+        "profile_sha256": "528b26b404c487ad4fded803f0ccff29d2f552857faa328a2a7f206f32c5cf8c",
+        "profile_version": "0.1",
+        "runtime": {
+          "filesystem_encoding": "utf-8",
+          "machine": "arm64",
+          "preferred_encoding": "utf-8",
+          "python_implementation": "CPython",
+          "python_version": "3.13.13",
+          "release": "27.0.0",
+          "system": "Darwin"
+        }
+      },
+      "version": "0.1"
+    },
+    "imported_routes": null,
+    "inputs": [
+      {
+        "page_count": 3,
+        "pages": "1,2,3",
+        "path": "/private/var/folders/3y/gvdgv5z14v38t7g0l6jg19qh0000gn/T/pytest-of-peterbusscher/pytest-2004/test_text_job0/book.txt",
+        "sha256": "008f52e0d55142a405da902ec254abb7be8de5e9f62d8fb8e0343918e121f5cc"
+      }
+    ],
+    "log_level": "INFO",
+    "root": "/private/var/folders/3y/gvdgv5z14v38t7g0l6jg19qh0000gn/T/pytest-of-peterbusscher/pytest-2004/test_text_job0/jobs/book/attempts/local_text",
+    "route_warnings": [],
+    "routing": null,
+    "run_id": "run-20261113T231733212867Z",
+    "started_at": "2026-11-13T23:17:33Z"
+  },
+  "schema_version": "0.1",
+  "sha256": "707f5494febe1fa9816d1e09bcc6d7e216df63e1a9d7c86f0b08cbb21fe00b93"
+}

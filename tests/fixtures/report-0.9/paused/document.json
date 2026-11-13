@@ -1,0 +1,443 @@
+{
+  "schema_version": "0.1",
+  "job_id": "job_cd39b54c65974630aec8fc127565b389",
+  "created_at": "2026-11-13T23:17:33Z",
+  "source": {
+    "path": "../source.txt",
+    "sha256": "b6f60e4092685ffd893a508ab3704696bc506e06c79c4d28fb679bf692a306c9",
+    "page_count": 3,
+    "annotations": {
+      "status": "none",
+      "count": 0
+    }
+  },
+  "selected_pages": [
+    1,
+    2,
+    3
+  ],
+  "status": "paused_budget",
+  "usage": {
+    "attempt_pages": 6,
+    "image_calls": 1,
+    "tokens": 60,
+    "tokens_known": true,
+    "cost_usd": null,
+    "known_cost_usd": 0,
+    "cost_known": false,
+    "paid_cost_known": false,
+    "paid_tokens_known": true
+  },
+  "limits": {
+    "max_image_pages": 1,
+    "max_attempt_pages": 10,
+    "max_tokens": null,
+    "max_cost_usd": null
+  },
+  "links": {
+    "article": null,
+    "custody": null
+  },
+  "source_retention": {
+    "capture": "present",
+    "preservation": "unverified",
+    "removal_eligibility": "not_assessed",
+    "removed": false
+  },
+  "next_action": "Reached max_image_pages (1). Review the retained results, or continue with: pageledger resume JOB_DIR --raise-limit max_image_pages=N",
+  "hold_policy": "0.9",
+  "stage_accounting": [
+    {
+      "stage": "local_text",
+      "pages_read": 3,
+      "reason": null
+    },
+    {
+      "stage": "local_ocr",
+      "pages_read": 2,
+      "reason": null
+    },
+    {
+      "stage": "image",
+      "pages_read": 1,
+      "reason": null
+    }
+  ],
+  "report_format": "0.9",
+  "engines": {
+    "local_text": {
+      "adapter": "local_text"
+    },
+    "local_ocr": {
+      "adapter": "local_ocr"
+    },
+    "image": {
+      "adapter": "image"
+    }
+  },
+  "pages": [
+    {
+      "page_id": "doc_0001_page_0001",
+      "page_number": 1,
+      "source_sha256": "b6f60e4092685ffd893a508ab3704696bc506e06c79c4d28fb679bf692a306c9",
+      "attempts": [
+        {
+          "attempt_id": "local_text:doc_0001_page_0001",
+          "stage": "local_text",
+          "run_path": "attempts/local_text",
+          "run_id": "run-20261113T231733092279Z",
+          "page_id": "doc_0001_page_0001",
+          "page_number": 1,
+          "source_sha256": "b6f60e4092685ffd893a508ab3704696bc506e06c79c4d28fb679bf692a306c9",
+          "outcome": "completed",
+          "raw_artifact": "attempts/local_text/raw/doc_0001_page_0001.txt",
+          "raw_sha256": "27b6304ef31134307785e940d10ab9604eff8ea25a8aa300d3d3487ae2a65c75",
+          "format": "text",
+          "warnings": [],
+          "classification": {
+            "type": "prose",
+            "confidence": 0.7,
+            "reason": "prose_text",
+            "action": null,
+            "prompt": null
+          },
+          "alignment": null,
+          "usage": {
+            "cost_usd": null,
+            "pages": 1,
+            "tokens": 10
+          },
+          "failure": null,
+          "input_evidence": null,
+          "adapter_capabilities": []
+        }
+      ],
+      "selected_attempt": "local_text:doc_0001_page_0001",
+      "disposition": "unreviewed_text",
+      "review_reasons": [],
+      "review": null,
+      "review_history": [],
+      "next_action": "review",
+      "comparisons": [],
+      "triggers": [],
+      "selected_output": {
+        "attempt_id": "local_text:doc_0001_page_0001",
+        "path": "attempts/local_text/raw/doc_0001_page_0001.txt",
+        "sha256": "27b6304ef31134307785e940d10ab9604eff8ea25a8aa300d3d3487ae2a65c75",
+        "format": "text",
+        "text": "The synthetic document contains complete readable prose for this source page. The synthetic document contains complete readable prose for this source page. The synthetic document contains complete readable prose for this source page. The synthetic document contains complete readable prose for this source page. The synthetic document contains complete readable prose for this source page. The synthetic document contains complete readable prose for this source page. The synthetic document contains complete readable prose for this source page. The synthetic document contains complete readable prose for this source page. "
+      },
+      "source_link": "../source.txt#page=1"
+    },
+    {
+      "page_id": "doc_0001_page_0002",
+      "page_number": 2,
+      "source_sha256": "b6f60e4092685ffd893a508ab3704696bc506e06c79c4d28fb679bf692a306c9",
+      "attempts": [
+        {
+          "attempt_id": "local_text:doc_0001_page_0002",
+          "stage": "local_text",
+          "run_path": "attempts/local_text",
+          "run_id": "run-20261113T231733092279Z",
+          "page_id": "doc_0001_page_0002",
+          "page_number": 2,
+          "source_sha256": "b6f60e4092685ffd893a508ab3704696bc506e06c79c4d28fb679bf692a306c9",
+          "outcome": "completed",
+          "raw_artifact": "attempts/local_text/raw/doc_0001_page_0002.txt",
+          "raw_sha256": "27b6304ef31134307785e940d10ab9604eff8ea25a8aa300d3d3487ae2a65c75",
+          "format": "text",
+          "warnings": [
+            "coverage_defect"
+          ],
+          "classification": {
+            "type": "prose",
+            "confidence": 0.7,
+            "reason": "prose_text",
+            "action": null,
+            "prompt": null
+          },
+          "alignment": null,
+          "usage": {
+            "cost_usd": null,
+            "pages": 1,
+            "tokens": 10
+          },
+          "failure": null,
+          "input_evidence": null,
+          "adapter_capabilities": []
+        },
+        {
+          "attempt_id": "local_ocr-0002:doc_0001_page_0002",
+          "stage": "local_ocr",
+          "run_path": "attempts/local_ocr-0002",
+          "run_id": "run-20261113T231733116402Z",
+          "page_id": "doc_0001_page_0002",
+          "page_number": 2,
+          "source_sha256": "b6f60e4092685ffd893a508ab3704696bc506e06c79c4d28fb679bf692a306c9",
+          "outcome": "completed",
+          "raw_artifact": "attempts/local_ocr-0002/raw/doc_0001_page_0002.txt",
+          "raw_sha256": "27b6304ef31134307785e940d10ab9604eff8ea25a8aa300d3d3487ae2a65c75",
+          "format": "text",
+          "warnings": [
+            "coverage_defect"
+          ],
+          "classification": {
+            "type": "prose",
+            "confidence": 0.7,
+            "reason": "prose_text",
+            "action": null,
+            "prompt": null
+          },
+          "alignment": null,
+          "usage": {
+            "cost_usd": null,
+            "pages": 1,
+            "tokens": 10
+          },
+          "failure": null,
+          "input_evidence": null,
+          "adapter_capabilities": []
+        },
+        {
+          "attempt_id": "image-0002:doc_0001_page_0002",
+          "stage": "image",
+          "run_path": "attempts/image-0002",
+          "run_id": "run-20261113T231733167217Z",
+          "page_id": "doc_0001_page_0002",
+          "page_number": 2,
+          "source_sha256": "b6f60e4092685ffd893a508ab3704696bc506e06c79c4d28fb679bf692a306c9",
+          "outcome": "completed",
+          "raw_artifact": "attempts/image-0002/raw/doc_0001_page_0002.txt",
+          "raw_sha256": "27b6304ef31134307785e940d10ab9604eff8ea25a8aa300d3d3487ae2a65c75",
+          "format": "text",
+          "warnings": [
+            "coverage_defect"
+          ],
+          "classification": {
+            "type": "prose",
+            "confidence": 0.7,
+            "reason": "prose_text",
+            "action": null,
+            "prompt": null
+          },
+          "alignment": null,
+          "usage": {
+            "cost_usd": null,
+            "pages": 1,
+            "tokens": 10
+          },
+          "failure": null,
+          "input_evidence": {
+            "artifact": "evidence/page-2.jpg",
+            "bytes": 38,
+            "color_space": "RGB",
+            "crop": {
+              "kind": "full_page"
+            },
+            "height": 2,
+            "kind": "page_image",
+            "media_type": "image/jpeg",
+            "model": "gemini-test-returned",
+            "page_number": 2,
+            "prompt_sha256": "168e2e8be0b9c0ffe1d0052893a125d587312fcda2ed794037283989dc9456bf",
+            "provider": null,
+            "renderer": {
+              "command": "pdftoppm",
+              "parameters": {
+                "dpi": 150
+              },
+              "version": "test 1"
+            },
+            "requested_model": "gemini-test",
+            "schema_version": "0.1",
+            "sha256": "e3bbd451513aa2bdb5d33f93c8e97ca6d2bf6004a58e308c94c717683bbea637",
+            "source_sha256": "b6f60e4092685ffd893a508ab3704696bc506e06c79c4d28fb679bf692a306c9",
+            "width": 3
+          },
+          "adapter_capabilities": []
+        }
+      ],
+      "selected_attempt": "local_text:doc_0001_page_0002",
+      "disposition": "coverage_defect",
+      "review_reasons": [
+        "coverage_defect"
+      ],
+      "review": null,
+      "review_history": [],
+      "next_action": "second_opinion",
+      "comparisons": [
+        {
+          "left_attempt": "local_text:doc_0001_page_0002",
+          "right_attempt": "local_ocr-0002:doc_0001_page_0002",
+          "agreement_ratio": 1.0,
+          "spans": [],
+          "number_differences": [],
+          "truncated": false
+        },
+        {
+          "left_attempt": "local_text:doc_0001_page_0002",
+          "right_attempt": "image-0002:doc_0001_page_0002",
+          "agreement_ratio": 1.0,
+          "spans": [],
+          "number_differences": [],
+          "truncated": false
+        },
+        {
+          "left_attempt": "local_ocr-0002:doc_0001_page_0002",
+          "right_attempt": "image-0002:doc_0001_page_0002",
+          "agreement_ratio": 1.0,
+          "spans": [],
+          "number_differences": [],
+          "truncated": false
+        }
+      ],
+      "triggers": [],
+      "hold_causes": [
+        {
+          "attempt_id": "local_text:doc_0001_page_0002",
+          "hold": "coverage_defect",
+          "cause": "coverage_defect"
+        },
+        {
+          "attempt_id": "local_ocr-0002:doc_0001_page_0002",
+          "hold": "coverage_defect",
+          "cause": "coverage_defect"
+        },
+        {
+          "attempt_id": "image-0002:doc_0001_page_0002",
+          "hold": "coverage_defect",
+          "cause": "coverage_defect"
+        }
+      ],
+      "selected_output": {
+        "attempt_id": "local_text:doc_0001_page_0002",
+        "path": "attempts/local_text/raw/doc_0001_page_0002.txt",
+        "sha256": "27b6304ef31134307785e940d10ab9604eff8ea25a8aa300d3d3487ae2a65c75",
+        "format": "text",
+        "text": "The synthetic document contains complete readable prose for this source page. The synthetic document contains complete readable prose for this source page. The synthetic document contains complete readable prose for this source page. The synthetic document contains complete readable prose for this source page. The synthetic document contains complete readable prose for this source page. The synthetic document contains complete readable prose for this source page. The synthetic document contains complete readable prose for this source page. The synthetic document contains complete readable prose for this source page. "
+      },
+      "source_link": "../source.txt#page=2"
+    },
+    {
+      "page_id": "doc_0001_page_0003",
+      "page_number": 3,
+      "source_sha256": "b6f60e4092685ffd893a508ab3704696bc506e06c79c4d28fb679bf692a306c9",
+      "attempts": [
+        {
+          "attempt_id": "local_text:doc_0001_page_0003",
+          "stage": "local_text",
+          "run_path": "attempts/local_text",
+          "run_id": "run-20261113T231733092279Z",
+          "page_id": "doc_0001_page_0003",
+          "page_number": 3,
+          "source_sha256": "b6f60e4092685ffd893a508ab3704696bc506e06c79c4d28fb679bf692a306c9",
+          "outcome": "completed",
+          "raw_artifact": "attempts/local_text/raw/doc_0001_page_0003.txt",
+          "raw_sha256": "27b6304ef31134307785e940d10ab9604eff8ea25a8aa300d3d3487ae2a65c75",
+          "format": "text",
+          "warnings": [
+            "coverage_defect"
+          ],
+          "classification": {
+            "type": "prose",
+            "confidence": 0.7,
+            "reason": "prose_text",
+            "action": null,
+            "prompt": null
+          },
+          "alignment": null,
+          "usage": {
+            "cost_usd": null,
+            "pages": 1,
+            "tokens": 10
+          },
+          "failure": null,
+          "input_evidence": null,
+          "adapter_capabilities": []
+        },
+        {
+          "attempt_id": "local_ocr-0003:doc_0001_page_0003",
+          "stage": "local_ocr",
+          "run_path": "attempts/local_ocr-0003",
+          "run_id": "run-20261113T231733139874Z",
+          "page_id": "doc_0001_page_0003",
+          "page_number": 3,
+          "source_sha256": "b6f60e4092685ffd893a508ab3704696bc506e06c79c4d28fb679bf692a306c9",
+          "outcome": "completed",
+          "raw_artifact": "attempts/local_ocr-0003/raw/doc_0001_page_0003.txt",
+          "raw_sha256": "27b6304ef31134307785e940d10ab9604eff8ea25a8aa300d3d3487ae2a65c75",
+          "format": "text",
+          "warnings": [
+            "coverage_defect"
+          ],
+          "classification": {
+            "type": "prose",
+            "confidence": 0.7,
+            "reason": "prose_text",
+            "action": null,
+            "prompt": null
+          },
+          "alignment": null,
+          "usage": {
+            "cost_usd": null,
+            "pages": 1,
+            "tokens": 10
+          },
+          "failure": null,
+          "input_evidence": null,
+          "adapter_capabilities": []
+        }
+      ],
+      "selected_attempt": "local_text:doc_0001_page_0003",
+      "disposition": "coverage_defect",
+      "review_reasons": [
+        "coverage_defect"
+      ],
+      "review": null,
+      "review_history": [],
+      "next_action": "image",
+      "comparisons": [
+        {
+          "left_attempt": "local_text:doc_0001_page_0003",
+          "right_attempt": "local_ocr-0003:doc_0001_page_0003",
+          "agreement_ratio": 1.0,
+          "spans": [],
+          "number_differences": [],
+          "truncated": false
+        }
+      ],
+      "triggers": [],
+      "hold_causes": [
+        {
+          "attempt_id": "local_text:doc_0001_page_0003",
+          "hold": "coverage_defect",
+          "cause": "coverage_defect"
+        },
+        {
+          "attempt_id": "local_ocr-0003:doc_0001_page_0003",
+          "hold": "coverage_defect",
+          "cause": "coverage_defect"
+        }
+      ],
+      "selected_output": {
+        "attempt_id": "local_text:doc_0001_page_0003",
+        "path": "attempts/local_text/raw/doc_0001_page_0003.txt",
+        "sha256": "27b6304ef31134307785e940d10ab9604eff8ea25a8aa300d3d3487ae2a65c75",
+        "format": "text",
+        "text": "The synthetic document contains complete readable prose for this source page. The synthetic document contains complete readable prose for this source page. The synthetic document contains complete readable prose for this source page. The synthetic document contains complete readable prose for this source page. The synthetic document contains complete readable prose for this source page. The synthetic document contains complete readable prose for this source page. The synthetic document contains complete readable prose for this source page. The synthetic document contains complete readable prose for this source page. "
+      },
+      "source_link": "../source.txt#page=3"
+    }
+  ],
+  "counts": {
+    "source_pages": 3,
+    "selected_pages": 3,
+    "processed_pages": 3,
+    "selected_outputs": 3,
+    "unresolved_pages": 3
+  },
+  "transcript": {
+    "path": "transcript.md",
+    "sha256": "5473c55370b17553249e95f5d8e2870c52b92fec51a05cac27173bbf52081e6d"
+  }
+}

@@ -1,0 +1,23 @@
+schema_version: '0.1'
+run_id: run-20261113T231733212867Z-rerun
+parent_run_id: run-20261113T231733212867Z
+parent_manifest: manifest.json
+rerun_depth: 0
+max_rerun_depth: 2
+created_at: '2026-11-13T23:17:33Z'
+reason: audit_policy
+rerun_executable: true
+rerun_status: executable
+items:
+- page_id: doc_0001_page_0002
+  page_number: 2
+  source: /private/var/folders/3y/gvdgv5z14v38t7g0l6jg19qh0000gn/T/pytest-of-peterbusscher/pytest-2004/test_text_job0/book.txt
+  action: review
+  reason: quality_warning
+  previous_grade: B
+- page_id: doc_0001_page_0003
+  page_number: 3
+  source: /private/var/folders/3y/gvdgv5z14v38t7g0l6jg19qh0000gn/T/pytest-of-peterbusscher/pytest-2004/test_text_job0/book.txt
+  action: review
+  reason: quality_warning
+  previous_grade: B

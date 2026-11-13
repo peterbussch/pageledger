@@ -1,0 +1,94 @@
+{
+  "artifacts": {
+    "audit": "audit.json",
+    "audit_md": "audit.md",
+    "config_snapshot": "config-snapshot.yml",
+    "cost": "cost.json",
+    "normalized_dir": "normalized/",
+    "provenance": "provenance.jsonl",
+    "quality": "quality.jsonl",
+    "raw_dir": "raw/",
+    "rerun_manifest": "rerun-manifest.yml",
+    "route_map": "route-map.yml",
+    "run_log": "run.log"
+  },
+  "completed_at": "2026-11-13T23:17:33Z",
+  "config": {
+    "path": "config-snapshot.yml",
+    "sha256": "0a4aea46f02fcdfd066849e6f52d3b40e9c89c7b0e286a3da1d180525f6fe16b",
+    "source_paths": [
+      "/private/var/folders/3y/gvdgv5z14v38t7g0l6jg19qh0000gn/T/pytest-of-peterbusscher/pytest-2004/test_text_job0/jobs/book/.job/local_text.yml"
+    ]
+  },
+  "dataset_citation": null,
+  "execution_mode": "execute",
+  "extractors": [
+    {
+      "adapter": "text",
+      "capabilities": [
+        "embedded_text",
+        "local"
+      ],
+      "deterministic": true,
+      "input_types": [
+        "text"
+      ],
+      "model": null,
+      "name": "text",
+      "output_types": [
+        "text"
+      ],
+      "prompt_hash": "168e2e8be0b9c0ffe1d0052893a125d587312fcda2ed794037283989dc9456bf",
+      "reproducibility_profile": {
+        "adapter": {
+          "code_sha256": "87bd910c3912441ae221729c64d598cba2ce1932fb5626dec3a0d82ae2634fb4",
+          "module": "pageledger.adapters",
+          "name": "text",
+          "version": "0.1"
+        },
+        "materials": [],
+        "pageledger": {
+          "code_sha256": "235473586e49999f356d3f08b1733c932414df29f4f0c53c497545a5f82c5cee",
+          "version": "0.9.0"
+        },
+        "profile_sha256": "528b26b404c487ad4fded803f0ccff29d2f552857faa328a2a7f206f32c5cf8c",
+        "profile_version": "0.1",
+        "runtime": {
+          "filesystem_encoding": "utf-8",
+          "machine": "arm64",
+          "preferred_encoding": "utf-8",
+          "python_implementation": "CPython",
+          "python_version": "3.13.13",
+          "release": "27.0.0",
+          "system": "Darwin"
+        }
+      },
+      "version": "0.1"
+    }
+  ],
+  "inputs": [
+    {
+      "page_count": 3,
+      "pages": "1,2,3",
+      "path": "/private/var/folders/3y/gvdgv5z14v38t7g0l6jg19qh0000gn/T/pytest-of-peterbusscher/pytest-2004/test_text_job0/book.txt",
+      "sha256": "008f52e0d55142a405da902ec254abb7be8de5e9f62d8fb8e0343918e121f5cc"
+    }
+  ],
+  "pageledger_version": "0.9.0",
+  "parent_run_id": null,
+  "run_depth": 0,
+  "run_id": "run-20261113T231733212867Z",
+  "schema_version": "0.1",
+  "started_at": "2026-11-13T23:17:33Z",
+  "status": "completed",
+  "summary": {
+    "estimated_cost_usd": 0.0,
+    "pages_extracted": 3,
+    "pages_quarantined": 0,
+    "pages_routed_review": 0,
+    "pages_skipped": 0,
+    "pages_total": 3,
+    "quality_warning_pages": 2,
+    "records_normalized": 0
+  }
+}

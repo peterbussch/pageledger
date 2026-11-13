@@ -1,0 +1,128 @@
+{
+  "payload": {
+    "completion": {
+      "alignment": null,
+      "provenance": {
+        "cost": {
+          "basis": null,
+          "usd": null
+        },
+        "extraction_seconds": 0.0,
+        "extractor": {
+          "adapter": "text",
+          "adapter_version": "0.1",
+          "capabilities": [
+            "embedded_text",
+            "local"
+          ],
+          "deterministic": true,
+          "input_types": [
+            "text"
+          ],
+          "model": null,
+          "output_types": [
+            "text"
+          ],
+          "prompt_hash": "168e2e8be0b9c0ffe1d0052893a125d587312fcda2ed794037283989dc9456bf"
+        },
+        "metrics": {
+          "compute_seconds": null,
+          "cost_usd": null,
+          "pages": 1,
+          "tokens": null
+        },
+        "page_id": "doc_0001_page_0002",
+        "result": {
+          "confidence": null,
+          "format": "text",
+          "raw_artifact": "raw/doc_0001_page_0002.txt",
+          "raw_sha256": "0ab306823035661bb8dba21cc25352319fe2a28eccdad81eaaaf7356ead6bf19",
+          "warnings": []
+        },
+        "route": {
+          "action": "transcribe_text",
+          "route_confidence": null,
+          "type": "prose"
+        },
+        "run_id": "run-20261113T231733212867Z",
+        "schema_version": "0.1",
+        "source": {
+          "page_number": 2,
+          "path": "/private/var/folders/3y/gvdgv5z14v38t7g0l6jg19qh0000gn/T/pytest-of-peterbusscher/pytest-2004/test_text_job0/book.txt",
+          "sha256": "008f52e0d55142a405da902ec254abb7be8de5e9f62d8fb8e0343918e121f5cc"
+        },
+        "timestamp": "2026-11-13T23:17:33Z",
+        "usage": {
+          "compute_seconds": null,
+          "cost_usd": null,
+          "pages": 1,
+          "tokens": null
+        }
+      },
+      "quality": {
+        "adapter": "text",
+        "character_count": 2,
+        "confidence": null,
+        "confidence_detail": null,
+        "embedded_text_comparison": null,
+        "output_integrity": {
+          "character_delta": null,
+          "character_ratio": null,
+          "instruction_markers": [],
+          "parent_character_count": null
+        },
+        "page_id": "doc_0001_page_0002",
+        "page_number": 2,
+        "schema_version": "0.1",
+        "text_quality": {
+          "alpha_token_count": 1,
+          "control_character_count": 0,
+          "digit_count": 0,
+          "foreign_script_count": 0,
+          "largest_identical_line_count": 1,
+          "latin_letter_ratio": 1.0,
+          "letter_count": 2,
+          "longest_letter_run": 0,
+          "longest_repeated_tail_length": 0,
+          "max_token_length": 2,
+          "mean_token_length": 2.0,
+          "mixed_script_token_ratio": 0.0,
+          "prereform_letter_count": 0,
+          "private_use_count": 0,
+          "replacement_character_count": 0,
+          "short_token_ratio": 1.0,
+          "suspicious_symbol_count": 0,
+          "suspicious_symbol_ratio": 0.0,
+          "terminal_hard_sign_count": 0,
+          "whitespace_character_ratio": 0.0
+        },
+        "warnings": [
+          "short_text"
+        ],
+        "word_count": 1
+      }
+    },
+    "extraction_seconds": 0.0,
+    "page_id": "doc_0001_page_0002",
+    "result": {
+      "confidence": null,
+      "confidence_detail": null,
+      "content": "iv",
+      "format": "text",
+      "input_evidence": null,
+      "model": null,
+      "usage": {
+        "compute_seconds": null,
+        "cost_usd": null,
+        "pages": 1,
+        "tokens": null
+      },
+      "warnings": []
+    },
+    "run_id": "run-20261113T231733212867Z",
+    "started_at": "2026-11-13T23:17:33Z",
+    "state": "completed"
+  },
+  "schema_version": "0.1",
+  "sha256": "cc0168ca54771e463618ba4ddd77aebc82575dea4bdd680ef6e6d651d32ff7e6"
+}
