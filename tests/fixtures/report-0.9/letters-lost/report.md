@@ -28,7 +28,7 @@ Pages that need a person come first. The review view (`pageledger review .` in t
 
 Everything below is in document.json, of which this report is a rendering. The codes in backticks are explained in [PageLedger's warnings](https://github.com/peterbussch/pageledger/blob/v0.9.0/docs/warnings.md).
 
-- Job: `job_d43b39b3226149a5bd5bd0e3e497a63a`, created 2026-11-13T23:48:22Z; hold policy 0.9; report format 0.9.
+- Job: `job_b7c34283354b4fb68f687ea61cde0336`, created 2026-11-14T00:02:31Z; hold policy 0.9; report format 0.9.
 - Source: [../source.txt][source]
 - Source SHA-256: `b6f60e4092685ffd893a508ab3704696bc506e06c79c4d28fb679bf692a306c9`
 - Read by: the `local_text` stage, the engine local_text (`local_text`); the `local_ocr` stage, the engine local_ocr (`local_ocr`); the `image` stage, the engine image (`image`).
@@ -58,7 +58,7 @@ Readings sent on to the next stage for a reason other than a hold, by trigger (a
 - Calls to an image model: 0.
 - Tokens: 20.
 - Cost: unknown: not every engine reported a cost.
-- Limits: max_attempt_pages 10, max_image_pages 2.
+- Limits: max_image_pages 2, max_attempt_pages 10.
 - PDF annotations (notes and links attached to pages): none (0). Counting them says nothing about whether the body text or its citations were extracted completely.
 
 ### Source custody
@@ -72,7 +72,7 @@ PageLedger records what it knows of the source file; it does not preserve or rem
 
 ### Files
 
-- Transcript: [transcript.md](<transcript.md>), SHA-256 `1c1f8a4cc95e35a9219dd6cbed987f092c31cae4122a64b2b5505b9026c207f2`
+- Transcript: [transcript.md](<transcript.md>), SHA-256 `99a54d11d3a47367d2ba894145de9b22aa667a5c6463fc15aae04748e9dcce42`
 - Next action recorded by the job: Check the pages against the source, those that need a person first, and record decisions with pageledger review.
 
 [source]: <../source.txt>

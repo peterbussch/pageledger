@@ -1,7 +1,7 @@
 {
   "schema_version": "0.1",
-  "job_id": "job_8755bac0843d4d45a2824296e9a5b64e",
-  "created_at": "2026-11-13T23:48:22Z",
+  "job_id": "job_762e7215d47247ce81f8a549fd6fd59a",
+  "created_at": "2026-11-14T00:02:31Z",
   "source": {
     "path": "../source.txt",
     "sha256": "b6f60e4092685ffd893a508ab3704696bc506e06c79c4d28fb679bf692a306c9",
@@ -30,9 +30,9 @@
   },
   "limits": {
     "max_cost_usd": null,
-    "max_attempt_pages": 10,
+    "max_tokens": null,
     "max_image_pages": 2,
-    "max_tokens": null
+    "max_attempt_pages": 10
   },
   "links": {
     "article": null,
@@ -85,7 +85,7 @@
           "attempt_id": "local_text:doc_0001_page_0001",
           "stage": "local_text",
           "run_path": "attempts/local_text",
-          "run_id": "run-20261113T234822880980Z",
+          "run_id": "run-20261114T000231119098Z",
           "page_id": "doc_0001_page_0001",
           "page_number": 1,
           "source_sha256": "b6f60e4092685ffd893a508ab3704696bc506e06c79c4d28fb679bf692a306c9",
@@ -138,7 +138,7 @@
           "attempt_id": "local_text:doc_0001_page_0002",
           "stage": "local_text",
           "run_path": "attempts/local_text",
-          "run_id": "run-20261113T234822880980Z",
+          "run_id": "run-20261114T000231119098Z",
           "page_id": "doc_0001_page_0002",
           "page_number": 2,
           "source_sha256": "b6f60e4092685ffd893a508ab3704696bc506e06c79c4d28fb679bf692a306c9",
@@ -170,7 +170,7 @@
           "attempt_id": "local_ocr-0002:doc_0001_page_0002",
           "stage": "local_ocr",
           "run_path": "attempts/local_ocr-0002",
-          "run_id": "run-20261113T234822905893Z",
+          "run_id": "run-20261114T000231144273Z",
           "page_id": "doc_0001_page_0002",
           "page_number": 2,
           "source_sha256": "b6f60e4092685ffd893a508ab3704696bc506e06c79c4d28fb679bf692a306c9",
@@ -202,7 +202,7 @@
           "attempt_id": "image-0002:doc_0001_page_0002",
           "stage": "image",
           "run_path": "attempts/image-0002",
-          "run_id": "run-20261113T234822959739Z",
+          "run_id": "run-20261114T000231207720Z",
           "page_id": "doc_0001_page_0002",
           "page_number": 2,
           "source_sha256": "b6f60e4092685ffd893a508ab3704696bc506e06c79c4d28fb679bf692a306c9",
@@ -264,7 +264,7 @@
       ],
       "review": null,
       "review_history": [],
-      "next_action": "second_opinion",
+      "next_action": "review",
       "comparisons": [
         {
           "left_attempt": "local_text:doc_0001_page_0002",
@@ -327,7 +327,7 @@
           "attempt_id": "local_text:doc_0001_page_0003",
           "stage": "local_text",
           "run_path": "attempts/local_text",
-          "run_id": "run-20261113T234822880980Z",
+          "run_id": "run-20261114T000231119098Z",
           "page_id": "doc_0001_page_0003",
           "page_number": 3,
           "source_sha256": "b6f60e4092685ffd893a508ab3704696bc506e06c79c4d28fb679bf692a306c9",
@@ -359,7 +359,7 @@
           "attempt_id": "local_ocr-0003:doc_0001_page_0003",
           "stage": "local_ocr",
           "run_path": "attempts/local_ocr-0003",
-          "run_id": "run-20261113T234822930132Z",
+          "run_id": "run-20261114T000231173583Z",
           "page_id": "doc_0001_page_0003",
           "page_number": 3,
           "source_sha256": "b6f60e4092685ffd893a508ab3704696bc506e06c79c4d28fb679bf692a306c9",
@@ -391,7 +391,7 @@
           "attempt_id": "image-0003:doc_0001_page_0003",
           "stage": "image",
           "run_path": "attempts/image-0003",
-          "run_id": "run-20261113T234822993707Z",
+          "run_id": "run-20261114T000231248969Z",
           "page_id": "doc_0001_page_0003",
           "page_number": 3,
           "source_sha256": "b6f60e4092685ffd893a508ab3704696bc506e06c79c4d28fb679bf692a306c9",
@@ -453,7 +453,7 @@
       ],
       "review": null,
       "review_history": [],
-      "next_action": "second_opinion",
+      "next_action": "review",
       "comparisons": [
         {
           "left_attempt": "local_text:doc_0001_page_0003",
@@ -517,6 +517,6 @@
   },
   "transcript": {
     "path": "transcript.md",
-    "sha256": "b87c6a63df0e33a7b95ccc7d5791c2dbbc05da207d67233e8048466f6fa3d025"
+    "sha256": "1729fa41b8c8af481e4c40da4723a6c3e187edfb3efae9c3d38ad5e355c89ac3"
   }
 }

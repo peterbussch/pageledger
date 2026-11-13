@@ -105,8 +105,11 @@ _LEGACY_WARNING_HOLDS = {**_WARNING_HOLDS, "low_confidence": "coverage_defect"}
 # OCR is held as incomplete. Jobs written under 0.6.1 are rebuilt without these.
 # 0.9: an inherited OCR layer stays a witness after our own OCR reads the page; a
 # literal reading that lost the pre-reform letters another kept is held; held readings
-# are ranked by evidence; an attempt that never finished raises no hold. Jobs written
-# under 0.8 are rebuilt without these.
+# are ranked by evidence; an attempt that never finished raises no hold; a page whose
+# readings are all held climbs whichever is shown first, but not past a kept typeset
+# layer; a rung the job does not configure is no next step; and a contested job's
+# trigger history judges the reading it selected then. Jobs written under 0.8 are
+# rebuilt without these.
 HOLD_POLICY = "0.9"
 HOLD_POLICIES = frozenset({"0.6", "0.6.1", "0.8", HOLD_POLICY})
 BLANK_REFUTING_POLICIES = frozenset({"0.6.1", "0.8", HOLD_POLICY})
@@ -303,7 +306,8 @@ def _records(attempt: dict) -> list[dict[str, Any]] | None:
         ):
             return None
         return [dict(zip(headers, row, strict=True)) for row in rows]
-    except (ValueError, TypeError):
+    except (ValueError, TypeError, csv.Error, RecursionError):
+        # A table that does not parse is compared as text, never a crash of the job.
         return None
 
 
@@ -483,7 +487,9 @@ def assess_page(
     sending it up the ladder. A literal reading that lost the pre-reform letters another
     kept is held, readings that are all held are ranked by evidence rather than order, an
     attempt that never finished raises no hold, and no trigger is recorded toward a stage
-    outside ``configured``.
+    outside ``configured``. A page whose readings are all held climbs whichever is shown
+    first, unless a kept typeset layer is its text; a rung outside ``configured`` is no
+    next step; and a contested job's trigger history judges the reading it selected then.
 
     ``stages`` is the job's ladder. A local reader (``local_image``) that failed
     leaves no reading and does not stop the page: it goes on to the next stage.
@@ -687,13 +693,16 @@ def assess_page(
         default=-1,
     )
     following = stages[stage_index + 1] if stage_index + 1 < len(stages) else None
+    if witnesses and configured is not None and following not in configured:
+        # A stage the job does not have is no next step: such a page goes to a person.
+        following = None
     triggers = _triggers(
         selected,
         [r for r in reasons if r not in _DISAGREEMENTS or r in disagreements]
         if witnesses
         else reasons,
         stages[stage_index] if stage_index >= 0 else None,
-        following if not witnesses or configured is None or following in configured else None,
+        following,
         escalate_on,
         roughness,
         rough_below,
@@ -701,7 +710,12 @@ def assess_page(
         ocr_layer_climbs,
         uncorroborated,
     )
-    held = not clean and not any(reason in reasons for reason in _COMPARISON_REASONS)
+    if witnesses:
+        # Every reading is held, whichever is shown first; a kept typeset layer stays the
+        # page's text, so a further reading could not replace it.
+        held = not clean and typeset is None
+    else:
+        held = not clean and not any(reason in reasons for reason in _COMPARISON_REASONS)
     if local_failed and following is None and "provider_failure" not in reasons:
         reasons.append("provider_failure")
     if local_failed and following is not None:
@@ -742,6 +756,7 @@ def assess_page(
         result["triggers"] = [
             *_trigger_history(
                 page,
+                contest if witnesses else None,
                 holds_for,
                 text_refutes_blank,
                 escalate_on,
@@ -1040,6 +1055,7 @@ def _ranked(readings: list[dict], holds_by_id: dict[str, list[str]]) -> list[dic
 
 def _trigger_history(
     page: dict,
+    contest: Callable[[dict, dict], dict] | None,
     holds_for: dict[str, str],
     text_refutes_blank: bool,
     escalate_on: tuple[str, ...] | list[str],
@@ -1085,6 +1101,8 @@ def _trigger_history(
             corroborate=corroborate,
             witnesses=witnesses,
             configured=configured,
+            # The reading a contested job selected then, so its triggers are that reading's.
+            contest=contest,
         )
         # Its list repeats the history found so far; only the tail is this stage's.
         history.extend(before["triggers"][len(history) :])

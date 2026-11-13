@@ -12,7 +12,7 @@ import pytest
 import yaml
 from test_image_evidence import image_descriptor
 
-from pageledger import runner
+from pageledger import processing, runner
 from pageledger.adapters import ExtractionResult, TextAdapter
 from pageledger.checkpoint import Checkpoint, file_digest, read_record
 from pageledger.processing import process, resume_job, review_job, verify_job
@@ -1079,6 +1079,11 @@ def test_verify_job_rebuilds_legacy_hold_policy_artifacts(setup):
         page.pop("comparisons", None)
         for attempt in page["attempts"]:
             attempt.pop("adapter_capabilities", None)
+    # A legacy job records what the legacy rules decided, such as each held page's next rung.
+    processing._refresh(job, setup[2], materialize=False)
+    for page in job["pages"]:
+        for attempt in page["attempts"]:
+            attempt.pop("text", None)
     write_record(job_path, job)
     report = build_document_report(job, setup[2], report_format="0.5.1")
     (setup[2] / "document.json").write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n")

@@ -621,3 +621,100 @@ def test_a_job_written_under_0_8_rebuilds_and_verifies_unchanged(setup, monkeypa
     assert page["selected_attempt"].startswith("local_ocr")
     assert page["disposition"] == "unreviewed_text"
     assert verify_job(setup[2])["status"] == "pass"
+
+
+# ---------------------------------------------------------------------------
+# Whether a held page climbs (review 2026-11-13: pass 1 #2, half A #7 and #18)
+# ---------------------------------------------------------------------------
+
+
+def test_a_kept_typeset_layer_does_not_climb_when_every_re_reading_is_held_too():
+    layer = _attempt("a1", "local_text", FLAGGED, warnings=["foreign_script_characters"])
+    ocr = _attempt("a2", "local_ocr", GARBLED, warnings=["low_confidence"])
+    page = _page(layer, ocr, comparisons=[_compared("a1", "a2", 0.89)])
+    result = assess_page(page, stages=LADDER, witnesses=True, configured=LADDER)
+    # The paid reading could never replace the layer, so it is not bought.
+    assert result["selected_attempt"] == "a1"
+    assert result["next_action"] == "review"
+
+
+def _all_held(ocr_text):
+    ocr = _attempt("s2", "local_ocr", ocr_text, warnings=["fragmented_text"])
+    reader = _attempt(
+        "s3",
+        "local_image",
+        "один два три четыре пять",
+        warnings=["repetition_loop"],
+        adapter_capabilities=["generative"],
+    )
+    return _page(ocr, reader, comparisons=[_compared("s2", "s3", 0.3)])
+
+
+@pytest.mark.parametrize("ocr_text", ["од§н ¤ва т©и ®етыре ¶ять", "одн два тр четыре пят"])
+def test_a_page_whose_readings_are_all_held_climbs_whichever_is_shown_first(ocr_text):
+    configured = ("local_text", "local_ocr", "local_image", "image")
+    result = assess_page(_all_held(ocr_text), stages=LADDER, witnesses=True, configured=configured)
+    assert result["next_action"] == "image"
+
+
+def test_a_failed_local_reader_without_a_paid_stage_is_recorded_and_goes_to_a_person():
+    ocr = _attempt("s2", "local_ocr", "Readable text from our own OCR")
+    failed = _attempt("s3", "local_image", "", outcome="failed")
+    configured = ("local_text", "local_ocr", "local_image")
+    result = assess_page(_page(ocr, failed), stages=LADDER, witnesses=True, configured=configured)
+    assert "provider_failure" in result["review_reasons"]
+    assert result["next_action"] == "review"
+
+
+def test_a_held_page_names_no_stage_the_job_does_not_run():
+    layer = _attempt("a1", "local_text", " ", warnings=["empty_text"])
+    configured = ("local_text",)
+    result = assess_page(_page(layer), stages=LADDER, witnesses=True, configured=configured)
+    assert result["review_reasons"] and result["next_action"] == "review"
+    # Hold policy 0.8 named the next rung of the ladder, configured or not.
+    assert assess_page(_page(layer), stages=LADDER, configured=configured)["next_action"] == (
+        "local_ocr"
+    )
+
+
+def test_a_contested_job_s_trigger_history_names_the_reading_it_selected_then():
+    ocr = _attempt("s2", "local_ocr", "Readable text read by our own engine")
+    reader = _attempt(
+        "s3",
+        "local_image",
+        "Entirely different words written down by a model",
+        adapter_capabilities=["generative"],
+    )
+    paid = _attempt(
+        "s4", "image", "Readable text read by our own engine", adapter_capabilities=["generative"]
+    )
+    comparisons = [
+        _compared("s2", "s3", 0.1),
+        _compared("s2", "s4", 1.0),
+        _compared("s3", "s4", 0.1),
+    ]
+
+    def contest(base, witness):
+        return {"open": [], "edition": None, "spans": []}
+
+    options = dict(
+        stages=LADDER,
+        witnesses=True,
+        configured=("local_text", "local_ocr", "local_image", "image"),
+        escalate_on=("hold", "disagreement"),
+        contest=contest,
+    )
+    live = assess_page(_page(ocr, reader, comparisons=comparisons[:1]), **options)
+    later = assess_page(_page(ocr, reader, paid, comparisons=comparisons), **options)
+    assert [t["attempt"] for t in live["triggers"] if t["stage"] == "local_image"] == ["s3"]
+    assert [t["attempt"] for t in later["triggers"] if t["stage"] == "local_image"] == ["s3"]
+
+
+def test_a_table_that_does_not_parse_is_not_compared_and_does_not_crash():
+    from pageledger.processing_policy import _numeric_conflict
+
+    broken = {"format": "csv", "text": 'h1,h2\n1,"' + "x" * 140_000}
+    deep = {"format": "json", "text": "[" * 100_000 + "]" * 100_000}
+    plain = {"format": "text", "text": "plain"}
+    assert _numeric_conflict(plain, broken) is False
+    assert _numeric_conflict(deep, broken) is False

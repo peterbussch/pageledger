@@ -403,6 +403,13 @@ research PDFs (historical Russian print, directories, gazettes, scholarship) in
 which no held page was right, but 28 of the 62 pages with any OCR history left the
 job wrong and not held. Each rule below names the page that motivated it.
 
+**When a held page climbs.** A page whose readings are all held climbs to the next
+reader whichever reading is shown first, except that a kept typeset layer (below)
+buys no reading that could not replace it. A ladder rung the job does not configure
+is no next step: a held page then goes to review, and a local reader that failed
+with nothing after it leaves `provider_failure` on its page. A contested job's
+trigger history judges, at each earlier stage, the reading the job selected then.
+
 **An OCR layer in any font is recognised.** `pdf_text` marks a layer
 `ocr_text_layer` not only when it is drawn in `GlyphLessFont` but also when most of
 its text is drawn invisibly on a page an image covers, when most of it is painted
