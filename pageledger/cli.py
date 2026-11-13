@@ -227,6 +227,10 @@ def _engine(args: argparse.Namespace) -> str:
         raise _UsageError(str(exc)) from exc
 
 
+# What a pass means, said under it: the screen a scholar quotes.
+VERIFIED = "The record is intact: every file matches what was recorded. This does not check that the text is right."
+
+
 class _UsageError(Exception):
     """A combination of options that argparse cannot express; exits 2 like other usage errors."""
 
@@ -522,8 +526,10 @@ def build_parser() -> argparse.ArgumentParser:
             job_parser = _command(subparsers, command)
         else:
             job_parser = subparsers.add_parser(command)
-        job_parser.add_argument("job_dir", type=Path)
-        job_parser.add_argument("--json", action="store_true", dest="json_output")
+        job_parser.add_argument("job_dir", type=Path, metavar="JOB_DIR", help="A job folder")
+        job_parser.add_argument(
+            "--json", action="store_true", dest="json_output", help="Print the result as JSON"
+        )
         if command == "review-job":
             job_parser.add_argument("--review", type=Path, required=True)
             job_parser.add_argument(
@@ -668,7 +674,11 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Keep each page as it is read, so an interrupted run can continue with resume",
     )
-    run_parser.add_argument("--dry-run", action="store_true")
+    run_parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Write the route map and plan without reading any page",
+    )
     run_parser.add_argument(
         "--json", action="store_true", dest="json_output", help="Print the result as JSON"
     )
@@ -727,7 +737,11 @@ def build_parser() -> argparse.ArgumentParser:
     rerun_parser.add_argument(
         "--out", required=True, type=Path, metavar="DIR", help="New empty run directory"
     )
-    rerun_parser.add_argument("--dry-run", action="store_true")
+    rerun_parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Write the plan for the pages to read again without reading any",
+    )
     rerun_parser.add_argument(
         "--json", action="store_true", dest="json_output", help="Print the result as JSON"
     )
@@ -986,13 +1000,19 @@ def _engine_options_given(args: argparse.Namespace) -> bool:
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     argv = sys.argv[1:] if argv is None else list(argv)
+    if not argv:
+        # Bare `pageledger` asks what there is to do.
+        parser.print_help()
+        return 0
     if argv[:1] == ["help"]:
         return _help(parser, argv[1:])
     args = parser.parse_args(argv)
     try:
         _check_usage(args)
     except _UsageError as exc:
-        parser.error(str(exc))
+        # The sentence says what to change; pageledger's own usage line would not.
+        print(f"pageledger: error: {exc}", file=sys.stderr)
+        return 2
     handlers = {
         "process": _cmd_job,
         "inspect-job": _cmd_job,
@@ -1109,7 +1129,12 @@ def _cmd_init_config(args: argparse.Namespace) -> int:
     else:
         config_text = _config_template(args.adapter)
     if args.out:
-        args.out.write_text(config_text, encoding="utf-8")
+        if args.out.expanduser().exists() or args.out.is_symlink():
+            raise ValueError(
+                f"{args.out} already exists; init never writes over a file, which may hold "
+                "your own settings. Choose another --out, or remove it first."
+            )
+        args.out.expanduser().write_text(config_text, encoding="utf-8")
         print(f"Wrote {args.out}", file=sys.stderr)
     else:
         sys.stdout.write(config_text)
@@ -1294,6 +1319,8 @@ def _cmd_verify_run(args: argparse.Namespace) -> int:
         print(json.dumps(report, ensure_ascii=False, sort_keys=True))
     else:
         sys.stdout.write(render_verification(report))
+        if report["status"] == "pass":
+            print(VERIFIED)
     return 0 if report["status"] == "pass" else 1
 
 
@@ -1619,7 +1646,11 @@ def _cmd_job(args: argparse.Namespace) -> int:
         _print_review_result(args.job_dir, result, dry_run=args.dry_run)
     else:
         reason = f" ({result['reason']})" if result.get("reason") else ""
-        print(f"Status: {result['status']}{reason}")
+        if args.command != "review-sheet":
+            # A written sheet is told by the lines below, not by a status code.
+            print(f"Status: {result['status']}{reason}")
+        if args.command == "verify-job" and result["status"] == "pass":
+            print(VERIFIED)
         if "decisions" in result:
             counts = sorted(result["decisions"].items())
             print("Decisions: " + (", ".join(f"{name} {n}" for name, n in counts) or "none"))
@@ -1763,7 +1794,7 @@ _DECISION_WORDS = {
 
 def _print_review_result(job: Path, result: dict, *, dry_run: bool) -> None:
     """What review --apply recorded, what is left, and the next step, in plain words."""
-    from .document_report import export_command, needs_person
+    from .document_report import closing_lines, export_command, needs_person
 
     decisions = dict(result.get("decisions", {}))
     corrected = len(result.get("corrections", []))
@@ -1789,11 +1820,9 @@ def _print_review_result(job: Path, result: dict, *, dry_run: bool) -> None:
     if dry_run:
         return
     if result["status"] != "completed":
-        reason = f" ({result['reason']})" if result.get("reason") else ""
-        print(f"Status: {result['status']}{reason}")
-        print(result.get("next_action", ""))
+        # Where the job stands and the one next command, as process says it.
+        print("\n".join(closing_lines(report, job)))
         return
-    report = json.loads((job / "document.json").read_text(encoding="utf-8"))
     held = [page for page in report["pages"] if needs_person(page, report)]
     shown = shlex.quote(str(job))
     if any(page["disposition"] == "source_defect" for page in report["pages"]):
@@ -1914,7 +1943,8 @@ class _Progress:
             doing = (
                 f"{doing}, page {pages[0]}" if len(pages) == 1 else f"{doing}, {len(pages)} pages"
             )
-        held = f"; {event['held']} need a person so far" if event["held"] else ""
+        verb = "needs" if event["held"] == 1 else "need"
+        held = f"; {event['held']} {verb} a person so far" if event["held"] else ""
         return f"{event['done']} of {event['selected']} pages done{held}. Now: {doing}"
 
     def clear(self) -> None:
@@ -1938,14 +1968,20 @@ def _interrupted(args: argparse.Namespace) -> str:
     if command == "fetch":
         if not folder.exists():
             return "Interrupted before any image was fetched."
+        # The options that shaped the fetch go on shaping the rest of it.
+        kept = _given_options(args, ("--pages", "pages"), ("--delay", "delay"))
+        kept += _given_options(args, ("--max-image-bytes", "max_image_bytes"))
         return (
             f"Interrupted. The images fetched so far are kept in {folder}.\n"
-            f"To fetch the rest: pageledger fetch {shlex.quote(args.url)} --out {shown} --resume"
+            f"To fetch the rest: pageledger fetch {shlex.quote(args.url)} --out {shown}"
+            f"{kept} --resume"
         )
     if (folder / "job.json").is_file() or (folder / "checkpoint.json").is_file():
+        # A custom adapter is found again only where it was found the first time.
+        kept = _given_options(args, ("--adapter-path", "adapter_path"))
         return (
             f"Interrupted. The pages read so far are kept in {folder}.\n"
-            f"To continue: pageledger resume {shown}"
+            f"To continue: pageledger resume {shown}{kept}"
         )
     if command == "run" and (folder / "manifest.json").is_file():
         return "Interrupted after the run was written."
@@ -1959,6 +1995,19 @@ def _interrupted(args: argparse.Namespace) -> str:
             f"Interrupted. {folder} cannot be continued, since {what}. Remove it and start again."
         )
     return "Interrupted before anything was written."
+
+
+_DEFAULTS = {"delay": 1.0, "max_image_bytes": 256 * 1024 * 1024}
+
+
+def _given_options(args: argparse.Namespace, *options: tuple[str, str]) -> str:
+    """Options the command was given (not left at their defaults), ready to append."""
+    given = ""
+    for flag, name in options:
+        value = getattr(args, name, None)
+        if value is not None and value != _DEFAULTS.get(name):
+            given += f" {flag} {shlex.quote(str(value))}"
+    return given
 
 
 def _cmd_review(args: argparse.Namespace) -> int:
@@ -1976,8 +2025,12 @@ def _cmd_review(args: argparse.Namespace) -> int:
         job = args.job_dir if args.job_dir.name not in {"", ".."} else args.job_dir.resolve()
         out = job.with_name(f"{job.name}-review")
         if out.exists() or out.is_symlink():
-            # A view asked for with other images is a new view, never the old one.
-            asked = out.is_symlink() or args.images is not None
+            # A view asked for with other images is a new view, never the old one; a view
+            # without images is the one --images none asks for.
+            same_images = args.images is None or (
+                args.images == "none" and not (out / "images").exists()
+            )
+            asked = out.is_symlink() or not same_images
             state = "other" if asked else view_state(args.job_dir, out)
             if state == "current":
                 page = out / "index.html"

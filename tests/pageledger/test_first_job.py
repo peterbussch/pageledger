@@ -111,10 +111,10 @@ def test_written_config_follows_the_source_for_local_text(tmp_path: Path) -> Non
 def test_option_combinations_that_cannot_work_are_usage_errors(
     capsys: pytest.CaptureFixture[str], argv: list[str], message: str
 ) -> None:
-    with pytest.raises(SystemExit) as exit_info:
-        main(argv)
-    assert exit_info.value.code == 2
-    assert message in capsys.readouterr().err
+    assert main(argv) == 2
+    err = capsys.readouterr().err
+    # The sentence alone: pageledger's own usage line says nothing about the mistake.
+    assert message in err and not err.startswith("usage:")
 
 
 def test_plain_init_config_is_unchanged(capsys: pytest.CaptureFixture[str]) -> None:
@@ -210,9 +210,7 @@ def test_a_source_that_is_neither_pdf_images_nor_text_is_refused_before_the_job_
     elif isinstance(content, bytes):
         source.write_bytes(content)
     out = tmp_path / "jobs" / "x"
-    with pytest.raises(SystemExit) as exit_info:
-        main(["process", str(source), "--out", str(out)])
-    assert exit_info.value.code == 2
+    assert main(["process", str(source), "--out", str(out)]) == 2
     err = capsys.readouterr().err
     assert message in err
     if name not in {"nowhere.txt", "empty.docx", "empty.pdf"}:

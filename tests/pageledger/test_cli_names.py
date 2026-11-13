@@ -632,7 +632,7 @@ def test_progress_rewrites_one_line_on_a_terminal() -> None:
     written = stream.getvalue()
     assert "\n" not in written
     assert "\r0 of 3 pages done. Now: checking for text the pages already carry" in written
-    assert "\r1 of 3 pages done; 1 need a person so far. Now: OCR, page 2" in written
+    assert "\r1 of 3 pages done; 1 needs a person so far. Now: OCR, page 2" in written
     assert written.endswith("\r")
 
 
@@ -781,3 +781,111 @@ def test_doctor_with_a_config_lists_only_the_keys_it_names(
     out = capsys.readouterr().out
     assert "API keys: processing.yml names none (no env_key)." in out
     assert "OPENAI_API_KEY" not in out and "Env " not in out
+
+
+# -- plain screens (review 2026-11-13) -------------------------------------------
+
+
+def test_bare_pageledger_prints_the_command_list(capsys: pytest.CaptureFixture[str]) -> None:
+    code, out, err = _cli(capsys)
+    assert code == 0 and out.startswith("usage: pageledger") and err == ""
+    assert "process" in out
+
+
+def _text_job(tmp_path: Path, capsys: pytest.CaptureFixture[str], *args: str) -> Path:
+    source = tmp_path / "book.txt"
+    source.write_text("first page\fsecond page\fthird page\n", encoding="utf-8")
+    out = tmp_path / "jobs" / "book"
+    code, _, err = _cli(capsys, "process", str(source), "--out", str(out), *args)
+    assert code == 0, err
+    return out
+
+
+def test_verify_says_what_a_pass_means(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    job = _text_job(tmp_path, capsys)
+    code, out, _ = _cli(capsys, "verify", str(job))
+    assert code == 0
+    assert out.splitlines()[:2] == ["Status: pass", cli.VERIFIED]
+    assert "does not check that the text is right" in cli.VERIFIED
+
+
+def test_init_never_writes_over_a_file(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    path = tmp_path / "processing.yml"
+    path.write_text("# my own settings\n", encoding="utf-8")
+    code, _, err = _cli(capsys, "init", "--out", str(path))
+    assert code == 1 and "already exists" in err
+    assert path.read_text(encoding="utf-8") == "# my own settings\n"
+
+
+def test_an_interrupt_names_the_options_the_rest_needs(tmp_path: Path) -> None:
+    folder = tmp_path / "job"
+    folder.mkdir()
+    (folder / "job.json").write_text("{}", encoding="utf-8")
+    process = argparse.Namespace(command="process", out=folder, adapter_path=tmp_path / "my ad")
+    assert cli._interrupted(process).endswith(
+        f"pageledger resume {folder} --adapter-path '{tmp_path / 'my ad'}'"
+    )
+    fetch = argparse.Namespace(
+        command="fetch",
+        out=folder,
+        url="https://example.org/manifest",
+        pages="1-8",
+        delay=3.0,
+        max_image_bytes=1000,
+    )
+    assert cli._interrupted(fetch).endswith(
+        "--pages 1-8 --delay 3.0 --max-image-bytes 1000 --resume"
+    )
+    fetch.delay, fetch.max_image_bytes, fetch.pages = 1.0, 256 * 1024 * 1024, None
+    assert cli._interrupted(fetch).endswith(f"--out {folder} --resume")
+
+
+def test_a_review_of_a_paused_job_names_its_folder_and_status_in_words(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    config = tmp_path / "cfg.yml"
+    config.write_text(
+        "processing:\n  local_text: {adapter: text}\n  limits: {max_attempt_pages: 1}\n",
+        encoding="utf-8",
+    )
+    job = _text_job(tmp_path, capsys, "--config", str(config))
+    document = json.loads((job / "document.json").read_text(encoding="utf-8"))
+    assert document["status"] == "paused_budget"
+    receipt = tmp_path / "empty.json"
+    receipt.write_text(
+        json.dumps({"schema_version": "0.1", "source_sha256": _source_sha(job), "decisions": []}),
+        encoding="utf-8",
+    )
+    code, out, _ = _cli(capsys, "review", str(job), "--apply", str(receipt))
+    assert "JOB_DIR" not in out and "Status: paused_budget" not in out
+    assert "Paused at a limit" in out and f"pageledger resume {job}" in out
+
+
+def _source_sha(job: Path) -> str:
+    from pageledger.checkpoint import read_record
+
+    return read_record(job / "job.json")["source"]["sha256"]
+
+
+def test_progress_counts_one_page_as_one(tmp_path: Path) -> None:
+    event = {"pages": [3], "stage": "local_ocr", "done": 1, "selected": 3, "held": 1}
+    assert "1 needs a person so far" in cli._Progress.line(event)
+    assert "2 need a person so far" in cli._Progress.line({**event, "held": 2})
+
+
+def test_a_written_review_sheet_is_told_in_words(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    job = _text_job(tmp_path, capsys)
+    code, out, _ = _cli(capsys, "review", str(job), "--sheet", str(tmp_path / "s.csv"))
+    assert code == 0 and "Status:" not in out and "Review sheet:" in out
+
+
+def test_a_view_without_images_is_found_up_to_date_when_asked_for_again(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    job = _text_job(tmp_path, capsys)
+    assert _cli(capsys, "review", str(job), "--images", "none")[0] == 0
+    code, out, err = _cli(capsys, "review", str(job), "--images", "none")
+    assert code == 0, err
+    assert "up to date" in out
