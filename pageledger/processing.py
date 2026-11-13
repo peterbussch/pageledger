@@ -256,12 +256,24 @@ def _check_corrections(root: Path, page: dict, pending: frozenset[str] = frozens
 
     ``pending`` are the hashes of corrections checked before they are written.
     """
+    # The texts a correction can start from, by hash: readings, the edition, corrections.
+    starts = {a["raw_sha256"]: a["raw_artifact"] for a in page["attempts"] if a["raw_artifact"]}
+    if page.get("edition"):
+        starts[page["edition"]["sha256"]] = page["edition"]["artifact"]
     for _, correction in corrections.chain(page.get("review_history", []), page["page_id"]):
         path = _safe(root, correction["artifact"])
         if correction["sha256"] in pending and not path.exists():
             continue
         if not path.is_file() or file_digest(path) != correction["sha256"]:
             raise ValueError(f"Corrected text changed or is missing: {correction['artifact']}")
+        start = starts.get(correction["from_sha256"])
+        if start is not None:
+            corrections.check_words(
+                correction,
+                _safe(root, start).read_bytes().decode("utf-8", errors="replace"),
+                path.read_bytes().decode("utf-8", errors="replace"),
+            )
+        starts[correction["sha256"]] = correction["artifact"]
 
 
 def _relocated(job: dict, root: Path) -> bool:

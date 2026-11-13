@@ -121,6 +121,16 @@ def validate(correction: object, page_id: str) -> None:
         raise ValueError("Review correction is invalid")
 
 
+def check_words(correction: dict, before: str, after: str) -> None:
+    """Refuse a receipt whose word counts are not those of its texts: a full rewrite
+    recorded as a small change would never be warned of."""
+    if word_changes(before, after) != correction["words"]:
+        raise ValueError(
+            f"The word changes recorded for {correction['artifact']} do not match its text "
+            "and the text it was corrected from"
+        )
+
+
 def author(history: list[dict], page_id: str, sha256: str) -> dict:
     """The receipt decision that first recorded a correction; a later accept carries it on."""
     return next(decision for decision, item in chain(history, page_id) if item["sha256"] == sha256)

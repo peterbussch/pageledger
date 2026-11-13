@@ -388,16 +388,6 @@ DECISION_GROUPS = (
 )
 
 
-def hold(code: str) -> str:
-    """A hold reason or machine disposition in plain words, with its code."""
-    return f"{HOLDS.get(code) or REVIEWED.get(code) or code} (`{code}`)"
-
-
-def reviewed(code: str) -> str:
-    """A person's review decision in plain words, with its code."""
-    return f"{REVIEWED.get(code, code)} (`{code}`)"
-
-
 def warning(code: str) -> str:
     return WARNINGS.get(code, UNKNOWN_WARNING)
 

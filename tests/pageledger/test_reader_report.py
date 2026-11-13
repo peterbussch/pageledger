@@ -861,3 +861,14 @@ def test_a_paused_job_s_record_says_what_job_dir_stands_for(setup):  # noqa: F81
     report = _report(setup)
     assert "pageledger resume JOB_DIR" in report
     assert "  - JOB_DIR stands for this job's folder." in report
+
+
+def test_from_inside_the_job_the_suggested_export_goes_beside_it(tmp_path, monkeypatch):
+    from pageledger.document_report import export_command
+
+    job = tmp_path / "jobs" / "book"
+    job.mkdir(parents=True)
+    monkeypatch.chdir(job)
+    assert export_command(".") == "pageledger export . --out ../book.md"
+    monkeypatch.chdir(tmp_path)
+    assert export_command("jobs/book") == "pageledger export jobs/book --out book.md"

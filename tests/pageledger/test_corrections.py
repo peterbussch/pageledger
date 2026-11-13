@@ -545,3 +545,19 @@ def test_tei_export_records_the_correction_as_a_change(corrected, tmp_path):
         pytest.skip("xmllint is not installed")
     schema = ROOT / "tests" / "fixtures" / "tei" / "tei_all.rng"
     subprocess.run([xmllint, "--noout", "--relaxng", str(schema), str(out)], check=True)
+
+
+def test_a_receipt_s_word_counts_are_checked_against_its_texts(job, tmp_path):
+    review_job(
+        job,
+        _decisions(job, tmp_path / "one", [_row(1, decision="correct", text=TEXT.upper())]),
+        reviewer="A. Reader",
+    )
+    assert verify_job(job)["status"] == "pass"
+    job_record = read_record(job / "job.json")
+    page = job_record["pages"][0]
+    page["review"]["decisions"][0]["correction"]["words"] = {"changed": 0, "added": 0, "removed": 0}
+    page["review_history"][-1] = page["review"]
+    write_record(job / "job.json", job_record)
+    result = verify_job(job)
+    assert result["status"] == "fail" and "word changes recorded" in result["error"]

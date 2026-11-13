@@ -864,7 +864,12 @@ def export_command(job: Path | str) -> str:
     """The one export a job's next step suggests: its text as Markdown, named after its folder."""
     folder = Path(job).expanduser()
     name = folder.name if folder.name not in {"", ".", ".."} else folder.resolve().name
-    return f"pageledger export {shlex.quote(str(job))} --out {shlex.quote(name + '.md')}"
+    out = name + ".md"
+    here, resolved = Path.cwd(), folder.resolve()
+    if here.is_relative_to(resolved):
+        # From inside the job, the export goes beside it, never into it.
+        out = os.path.relpath(resolved.parent / out, here)
+    return f"pageledger export {shlex.quote(str(job))} --out {shlex.quote(out)}"
 
 
 # -- What `process` prints when a job ends --------------------------------------
