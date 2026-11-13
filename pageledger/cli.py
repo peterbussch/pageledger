@@ -130,7 +130,7 @@ PROCESSING_OPTIONAL = f"""\
   # and records every place they differ; it needs an image or local_image stage.
   # {_SPEC}#contest-a-models-reading
   # contest:
-  #   rules: ru-print-0.2   # Russian print; latin-print-0.1 for Latin-script print
+  #   rules: ru-print-0.3   # Russian print; latin-print-0.1 for Latin-script print
 """
 
 

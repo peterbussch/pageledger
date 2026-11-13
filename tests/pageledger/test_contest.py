@@ -341,5 +341,43 @@ def test_the_latin_procedure_is_pinned_to_its_rule_set():
     ).hexdigest()
     assert (digest, rules) == (
         "a53b78f505361bdecbb0c8ffb4c76153e881b794ef50566aa82839213d9b3747",
-        "76c2562932ab2bd416d4c5bf7e77fbf7bc0e0396be488a88c9d20b87709a6559",
+        # 0.9.0 (never released before) finds Latin words with their accents and marks.
+        "fd42b9e4176343ceb34a8121b9fe8acdb8ff53bb6245c54a8538260c66a2c55e",
     )
+
+
+@pytest.mark.parametrize(
+    "base,witness",
+    [
+        ("Он при-\nѣхалъ домой", "Он приѣхалъ домой"),
+        ("Die Ver-\nänderung kam", "Die Veränderung kam"),
+        ("la ré-\négalité des", "la réégalité des"),
+    ],
+)
+def test_rule_sets_0_3_rejoin_a_hyphenated_word_in_any_script(base, witness):
+    for rules in ("ru-print-0.3", "latin-print-0.1"):
+        assert contest(base, witness, rules=rules, engine="rapidocr", known=None) == []
+    # The earlier sets keep exactly their spans: they rejoined only a-z and а-я.
+    assert contest(base, witness, rules="ru-print-0.2", engine="rapidocr", known=None)
+
+
+def test_rule_sets_0_3_keep_indic_vowel_signs_inside_the_word():
+    from pageledger.contest import _tokens
+
+    text = "राम की किताब यहाँ है"
+    assert [word for *_, word in _tokens(text, marks=True)] == text.split()
+    assert len(_tokens(text)) > len(text.split())
+
+
+def test_rule_sets_0_3_do_not_take_a_word_from_elsewhere_as_the_second_half():
+    base, witness = "так: при-\nчем дом стоит здесь", "так: при- дом стоит здесь чем"
+    old = contest(base, witness, rules="ru-print-0.2", engine="rapidocr", known=None)
+    new = contest(base, witness, rules="ru-print-0.3", engine="rapidocr", known=None)
+    assert old == []
+    assert [(s["base"], s["witness"]) for s in new] == [("при-\nчем", "при"), ("", "чем")]
+
+
+def test_a_line_that_goes_on_in_capitals_starts_a_new_word():
+    from pageledger.contest import _tokens
+
+    assert [w for *_, w in _tokens("Нью-\nЙорк", marks=True)] == ["Нью", "Йорк"]

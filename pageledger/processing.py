@@ -732,6 +732,10 @@ def _job_lexicon(job: dict) -> Any:
     config = job["policy"]["lexicon"]
     if config["provider"] == "wordlist" and job.get("lexicon"):
         config = {**config, "path": job["lexicon"]["path"]}
+    recorded = job.get("lexicon") or {}
+    if recorded.get("provider") == "pymorphy3" and "tokens" not in recorded:
+        # Recorded before tokens 0.2: its words are found again as they were then.
+        return load_lexicon(config, tokens=None)
     return load_lexicon(config)
 
 

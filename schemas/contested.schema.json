@@ -8,7 +8,7 @@
   "properties": {
     "schema_version": { "const": "0.1" },
     "page_id": { "type": "string", "minLength": 1 },
-    "rules": { "type": "string", "description": "The versioned rule set that settled spans: ru-print-0.1, ru-print-0.2 or latin-print-0.1." },
+    "rules": { "type": "string", "description": "The versioned rule set that settled spans: ru-print-0.1, ru-print-0.2, ru-print-0.3 or latin-print-0.1." },
     "base": {
       "type": "object",
       "required": ["attempt", "text_sha256"],

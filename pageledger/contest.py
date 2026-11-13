@@ -10,6 +10,7 @@ page image.
 
 from __future__ import annotations
 
+import functools
 import hashlib
 import re
 import unicodedata
@@ -81,6 +82,8 @@ RULE_SETS["ru-print-0.2"] = {**RULE_SETS["ru-print-0.1"], "grouped_numbers": Tru
 RULE_SETS["latin-print-0.1"] = {
     "script": "latin",
     "grouped_numbers": True,
+    # Words as ru-print-0.3 finds them (below).
+    "tokens": "marks",
     "glyph_pairs": {
         "rapidocr": [
             ("e", "c"),
@@ -100,20 +103,49 @@ RULE_SETS["latin-print-0.1"] = {
         ]
     },
 }
+# ru-print-0.3 (and latin-print-0.1) keep a word whole with every combining mark that
+# follows a letter (stress accents, titlo, Indic vowel signs), and rejoin a word broken
+# by a line-end hyphen whenever the next line goes on in lower case, in any script
+# (при-ѣхалъ, Ver-änderung, ré-égalité). A second half the witness read elsewhere
+# on the page is no longer taken for the rest of a hyphenated word.
+RULE_SETS["ru-print-0.3"] = {**RULE_SETS["ru-print-0.2"], "tokens": "marks"}
 
 
 def _span_id(*parts: object) -> str:
     return "sp_" + hashlib.sha256("\x1f".join(map(str, parts)).encode("utf-8")).hexdigest()[:16]
 
 
-def _tokens(text: str, skip: list[tuple[int, int]] | None = None) -> list[tuple[int, int, str]]:
+@functools.cache
+def _marked_token() -> re.Pattern[str]:
+    """A word with all its combining marks, and the halves of a line-end hyphenation."""
+    marks = "".join(
+        re.escape(chr(code))
+        for code in range(0x300, 0x20000)
+        if unicodedata.category(chr(code)).startswith("M")
+    )
+    part = rf"(?:[^\W_]|[{marks}])+"
+    return re.compile(rf"{part}(?:[-‐­][ \t]*\n\s*{part})?")
+
+
+def _tokens(
+    text: str, skip: list[tuple[int, int]] | None = None, *, marks: bool = False
+) -> list[tuple[int, int, str]]:
     """(start, end, normalized word) for each word outside the skipped ranges."""
+    spans = []
+    for match in (_marked_token() if marks else _TOKEN).finditer(text):
+        broken = _BREAK.search(match.group()) if marks else None
+        if broken is not None and not text[match.start() + broken.end()].islower():
+            # A line that goes on in capitals or digits starts a new word.
+            spans.append((match.start(), match.start() + broken.start()))
+            spans.append((match.start() + broken.end(), match.end()))
+        else:
+            spans.append((match.start(), match.end()))
     tokens = []
-    for match in _TOKEN.finditer(text):
-        if any(match.start() < end and start < match.end() for start, end in skip or ()):
+    for first, last in spans:
+        if any(first < end and start < last for start, end in skip or ()):
             continue
-        word = unicodedata.normalize("NFC", _BREAK.sub("", match.group()))
-        tokens.append((match.start(), match.end(), word))
+        word = unicodedata.normalize("NFC", _BREAK.sub("", text[first:last]))
+        tokens.append((first, last, word))
     return tokens
 
 
@@ -280,6 +312,7 @@ def contest(
     grouped_numbers = RULE_SETS[rules].get("grouped_numbers", False)
     latin = RULE_SETS[rules].get("script") == "latin"
     letters = _LATIN if latin else _CYRILLIC
+    marks = RULE_SETS[rules].get("tokens") == "marks"
 
     def grouped(base_part: str, witness_part: str) -> str:
         digits = _DIGIT.search(base_part) or _DIGIT.search(witness_part)
@@ -291,11 +324,11 @@ def contest(
     regions = [(m.start(), m.end()) for m in _REGION.finditer(base)]
     # One placeholder per region, so a formula aligns as a unit and not as letters.
     stream: list[tuple[int, int, str, int | None]] = sorted(
-        [(s, e, w, None) for s, e, w in _tokens(base, regions)]
+        [(s, e, w, None) for s, e, w in _tokens(base, regions, marks=marks)]
         + [(s, e, f"\x00{n}", n) for n, (s, e) in enumerate(regions)],
         key=lambda token: token[0],
     )
-    other = _tokens(witness)
+    other = _tokens(witness, marks=marks)
     words = [t[2] for t in stream]
     read = [t[2] for t in other]
     # Where in the base each witness word sits, for anchoring words only it has.
@@ -368,7 +401,7 @@ def contest(
                 right.remove(j + 1)
                 after[j] = after[j + 1] = stream[i][1]
                 break
-            if read[j] == parts[0] and hyphen_after(witness, other[j][1]):
+            if not marks and read[j] == parts[0] and hyphen_after(witness, other[j][1]):
                 second = next((k for k in right if k != j and read[k] == parts[1]), None)
                 if second is not None:
                     left.remove(i)

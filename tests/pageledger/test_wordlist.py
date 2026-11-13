@@ -129,3 +129,30 @@ def test_the_config_names_a_word_list_by_path():
 def test_a_malformed_word_list_config_is_refused(lexicon):
     with pytest.raises(ValueError, match="provider: wordlist with the path"):
         processing_config(_config(escalate_on=["hold", "rough"], lexicon=lexicon), pdf=True)
+
+
+def test_the_russian_dictionary_judges_pre_reform_and_stressed_words_whole(monkeypatch):
+    import importlib.metadata
+    import sys
+    import types
+
+    from pageledger import lexicon
+
+    known = {"замок", "дать", "сочинение", "сов", "мок"}
+    fake = types.ModuleType("pymorphy3")
+    fake.MorphAnalyzer = lambda lang: types.SimpleNamespace(word_is_known=known.__contains__)
+    monkeypatch.setitem(sys.modules, "pymorphy3", fake)
+    monkeypatch.setattr(importlib.metadata, "version", lambda name: "9.9")
+    monkeypatch.setattr(lexicon, "_LOADED", {})
+    config = {"provider": "pymorphy3", "language": "ru"}
+    text = "совѣтъ Россія за́мок вы́дать сочине́ние при-\nѣхалъ"
+
+    current = lexicon.load_lexicon(config)
+    assert current.identity["tokens"] == "0.2"
+    words = current.words(text)
+    assert words == ["совѣтъ", "Россія", "за́мок", "вы́дать", "сочине́ние", "приѣхалъ"]
+    assert [current.known(word) for word in words[2:5]] == [True, False, True]
+    # A job recorded before tokens 0.2 is judged again exactly as it was.
+    legacy = lexicon.load_lexicon(config, tokens=None)
+    assert "tokens" not in legacy.identity
+    assert legacy.words(text)[:2] == ["сов", "Росс"]

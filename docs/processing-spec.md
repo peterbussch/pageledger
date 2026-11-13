@@ -671,7 +671,13 @@ image-checked text, and the open spans covered 306 of the 319 corrections the
 model's text needed. The misses were accents and figure labels that neither
 engine read. `ru-print-0.2` is the same, except that a grouped span (words only
 one side has, or an unpaired run) with a digit on either side is `number`, as a
-paired one always was; 0.1 called it `word`.
+paired one always was; 0.1 called it `word`. `ru-print-0.3` is 0.2 with Unicode
+words: a word keeps every combining mark after a letter (stress accents, titlo,
+Indic vowel signs), a word broken by a line-end hyphen is rejoined whenever the
+next line goes on in lower case in any script (`при-ѣхалъ`, `Ver-änderung`),
+and the second half of such a word must follow its first half in the other
+reading rather than stand anywhere on the page. `latin-print-0.1` finds words
+the same way. `ru-print-0.1` and `ru-print-0.2` keep their spans exactly.
 
 `latin-print-0.1` is for Latin-script print. It treats spacing, line-break
 hyphenation and punctuation as the Russian sets do, files grouped spans with

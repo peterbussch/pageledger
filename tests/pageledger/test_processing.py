@@ -653,7 +653,7 @@ def _escalating(setup, monkeypatch, *, rough=True, **processing):
             "rough_below": 0.95,
         }
     setup[1].write_text(yaml.safe_dump(data))
-    monkeypatch.setattr(processing_module, "load_lexicon", lambda config: _FakeLexicon())
+    monkeypatch.setattr(processing_module, "load_lexicon", lambda config, **_: _FakeLexicon())
     # Every reading of the fixture text is judged rough by this stand-in.
     monkeypatch.setattr(
         processing_module,
@@ -727,7 +727,7 @@ def test_contest_with_a_lexicon_and_no_escalation_triggers(setup, monkeypatch):
     data["processing"]["contest"] = {"rules": "ru-print-0.1"}
     data["processing"]["lexicon"] = {"provider": "pymorphy3", "language": "ru"}
     setup[1].write_text(yaml.safe_dump(data))
-    monkeypatch.setattr(processing_module, "load_lexicon", lambda config: _FakeLexicon())
+    monkeypatch.setattr(processing_module, "load_lexicon", lambda config, **_: _FakeLexicon())
     assert launch(setup, pages="2")["status"] == "completed"
     assert verify_job(setup[2])["status"] == "pass"
 
@@ -742,7 +742,7 @@ def test_a_job_refuses_to_verify_under_another_lexicon(setup, monkeypatch):
 
     import pageledger.processing as processing_module
 
-    monkeypatch.setattr(processing_module, "load_lexicon", lambda config: Other())
+    monkeypatch.setattr(processing_module, "load_lexicon", lambda config, **_: Other())
     result = verify_job(setup[2])
     assert result["status"] == "fail"
     assert "Install the recorded version" in result["error"]
