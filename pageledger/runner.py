@@ -1811,6 +1811,8 @@ def _validate_extraction_result(adapter_name: str, result: Any) -> None:
         f"Adapter '{adapter_name}' content must be JSON-serializable",
         result.content,
     )
+    if not _string_keys(result.content):
+        raise ValueError(f"Adapter '{adapter_name}' content keys must be strings")
     if not isinstance(result.format, str) or not result.format:
         raise ValueError(f"Adapter '{adapter_name}' format must be a non-empty string")
     if re.fullmatch(r"[A-Za-z0-9_]+", result.format) is None:
@@ -1881,6 +1883,20 @@ def _canonical_usage(usage: dict[str, Any]) -> dict[str, Any]:
         "compute_seconds": usage.get("compute_seconds"),
         "cost_usd": usage.get("cost_usd"),
     }
+
+
+def _string_keys(value: Any) -> bool:
+    """JSON writes a number key as a string, so a reading must use strings itself."""
+    stack = [value]
+    while stack:
+        item = stack.pop()
+        if isinstance(item, dict):
+            if not all(isinstance(key, str) for key in item):
+                return False
+            stack.extend(item.values())
+        elif isinstance(item, list):
+            stack.extend(item)
+    return True
 
 
 def _require_json_serializable(message: str, value: Any) -> None:

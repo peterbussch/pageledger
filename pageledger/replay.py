@@ -1278,7 +1278,15 @@ def _reject_image_evidence(run_root: Path, manifest: dict[str, Any]) -> None:
     """Image transport is not yet part of generation-zero text replay."""
     path = _declared_file(run_root, manifest, "provenance")
     for line in path.read_text(encoding="utf-8").splitlines():
-        if line.strip() and json.loads(line).get("input_evidence") is not None:
+        if not line.strip():
+            continue
+        try:
+            entry = json.loads(line)
+        except ValueError:
+            entry = None
+        if not isinstance(entry, dict):
+            _fail("bundle_malformed", "A provenance line is not a JSON object")
+        if entry.get("input_evidence") is not None:
             _fail(
                 "image_evidence_unsupported", "Image evidence cannot yet be transported or replayed"
             )

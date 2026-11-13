@@ -2126,3 +2126,11 @@ def test_a_huge_pages_range_is_refused_before_it_is_built(tmp_path):
     assert runner_module._parse_pages_expression("2-3,1", 5) == [1, 2, 3]
     with pytest.raises(ValueError, match="selects page 9 but the source has 5 pages"):
         runner_module._parse_pages_expression("1-9", 5)
+
+
+def test_json_content_with_number_keys_is_an_invalid_result():
+    from pageledger.runner import _validate_extraction_result
+
+    result = ExtractionResult([{1: "5"}], "json", None, None, [], {"pages": 1})
+    with pytest.raises(ValueError, match="content keys must be strings"):
+        _validate_extraction_result("custom", result)

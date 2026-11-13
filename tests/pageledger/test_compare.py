@@ -809,3 +809,17 @@ def test_compare_legacy_missing_provenance_is_unknown(tmp_path):
     assert report["pages"][0]["source_status"] == "unknown"
     assert report["pages"][0]["comparability"] == "incomparable_unknown"
     assert report["pages_incomparable_total"] == 1
+
+
+def test_compare_refuses_a_damaged_or_repeated_page_line(tmp_path):
+    import pytest
+
+    from pageledger.compare import _by_page
+
+    path = tmp_path / "quality.jsonl"
+    path.write_text('{"page_id": "a"}\n{"page_id": "a"}\n', encoding="utf-8")
+    with pytest.raises(ValueError, match="lists a twice"):
+        _by_page(path, "A")
+    path.write_text("{not json\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="not valid JSON"):
+        _by_page(path, "A")
