@@ -172,7 +172,7 @@ def test_worker_envelope_redacts_unexpected_error(
         "ok": False,
         "error": {
             "code": "replay_worker_failed",
-            "message": "Replay worker failed without a valid result.",
+            "message": "Replay worker failed without a valid result. (RuntimeError)",
         },
     }
     assert "secret details" not in result_path.read_text(encoding="utf-8")
@@ -618,17 +618,36 @@ def test_review_only_custom_adapter_without_hook_gets_planned_entry(tmp_path: Pa
     assert "reproducibility_profile" not in manifest["extractors"][0]
 
 
-def test_bundle_rejects_successful_custom_adapter_without_profile(tmp_path: Path) -> None:
-    from pageledger.replay import ReplayError, bundle_run
+def test_a_deterministic_adapter_without_a_profile_replays_as_compared_not_exact(
+    tmp_path: Path,
+) -> None:
+    from pageledger.replay import bundle_run, replay_bundle
 
     run_dir, _, _ = _run_custom_adapter_without_profile(tmp_path, action="transcribe_text")
-    manifest = json.loads((run_dir / "manifest.json").read_text(encoding="utf-8"))
-    assert manifest["execution_mode"] == "execute"
-    assert manifest["status"] == "completed"
-    with pytest.raises(ReplayError) as exc_info:
-        bundle_run(run_dir, tmp_path / "bundle")
-    assert exc_info.value.code == "profile_missing"
-    assert str(exc_info.value) == "Deterministic non-cloud extractor lacks a profile"
+    bundle_run(run_dir, tmp_path / "bundle")
+    result = replay_bundle(
+        tmp_path / "bundle", tmp_path / "replayed", adapter_path=tmp_path / "adapters"
+    )
+    assert result["outcome"] == "evidence_compared"
+    assert result["profile_match"] is None
+
+
+def test_profiles_match_across_an_os_point_release_and_python_patch_release(
+    tmp_path: Path,
+) -> None:
+    from pageledger.replay import profiles_match
+
+    run_dir, _, _ = _run_text(tmp_path)
+    recorded = json.loads((run_dir / "manifest.json").read_text(encoding="utf-8"))["extractors"][0][
+        "reproducibility_profile"
+    ]
+    local = json.loads(json.dumps(recorded))
+    local["runtime"]["release"] = "99.0.1"
+    major, minor, *_ = local["runtime"]["python_version"].split(".")
+    local["runtime"]["python_version"] = f"{major}.{minor}.99"
+    assert profiles_match(local, recorded)
+    local["runtime"]["machine"] = "elsewhere"
+    assert not profiles_match(local, recorded)
 
 
 def test_bundle_text_run_has_portable_layout(tmp_path: Path) -> None:
@@ -1363,6 +1382,7 @@ def test_replay_worker_startup_is_fixed_and_private(
     assert kwargs["stdout"] is subprocess.DEVNULL
     assert kwargs["stderr"] is subprocess.DEVNULL
     assert kwargs["check"] is False
+    assert kwargs["timeout"] == replay_module.REPLAY_TIMEOUT_SECONDS
     assert kwargs["cwd"] != Path.cwd()
     assert kwargs["cwd"] != output
     assert Path(command[-2]) == output.resolve()
@@ -1687,7 +1707,7 @@ def test_bundle_explains_that_a_document_job_is_shared_as_a_folder(tmp_path: Pat
     with pytest.raises(ReplayError) as excinfo:
         bundle_run(job, tmp_path / "bundle")
     assert "bundle` accepts a run, not a document job" in str(excinfo.value)
-    assert "Deposit a job" in str(excinfo.value)
+    assert "share-and-cite.md#deposit-a-job" in str(excinfo.value)
 
 
 @pytest.mark.parametrize("unsafe_path", ["/tmp/escape", "../escape"])

@@ -94,10 +94,10 @@ def test_pdf_ocr_profile_material_provider_success_and_unavailable(
     assert replay_module.build_reproducibility_profile(PdfOcrAdapter()) is None
 
 
-def test_pdf_ocr_run_without_profile_is_ordinary_but_not_bundleable(
+def test_pdf_ocr_run_without_profile_is_ordinary_and_bundles_as_not_exact(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from pageledger.replay import ReplayError, bundle_run
+    from pageledger.replay import bundle_run
     from pageledger.runner import run
 
     monkeypatch.setattr(
@@ -139,9 +139,8 @@ def test_pdf_ocr_run_without_profile_is_ordinary_but_not_bundleable(
     assert result["summary"]["pages_extracted"] == 1
     manifest = json.loads((run_dir / "manifest.json").read_text(encoding="utf-8"))
     assert "reproducibility_profile" not in manifest["extractors"][0]
-    with pytest.raises(ReplayError) as error:
-        bundle_run(run_dir, tmp_path / "bundle")
-    assert error.value.code == "profile_missing"
+    bundle_run(run_dir, tmp_path / "bundle")
+    assert (tmp_path / "bundle" / "bundle.json").is_file()
 
 
 def _one_text_page(tmp_path: Path, monkeypatch) -> None:

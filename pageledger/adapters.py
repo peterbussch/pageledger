@@ -21,6 +21,8 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any, BinaryIO, ClassVar, Literal
 
+from ._version import __version__
+
 # The classic plain-text page break. Splitting on it lets a single text file
 # carry multiple pages without any new dependency.
 PAGE_DELIMITER = "\f"
@@ -536,7 +538,7 @@ _LANGUAGE_CODES = {
 _COMMUNITY_MODELS = {
     "orus": (
         "a community model for Russian printed before 1918",
-        "https://github.com/peterbussch/pageledger/blob/main/docs/engine-recipes.md"
+        f"https://github.com/peterbussch/pageledger/blob/v{__version__}/docs/engine-recipes.md"
         "#tesseract-with-the-community-orus-model-macos-and-linux",
     ),
 }

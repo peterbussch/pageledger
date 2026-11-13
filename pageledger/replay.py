@@ -48,6 +48,8 @@ _BUNDLE_VERSION = "0.1"
 _WORKER_PROTOCOL_VERSION = "0.1"
 _WORKER_GENERIC_CODE = "replay_worker_failed"
 _WORKER_GENERIC_MESSAGE = "Replay worker failed without a valid result."
+# A whole run is replayed in one worker; adapters keep their own per-call timeouts.
+REPLAY_TIMEOUT_SECONDS = 6 * 3600
 _WORKER_MAX_RESULT_BYTES = 1_048_576
 _WORKER_BOOTSTRAP = """\
 import runpy
@@ -181,6 +183,11 @@ def profiles_match(local: Mapping[str, Any], recorded: Mapping[str, Any]) -> boo
             for key in ("preferred_encoding", "filesystem_encoding"):
                 if isinstance(runtime.get(key), str):
                     runtime[key] = _codec_name(runtime[key])
+            # The OS release and Python's patch level are context, not identity: an OS
+            # point update or a Python bug-fix release does not change what is read.
+            runtime.pop("release", None)
+            if isinstance(runtime.get("python_version"), str):
+                runtime["python_version"] = ".".join(runtime["python_version"].split(".")[:2])
         return payload
 
     return profile_sha256(comparable(local)) == profile_sha256(comparable(recorded))
@@ -395,8 +402,9 @@ def bundle_run(run_dir: Path, out_dir: Path) -> dict[str, Any]:
     if (requested / "job.json").is_file():
         _fail(
             "job_not_bundleable",
-            "`bundle` accepts a run, not a document job. Share the job as its folder; "
-            "see the 'Deposit a job' section in docs/share-and-cite.md.",
+            "`bundle` accepts a run, not a document job. Share the job as its folder; see "
+            f"https://github.com/peterbussch/pageledger/blob/v{__version__}/docs/"
+            "share-and-cite.md#deposit-a-job",
         )
     run_root = _resolve_directory(run_dir, "run_path_invalid")
     report = verify_run(run_root)
@@ -629,7 +637,14 @@ def replay_bundle(
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL,
                     check=False,
+                    timeout=REPLAY_TIMEOUT_SECONDS,
                 )
+            except subprocess.TimeoutExpired as exc:
+                raise ReplayError(
+                    "replay_timeout",
+                    f"Replay was stopped after {REPLAY_TIMEOUT_SECONDS // 3600} hours without "
+                    "a result; an engine it calls may be hanging.",
+                ) from exc
             except OSError as exc:
                 raise ReplayError(_WORKER_GENERIC_CODE, _WORKER_GENERIC_MESSAGE) from exc
             return _read_worker_response(
@@ -715,9 +730,17 @@ def _replay_bundle_in_process(
             "incompatible_environment",
             "Local reproducibility profile could not be established",
         ) from exc
-    if bool(getattr(adapter, "deterministic", False)) and not cloud:
-        recorded_profile = baseline_extractor.get("reproducibility_profile")
-        if not isinstance(recorded_profile, dict) or local_profile is None:
+    recorded_profile = baseline_extractor.get("reproducibility_profile")
+    # Exactness needs a deterministic local adapter whose environment was recorded; one
+    # recorded without a profile is replayed and compared, never claimed exact.
+    exact_possible = (
+        bool(baseline_extractor["deterministic"])
+        and not cloud
+        and isinstance(recorded_profile, dict)
+    )
+    if exact_possible:
+        assert isinstance(recorded_profile, dict)
+        if local_profile is None:
             raise ReplayError(
                 "incompatible_environment",
                 "Local reproducibility profile does not match the baseline",
@@ -785,7 +808,7 @@ def _replay_bundle_in_process(
         "different_page_ids": sorted(set(different_page_ids)),
         "missing_page_ids": sorted(set(missing_page_ids)),
     }
-    deterministic = bool(baseline_extractor["deterministic"]) and not cloud
+    deterministic = exact_possible
     outcome = (
         "exact"
         if deterministic and raw["different"] == 0 and raw["missing"] == 0
@@ -1112,10 +1135,8 @@ def _validate_extractor_identity(identity: dict[str, Any]) -> None:
     if not isinstance(identity["options"], dict):
         _fail("extractor_invalid", "Extractor options must be a mapping")
     profile = identity["reproducibility_profile"]
-    cloud = "cloud" in {item.casefold() for item in identity["capabilities"]}
     if profile is None:
-        if identity["deterministic"] and not cloud:
-            _fail("profile_missing", "Deterministic non-cloud extractor lacks a profile")
+        # Replayed without a profile, the run is compared as evidence, not claimed exact.
         return
     _validate_reproducibility_profile(profile, identity)
 

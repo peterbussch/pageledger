@@ -1488,10 +1488,15 @@ def _check_replay_linkage(
     deterministic = baseline_identity["deterministic"]
     capabilities = cast(list[str], baseline_identity["capabilities"])
     cloud = any(value.casefold() == "cloud" for value in capabilities)
-    if deterministic and not cloud:
+    # A deterministic local run recorded without a profile replays as compared evidence.
+    exact_possible = (
+        deterministic
+        and not cloud
+        and baseline_identity["reproducibility_profile_sha256"] is not None
+    )
+    if exact_possible:
         if (
-            baseline_identity["reproducibility_profile_sha256"] is None
-            or local_identity is None
+            local_identity is None
             or local_identity["reproducibility_profile_sha256"] is None
             or baseline_identity["reproducibility_profile_sha256"]
             != local_identity["reproducibility_profile_sha256"]
@@ -1512,8 +1517,7 @@ def _check_replay_linkage(
         )
     outcome = replay.get("outcome")
     if outcome == "exact" and (
-        not deterministic
-        or cloud
+        not exact_possible
         or replay.get("profile_match") is not True
         or counts.get("different") != 0
         or counts.get("missing") != 0
@@ -1526,16 +1530,16 @@ def _check_replay_linkage(
             "Exact replay invariants are not satisfied",
             artifact="replay.json",
         )
-    elif outcome == "evidence_compared" and deterministic and not cloud:
+    elif outcome == "evidence_compared" and exact_possible:
         _add(
             errors,
             "replay_linkage_mismatch",
-            "Evidence-compared outcome requires a nondeterministic or cloud extractor",
+            "Evidence-compared outcome requires a nondeterministic or cloud extractor, "
+            "or one recorded without a reproducibility profile",
             artifact="replay.json",
         )
     elif outcome == "deterministic_mismatch" and (
-        not deterministic
-        or cloud
+        not exact_possible
         or (
             counts.get("different", 0) == 0
             and counts.get("missing", 0) == 0
