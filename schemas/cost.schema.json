@@ -36,11 +36,11 @@
     "cost_usd": {
       "type": ["number", "null"],
       "minimum": 0,
-      "description": "Estimated total cost in USD. Null when cost is unknown."
+      "description": "Estimated total cost in USD: the sum of the pages whose cost is known. Null when no page had a known cost and at least one did not; 0 when no page was extracted."
     },
     "cost_known": {
       "type": "boolean",
-      "description": "True if cost_usd is meaningful (at least one page had a known cost). False when pricing is absent and no adapter reported cost."
+      "description": "True when every extracted page had a known cost (also when no page was extracted). False when any page's cost is unknown; cost_usd then covers only the known pages."
     },
     "cost_basis": {
       "type": "string",
