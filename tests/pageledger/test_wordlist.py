@@ -156,3 +156,18 @@ def test_the_russian_dictionary_judges_pre_reform_and_stressed_words_whole(monke
     legacy = lexicon.load_lexicon(config, tokens=None)
     assert "tokens" not in legacy.identity
     assert legacy.words(text)[:2] == ["сов", "Росс"]
+
+
+def test_the_recorded_russian_lexicon_identity_fits_the_job_schema():
+    import json
+    from pathlib import Path
+
+    import jsonschema
+
+    schema = json.loads(
+        (Path(__file__).parents[2] / "schemas" / "job.schema.json").read_text(encoding="utf-8")
+    )
+    lexicon = schema["properties"]["payload"]["properties"]["lexicon"]
+    identity = {"provider": "pymorphy3", "language": "ru", "version": "3", "dictionary": "2"}
+    jsonschema.validate({**identity, "tokens": "0.2"}, lexicon)
+    jsonschema.validate(identity, lexicon)

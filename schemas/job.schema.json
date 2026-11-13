@@ -985,7 +985,8 @@
                 "provider": {"type": "string"},
                 "language": {"type": "string"},
                 "version": {"type": "string"},
-                "dictionary": {"type": "string"}
+                "dictionary": {"type": "string"},
+                "tokens": {"const": "0.2", "description": "How words are found: 0.2 keeps pre-reform letters and stress accents inside a word. Absent in jobs written before it, which are judged as they were."}
               },
               "required": ["provider", "language", "version", "dictionary"],
               "additionalProperties": false

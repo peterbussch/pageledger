@@ -297,9 +297,12 @@ processing:
 
 - `rough`: the selected reading's share of words the lexicon knows falls below
   `rough_below`. Words split across a line break are rejoined first, and a page
-  with fewer than 20 Cyrillic words is not judged. Install the Russian lexicon
-  with `pip install 'pageledger[ru]'`, or name a word list for any language
-  (below).
+  with fewer than 20 Cyrillic words is not judged. With the Russian lexicon a
+  word keeps its pre-reform letters (ѣ, і, ѳ, ѵ) and stress accents, and is looked
+  up without the accents; the job records this as `tokens: "0.2"` in its
+  `lexicon`. Jobs recorded without it are judged again as they were. Install the
+  Russian lexicon with `pip install 'pageledger[ru]'`, or name a word list for any
+  language (below).
 - `disagreement`: the selected reading and another clean one agree on fewer than
   60% of their words, or read a number differently. Without this trigger the page
   goes to review, as before.
