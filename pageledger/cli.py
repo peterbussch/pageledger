@@ -1675,6 +1675,8 @@ def _cmd_job(args: argparse.Namespace) -> int:
         if "binding" in result:
             print(f"Review sheet: {result['out']} ({result['rows']} pages)")
             print(f"Binding: {result['binding']}")
+            if result.get("guide"):
+                print(f"How to fill it in: {result['guide']}")
         if result.get("report"):
             print(f"Report: {result['report']}")
         if result.get("next_action"):
@@ -2063,7 +2065,7 @@ def _cmd_review(args: argparse.Namespace) -> int:
         print(
             "Open that file in a web browser to see the pages and record your decisions; "
             f"to use a spreadsheet instead, fill in {Path(result['sheet']).name} beside it, "
-            "as review-decisions.txt there explains."
+            f"as {Path(result.get('guide', 'review-decisions.txt')).name} there explains."
         )
     return 0
 

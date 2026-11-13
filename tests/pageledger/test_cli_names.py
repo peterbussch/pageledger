@@ -877,8 +877,11 @@ def test_a_written_review_sheet_is_told_in_words(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     job = _text_job(tmp_path, capsys)
+    (tmp_path / "review-decisions.txt").write_text("someone else's guide", encoding="utf-8")
     code, out, _ = _cli(capsys, "review", str(job), "--sheet", str(tmp_path / "s.csv"))
     assert code == 0 and "Status:" not in out and "Review sheet:" in out
+    guide = out.split("How to fill it in: ")[1].strip()
+    assert Path(guide).is_file() and Path(guide).name != "review-decisions.txt"
 
 
 def test_a_view_without_images_is_found_up_to_date_when_asked_for_again(
