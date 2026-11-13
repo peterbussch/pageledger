@@ -5,7 +5,7 @@ from __future__ import annotations
 import codecs
 from pathlib import Path
 
-from .adapters import _reading_pdf
+from .adapters import _reading_pdf, text_pages
 from .image_source import KIND, is_image_source
 
 PDF = "pdf"
@@ -48,8 +48,7 @@ def source_kind(source: Path) -> str:
 
 def inspect_source(source: Path) -> tuple[int, dict]:
     if source.suffix.lower() != ".pdf":
-        text = source.read_text(encoding="utf-8")
-        return text.count("\f") + 1, {"status": "none", "count": 0}
+        return len(text_pages(source)), {"status": "none", "count": 0}
     with source.open("rb") as stream:
         # Reading the page list here surfaces a needed password or missing AES
         # support as a typed diagnostic before the inventory checks below.

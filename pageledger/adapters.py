@@ -84,6 +84,7 @@ class PageLedgerDiagnostic(RuntimeError):
             "engine_timeout",
             "unsupported_image",
             "malformed_image",
+            "unreadable_text",
         }
     )
 
@@ -148,10 +149,31 @@ def paginate(source: Path, *, allow_pdf: bool = False) -> int:
             return 1
         return _pdf_page_count(source)
     try:
-        content = source.read_text(encoding="utf-8")
-    except (UnicodeDecodeError, OSError):
+        return len(text_pages(source))
+    except (PageLedgerDiagnostic, OSError):
         return 1
-    return content.count(PAGE_DELIMITER) + 1
+
+
+def text_pages(source: Path) -> list[str]:
+    """A UTF-8 text file's pages, split on the form feed.
+
+    The bytes are decoded as they are, so CR and CRLF line endings stay in the page
+    text; a leading byte-order mark is an encoding marker, not text. A form feed ends
+    a page, so one at the very end (with nothing but white space after it, as OCR
+    tools and exports write) does not start another, empty page.
+    """
+    try:
+        text = source.read_bytes().decode("utf-8-sig")
+    except UnicodeDecodeError as exc:
+        raise PageLedgerDiagnostic(
+            "unreadable_text",
+            f"{source.name} is not UTF-8 text (byte {exc.start} cannot be read as UTF-8); "
+            "save it as UTF-8 and read it again",
+        ) from None
+    pages = text.split(PAGE_DELIMITER)
+    if len(pages) > 1 and not pages[-1].strip():
+        pages.pop()
+    return pages
 
 
 def adapter_page_count(adapter: Any, source: Path) -> int:
@@ -183,6 +205,7 @@ class TextAdapter:
         return {"materials": []}
 
     def page_count(self, source: Path) -> int:
+        # Undecodable text counts as one page; reading it then fails with the reason.
         return paginate(source, allow_pdf=False)
 
     def extract(
@@ -198,7 +221,7 @@ class TextAdapter:
             raise ValueError(f"Text adapter does not support action: {action}")
 
         _ = page_id, prompt
-        pages = source.read_text(encoding="utf-8").split(PAGE_DELIMITER)
+        pages = text_pages(source)
         if page_number < 1 or page_number > len(pages):
             raise ValueError(f"page_number {page_number} out of range for {source}")
         return ExtractionResult(
@@ -426,7 +449,19 @@ class PdfOcrAdapter:
             rendered = _png_size(images[0])
             output_prefix = tmp_path / "ocr"
             _run_ocr_command(
-                [tesseract, str(images[0]), str(output_prefix), "-l", self.lang, "txt", "tsv"],
+                # Some Tesseract releases end the text with a form feed, PageLedger's page
+                # break; an empty separator keeps the page's text the same across releases.
+                [
+                    tesseract,
+                    str(images[0]),
+                    str(output_prefix),
+                    "-l",
+                    self.lang,
+                    "-c",
+                    "page_separator=",
+                    "txt",
+                    "tsv",
+                ],
                 timeout=_OCR_TIMEOUT_SECONDS,
                 context=f"tesseract failed on page {page_number} of {source}",
             )
@@ -833,16 +868,26 @@ def _page_image_ppis(source: Path) -> tuple[float, ...]:
 
 
 def _largest_image_ppi(page: Any) -> float:
+    """Only an image with the page's proportions can be its scan; a logo or figure,
+    however sharp, must not raise the render DPI of a born-digital page."""
     width = float(page.mediabox.width) / 72
     height = float(page.mediabox.height) / 72
     resources = page["/Resources"] if "/Resources" in page else {}
     xobjects = resources["/XObject"] if "/XObject" in resources else {}
     ppi = 0.0
     if width > 0 and height > 0:
+        page_shape = min(width, height) / max(width, height)
         for name in xobjects:
             xobject = xobjects[name]
-            if xobject.get("/Subtype") == "/Image":
-                ppi = max(ppi, int(xobject["/Width"]) / width, int(xobject["/Height"]) / height)
+            if xobject.get("/Subtype") != "/Image":
+                continue
+            image_width, image_height = int(xobject["/Width"]), int(xobject["/Height"])
+            if min(image_width, image_height) <= 0:
+                continue
+            shape = min(image_width, image_height) / max(image_width, image_height)
+            if abs(shape - page_shape) > _SCAN_ASPECT_TOLERANCE * page_shape:
+                continue
+            ppi = max(ppi, image_width / width, image_height / height)
     return ppi
 
 
@@ -880,7 +925,7 @@ def _require_binary(name: str) -> str:
         package = _BINARY_PACKAGES.get(name, name)
         raise PageLedgerDiagnostic(
             "missing_binary",
-            f"The pdf_ocr adapter needs '{name}' on PATH; install {package}. "
+            f"PageLedger needs '{name}' on PATH to read this page; install {package}. "
             "Run 'pageledger doctor' for install hints.",
         )
     return path
@@ -1025,14 +1070,18 @@ def capture_pypdf_repairs() -> Iterator[None]:
     buried a four-page job under 95 lines. Its other warnings still reach stderr. This is
     logging configuration, so the command line applies it; library callers keep pypdf's own.
     """
-    repaired = 0
+    repaired = fonts = 0
     other = logging.StreamHandler()
 
     class _Notices(logging.Handler):
         def emit(self, record: logging.LogRecord) -> None:
-            nonlocal repaired
-            if record.getMessage().startswith(_PYPDF_REPAIR_NOTICES):
+            nonlocal repaired, fonts
+            message = record.getMessage()
+            if message.startswith(_PYPDF_REPAIR_NOTICES):
                 repaired += 1
+            elif message.startswith("fontTools is required"):
+                # Newer pypdf prints the whole font dictionary with each of these.
+                fonts += 1
             else:
                 other.emit(record)
 
@@ -1047,6 +1096,12 @@ def capture_pypdf_repairs() -> Iterator[None]:
         logger.propagate = propagate
         if repaired:
             print(f"pypdf repaired {repaired} objects while reading PDF files.", file=sys.stderr)
+        if fonts:
+            print(
+                f"pypdf could not fully decode {fonts} fonts without the fontTools package; "
+                "their text may read differently.",
+                file=sys.stderr,
+            )
 
 
 @contextmanager

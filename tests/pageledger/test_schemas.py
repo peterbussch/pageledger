@@ -480,12 +480,12 @@ def test_quality_execute_success(tmp_path: Path) -> None:
     """Quality lines validate and warn on short/empty text."""
     source = tmp_path / "sample.txt"
     source.write_text(
-        "page one text here\f", encoding="utf-8"
-    )  # page 2 is empty (trailing form feed)
+        "page one text here\f\fpage three", encoding="utf-8"
+    )  # page 2 is empty; a trailing form feed would only end page 1
     out_dir = _run_pageledger(tmp_path, config_yaml=MINIMAL_CONFIG, inputs=[str(source)])
     entries = _validate_jsonl(out_dir / "quality.jsonl", _quality_schema, "quality")
-    # Both pages extracted (page 1 has text, page 2 is empty string)
-    assert len(entries) == 2
+    # Every page extracted (page 2 is an empty string)
+    assert len(entries) == 3
     # Page 2 should have empty_text warning
     warnings_by_page = {e["page_id"]: e["warnings"] for e in entries}
     page1_warnings = [w for w in warnings_by_page.get("doc_0001_page_0001", [])]

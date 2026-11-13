@@ -864,7 +864,7 @@ run:
     assert log_event["status"] == "failed"
     assert log_event["error"]["adapter"] == "text"
     assert log_event["error"]["page_id"] == "doc_0001_page_0001"
-    assert "UnicodeDecodeError" in log_event["error"]["message"]
+    assert "is not UTF-8 text" in log_event["error"]["message"]
 
 
 def test_failed_run_preserves_full_pre_extraction_route_map(tmp_path):
