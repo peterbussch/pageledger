@@ -379,6 +379,7 @@
       "missing_crypto_dependency",
       "missing_language_pack",
       "render_limit",
+      "unreadable_text",
       "unsupported_encryption",
       "unsupported_image"
     ],

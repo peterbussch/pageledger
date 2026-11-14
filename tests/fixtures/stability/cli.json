@@ -512,6 +512,11 @@
           "choices": null,
           "required": true,
           "takes_value": true
+        },
+        "--trust-endpoint": {
+          "choices": null,
+          "required": false,
+          "takes_value": true
         }
       },
       "positionals": [
@@ -576,6 +581,11 @@
           "takes_value": false
         },
         "--raise-limit": {
+          "choices": null,
+          "required": false,
+          "takes_value": true
+        },
+        "--trust-endpoint": {
           "choices": null,
           "required": false,
           "takes_value": true
