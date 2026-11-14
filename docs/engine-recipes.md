@@ -14,8 +14,9 @@ through PageLedger used 19 of those pages. "Character error" here means
 characters that differ from that reference, so a figure measures agreement
 with it, not accuracy, and it describes that evaluation set, not other
 documents. "Exact numbers" is the share of the reference's numbers an engine
-wrote digit for digit; the scoring script that counts them is being corrected
-for lists such as `12, 15`, so treat those percentages as approximate.
+wrote digit for digit. These percentages were counted before the scoring script
+learned to read a list such as `12, 15` as two numbers, so treat them as
+approximate until the evaluation is scored again.
 
 ## Local Qwen3.5-9B with mlx-vlm (macOS)
 

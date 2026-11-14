@@ -158,3 +158,18 @@ def test_split_needs_the_splits_file(tmp_path):
     with pytest.raises(SystemExit) as caught:
         score.main([str(tmp_path), str(tmp_path), "--split", "dev"])
     assert caught.value.code == 2
+
+
+@pytest.mark.parametrize(
+    ("reference", "engine", "found"),
+    [
+        ("стр. | 12, 15", "стр. 12, 15", [True, True]),
+        ("годы | 1897, 1898", "годы 1897, 1898", [True, True]),
+        ("годы | 1897, 1898", "годы 18971898", [False, False]),
+        ("Уѣздъ | 1 234", "Уезд 1234", [True]),
+        ("Уѣздъ | 12,345", "Уезд 12 345", [True]),
+    ],
+)
+def test_a_list_of_numbers_is_read_alike_on_both_sides(reference, engine, found):
+    numbers = score.reference_numbers(reference)
+    assert [number in score.digit_groups(engine) for number in numbers] == found

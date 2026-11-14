@@ -27,8 +27,9 @@ HISTORICAL = {"ѣ": "ѣѢ", "і": "іІ", "ѳ": "ѳѲ", "ѵ": "ѵѴ"}
 FINAL_HARD = re.compile(r"ъ(?=[\s.,;:!?)\]»\"'—-]|$)")
 DOT_LEADER = re.compile(r"(?:[.·…]\s*){3,}")
 HANDWRITING = re.compile(r"\{hw:[^}]*\}")
-NUMBER = re.compile(r"\d(?:[\d.,\u00a0 ]*\d)?")
-SEPARATOR = re.compile(r"[.,\u00a0 ]")
+# A number may group its thousands with one separator before exactly three digits:
+# "1 234" and "12,345" are one number each, "12, 15" and "1897, 1898" are two.
+NUMBER = re.compile(r"\d+(?:[.,\u00a0 ]\d{3}(?!\d))*")
 # Some vision models write tables as HTML, often a whole table on one line.
 ROW_END = re.compile(r"</tr\s*>|<br\s*/?>", re.IGNORECASE)
 TAG = re.compile(r"</?[A-Za-z][^>]*>")
@@ -138,21 +139,8 @@ def reference_numbers(raw: str) -> list[str]:
 
 
 def digit_groups(text: str) -> set[str]:
-    """Digit runs, alone and joined with up to two neighbours across one separator."""
-    runs, current = [], []
-    for index, part in enumerate(re.split(r"(\d+)", text)):
-        if index % 2:
-            current.append(part)
-        elif not (current and SEPARATOR.fullmatch(part)):
-            runs.append(current)
-            current = []
-    runs.append(current)
-    return {
-        "".join(run[start:end])
-        for run in runs
-        for start in range(len(run))
-        for end in range(start + 1, min(len(run), start + 3) + 1)
-    }
+    """The digits of each number in engine text, read as reference_numbers reads them."""
+    return {re.sub(r"\D", "", found) for found in NUMBER.findall(text)}
 
 
 def historical_counts(text: str) -> dict[str, int]:
