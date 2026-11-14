@@ -11,8 +11,10 @@ Verifies the failure scenario table from run-manifest-spec.md:
 from __future__ import annotations
 
 import json
+import os
 import sys
 import textwrap
+from pathlib import Path
 
 import pytest
 
@@ -21,6 +23,9 @@ from pageledger.runner import (
     BudgetExceededError,
     run,
 )
+
+# Child processes import this checkout's package, never another one's.
+CHECKOUT = str(Path(__file__).resolve().parents[2])
 
 # =========================================================================
 # Adapter fails after prior pages succeed → partial artifacts
@@ -47,7 +52,6 @@ def test_adapter_fails_on_page_3_of_5_preserves_prior_pages(tmp_path):
     )
 
     # Write a custom adapter module that fails on page 3
-    import os
 
     mod_path = tmp_path / "test_fail_p3.py"
     mod_path.write_text(
@@ -81,7 +85,7 @@ def test_adapter_fails_on_page_3_of_5_preserves_prior_pages(tmp_path):
     """)
     )
 
-    env = {**os.environ, "PYTHONPATH": str(tmp_path)}
+    env = {**os.environ, "PYTHONPATH": os.pathsep.join([CHECKOUT, str(tmp_path)])}
     import subprocess
 
     result = subprocess.run(
@@ -295,7 +299,6 @@ def test_budget_at_exact_cost_cap_stops_before_next_page(tmp_path):
 
 def test_retry_exhausted_writes_retry_and_error_entries(tmp_path):
     """Adapter always fails; retry WARNING entries precede final ERROR entry."""
-    import os
 
     source = tmp_path / "doc.txt"
     source.write_text("first page\fsecond page\n", encoding="utf-8")
@@ -339,7 +342,7 @@ def test_retry_exhausted_writes_retry_and_error_entries(tmp_path):
     """)
     )
 
-    env = {**os.environ, "PYTHONPATH": str(tmp_path)}
+    env = {**os.environ, "PYTHONPATH": os.pathsep.join([CHECKOUT, str(tmp_path)])}
     import subprocess
 
     result = subprocess.run(
@@ -637,7 +640,6 @@ def test_adapter_error_envelope_discards_adapter_controlled_diagnostics(secret_t
 
 def test_run_log_does_not_contain_environment_secrets(tmp_path, monkeypatch):
     """Adapter exception messages in run.log do not expose env vars."""
-    import os
 
     monkeypatch.setenv("MY_SECRET_KEY", "sk-should-not-leak")
 
@@ -684,7 +686,7 @@ def test_run_log_does_not_contain_environment_secrets(tmp_path, monkeypatch):
         encoding="utf-8",
     )
 
-    env = {**os.environ, "PYTHONPATH": str(tmp_path)}
+    env = {**os.environ, "PYTHONPATH": os.pathsep.join([CHECKOUT, str(tmp_path)])}
     import subprocess
 
     completed = subprocess.run(

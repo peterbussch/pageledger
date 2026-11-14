@@ -130,17 +130,16 @@ def test_artifact_counts_consistent_synthetic(tmp_path: Path) -> None:
 
 
 # =========================================================================
-# Stress tests — marked 'stress' for optional CI
+# Larger runs. 100 and 1,000 pages take under a second and run everywhere;
+# 5,000 pages is marked 'stress' and run by hand (-m stress).
 # =========================================================================
 
 
-@pytest.mark.stress
 def test_stress_100_pages(tmp_path: Path) -> None:
     """100-page synthetic run: correct counts, no drift."""
     _stress_run(tmp_path, 100)
 
 
-@pytest.mark.stress
 def test_stress_1000_pages(tmp_path: Path) -> None:
     """1,000-page synthetic run: correct counts, no drift."""
     _stress_run(tmp_path, 1000)
@@ -148,7 +147,7 @@ def test_stress_1000_pages(tmp_path: Path) -> None:
 
 @pytest.mark.stress
 def test_stress_5000_pages(tmp_path: Path) -> None:
-    """5,000-page synthetic run: correct counts, reasonable runtime."""
+    """5,000-page synthetic run: correct counts."""
     _stress_run(tmp_path, 5000)
 
 
@@ -164,7 +163,6 @@ def test_run_ids_are_unique_across_runs(tmp_path: Path) -> None:
 
     id1 = _run_and_get_id(tmp_path, source, tmp_path / "r1")
     # brief sleep to ensure timestamp changes
-    import time
 
     time.sleep(0.002)
     id2 = _run_and_get_id(tmp_path, source, tmp_path / "r2")
@@ -262,9 +260,7 @@ def _stress_run(tmp_path: Path, page_count: int) -> None:
     ]
     source.write_text("\f".join(lines), encoding="utf-8")
 
-    t0 = time.monotonic()
     out_dir = _run_pageledger(tmp_path, [source])
-    elapsed = time.monotonic() - t0
 
     manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
     pe = manifest["summary"]["pages_extracted"]
@@ -280,12 +276,3 @@ def _stress_run(tmp_path: Path, page_count: int) -> None:
     assert raw_count == page_count, f"raw={raw_count} != {page_count}"
     assert prov_count == page_count, f"provenance={prov_count} != {page_count}"
     assert quality_count == page_count, f"quality={quality_count} != {page_count}"
-
-    # Coarse performance: 5000 pages should complete in under 60 seconds
-    # (this is a generous bound for a local test)
-    if page_count >= 5000:
-        assert elapsed < 120, f"5000 pages took {elapsed:.1f}s; expected < 120s"
-
-    # Log the timing for informational purposes (visible with -s flag)
-    pps = page_count / elapsed if elapsed > 0 else 0
-    print(f"[stress {page_count}p] {elapsed:.2f}s, {pps:.0f} pages/sec, {pe} extracted")

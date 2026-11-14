@@ -612,6 +612,13 @@ def test_builtin_adapter_names_still_resolve(name: str) -> None:
         assert not str(exc).startswith("Unsupported adapter"), f"{name}: {BREAKING}"
 
 
+def test_the_adapter_name_probe_still_recognises_an_unknown_name() -> None:
+    """The probe above reads a message; if it is reworded, the probe must be updated."""
+    with pytest.raises(ValueError) as refused:
+        adapters.load_adapter("no_such_adapter")
+    assert str(refused.value).startswith("Unsupported adapter")
+
+
 # -- Adapter protocol --------------------------------------------------------
 
 STUB_ADAPTER = textwrap.dedent(
@@ -813,6 +820,13 @@ def test_processing_keys_are_still_known(key: str) -> None:
         assert not str(exc).startswith("Unknown processing key"), f"processing.{key}: {BREAKING}"
 
 
+def test_the_processing_key_probe_still_recognises_an_unknown_key() -> None:
+    """The probe above reads a message; if it is reworded, the probe must be updated."""
+    with pytest.raises(ValueError) as refused:
+        processing_config.processing_config({"processing": {"no_such_key": None}}, pdf=False)
+    assert str(refused.value).startswith("Unknown processing key")
+
+
 CONFIG_PROPERTIES = (
     "dataset_citation",
     "language",
@@ -893,11 +907,18 @@ def test_a_0_8_config_means_what_it_meant() -> None:
 # -- Runs and jobs written by published releases -----------------------------
 
 
+@pytest.fixture(autouse=True)
+def _empty_cwd(tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The releases record their source as the bare path ``sample.txt``, which resolves
+    against the working directory; run where no such file can exist."""
+    monkeypatch.chdir(tmp_path_factory.mktemp("cwd"))
+
+
 def _copy_release(version: str, kind: str, tmp_path: Path) -> Path:
     """Copy a golden run or job as Git checked it out: its empty directories are gone."""
     recorded = json.loads((RELEASES / version / "run" / "manifest.json").read_text())
-    if Path(recorded["inputs"][0]["path"]).exists():
-        pytest.skip("the releases' recorded source path exists on this machine")
+    source = Path(recorded["inputs"][0]["path"])
+    assert not source.exists(), f"{source.resolve()} exists, so its missing-source check can't run"
     target = tmp_path / f"{kind}-{version}"
     shutil.copytree(RELEASES / version / kind, target)
     return target.resolve()

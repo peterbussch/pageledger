@@ -258,7 +258,9 @@ def test_image_receipts_validate_against_published_schemas(image_job):
     registry = Registry(retrieve=retrieve)
     schema = json.loads((schemas / "checkpoint-page.schema.json").read_text())
     launch_image(image_job)
-    for path in (image_job[2] / ".checkpoint/pages").glob("*.json"):
+    pages = sorted((image_job[2] / ".checkpoint/pages").glob("*.json"))
+    assert len(pages) == 2
+    for path in pages:
         jsonschema.Draft202012Validator(schema, registry=registry).validate(
             json.loads(path.read_text())
         )

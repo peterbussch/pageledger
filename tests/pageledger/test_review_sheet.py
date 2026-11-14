@@ -205,6 +205,85 @@ def test_an_unfit_sheet_is_refused_before_anything_is_recorded(job, tmp_path, ch
     assert all(page["review"] is None for page in _pages(job))
 
 
+def _damage_text(old, new):
+    def damage(sheet):
+        sheet.write_text(sheet.read_text(encoding="utf-8-sig").replace(old, new, 1))
+
+    return damage
+
+
+def _damage_binding(change):
+    def damage(sheet):
+        binding = json.loads(binding_path(sheet).read_text())
+        binding_path(sheet).write_text(json.dumps(change(binding)))
+
+    return damage
+
+
+def _drop_page(binding):
+    binding["bindings"].pop("p0002")
+    return binding
+
+
+def _unreadable(sheet):
+    """A cell longer than the csv module will read, as a damaged file can hold."""
+    sheet.write_text(sheet.read_text(encoding="utf-8-sig") + '"' + "x" * 200_000 + '"\n')
+
+
+@pytest.mark.parametrize(
+    ("damage", "message"),
+    [
+        (_damage_text("decision", "verdict"), "Review sheet columns must be"),
+        (_damage_text("\np0002,", "\np0002,2,extra,"), "Row 3 of the review sheet does not"),
+        (_damage_text("\np0002,", ",x\np0002,"), "Row 2 of the review sheet does not"),
+        (_damage_text("\np0002,", "\np0002\n"), "Row 3 of the review sheet does not"),
+        (_unreadable, "Cannot read the review sheet"),
+        (lambda sheet: binding_path(sheet).write_text("{"), "Cannot read review sheet binding"),
+        (_damage_binding(lambda b: {**b, "schema_version": "9"}), "binding is invalid"),
+        (_damage_binding(lambda b: [b]), "binding is invalid"),
+        (_damage_binding(_drop_page), "written for a different set of pages"),
+    ],
+)
+def test_a_damaged_sheet_or_binding_is_refused_before_anything_is_recorded(
+    job, tmp_path, damage, message
+):
+    sheet = _sheet(job, tmp_path / "review.csv")
+    _edit(sheet, lambda rows: rows[0].update(decision="accept"))
+    before = (job / "job.json").read_bytes()
+    damage(sheet)
+
+    with pytest.raises(ValueError, match=message):
+        review_job(job, sheet, reviewer="A. Reader")
+    assert (job / "job.json").read_bytes() == before
+
+
+@pytest.mark.parametrize("formula", ["=HYPERLINK(1)", "+1", "@SUM(A1)", "\t=1"])
+def test_a_formula_in_the_decision_column_is_refused(job, tmp_path, formula):
+    sheet = _sheet(job, tmp_path / "review.csv")
+    _edit(sheet, lambda rows: rows[0].update(decision=formula))
+
+    with pytest.raises(ValueError, match="Review row p0001 has a formula in decision"):
+        review_job(job, sheet, reviewer="A. Reader")
+    assert all(page["review"] is None for page in _pages(job))
+
+
+@pytest.mark.parametrize(
+    "data",
+    [
+        {"schema_version": "0.1", "bindings": {}},
+        {"schema_version": "0.1", "bindings": [], "rows": []},
+        {"schema_version": "0.2", "bindings": {}, "rows": []},
+    ],
+)
+def test_a_decisions_file_of_another_shape_is_refused(job, tmp_path, data):
+    path = tmp_path / "decisions.json"
+    path.write_text(json.dumps(data))
+
+    with pytest.raises(ValueError, match="A decisions file holds schema_version 0.1"):
+        review_job(job, path, reviewer="A. Reader")
+    assert all(page["review"] is None for page in _pages(job))
+
+
 def test_a_sheet_written_before_the_evidence_changed_is_refused(job, tmp_path):
     ocr = next(a["attempt_id"] for a in _pages(job)[1]["attempts"] if a["stage"] == "local_ocr")
     earlier = _sheet(job, tmp_path / "earlier.csv")

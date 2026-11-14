@@ -476,13 +476,14 @@ def test_tei_and_jsonl_carry_the_hold_and_the_warnings(setup, tmp_path):  # noqa
     categories = tei.findall(f".//{TEI}classDecl/{TEI}taxonomy/{TEI}category")
     assert len(categories) == 4
     xmllint = shutil.which("xmllint")
-    if xmllint:
-        checked = subprocess.run(
-            [xmllint, "--noout", "--relaxng", str(TEI_ALL), str(tmp_path / "book.tei")],
-            capture_output=True,
-            text=True,
-        )
-        assert checked.returncode == 0, checked.stderr
+    if not xmllint:
+        pytest.skip("xmllint is not installed, so the TEI was not validated against TEI All")
+    checked = subprocess.run(
+        [xmllint, "--noout", "--relaxng", str(TEI_ALL), str(tmp_path / "book.tei")],
+        capture_output=True,
+        text=True,
+    )
+    assert checked.returncode == 0, checked.stderr
 
 
 # ---------------------------------------------------------------------------
@@ -596,7 +597,7 @@ def test_the_new_format_keeps_every_link_hash_and_fact_of_the_old(tmp_path):
         "MODEL_OUTPUT_TRUNCATED",
         "multi_column_rows",
         "| 0 (no page met its trigger)",
-        "none (0)" if False else "present (2)",
+        "present (2)",
         "Changed elsewhere: review --apply on 2026-11-10T00:00:00Z in /x",
         "unverified",
         "not_assessed",

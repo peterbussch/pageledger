@@ -207,7 +207,8 @@ def test_unfit_correction_files_are_refused_before_anything_is_recorded(
     sheet = _sheet(job, folder, {1: f"correct:{name}"})
     if message is None:
         # Line breaks differ from the reading, so this is a correction, not a copy.
-        review_job(job, sheet, reviewer="A. Reader", dry_run=True)
+        assert review_job(job, sheet, reviewer="A. Reader", dry_run=True)["status"] == "checked"
+        assert all(page["review"] is None for page in _pages(job))
         return
     with pytest.raises(ValueError, match=message):
         review_job(job, sheet, reviewer="A. Reader")
@@ -385,6 +386,36 @@ def test_a_plain_receipt_cannot_replace_a_correction(job, tmp_path):
     export_job(job, out, format="txt")
     assert TEXT in out.read_text().split("Page 2")[0]
     assert verify_job(job)["status"] == "pass"
+
+
+@pytest.mark.parametrize(
+    "artifact",
+    [
+        "../../outside.txt",
+        "/etc/hosts",
+        "attempts/local_text/raw/doc_0001_page_0001.txt",
+        "corrections/doc_0001_page_0002/{sha}.txt",
+    ],
+)
+def test_a_receipt_whose_correction_points_elsewhere_is_refused(job, tmp_path, artifact):
+    """A hand-written JSON receipt must not make a correction of any file it names."""
+    fresh = tmp_path / "fresh"
+    shutil.copytree(job, fresh)
+    review_job(
+        job,
+        _decisions(job, tmp_path / "view", [_row(1, decision="correct", text=TEXT)]),
+        reviewer="A. Reader",
+    )
+    receipt = _pages(job)[0]["review"]
+    correction = receipt["decisions"][0]["correction"]
+    correction["artifact"] = artifact.format(sha=correction["sha256"])
+    hand_written = tmp_path / "hand-written.json"
+    hand_written.write_text(json.dumps(receipt))
+    before = (fresh / "job.json").read_bytes()
+
+    with pytest.raises(ValueError, match="Review correction is invalid"):
+        review_job(fresh, hand_written)
+    assert (fresh / "job.json").read_bytes() == before
 
 
 def test_a_correction_of_an_edition_starts_from_the_edition(setup, monkeypatch, tmp_path):  # noqa: F811

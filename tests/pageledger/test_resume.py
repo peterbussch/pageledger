@@ -108,7 +108,14 @@ def test_all_retained_evidence_is_validated_before_pending_calls(job, damage):
         targets[damage].unlink()
     else:
         targets[damage].write_text("damaged")
-    with pytest.raises(ValueError):
+    reason = {
+        "source": "Recovery source identity changed",
+        "config": "Recovery config identity changed",
+        "raw": "Recovery output changed",
+        "receipt": "Recovery page inventory mismatch",
+        "response": "Recovery record invalid",
+    }[damage]
+    with pytest.raises(ValueError, match=reason):
         runner.resume(out)
     assert adapter.calls == [1]
 
@@ -189,7 +196,7 @@ def test_budget_reconstruction_stops_pending_work(job):
         runner.resume(job[2])
     assert job[3].calls == [1, 2]
     assert verify_run(job[2])["status"] == "pass"
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="does not permit resume"):
         runner.resume(job[2])
     assert job[3].calls == [1, 2]
 
@@ -376,7 +383,13 @@ def test_semantically_invalid_rehashed_records_fail_closed(job, damage):
         plan = read_record(out / "checkpoint.json")
         plan["parent_run_id"] = "untrusted-parent"
         write_record(out / "checkpoint.json", plan)
-    with pytest.raises(ValueError):
+    reason = {
+        "failed_type": "Invalid typed recovery failure",
+        "missing_planned_page": "Recovery plan has missing or unexpected source pages",
+        "state_gap": "Recovery attempt order contains a gap",
+        "job_unknown_field": "Invalid recovery job identity or plan",
+    }[damage]
+    with pytest.raises(ValueError, match=reason):
         runner.resume(out)
     assert job[3].calls == [1]
 

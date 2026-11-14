@@ -13,9 +13,17 @@ from pathlib import Path
 import pytest
 import yaml
 
-pypdf = pytest.importorskip("pypdf")
+try:
+    import pypdf  # noqa: F401
+except ModuleNotFoundError:
+    pypdf = None
+
 ROOT = Path(__file__).resolve().parents[2]
-pytestmark = pytest.mark.skipif(shutil.which("pdftoppm") is None, reason="pdftoppm is required")
+# Only the tests that render a page need these; the reading-order logic needs neither.
+needs_pdf = pytest.mark.skipif(
+    pypdf is None or shutil.which("pdftoppm") is None,
+    reason="needs the pdf extra and Poppler's pdftoppm",
+)
 
 
 def _pdf(path: Path) -> Path:
@@ -52,6 +60,7 @@ def _fake_rapidocr(monkeypatch: pytest.MonkeyPatch, engine: type) -> None:
     monkeypatch.setattr(importlib.metadata, "version", lambda _name: "3.9.2")
 
 
+@needs_pdf
 def test_rapidocr_assembles_text_and_maps_confidence(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -115,6 +124,7 @@ def _engine_for(lines):
     return Engine
 
 
+@needs_pdf
 def test_rapidocr_reads_rows_across_the_page_by_default(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -129,6 +139,7 @@ def test_rapidocr_reads_rows_across_the_page_by_default(
     assert "reading-order" not in result.model
 
 
+@needs_pdf
 def test_rapidocr_column_reading_order_reads_each_column_through(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -326,6 +337,7 @@ def test_rapidocr_rejects_an_unknown_reading_order(tmp_path: Path, monkeypatch) 
         )
 
 
+@needs_pdf
 def test_rapidocr_run_cli_writes_normalized_quality_and_detail(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -367,6 +379,7 @@ def test_rapidocr_run_cli_writes_normalized_quality_and_detail(
     assert len(constructions) == 1
 
 
+@needs_pdf
 def test_rapidocr_render_timeout_reaches_pdftoppm(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -430,6 +443,7 @@ def test_rapidocr_missing_model_files_is_actionable(
         load_adapter("rapidocr", {"rec_model_dir": str(tmp_path)})
 
 
+@needs_pdf
 def test_rapidocr_reads_character_dictionary_from_inference_yaml(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -464,6 +478,7 @@ def test_rapidocr_reads_character_dictionary_from_inference_yaml(
     assert paths[0].parent == Path(adapter._recognizer_keys_path).parent
 
 
+@needs_pdf
 def test_rapidocr_warns_for_rows_joining_four_lines_in_most_rows(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -501,6 +516,7 @@ def test_rapidocr_warns_for_rows_joining_four_lines_in_most_rows(
     assert "multi_column_rows" not in column_result.warnings
 
 
+@needs_pdf
 def test_rapidocr_returns_its_line_boxes_as_a_layout(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -553,6 +569,7 @@ def test_multi_column_rows_threshold_excludes_single_and_two_column_rows():
     assert not _multi_column_rows(four_column_rows)
 
 
+@needs_pdf
 def test_apple_vision_adapter_runs_helper_and_assembles_rows(tmp_path: Path) -> None:
     helper = tmp_path / "helper"
     helper.write_text(
@@ -580,3 +597,39 @@ def test_rapidocr_rows_read_a_right_to_left_row_from_the_right() -> None:
     ]
     assert assemble(lines).splitlines() == ["שם | עיר | שנה", "Name | City"]
     assert _assemble(lines, "rows")[1] == 1
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "apple_vision_adapter:AppleVisionAdapter",
+        "cloud_vlm_adapter_skeleton:CloudVlmAdapter",
+        "docling_adapter:DoclingAdapter",
+        "local_llm_cleanup_adapter:LocalLlmCleanupAdapter",
+        "ollama_cleanup_adapter:OllamaCleanupAdapter",
+        "prereform_normalizer_adapter:PrereformNormalizerAdapter",
+        "tesseract_pdftoppm_adapter:TesseractPdftoppmAdapter",
+        "tesseract_tsv_table_adapter:TesseractTsvTableAdapter",
+    ],
+)
+def test_every_example_adapter_loads_by_name_and_keeps_the_protocol(
+    name: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from pageledger.adapters import adapter_conformance_check, load_adapter
+
+    monkeypatch.syspath_prepend(str(ROOT / "examples"))
+    assert adapter_conformance_check(load_adapter(name)) == []
+
+
+def test_every_example_adapter_is_in_the_conformance_list() -> None:
+    listed = {
+        "apple_vision_adapter",
+        "cloud_vlm_adapter_skeleton",
+        "docling_adapter",
+        "local_llm_cleanup_adapter",
+        "ollama_cleanup_adapter",
+        "prereform_normalizer_adapter",
+        "tesseract_pdftoppm_adapter",
+        "tesseract_tsv_table_adapter",
+    }
+    assert {path.stem for path in (ROOT / "examples").glob("*_adapter*.py")} == listed

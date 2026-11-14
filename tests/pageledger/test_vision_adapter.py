@@ -18,7 +18,6 @@ from pageledger.cli import main
 from pageledger.image_evidence import validate_input_evidence
 from pageledger.processing import process
 
-pytestmark = pytest.mark.skipif(shutil.which("pdftoppm") is None, reason="needs Poppler")
 READING = {
     "model": "served-model",
     "choices": [{"message": {"content": "page text"}, "finish_reason": "stop"}],
@@ -67,7 +66,10 @@ def endpoint():
 
 @pytest.fixture
 def pdf(tmp_path):
+    """A one-page PDF that the adapter renders, so its tests need Poppler too."""
     pypdf = pytest.importorskip("pypdf")
+    if shutil.which("pdftoppm") is None:
+        pytest.skip("needs Poppler's pdftoppm")
     writer = pypdf.PdfWriter()
     writer.add_blank_page(width=612, height=792)
     path = tmp_path / "page.pdf"

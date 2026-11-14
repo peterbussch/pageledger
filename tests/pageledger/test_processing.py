@@ -382,7 +382,7 @@ def test_tampered_selected_output_fails_verification(setup):
     selected = job["pages"][0]["attempts"][0]["raw_artifact"]
     (setup[2] / selected).write_text("changed")
     assert verify_job(setup[2])["status"] == "fail"
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="Recovery output changed or completed output is missing"):
         resume_job(setup[2])
 
 
@@ -482,8 +482,12 @@ def test_attempt_limit_processes_a_prefix_then_pauses(setup):
 def test_paused_job_stays_paused_without_a_higher_limit(setup):
     _limit_attempts(setup, 2)
     assert resume_job(setup[2])["status"] == "paused_budget"
-    for bad in ({"max_attempt_pages": 2}, {"max_attempt_pages": 1}, {"max_retries": 5}):
-        with pytest.raises(ValueError):
+    for bad, reason in (
+        ({"max_attempt_pages": 2}, "max_attempt_pages must be raised above 2"),
+        ({"max_attempt_pages": 1}, "max_attempt_pages must be raised above 2"),
+        ({"max_retries": 5}, "max_retries is not a processing limit"),
+    ):
+        with pytest.raises(ValueError, match=reason):
             resume_job(setup[2], raise_limits=bad)
     assert read_record(setup[2] / "job.json")["usage"]["attempt_pages"] == 2
 

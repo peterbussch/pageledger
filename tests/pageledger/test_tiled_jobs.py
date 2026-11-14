@@ -317,6 +317,31 @@ def _completed(tiled_job) -> tuple[Path, dict]:
     return root, job
 
 
+def test_a_batch_of_tiled_pages_counts_every_page_s_tiles_against_the_limit(tiled_job):
+    source, config, root, log = tiled_job
+    data = yaml.safe_load(config.read_text())
+    data["processing"]["batch"] = {"pages": 2, "concurrent": 1}
+    config.write_text(yaml.safe_dump(data))
+
+    # Both pages fit one batch, but their 18 tiles do not fit 12 requests: only page 1 starts.
+    assert process(source=source, config_path=config, out_dir=root)["status"] == "paused_budget"
+    job = read_record(root / "job.json")
+    assert job["halt_reason"] == "budget:max_image_requests"
+    assert job["usage"]["image_requests"] == 9
+    assert len(log.read_text().splitlines()) == 9
+
+    # Exactly enough for page 2's nine tiles.
+    resumed = resume_job(root, raise_limits={"max_image_requests": 18})
+    assert resumed["status"] == "completed"
+    job = read_record(root / "job.json")
+    assert job["usage"]["image_requests"] == 18
+    assert [stage["tiles"]["count"] for stage in job["stages"] if stage["stage"] == "image"] == [
+        9,
+        9,
+    ]
+    assert verify_job(root)["status"] == "pass"
+
+
 def test_a_changed_tile_image_fails_verification(tiled_job):
     root, job = _completed(tiled_job)
     reading = next(a for a in job["pages"][0]["attempts"] if a["stage"] == "image")

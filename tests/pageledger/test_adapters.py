@@ -25,6 +25,9 @@ from pageledger.adapters import (
     ocr_pdf_page_count,
 )
 
+# Child processes import this checkout's package, never another one's.
+CHECKOUT = str(Path(__file__).resolve().parents[2])
+
 # =========================================================================
 # Adapter conformance helper — built-in adapters
 # =========================================================================
@@ -989,7 +992,7 @@ def _run_and_assert_success(
         encoding="utf-8",
     )
     out_dir = tmp_path / "out"
-    env = {**os.environ, "PYTHONPATH": str(tmp_path)}
+    env = {**os.environ, "PYTHONPATH": os.pathsep.join([CHECKOUT, str(tmp_path)])}
     result = subprocess.run(
         [
             sys.executable,
@@ -1035,7 +1038,7 @@ def _run_and_assert_error(
         encoding="utf-8",
     )
     out_dir = tmp_path / "out"
-    env = {**os.environ, "PYTHONPATH": str(tmp_path)}
+    env = {**os.environ, "PYTHONPATH": os.pathsep.join([CHECKOUT, str(tmp_path)])}
     result = subprocess.run(
         [
             sys.executable,
