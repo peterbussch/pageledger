@@ -262,7 +262,7 @@ def test_single_writer_rejects_second_resume(job):
     from pageledger.checkpoint import writer_lock
 
     with writer_lock(job[2]):
-        with pytest.raises(ValueError, match="active writer"):
+        with pytest.raises(ValueError, match="already working in this folder"):
             runner.resume(job[2])
     runner.resume(job[2])
     assert job[3].calls == [1, 2, 3]

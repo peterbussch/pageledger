@@ -3,7 +3,7 @@
 Release changes follow the [artifact compatibility policy](docs/run-manifest-spec.md#compatibility-policy)
 and, from 1.0, [stability](docs/stability.md).
 
-## 0.9.0 - 2026-11-10
+## 0.9.0 - 2026-11-13
 
 0.9.0 is the candidate for 1.0. It writes down the contract that 1.0 will keep
 (commands and options, exit codes, configuration keys, the adapter protocol,

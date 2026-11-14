@@ -162,7 +162,10 @@ def writer_lock(root: Path):
         try:
             fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError as exc:
-            raise ValueError("Run already has an active writer") from exc
+            raise ValueError(
+                "Another PageLedger command is already working in this folder; "
+                "wait for it to finish, then try again"
+            ) from exc
         try:
             yield
         finally:

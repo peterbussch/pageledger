@@ -60,7 +60,7 @@ def test_a_job_with_an_active_writer_refuses_every_other_writer(
             ["adjudicate", str(job), "--decisions", str(decisions), "--reviewer", "A. Reader"],
         ):
             assert main(argv) == 1, argv
-            assert "already has an active writer" in capsys.readouterr().err, argv
+            assert "already working in this folder" in capsys.readouterr().err, argv
 
     assert _state(job) == before
     assert not (tmp_path / "second.csv").exists()

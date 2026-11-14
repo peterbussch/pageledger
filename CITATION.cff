@@ -22,4 +22,4 @@ identifiers:
     description: "Concept DOI resolving to the latest archived version of PageLedger."
 repository-code: "https://github.com/peterbussch/pageledger"
 version: "0.9.0"
-date-released: "2026-11-10"
+date-released: "2026-11-13"

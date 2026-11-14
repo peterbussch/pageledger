@@ -66,8 +66,8 @@ part for its reports.
 Use a pull request for the release. Before merging, read its reviews and inline
 comments, including Copilot's findings, as well as the check results. Confirm
 that substantive findings are fixed or have a documented technical response.
-Request a fresh Copilot review after fixes when available, and wait for pending
-reviews. Check the review threads again immediately before approving publication;
+Request a Copilot review only when the maintainer asks for one, and wait for
+pending reviews. Check the review threads again immediately before approving publication;
 a review can finish after CI or after the merge. A green check list does not
 replace reading the reviews.
 
