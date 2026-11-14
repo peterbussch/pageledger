@@ -93,7 +93,7 @@ is the durable pointer to every other artifact in the run directory.
 | `inputs` | array | Source files and checksums. Each entry carries `path`, `sha256`, and `page_count` (the source's full size). When `--pages` or a rerun limits the run, the entry also carries the selection expression as `pages` (e.g. `"1-8,81"`). |
 | `skipped_inputs` | array | Optional. Names of hidden files (such as `.DS_Store` and `._*` sidecars) found in input directories and skipped. Present only when a file was skipped. |
 | `config` | object | Run-directory config snapshot path, checksum, and source config paths. |
-| `extractors` | array | Extractor adapters and model/version metadata. Current writers may add an optional `reproducibility_profile` containing the profile envelope and `profile_sha256`; it is path-free and omitted when an adapter has no hook. |
+| `extractors` | array | Extractor adapters and model/version metadata. Current writers may add an optional `reproducibility_profile` containing the profile envelope and `profile_sha256`; it is path-free and omitted when an adapter has no hook. See [the reproducibility profile](#the-reproducibility-profile). |
 | `dataset_citation` | object or null | Optional user-provided source citation for the input collection. |
 | `artifacts` | object | Relative paths to route, raw, normalized, audit, and provenance artifacts. |
 | `summary` | object | Counts and cost summary for quick inspection. |
@@ -236,6 +236,41 @@ The current generation's effective adapter is also the extractor recorded in
   `alerts`, `by_adapter`, and `by_page_type` fields are additive 0.1 evidence;
   the rollups contain extracted pages only because they are derived from
   `provenance.jsonl`.
+
+## The reproducibility profile
+
+`extractors[].reproducibility_profile` records what a later replay must find
+again to call its output exact. `profile_version` is `"0.1"`; `pageledger`
+gives the `version` and a `code_sha256` of the package's code; `adapter` its
+`module`, `name`, `version` and `code_sha256`; `runtime` the
+`python_implementation`, `python_version`, `system`, `release` (the operating
+system's release), `machine`, `preferred_encoding` and `filesystem_encoding`;
+and `materials` each binary, package, model or asset the adapter declares, by
+`kind`, `name`, `version` and `sha256`. `profile_sha256` is the hash of the
+rest. Replay compares the whole profile, so an operating-system update or a
+Python bug-fix release makes it refuse with `incompatible_environment`. A
+`binary` material is the file found on `PATH`, which may be a wrapper script
+rather than the engine and its libraries.
+
+## cost.json
+
+| Field | Meaning |
+|---|---|
+| `schema_version` | `"0.1"`. |
+| `run_id` | The run. |
+| `execution_mode` | `execute`, or `dry_run` for a run that extracted nothing. |
+| `currency` | Always `USD`. |
+| `canonical_unit` | Always `pages`: the one unit every adapter reports. |
+| `pages_extracted` | Pages the adapter returned a result for. |
+| `tokens_total` | Tokens the adapters reported, summed; 0 when none did. |
+| `pricing` | The `run.pricing` rates from the config, or null when none are set. |
+| `usage` | Totals: `pages`, `tokens`, `compute_seconds` (adapter-reported) and `extraction_seconds` (measured by PageLedger). A total no adapter reported is null. |
+| `cost_usd` | The known part of the cost: the sum over pages whose cost is known. Null when none is known; 0 when nothing was extracted. |
+| `cost_known` | True only when every extracted page's cost is known. |
+| `cost_basis` | `adapter_reported`, `configured_rate`, `mixed` or `none`. |
+| `budget` | Present when a cap is set: for each capped unit, `max`, `current` and `exceeded`; with `warn_at_percent`, also `warn_at` (the amount that warns) and `warning`. |
+| `alerts` | The first crossing of each warning: its `unit`, `threshold`, `kind` (`absolute` or `percent`), `current`, `page_id` and `timestamp`. |
+| `by_adapter`, `by_page_type` | The same totals grouped by adapter and by routed page type. |
 
 ## Compatibility policy
 

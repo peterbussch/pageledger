@@ -43,6 +43,31 @@ The observed paired ratio was about 0.7001 and the 95% effect interval was
 29.53–30.66%, so both the point gate and confidence gate failed. The useful
 improvement remains; the original objective remains unmet.
 
+## The benchmark harness as it stands
+
+What the harness in `scripts/pageledger_bench/` does today, so that no one
+reads more into a result than it holds:
+
+- Run it from the repository root, since it imports `scripts` as a package:
+  `python -m scripts.pageledger_bench run --workload primary --out DIR
+  --freeze-receipt RECEIPT --warmup-state none` (or `generalization`,
+  `post-untimed-warmup`). It needs an approved freeze receipt naming the
+  harness commit and the hashes of its files. The receipt is checked only
+  against itself and the git history, so it records an approval; it does not
+  prove one (anyone can write a receipt that passes).
+- Commit 186e5642, linked above, is the historical frozen harness. Every frozen
+  file has changed since, so a receipt for it is now refused
+  (`approved_manifest_drift`).
+- The timed run happens inside `cProfile`, so its times are profiled times, not
+  the unprofiled acceptance timing the protocol below asks for.
+- Its equivalence check compares JSON, JSONL and YAML artifacts after parsing
+  them, and only `config-snapshot.yml` and `raw/` as bytes. A change in an
+  artifact's formatting with the same content passes; it does not check
+  "canonical artifact bytes" as the correctness gates below require.
+- A `pass` status means the run's correctness checks passed. It does not
+  evaluate the `performance_gates` in `benchmark_manifest.json` and compares
+  with no recorded baseline, so it says nothing about speed.
+
 ## Proposed successor protocol
 
 This section is a proposal, not an approved campaign and not authorization to

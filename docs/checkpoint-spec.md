@@ -65,6 +65,13 @@ recovery writer. Process termination releases the lock; the retained lock file
 does not mean a writer is still active. Resumable execution currently requires
 POSIX support.
 
+Before resuming, PageLedger removes its own `.pending-*` temporary files
+that no record names, left by a write that was cut off, under the writer lock.
+A run's `config-snapshot.yml` names its adapter; on resume a custom adapter is
+imported only from a folder you pass with `--adapter-path`, and a vision model
+server off this machine is used only when you name it with `--trust-endpoint`
+(see [jobs, runs and bundles you receive](share-and-cite.md#jobs-runs-and-bundles-you-receive)).
+
 Until the run is finalized, resume trusts only the recovery journal. Final
 `provenance.jsonl`, `quality.jsonl`, cost, audit and rerun artifacts are derived
 from the saved responses and frozen context. The final manifest is published
@@ -192,7 +199,10 @@ does not add duplicate page rows or count reused responses as new calls.
 Aggregates reconstruct the original successful-page usage, timing and budget
 crossings. A process interruption cannot reset the budget. Resumable runs stop
 before a pending request when accumulated usage has reached a configured cap;
-saved responses and completed pages can still be recovered at that cap.
+saved responses and completed pages can still be recovered at that cap. Under
+`max_tokens` or `max_usd`, a page whose adapter (unless it declares `local`) did
+not report that unit also stops the run before the next request, with an ERROR
+`budget_exceeded` line in `run.log`.
 
 A raw file written before completion is checked against the saved response.
 A valid saved response can be published after interruption. Raw output without

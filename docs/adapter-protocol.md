@@ -55,6 +55,15 @@ from typing import ClassVar
 from pageledger.adapters import ExtractionResult, adapter_conformance_check
 
 
+def toy_pages(source: Path) -> list[str]:
+    # Decode the bytes as they are, so line endings stay as written; drop a
+    # byte-order mark; a final form feed does not start an empty page.
+    pages = source.read_bytes().decode("utf-8-sig").split("\f")
+    if len(pages) > 1 and not pages[-1].strip():
+        pages.pop()
+    return pages
+
+
 class ToyAdapter:
     name: ClassVar[str] = "toy"
     version: ClassVar[str] = "1"
@@ -67,7 +76,7 @@ class ToyAdapter:
         return action == "transcribe_text"
 
     def page_count(self, source: Path) -> int:
-        return source.read_text(encoding="utf-8").count("\f") + 1
+        return len(toy_pages(source))
 
     def extract(
         self,
@@ -81,9 +90,8 @@ class ToyAdapter:
         if not self.supports(action):
             raise ValueError(f"Toy adapter does not support action: {action}")
         _ = page_id, prompt
-        pages = source.read_text(encoding="utf-8").split("\f")
         return ExtractionResult(
-            content=pages[page_number - 1], format="text", confidence=None,
+            content=toy_pages(source)[page_number - 1], format="text", confidence=None,
             model="toy-1", warnings=[], usage={"pages": 1},
         )
 
@@ -96,6 +104,7 @@ if __name__ == "__main__":
 ```
 
 Run `python toy_adapter.py`; an empty issue list prints `ToyAdapter conforms`.
+`toy_pages` splits pages the way the built-in `text` adapter (version 0.2) does.
 Then configure the adapter in a complete config (the taxonomy is required):
 
 ```yaml
@@ -108,8 +117,8 @@ run:
   adapter: toy_adapter:ToyAdapter
 ```
 
-For `sample.txt`, containing one or more form-feed-separated pages, run
-`pageledger run sample.txt --config pageledger.yml --out runs/toy
+For `pages.txt`, containing one or more form-feed-separated pages, run
+`pageledger run pages.txt --config pageledger.yml --out runs/toy
 --adapter-path .`. A conformance check validates declared shape; it does not
 prove extraction correctness. Add tests for supported actions, page numbering,
 input handling, and failures. An image adapter follows the same one-call,
@@ -357,9 +366,10 @@ credentials, tokens, arbitrary metadata, or mutable version aliases. PageLedger
 adds the package/adapter/runtime envelope and a `profile_sha256` to the
 manifest and bundle; it does not copy or install the named material.
 
-The hook is optional. Its absence never blocks an ordinary `run`, but a
-deterministic local adapter without a profile cannot establish the strict
-material identity required for an `exact` verified replay. A profile covers
+The hook is optional. Its absence never blocks an ordinary `run` or `bundle`,
+but a deterministic local adapter without a profile cannot establish the strict
+material identity required for an `exact` verified replay: its bundle replays
+as `evidence_compared`. A profile covers
 only the materials the adapter declares, not every imported dependency or
 their authenticity. Cloud adapters are evidence-compared because cloud
 identity and service state are outside this contract. See the [replay
@@ -377,7 +387,23 @@ pageledger run scan.pdf --config custom.yml --out runs/custom \
 ```
 
 The directory is prepended to `sys.path` before the config is validated.
-`rerun` accepts the same flag.
+`rerun`, `process`, `resume` and `replay` accept the same flag.
+
+A job, run or bundle records the import string of its adapter. When you
+`resume` one or `replay` a bundle, PageLedger imports a custom adapter only
+from the folder you pass with `--adapter-path`, and only an object defined in
+that folder; it never runs code because a folder you received names it. So
+pass `--adapter-path` only for code you have read or trust, and see
+[jobs, runs and bundles you receive](share-and-cite.md#jobs-runs-and-bundles-you-receive).
+
+### Usage and spending caps
+
+An adapter that declares `local` in `capabilities` costs nothing to call again.
+Any other adapter that leaves `usage.tokens` or `usage.cost_usd` null under a
+`run.budget.max_tokens` or `max_usd` cap stops the run before the next request,
+because the cap can no longer be checked (`run.budget.unknown_usage: continue`
+reads on). Report usage whenever the backend gives it, and declare `local` only
+for an adapter that sends nothing off the machine.
 
 ### Local Docling example
 

@@ -19,6 +19,7 @@ jobs/book/
 ├── attempts/         # ordinary resumable runs for the processing stages
 ├── partials/         # when a stage failed with partial output: kept, never selected
 ├── contested/        # with processing.contest: where a model and the literal engine differ
+├── witnesses/        # with tiling: the literal engine's text rearranged to the tile plan
 ├── editions/         # a model's reading with its adjudicated changes applied
 ├── corrections/      # texts a reviewer corrected, each named by its own SHA-256
 └── .job/             # exact child configuration snapshots
@@ -189,8 +190,23 @@ Spec: [`audit-spec.md`](audit-spec.md).
 Record human decisions outside the run directory, keyed by `run_id` and
 `page_id`. A project spreadsheet can add the source/page, decision, reason,
 reviewer/date, and selected downstream output without inventing a new
-PageLedger artifact. Editing `audit.md`, `audit.json`, or `raw/` in place changes
-verified evidence and makes the run fail integrity checks. See the executable
+PageLedger artifact. Editing `audit.md`, `audit.json`, `raw/`, `normalized/` or
+`quality.jsonl` in place changes verified evidence and makes the run fail
+integrity checks.
+
+`verify` does not take the derived files on trust. From the raw readings,
+provenance and config snapshot it derives again each page's normalized record,
+its grade and the review and quarantine queues, as the run did, and fails when
+a file differs. A later release may grade the same text differently, so each
+derivation carries the first release whose rules it shares: a run written by
+that release or later must match exactly, and an older run whose files differ
+gets the warning `derived_evidence_differs`, naming the file, and still passes.
+Text quality signals themselves (shape, repetition, language and model-remark
+warnings) are not derived again, since that would need the source PDF, the
+parent run and the declared language; verify does check each quality line's
+confidence and the engine's own warnings against the provenance. Hidden files under `raw/` or `normalized/`, such as the
+`.DS_Store` and `._` files Finder and exFAT copies leave, are named in a
+`stray_file` warning and otherwise ignored. See the executable
 [first-run review example](first-run.md#record-review-decisions-outside-the-run).
 
 `rerun-manifest.yml` records what to do next. It is an executable list of flagged

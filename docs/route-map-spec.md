@@ -14,7 +14,7 @@ run_id: classify-20260717T193000000000Z
 generated_at: "2026-07-17T19:30:00Z"
 classifier:
   adapter: builtin:structural
-  model: pdf_ocr/0.1
+  model: pdf_ocr/0.2
   prompt_hash: null
 documents:
   - source: /data/scans/volume_01.pdf

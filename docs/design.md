@@ -47,9 +47,11 @@ usage = {
 Dollar cost is resolved by PageLedger in
 priority order: (1) adapter-reported `cost_usd`, (2) configured unit rates
 (`cost_per_page` / `cost_per_1k_tokens`), (3) otherwise `null`: the run
-still reports raw page counts. Budgets cap on pages, tokens, or dollars,
-whichever the config sets, because the page count is the only value always
-present.
+still reports raw page counts. A budget can cap pages, tokens or dollars
+(`run.budget.max_pages`, `max_tokens`, `max_usd`). Only the page count is
+always known; tokens and dollars are known only when the adapter reports them
+or a rate is set, so a token or dollar cap stops a paid run when it can no
+longer be checked.
 
 See the [glossary](glossary.md) for the terms used in these workflow descriptions.
 
@@ -74,7 +76,9 @@ action and optional prompt; uncertain or unmapped decisions go to review.
 Domain labels are supplied by an importable classifier hook, not hardcoded in
 core. Confidences are fixed heuristic evidence, not calibrated probabilities.
 
-Example route map:
+An excerpt of a route map (a complete one also carries `schema_version`,
+`run_id` and each document's `source_sha256` and `page_count`; see the
+[route map specification](route-map-spec.md)):
 
 ```yaml
 documents:
@@ -162,8 +166,9 @@ confidence under `low_confidence_threshold` caps its grade at C.
 ## Run controller
 
 The controller manages long extraction runs. It implements budgets
-(pages/tokens/dollars, preflight and mid-run), capless absolute warnings and
-first-crossing alerts, retry with optional
+(pages/tokens/dollars, checked before and during the run), warnings at a set
+amount even when no cap is set (`warn_pages`, `warn_tokens`, `warn_usd`), an
+alert the first time each is crossed, retry with optional
 exponential backoff, per-page provenance with measured extraction time,
 quality signals, audit/review queues, rerun execution (`pageledger rerun`
 consumes the rerun manifest, enforcing `max_rerun_depth`), and cross-run
@@ -197,8 +202,8 @@ page can remain in the review queue for other reasons, but it is excluded from
 
 `run.adapter_order` is a non-empty escalation chain indexed by generation:
 entry 0 runs the original extraction and entry N runs rerun generation N.
-Each entry can carry its own adapter options. Chain exhaustion and
-`max_rerun_depth` are independent terminal gates. Pending pages remain in the
+Each entry can carry its own adapter options. Reruns stop when the chain has
+no further entry or when `max_rerun_depth` is reached, whichever comes first. Pending pages remain in the
 review queue when the chain ends; PageLedger does not silently quarantine
 them or try another adapter inside the same run.
 

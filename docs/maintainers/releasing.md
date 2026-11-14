@@ -55,6 +55,14 @@ uploading to PyPI also requires approval through the `pypi` environment.
 The release checker fails if the tag, package/runtime versions, citation,
 changelog date, or committed lock disagree.
 
+When a release changes how runs are aligned, graded or queued (`aligner.py`,
+`grading.py`, `policy.py`), raise the matching `_NORMALIZED_RULES_SINCE`,
+`_GRADE_RULES_SINCE` or `_QUEUE_RULES_SINCE` in `verify.py` to that release.
+`verify` derives those files again and holds runs from that release on to the
+new rules exactly, while older runs whose files differ only get a
+`derived_evidence_differs` warning. A job's `report_format` plays the same
+part for its reports.
+
 Use a pull request for the release. Before merging, read its reviews and inline
 comments, including Copilot's findings, as well as the check results. Confirm
 that substantive findings are fixed or have a documented technical response.
@@ -87,7 +95,12 @@ replace reading the reviews.
    `production_confirmation`. This production run repeats every source gate,
    builds once, records and retains the hashes, and passes that same run's
    artifact to the protected `pypi` job. Approve the environment only after
-   inspecting the run and its retained artifact.
+   inspecting the run and its retained artifact. That artifact is a new build:
+   nothing compares its hashes with the verify run's, and the two builds are
+   not guaranteed to be byte-identical, so the wheel exercised in step 2 is not
+   necessarily the one uploaded. Compare the two runs' `SHA256SUMS` by hand.
+   Nothing checks that the tag's commit is on `main` either: confirm it with
+   `git merge-base --is-ancestor vX.Y.Z origin/main`.
 5. Verify the public PyPI version, filenames, metadata, and hashes independently.
    Record public status separately as `not published`, `PyPI verified`, and
    `GitHub release verified`; neither a local build nor an uploaded Actions

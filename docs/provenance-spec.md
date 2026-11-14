@@ -160,11 +160,11 @@ not a calibrated accuracy score. Fields:
 | `confidence_detail` | object or null | ❌ | yes | Engine-native confidence evidence. Emitted by current runs; optional for original 0.1 compatibility. `pdf_ocr` records Tesseract's word statistics; from 0.9, `pdf_text` records why it judged a layer an earlier OCR (`ocr_text_layer`, below). |
 | `warnings` | array of strings | ✅ | no | Adapter-native warnings plus PageLedger-derived quality warnings (see taxonomy below). Adapter warnings are also retained in the provenance result. |
 | `text_quality` | object | ✅ | no | Sub-metrics (see below). |
-| `embedded_text_comparison` | object | ❌ | yes | Comparison with PDF embedded text layer. Null for non-PDF sources. |
+| `embedded_text_comparison` | object | ❌ | yes | Comparison with the PDF's embedded text layer: `embedded_character_count` (characters in the layer), `character_delta` (this reading's count minus the layer's) and `character_ratio` (this reading's count divided by the layer's, four decimals; null when the layer is empty). Null for non-PDF sources and for adapters that read the layer themselves. |
 | `output_integrity` | object | ❌ | no | Conservative chat-template-marker and parent-rerun size evidence. Optional for older lines. |
 | `grade` | string | ❌ | no | `A`–`F`. Optional for older lines. |
 | `grade_basis` | string | ❌ | no | `signals_only` or `schema_aware`. Optional for older lines. |
-| `grade_detail` | object | ❌ | no | Grade evidence detail. Optional for older lines. |
+| `grade_detail` | object | ❌ | no | How the grade was reached: `signals_grade` and `schema_grade` (the two axes below; `schema_grade` null without a normalized record), `confidence_band` (null when the adapter reports no confidence), `warning_count`, `required_column_coverage` and `arithmetic_pass_rate` (null without schema evidence), and `reasons`, plain phrases such as `empty_text forces F`. Optional for older lines. |
 
 ### Grade bands
 
@@ -185,9 +185,10 @@ Confidence/coverage/pass-rate thresholds are overridable under
 `run.grading.thresholds`. The schema `quality` section adds floors:
 coverage below `minimum_required_column_coverage` forces the schema axis
 to F, and page confidence under `low_confidence_threshold` caps the final
-grade at C. The structured-format prose heuristics
+grade at C. The seven warnings meant for prose
 (`suspicious_symbol_density`, `fragmented_text`, `joined_text`,
-`digits_only_text`) do not fire on
+`digits_only_text`, `split_words`, `labels_without_values`,
+`capital_sign_in_word`) do not fire on
 `markdown_table`/`json`/`csv` pages: pipes and braces are construction,
 not garble.
 
@@ -211,11 +212,13 @@ not garble.
 | `digit_count` | integer | Decimal digits. |
 | `mixed_script_token_ratio` | number (0–1) | Share of letter tokens that mix Latin, Cyrillic or Greek letters, as look-alike substitutions do (`пpoдoлжoние` with Latin `p` and `o`). |
 | `private_use_count` | integer | Private Use Area code points, except one that opens a line before a space: that is a bullet or icon glyph from a symbol font. |
+| `foreign_script_count` | integer | Letters and marks from scripts other than Latin, Cyrillic or Greek, letterlike symbols and mathematical alphanumerics excepted; the evidence for `foreign_script_characters`. |
 | `largest_identical_line_count` | integer | How often the most repeated non-empty line occurs, ignoring dot leaders and rules. |
 | `longest_repeated_tail_length` | integer | Length in characters of the longest ending made of one unit of up to 200 characters repeated at least 20 times; 0 when there is none. |
 | `longest_letter_run` | integer | Longest run of one repeated letter; 0 when no letter repeats. |
 
-The last seven fields are new in 0.6; older quality lines omit them.
+`letter_count` and the fields after it are new in 0.6 (`foreign_script_count`
+in 0.7); older quality lines omit them.
 
 ### Warning taxonomy
 
