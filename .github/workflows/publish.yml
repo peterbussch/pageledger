@@ -138,8 +138,9 @@ jobs:
           RELEASE_TAG: ${{ github.ref_name }}
         run: |
           uv run --frozen --extra dev python scripts/check_release.py "$RELEASE_TAG"
-          # A pinned build backend and the tag commit's time make the wheel byte-identical
-          # in every run from this tag, so the wheel a verify run tested is the one uploaded.
+          # A pinned build backend and the tag commit's time should make every run from this
+          # tag build the same wheel bytes, so the wheel a verify run tested can be compared
+          # with the one uploaded.
           printf 'setuptools==84.2.1\n' > "$RUNNER_TEMP/build-constraints.txt"
           SOURCE_DATE_EPOCH="$(git log -1 --format=%ct)" \
             PIP_CONSTRAINT="$RUNNER_TEMP/build-constraints.txt" \

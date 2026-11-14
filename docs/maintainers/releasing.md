@@ -97,10 +97,10 @@ replace reading the reviews.
    artifact to the protected `pypi` job. Approve the environment only after
    inspecting the run and its retained artifact. That artifact is a new build.
    Both runs build with a pinned setuptools and the tag commit's time as
-   `SOURCE_DATE_EPOCH`, so the wheel comes out byte-identical; the sdist may
-   not. Before approving, compare the wheel's line in the two runs' printed
-   `SHA256SUMS`: nothing compares them automatically. Both runs refuse a tag
-   whose commit is not on `main`.
+   `SOURCE_DATE_EPOCH`, which made two local builds give byte-identical wheels;
+   the sdist differs between builds. Before approving, compare the wheel's line
+   in the two runs' printed `SHA256SUMS`: nothing compares them automatically.
+   Both runs refuse a tag whose commit is not on `main`.
 5. Verify the public PyPI version, filenames, metadata, and hashes independently.
    Record public status separately as `not published`, `PyPI verified`, and
    `GitHub release verified`; neither a local build nor an uploaded Actions
