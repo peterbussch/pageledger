@@ -30,8 +30,10 @@ sh scripts/check.sh --all-lanes  # also without the pdf extra; run before pushin
 git config core.hooksPath scripts/git-hooks   # optional: lint on commit, run the gate on push
 ```
 
-The hooks check the files in your working tree, not exactly what is staged or
-pushed, so commit or stash other changes before relying on them.
+The commit hook checks what is staged. The push hook runs the gate on each pushed
+commit in a temporary worktree with its own environment, so it takes a few minutes
+and leaves your `.venv` and uncommitted changes alone. Note that `scripts/check.sh`
+run by hand syncs `.venv` to exactly the dev and pdf extras.
 
 [AGENTS.md](AGENTS.md) covers repository structure, test requirements and
 implementation constraints. See [maintainer procedures](docs/maintainers/README.md)
