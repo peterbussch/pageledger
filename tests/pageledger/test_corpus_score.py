@@ -168,6 +168,8 @@ def test_split_needs_the_splits_file(tmp_path):
         ("годы | 1897, 1898", "годы 18971898", [False, False]),
         ("Уѣздъ | 1 234", "Уезд 1234", [True]),
         ("Уѣздъ | 12,345", "Уезд 12 345", [True]),
+        ("Уѣздъ | 1 234 | 567", "Уезд 1234 567", [True, True]),
+        ("Уѣздъ | 1 234 | 567", "Уезд 1 234 567", [True, True]),
     ],
 )
 def test_a_list_of_numbers_is_read_alike_on_both_sides(reference, engine, found):

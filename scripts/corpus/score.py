@@ -139,8 +139,18 @@ def reference_numbers(raw: str) -> list[str]:
 
 
 def digit_groups(text: str) -> set[str]:
-    """The digits of each number in engine text, read as reference_numbers reads them."""
-    return {re.sub(r"\D", "", found) for found in NUMBER.findall(text)}
+    """Each number in engine text, read as reference_numbers reads them, and each
+    contiguous run of its digit groups: engine text has no cell borders, so the
+    columns "1 234 | 567" can come out as "1234 567"."""
+    found = set()
+    for number in NUMBER.findall(text):
+        parts = re.split(r"[.,\u00a0 ]", number)
+        found |= {
+            "".join(parts[start:end])
+            for start in range(len(parts))
+            for end in range(start + 1, len(parts) + 1)
+        }
+    return found
 
 
 def historical_counts(text: str) -> dict[str, int]:

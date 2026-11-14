@@ -40,7 +40,7 @@ are read as rows of cells.
 | `normalized_cer`, `normalized_grapheme_cer` | The same after case-folding, writing ѣ, і, ѳ and ѵ as е, и, ф and и, and dropping word-final ъ. |
 | `exact_lines` | Share of reference lines found without a single edit. |
 | `missing_lines` | Share of reference lines needing edits for more than half their characters. |
-| `numbers_found` | Share of the numbers in each table cell of the reference that appear in the matched text; `1 850` and `1850` count as the same number. A separator groups digits only before exactly three more, so `12, 15` is two numbers on both sides. |
+| `numbers_found` | Share of the numbers in each table cell of the reference that appear in the matched text; `1 850` and `1850` count as the same number. A separator groups digits only before exactly three more, so `12, 15` is two numbers and `18971898` does not count as `1897, 1898`; engine text, which has no cell borders, may also match one part of a grouped number, so `1 234 567` finds `1234` and `567`. |
 | `historical_kept` | Share of the reference's ѣ, і, ѳ, ѵ and word-final ъ also in the matched text. |
 | `historical_added` | Such letters in the matched text beyond the reference's. |
 
