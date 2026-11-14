@@ -83,5 +83,7 @@ per page in page order (see the
 [run manifest](run-manifest-spec.md#page-image-sources) and
 [job](processing-spec.md#durable-job-and-attempts) specifications).
 `verify` adds `iiif_snapshot_incomplete` and `iiif_record_changed` warnings
-when the images still match; images a later resume added are reported, as for
-any folder, as `source_changed` naming each one.
+when the images still match. Images a later `fetch --resume` added are
+reported for a job as the warning `iiif_snapshot_grown`, naming each one (the
+images the job read are unchanged and keep their page numbers), and for a run,
+as for any folder, as `source_changed` naming each one.

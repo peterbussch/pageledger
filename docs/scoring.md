@@ -4,7 +4,8 @@
 reference transcription, line by line. The references PageLedger uses were read
 by frontier vision models and stay provisional until a person checks them, so
 every number is labelled **against reference**: it is agreement with another
-reading, not accuracy.
+reading, not accuracy. The script is in PageLedger's source repository, not in
+the installed package, so run it from a clone of the repository.
 
 ```bash
 python scripts/corpus/score.py references/ engine-output/

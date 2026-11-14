@@ -1,20 +1,47 @@
 # Non-English and historical OCR
 
-PageLedger's lexical shape signals use Unicode letter and combining-mark
-categories rather than an ASCII-oriented tokenizer. Clean-prose regression
-fixtures cover Latin, Cyrillic, Arabic, Devanagari, Bengali, Gujarati,
-Gurmukhi, Tamil, Telugu, Kannada, and Malayalam scripts. That coverage guards
-against known false warnings; it is not language-specific calibration or an
-OCR-accuracy claim. This page walks two real Russian documents through the
-tool: a modern born-digital report and an 1850 scan in pre-reform orthography.
-The commands and numbers are from actual runs; substitute your own files.
+OCR reads a page with a model trained for one language or script, so the first
+thing to settle for a document in Russian, pre-reform spelling or any language
+other than English is which model reads it. This page shows how to choose and
+check one with a job, then how the same signals appear in a pipeline run. The
+commands and numbers are from real runs on two Russian documents, a modern
+born-digital report and an 1850 scan in pre-reform spelling; substitute your
+own files.
+
+## Read a sample with the right language
+
+Tell `process` the document's language with `--lang`, and read a few pages
+first:
+
+```bash
+pageledger process 1850-review.pdf --lang rus --pages 20-22 --out jobs/review-sample
+```
+
+`--lang` takes Tesseract's three-letter codes (`rus`, `deu`, `fra`; `rus+eng`
+for pages that really mix two). A wrong guess such as `ru` is refused before
+anything is read, with the closest installed code ("Did you mean rus?"), a few
+of the installed codes and a pointer to `pageledger doctor`. The report then
+says which pages OCR was unsure of, and whether their script fits the language
+given.
+
+For print from before the 1918 reform, the stock `rus` model drops the letters
+ѣ, і, ѳ and ѵ, and the report says so. The community `orus` model writes them;
+in our test it kept more of them but made more errors overall, so read the same
+pages with it and compare the two reports before choosing:
+
+```bash
+pageledger process 1850-review.pdf --lang orus --pages 20-22 --out jobs/review-orus
+```
+
+[Tesseract with the community orus model](engine-recipes.md#tesseract-with-the-community-orus-model-macos-and-linux)
+says where to put it.
 
 ## Language packs come first
 
 An OCR language pack is the engine's trained data for one script or language.
-`pdf_ocr` passes its `lang` setting (`--lang` for `process`) straight to
-Tesseract; PageLedger does not install or choose packs for you, and a missing
-pack is the most common first failure.
+`--lang` (or `lang` in a configuration) goes straight to Tesseract; PageLedger
+does not install or choose packs for you, and a missing pack is the most common
+first failure.
 
 On macOS with Homebrew, install the engine and its language data separately:
 
@@ -32,9 +59,7 @@ sudo apt install tesseract-ocr tesseract-ocr-rus tesseract-ocr-spa
 Package names vary by distribution. Choose packs from a sample of your pages:
 
 - Modern Russian: Tesseract `rus`.
-- Pre-reform Russian: test `rus` on a sample, but expect it to modernize or
-  misread the abolished letters (see
-  [the 1850 scan below](#an-1850-scan-in-pre-reform-orthography)).
+- Pre-reform Russian: compare `rus` and `orus` on a sample, as above.
 - Spanish, French, German, Italian and other Latin-script languages: the
   language's own code, such as `spa`, `fra`, `deu` or `ita`. Latin script
   alone does not identify the language.
@@ -48,17 +73,21 @@ pageledger doctor
 ```
 
 ```
-Command tesseract: /Users/you/.local/bin/tesseract (tesseract 5.5.2)
-OCR languages (125): afr, amh, ara, ..., rus, ...
+What process can do on this machine:
+  Read the text a PDF carries (pypdf).
+  Read page images and scanned PDFs with Tesseract 5.5.2 OCR.
+  Languages for --lang (123 installed): eng, rus, ukr, bel, pol, deu, fra, ita, spa, lat, heb, and more.
 ```
 
-Those names are the valid `lang:` values. If you configure a language that
-is not installed, the run refuses before extracting anything and prints
-the installed list. Set DPI and language in the config:
+`pageledger doctor --all` lists every installed code.
 
-Save this as `ocr-rus.yml`. The `taxonomy` section tells PageLedger to
-extract every page; without one, every page would go to review and
-nothing would be extracted.
+## For pipelines: the same checks in a run
+
+A `run` reads every selected page with one adapter and records quality signals,
+without a job's holds and review. Its configuration sets the language and DPI
+directly. Save this as `ocr-rus.yml`; the `taxonomy` section tells PageLedger
+to extract every page (without one, every page would go to review and nothing
+would be extracted):
 
 ```yaml
 schema_version: "0.1"
@@ -82,7 +111,14 @@ OCR languages. With it, a page read mostly in another script gets
 `historical_letters_lost`. PageLedger never guesses a collection's language, so
 without the block neither check runs.
 
-## A modern born-digital document
+PageLedger's word-shape signals use Unicode letter and combining-mark
+categories rather than an ASCII-oriented tokenizer. Regression fixtures of
+clean prose cover Latin, Cyrillic, Arabic, Devanagari, Bengali, Gujarati,
+Gurmukhi, Tamil, Telugu, Kannada and Malayalam scripts. That guards against
+known false warnings; it is not calibration for any language, and not a claim
+about OCR accuracy.
+
+### A modern born-digital document
 
 A 259-page Russian policy report with a real text layer needs no OCR at
 all. `pdf_text` extracts clean Cyrillic:
@@ -104,7 +140,7 @@ layout engines insert mid-word spaces («С анкционная» for «Сан�
 That comes from the source PDF, passes every shape heuristic, and is
 exactly the kind of thing the review queue and sampling are for.
 
-## An 1850 scan in pre-reform orthography
+### An 1850 scan in pre-reform orthography
 
 The second document is the *Военно-статистическое обозрѣніе Харьковской
 губерніи* (Military-Statistical Review of Kharkov Governorate, 1850): 178
@@ -157,9 +193,11 @@ Two calibration notes. The abolished-letter count deliberately excludes і,
 which is standard modern Ukrainian and Belarusian; Ukrainian archives do
 not get false-flagged. And no official `rus_old` traineddata exists in the
 Tesseract project; community-trained historical models do, with varying
-quality, so test one against `quality.jsonl` before trusting it.
+quality. The [`orus` recipe](engine-recipes.md#tesseract-with-the-community-orus-model-macos-and-linux)
+gives one with our measurement; test any such model on a sample before
+trusting it.
 
-## Normalizing pre-reform orthography
+### Normalizing pre-reform orthography
 
 For search, matching, and modern-corpus work you often want ѣ→е, і→и,
 ѳ→ф, ѵ→и, and word-final ъ dropped (while keeping it in съѣздъ→съезд,

@@ -109,45 +109,23 @@ pageledger process nara.pdf --config nara.yml \
 pageledger verify-job jobs/nara --json
 ```
 
-Use a new output directory for each run. For the two local scans, use the
+To check a reproduction, compare your job's `transcript.md` SHA-256 with
+`transcript_sha256` in `summary.json`. A match also needs the same Tesseract
+(5.5.2) and the same `eng.traineddata`, whose hash `summary.json` records. Use a
+new output directory for each run. For the two local scans, use the
 fingerprints and page lists in `summary.json` with `cyrillic.yml`. We do not
 have a verified download URL for those exact files, so full public reproduction
 of those two samples remains limited. Source PDFs, page images, and full
 transcripts are not included here. The retained local jobs hold the complete
 attempt evidence; the public files are a summary, not a portable job bundle.
 
-## Separate live VLM check
+## A separate image-model attempt
 
-We also tried image-model escalation on census PDF page 23, a spread with
-two dense tables. **No live VLM transcription completed.** These attempts
-are separate from the 60-page local OCR trial above.
-
-| Attempt | Result |
-| --- | --- |
-| Antigravity Gemini, first account | HTTP 422: account had no project. Google later confirmed that account was ineligible. |
-| Cursor Gemini, 4096-pixel image | HTTP 400: image exceeded the route's 1 MiB limit. |
-| Antigravity Gemini, eligible account | HTTP 429: authorization and project were present, but Gemini quota was exhausted. |
-| Cursor config, 1 MiB image limit | Stopped locally: the 4096-pixel image did not fit, even at JPEG quality 60. No image request was sent. |
-| Cursor Gemini, 3072-pixel image | The retained image fit the byte limit; the gateway returned HTTP 503. |
-
-Each fresh job allowed three extraction attempts and one image stage.
-All five jobs halted, preserved the completed local OCR and available failure
-evidence, and passed `verify-job`. The adapter did not retry requests or switch
-providers. Recorded token use and monetary cost remain unknown.
-
-The final JPEG was 2206 × 3072 pixels and 965,580 bytes, at quality 90.
-An AI assistant inspected that exact image before the final job. The table
-rows used for the planned spot check remained readable. There was no returned
-VLM text to compare, so this test establishes neither transcription quality
-nor a working live provider route.
-
-[vlm-results.json](vlm-results.json) retains each result, image and output
-fingerprints, and the readings recorded before testing. [vlm.yml](vlm.yml)
-is the exact final configuration. It requires the optional example adapter,
-Pillow, Poppler, and an authorized OpenAI-compatible gateway. The model name
-and gateway in that file describe this test; they are not a promise of access.
-See the [image adapter specification](../../image-evidence-spec.md) for setup
-and the new `max_image_bytes` and `max_image_dimension` options.
+A separate attempt to read census page 23 with a hosted image model returned
+no text: every request failed at the gateway (account, quota, size limit or
+server errors), so it measured nothing about transcription.
+[vlm-results.json](vlm-results.json) and [vlm.yml](vlm.yml) keep the record;
+vlm.yml names an example adapter that later releases no longer ship.
 
 ## What this changes next
 

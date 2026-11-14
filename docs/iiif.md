@@ -131,9 +131,16 @@ pixels than the archive holds.
   same URL over `https` instead, and the record keeps the declared id beside the
   https URLs it fetched. If the https form does not answer, that canvas fails
   with a message saying the service was declared as http. A manifest you name
-  by an `http://` URL is fetched as declared. PageLedger checks the addresses a name resolves to
-  just before asking, but cannot stop a name that resolves differently a moment
-  later; fetch only manifests you have reason to trust.
+  by an `http://` URL is fetched as declared. PageLedger looks the name up and
+  checks its addresses just before asking, but the connection looks the name
+  up again, so a host that answers with a public address and then a private one
+  is not caught, and a name that cannot be looked up is not refused at that
+  check. Fetch only manifests you have reason to trust.
+- A URL whose query carries a key, token, password or signature (`token=`,
+  `api_key=`, `X-Amz-Signature=` and the like) is refused before anything is
+  asked, because it would be written into the fetch record and the job's
+  report; fetch a URL without it. A signed link a server redirects to is
+  recorded with that value written as `redacted`.
 - It follows at most three redirects and never one from https to http. It
   sends no cookies and uses your system's proxy settings, as a browser would.
 - A URL with a space or a control character in it, or a non-ASCII character in its path, is

@@ -1,19 +1,31 @@
 # Engine recipes
 
-These examples use the built-in `vision` adapter or custom adapters in
-`examples/`. Scores are agreement with a model-made reference on 24 transcribed
-pages of historical print, not accuracy; later runs through PageLedger used 19
-of those pages. They describe that evaluation set, not a guarantee for other
-documents.
+These recipes set up the engines PageLedger can use besides Tesseract. Each
+gives the configuration for a job, which `pageledger process` reads with
+`--config`. `pageledger init --engine rapidocr` or `--engine indra` writes a
+commented job configuration for those two OCR engines; the others are added to
+that file by hand. For a pipeline run with `pageledger run`, the same adapter
+and options go under `run.adapter` and `run.adapter_options`, with a
+`taxonomy` that names the page types to extract (see [first run](first-run.md)).
+
+The error figures below are disagreement with a reference transcription made
+by a model and checked by hand, on 24 pages of historical print; later runs
+through PageLedger used 19 of those pages. "Character error" here means
+characters that differ from that reference, so a figure measures agreement
+with it, not accuracy, and it describes that evaluation set, not other
+documents. "Exact numbers" is the share of the reference's numbers an engine
+wrote digit for digit; the scoring script that counts them is being corrected
+for lists such as `12, 15`, so treat those percentages as approximate.
 
 ## Local Qwen3.5-9B with mlx-vlm (macOS)
 
 Qwen3.5-9B 4-bit was the strongest local model on prose (8.4% character error)
 and directories and dictionaries (2.0%) in the evaluation; its overall error
 was 16.0%, exact numbers 60%, and it kept 90% of pre-reform letters. It looped
-on some pages. On an M4 Pro, it took about 90 seconds per page and used 8.3 GB
-of memory. In a later run through PageLedger, the pages it finished took a
-median of 38 seconds and measured 1.6% character error, but 4 of the 12 pages
+on some pages. On an M4 Pro it used 8.3 GB of memory and took about 90 seconds
+a page in the evaluation. In a later run
+through PageLedger, the pages it finished took a median of 38 seconds and
+measured 1.6% character error, but 4 of the 12 pages
 it attempted looped until `max_tokens`; see
 [time, heat and loops](vision-adapter.md#local-models-time-heat-and-loops). Use
 it selectively and review every generated reading.
@@ -26,17 +38,22 @@ Qwen's thinking mode stays off unless you pass `--enable-thinking`. No separate
 OCR package is needed. The model weights use the publisher's license; check
 that license before redistribution.
 
+In a job it is the `local_image` stage, a model on this machine that reads the
+pages OCR could not settle, with its own page limit:
+
 ```yaml
 schema_version: "0.1"
-run:
-  adapter: vision
-  adapter_options:
-    base_url: http://127.0.0.1:8080/v1
-    model: mlx-community/Qwen3.5-9B-4bit
-taxonomy:
-  page_types:
-    prose:
-      default_action: transcribe_text
+processing:
+  local_ocr:
+    adapter: pdf_ocr
+    adapter_options: {lang: rus}
+  local_image:
+    adapter: vision
+    adapter_options:
+      base_url: http://127.0.0.1:8080/v1
+      model: mlx-community/Qwen3.5-9B-4bit
+  limits:
+    max_local_image_pages: 20
 ```
 
 ## dots.ocr with mlx-vlm as the local reader (macOS)
@@ -61,22 +78,22 @@ model's own prompt:
 
 ```yaml
 schema_version: "0.1"
-run:
-  adapter: vision
-  adapter_options:
-    base_url: http://127.0.0.1:8081/v1
-    model: PATH
-    timeout_seconds: 600
-    max_tokens: 8192
-taxonomy:
-  page_types:
-    prose:
-      default_action: transcribe_text
-      prompt: Extract the text content from this image.
+processing:
+  local_ocr:
+    adapter: pdf_ocr
+  local_image:
+    adapter: vision
+    adapter_options:
+      base_url: http://127.0.0.1:8081/v1
+      model: PATH
+      timeout_seconds: 600
+      max_tokens: 8192
+    prompt: Extract the text content from this image.
+  limits:
+    max_local_image_pages: 20
 ```
 
-In a job it fits as `local_image`, with its own
-`max_local_image_pages`. dots.ocr is MIT-licensed.
+dots.ocr is MIT-licensed.
 
 ## GGUF vision model through llama.cpp (macOS and Linux)
 
@@ -89,15 +106,16 @@ Review the model's license and hardware requirements.
 
 ```yaml
 schema_version: "0.1"
-run:
-  adapter: vision
-  adapter_options:
-    base_url: http://127.0.0.1:8080/v1
-    model: local-gguf
-taxonomy:
-  page_types:
-    prose:
-      default_action: transcribe_text
+processing:
+  local_ocr:
+    adapter: pdf_ocr
+  local_image:
+    adapter: vision
+    adapter_options:
+      base_url: http://127.0.0.1:8080/v1
+      model: local-gguf
+  limits:
+    max_local_image_pages: 20
 ```
 
 ## RapidOCR with PP-OCRv5 Cyrillic (macOS and Linux, CPU)
@@ -118,21 +136,22 @@ If `det_model_dir` is omitted, RapidOCR may download its default detector on
 first use. Any PP-OCRv5 recognizer works the same way; each page's provenance
 records the recognizer's hash.
 
+`pageledger init --engine rapidocr --model-dir /models/ppocrv5-cyrillic --out
+document-job.yml` writes a job configuration with RapidOCR as the OCR stage;
+add the detector and size by hand:
+
 ```yaml
 schema_version: "0.1"
-run:
-  adapter: rapidocr
-  adapter_options:
-    rec_model_dir: /models/ppocrv5-cyrillic
-    det_model_dir: /models/ppocrv5-mobile-det
-    max_side: 3200
-taxonomy:
-  page_types:
-    prose:
-      default_action: transcribe_text
+processing:
+  local_ocr:
+    adapter: rapidocr
+    adapter_options:
+      rec_model_dir: /models/ppocrv5-cyrillic
+      det_model_dir: /models/ppocrv5-mobile-det
+      max_side: 3200
 ```
 
-Run with `pageledger run book.pdf --config pageledger.yml --out runs/rapidocr`.
+Then `pageledger process book.pdf --config document-job.yml --out jobs/book`.
 
 ## RapidOCR with PP-OCRv5 English (macOS and Linux, CPU)
 
@@ -146,16 +165,13 @@ Apache-2.0.
 
 ```yaml
 schema_version: "0.1"
-run:
-  adapter: rapidocr
-  adapter_options:
-    rec_model_dir: /models/ppocrv5-english
-    det_model_dir: /models/ppocrv5-mobile-det
-    max_side: 3200
-taxonomy:
-  page_types:
-    prose:
-      default_action: transcribe_text
+processing:
+  local_ocr:
+    adapter: rapidocr
+    adapter_options:
+      rec_model_dir: /models/ppocrv5-english
+      det_model_dir: /models/ppocrv5-mobile-det
+      max_side: 3200
 ```
 
 In the 2026 telephone-directory dogfood, RapidOCR read 24 of 32 lines exactly
@@ -170,6 +186,13 @@ neighbouring lines together. Set `reading_order: columns` for such pages: the
 adapter then cuts the page at its whitespace and reads each column from top to
 bottom. Do not use it for tables, whose columns it would read one at a time.
 The page's provenance records the choice (`reading-order=columns`).
+
+A row in Hebrew, Yiddish or an Arabic script is written from its right-hand
+end, and the reading's model string then ends `; right-to-left-rows=N`. RapidOCR
+does not say in which order a row's pieces are read, so the direction is taken
+from the order it found them in; a right-to-left row whose first piece found
+starts with a Latin letter is still written left to right. Columns are always
+taken left to right. (This is the `rapidocr` adapter's version 0.2.)
 
 Each page is rendered with `pdftoppm` before recognition, and a render that
 takes longer than `render_timeout_seconds` (default 120) fails the page. Raise
@@ -187,16 +210,16 @@ at a time:
 
 ```yaml
 schema_version: "0.1"
-run:
-  adapter: indra
-  adapter_options:
-    mode: ocr          # or auto: Indra reads a sound text layer itself
-    dpi: 300
-taxonomy:
-  page_types:
-    prose:
-      default_action: transcribe_text
+processing:
+  local_ocr:
+    adapter: indra
+    adapter_options:
+      mode: ocr          # or auto: Indra reads a sound text layer itself
+      dpi: 300
 ```
+
+`pageledger init --engine indra --out document-job.yml` writes this stage for
+you.
 
 Install with `pip install 'pageledger[indra]'`. The first page downloads the
 models (about 76 MB) from Hugging Face into its cache; if that download stalls,
@@ -206,7 +229,8 @@ and downloads the math models; `output: markdown` keeps headings and tables
 (as HTML) instead of plain lines. Each page's provenance records the indra-ocr
 version, a hash of the model files, the mode and the dpi; the line confidences
 become the page's quality evidence, and the layout blocks, rotation and skew
-are kept with them.
+are kept with them. Those blocks are not a layout a job can cut tiles along, so
+`tiling.layout` refuses indra; use rapidocr or alto there.
 
 On the 20 hand-checked pages of the 0.8 dogfood, Indra in `ocr` mode measured
 a median character error of 0.159 against Tesseract's 0.242, at a median of 0.7
@@ -295,11 +319,16 @@ RapidOCR's `reading_order: columns` does, and each column is read top to
 bottom. So a gutter narrower than a word's height is read as a word space (the
 columns interleave row by row), and text set at a tab stop inside a column, such
 as names with their numbers aligned far to the right, is read as two columns:
-all the names, then all the numbers. If any word has no box, or one that is negative or too large to measure, the page keeps the file's order. Words are kept as printed: a word broken
+all the names, then all the numbers. If any word has no box, or one that is negative or too large to measure, the page keeps the file's order. A row in Hebrew, Yiddish or an Arabic script is read
+from its right-hand end, keeping the file's word order, and the model string
+then ends `; right-to-left-rows=N`; columns are still taken left to right, so a
+page set in right-to-left columns reads them in the wrong order. Words are kept as printed: a word broken
 at a line end keeps its hyphen (`HYP`) and the library's suggested whole word
 (`SUBS_CONTENT`) is not used. Word confidence comes from `WC` (0 unsure, 1
 sure) or else from `CC` (one digit a character, 0 sure, 9 unsure), and feeds
-`low_confidence` like RapidOCR's.
+`low_confidence` like RapidOCR's. The page's confidence is given only when the
+file scores every word; otherwise it is empty, and `confidence_detail` counts
+the unscored words (`unscored_count`) beside the figures for the scored ones.
 
 Every reading with text carries `ocr_text_layer`, so in a job the
 rules for an inherited OCR layer apply and the page climbs to local OCR. In a
@@ -317,7 +346,7 @@ reported as `alto_geometry_mismatch` (see [warnings](warnings.md)).
 The model string names the file, its SHA-256 and the software the file
 declares, for example `alto; file 0001.xml sha256:…; software ABBYY FineReader
 8.0`, so a changed file is a different reading. `verify`
-checks the recorded text against that record but do not read the ALTO file
+checks the recorded text against that record but does not read the ALTO file
 again: it lies outside the source and the run, so keep the folder with the run
 if the reading must be checked later, and compare its digest by hand.
 
@@ -329,30 +358,40 @@ see [Read dense pages in tiles](processing-spec.md#read-dense-pages-in-tiles).
 
 ## Tesseract with the community orus model (macOS and Linux)
 
-The `orus` model source is [AButon-8/iskra_ocr](https://github.com/AButon-8/iskra_ocr),
-which also contains the *Iskra* evaluation. The model measured 20.9% character error overall and kept 58%
-of pre-reform letters, compared with 18.9% error and 35% retained letters for
-stock `rus`. On the *Iskra* 1900–05 corpus, its publisher reports 1.30% versus
-9.45%; that publisher result is not the 24-page evaluation. Stock `rus`
-recognizes modern Russian and therefore loses historical letters such as ѣ,
-ѳ and ѵ. Time per page and memory for `orus` were not measured; both depend on
-render DPI, page size and hardware. Install Tesseract and Poppler, then install
-the community `orus.traineddata`
-in a tessdata directory, and set `TESSDATA_PREFIX` to that directory before
-running PageLedger. Tesseract is Apache-2.0; verify the community model's own
-license and source.
+Stock Tesseract `rus` is trained on modern Russian, so it drops or garbles the
+pre-1918 letters ѣ, і, ѳ and ѵ. The community `orus` model writes them. In our
+24-page test it kept more of them (58% against 35% for `rus`) but made more
+errors overall (20.9% character error against 18.9%), so try it on a few pages
+and compare before reading a whole book with it. Its publisher reports 1.30%
+against 9.45% on the *Iskra* 1900–05 corpus; that is the publisher's own
+evaluation, not ours. Time per page and memory were not measured.
+
+1. Download `orus.traineddata` from
+   [AButon-8/iskra_ocr](https://github.com/AButon-8/iskra_ocr), and check its
+   licence there. Tesseract itself is Apache-2.0.
+2. Copy it into the folder that holds Tesseract's other languages, beside
+   `rus.traineddata`: `$(brew --prefix)/share/tessdata` with Homebrew, or
+   `/usr/share/tesseract-ocr/5/tessdata` on Debian and Ubuntu. Don't point
+   `TESSDATA_PREFIX` at a folder holding only `orus`: Tesseract would then see
+   no other language. `pageledger doctor` lists `orus` once it is in place.
+3. Read a few pages with it, and the same pages with `rus`, and compare the
+   two reports:
+
+```bash
+pageledger process book.pdf --lang orus --pages 20-22 --out jobs/book-orus
+pageledger process book.pdf --lang rus --pages 20-22 --out jobs/book-rus
+```
+
+In a configuration file, `orus` is the OCR stage's language:
 
 ```yaml
 schema_version: "0.1"
-run:
-  adapter: pdf_ocr
-  adapter_options:
-    lang: orus
-    dpi: 300
-taxonomy:
-  page_types:
-    prose:
-      default_action: transcribe_text
+processing:
+  local_ocr:
+    adapter: pdf_ocr
+    adapter_options:
+      lang: orus
+      dpi: 300
 ```
 
 ## Apple Vision (macOS, post-1918 print)
@@ -368,19 +407,17 @@ part of macOS; Apple's platform terms apply.
 
 ```yaml
 schema_version: "0.1"
-run:
-  adapter: apple_vision_adapter:AppleVisionAdapter
-  adapter_options:
-    helper: ./apple_vision_ocr
-    languages: ru-RU
-    max_side: 3000
-taxonomy:
-  page_types:
-    prose:
-      default_action: transcribe_text
+processing:
+  local_ocr:
+    adapter: apple_vision_adapter:AppleVisionAdapter
+    adapter_options:
+      helper: ./apple_vision_ocr
+      languages: ru-RU
+      max_side: 3000
 ```
 
-Use `--adapter-path examples` when running the config.
+Pass `--adapter-path examples` with the command, since the adapter is a
+Python file in that folder rather than part of PageLedger.
 
 ## Hosted OpenAI-compatible model
 
@@ -395,20 +432,24 @@ Hosted speed and cost vary by provider; consult its service terms and pricing.
 Install Poppler, set `GATEWAY_API_KEY` in the environment, and use the model
 name your gateway lists at `/v1/models`:
 
+In a job a hosted model is the paid `image` stage, which reads only the pages
+the local readers could not settle, up to `max_image_pages`:
+
 ```yaml
 schema_version: "0.1"
-run:
-  adapter: vision
-  adapter_options:
-    base_url: https://gateway.example.org/v1
-    model: gemini-3.8-flash
-    env_key: GATEWAY_API_KEY
-    allow_remote: true
-    reasoning_effort: none
-taxonomy:
-  page_types:
-    prose:
-      default_action: transcribe_text
+processing:
+  local_ocr:
+    adapter: pdf_ocr
+  image:
+    adapter: vision
+    adapter_options:
+      base_url: https://gateway.example.org/v1
+      model: gemini-3.8-flash
+      env_key: GATEWAY_API_KEY
+      allow_remote: true
+      reasoning_effort: none
+  limits:
+    max_image_pages: 20
 ```
 
 A gateway on this machine that forwards requests to a hosted provider still

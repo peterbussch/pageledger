@@ -18,7 +18,13 @@ hook for types such as `letter`, `invoice`, or `map`.
 
 ## Classify, review, then run
 
-Use the same input paths and config for classification and execution:
+Use the same input paths and config for classification and execution. The
+config must name an adapter that can read the pages: for scans with no text
+layer that is `pdf_ocr` (set `run.adapter: pdf_ocr` and, if you like,
+`classify.adapter: pdf_ocr`). With the `pageledger.yml` that `init --run`
+writes, whose adapter is `text`, `classify` probes a PDF's text layer, so every
+page of a scan is `unknown` and goes to review, and `run` then stops because
+`text` cannot read a PDF.
 
 ```bash
 pageledger classify scans/volume.pdf \
