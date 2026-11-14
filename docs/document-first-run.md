@@ -1,14 +1,157 @@
-# First job: process, inspect, verify, recover, and review
+# First job: process, check, correct and export
 
-This tutorial is a small, offline job. It uses PageLedger's built-in
-`text` adapter and a three-page synthetic text fixture, so it needs no OCR
-engine, network access, provider credential, or extra package. The optional
-recovery helper records adapter calls in JSONL and reports unknown cost. JSONL
-means one JSON object per line. These files show what this journey did; they do
-not measure transcription accuracy.
+This tutorial makes one small job from a three-page text file, checks its
+record, corrects a word and writes the text out. It needs only
+`pip install pageledger`: no OCR engine, no network and no model. Type the
+commands in an empty folder.
 
-The commands below are maintained executable blocks. From a source checkout,
-run them with the standard-library helper:
+## Make a source
+
+A text file's pages are separated by form feeds (`\f`). This one has three
+short, made-up pages:
+
+```bash pageledger-tutorial
+PYTHON="${PYTHON:-python}"
+printf 'Synthetic page one: a short archival-style paragraph.\fSynthetic page two: a second paragraph for the review example.\fSynthetic page three: the final paragraph in this fixture.' > sample-document.txt
+```
+
+## Process, inspect and verify
+
+```bash pageledger-tutorial
+pageledger process sample-document.txt --out jobs/complete
+pageledger inspect jobs/complete
+pageledger verify jobs/complete
+```
+
+`process` makes the job, the folder `jobs/complete`, and says how many pages
+need a person and what to run next. A text file has no page images, so its own
+text is the only reading; nothing is sent anywhere. Here all three pages need a
+person, because a page with very little text is held in case text is missing:
+
+```text
+Finished: 3 pages read; 3 need a person.
+The job is in jobs/complete.
+Why they need a person:
+  3 pages: the text file has very little text.
+```
+
+`inspect` prints the job's report, `report.md`: where each page stands, which
+reading was selected, and then, for the record, the hashes and settings behind
+every reading. The cost is shown as unknown, not zero, because the text reader
+reports no charge.
+
+`verify` checks the record: the source's fingerprint (its SHA-256 hash), every
+saved reading, the selected text and the report.
+
+```text
+Status: pass
+The record is intact: every file matches what was recorded. This does not check that the text is right.
+```
+
+A finished job is not a checked one. Whether the text is right is for a person
+to decide, which is the next step.
+
+## Correct a word
+
+When the text is wrong, you record the right text rather than editing the
+engine's. The job keeps both, with a receipt saying who changed what and from
+which reading, so a later reader can check the correction against the page.
+
+The review sheet is a spreadsheet with one row per page. Write it, put the
+corrected text of page 2 in a file beside it, and type `correct:p0002.txt` in
+page 2's `decision` column. In a spreadsheet program you would type it by hand
+and save as CSV UTF-8; here a few lines of Python do it:
+
+```bash pageledger-tutorial
+pageledger review jobs/complete --sheet correct/review.csv
+"$PYTHON" - <<'PY'
+import csv
+from pathlib import Path
+
+Path("correct/p0002.txt").write_text(
+    "Synthetic page two: a second paragraph for the correction example.",
+    encoding="utf-8",
+)
+sheet = Path("correct/review.csv")
+with sheet.open(encoding="utf-8-sig", newline="") as stream:
+    rows = list(csv.DictReader(stream))
+rows[1]["decision"] = "correct:p0002.txt"
+rows[1]["note"] = "Synthetic fixture correction of one word."
+with sheet.open("w", encoding="utf-8-sig", newline="") as stream:
+    writer = csv.DictWriter(stream, fieldnames=list(rows[0]))
+    writer.writeheader()
+    writer.writerows(rows)
+PY
+pageledger review jobs/complete --apply correct/review.csv \
+  --reviewer "synthetic tutorial reviewer" --dry-run
+pageledger review jobs/complete --apply correct/review.csv \
+  --reviewer "synthetic tutorial reviewer"
+"$PYTHON" - <<'PY'
+import json
+from pathlib import Path
+
+job = json.loads(Path("jobs/complete/job.json").read_text())["payload"]
+print(json.dumps(job["pages"][1]["review"]["decisions"][0]["correction"], indent=2))
+PY
+pageledger verify jobs/complete
+echo DOCUMENT_JOURNEY_CORRECTION_OK
+```
+
+The dry run prints `Correction of page 2, from the text file: 1 word changed,
+0 added, 0 removed` and records nothing; the second command records it. The
+reviewer's name here is made up for the example. The receipt's `correction`
+names the corrected text's file under `corrections/`, its SHA-256, the SHA-256
+of the reading it started from, and the word counts. The engine's reading is
+still in the job, unchanged; the report now shows page 2 as corrected by a
+person. See [correct the text](processing-spec.md#correct-the-text).
+
+## Review beside the page image
+
+Checking a transcript means reading it against the page it came from. For a
+PDF or page images, `review` writes a folder to open in a browser, with each
+page's image beside its text and the other readings compared word by word:
+
+```bash
+pageledger review jobs/complete --out review --images none
+```
+
+This source is a text file, so it has no images and `--images none` is
+needed. Choose a decision under each page or correct its text in the box below
+it, download `review.json`, and record it with
+`pageledger review jobs/complete --apply ~/Downloads/review.json --reviewer "Your Name"`.
+Nothing is recorded until you do.
+[Review and correct](review-and-correct.md) goes through each step.
+
+## Export the text
+
+```bash pageledger-tutorial
+pageledger export jobs/complete --out sample-document.md
+```
+
+The export marks each page with whether a person checked it, and which reading
+its text comes from. `--format` gives plain text, JSON lines or TEI instead;
+see [export](export.md).
+
+## Write the configuration out
+
+Without `--config`, `process` uses the configuration that `init` writes for the
+same options. To change what a job does (another OCR engine, a language, a
+second engine), write it to a file, edit it, and pass it with `--config`:
+
+```bash pageledger-tutorial
+pageledger init --engine none --out document-job.yml
+grep -v '^ *#' document-job.yml
+```
+
+Its comments say what each setting does. For a PDF, leave out `--engine none`:
+the default adds Tesseract OCR for pages whose own text is missing or looks
+wrong.
+
+## For maintainers: the checks this page also runs
+
+The blocks above are tested by running them in order. Two more blocks need a
+source checkout and are not part of the tutorial; skip them. From a checkout,
+the whole page runs with:
 
 ```bash
 python examples/run_first_run.py \
@@ -18,82 +161,10 @@ python examples/run_first_run.py \
   --source-root "$PWD"
 ```
 
-The helper supplies the recovery helper path as
-`PAGELEDGER_TUTORIAL_RECOVERY_HELPER`. If you copy the executable blocks out
-of the helper, set that variable to the checkout's
-`examples/run_document_recovery.py` first.
-
-## Make a synthetic source
-
-The form-feed character creates three source pages. The text is intentionally
-ordinary and synthetic. A completed job means the processing stages finished;
-it does not mean a person reviewed or approved the pages.
-
-```bash pageledger-tutorial
-PYTHON="${PYTHON:-python}"
-mkdir -p jobs
-"$PYTHON" - <<'PY'
-from pathlib import Path
-
-Path("sample-document.txt").write_text(
-    "Synthetic page one: a short archival-style paragraph.\f"
-    "Synthetic page two: a second paragraph for the review example.\f"
-    "Synthetic page three: the final paragraph in this fixture.",
-    encoding="utf-8",
-)
-PY
-```
-
-## Process, inspect, and verify a completed job
-
-One command starts the job. Without a config file, `process` uses the
-configuration `init` writes for the same options. A
-plain-text file has no page images, so for a `.txt` source that configuration
-has no OCR stage; for a PDF it would add Tesseract OCR for the pages whose own
-text is missing or looks wrong. The first lines on screen name the
-configuration and the command that writes it out.
-
-`process` writes the job and its child run to disk, then says how many pages
-need a person and what to run next. `inspect` reads the document report,
-while `verify` checks the source fingerprint (a SHA-256 hash of the file),
-saved readings, selected text, and report consistency.
-
-```bash pageledger-tutorial
-pageledger process sample-document.txt --out jobs/complete
-pageledger inspect jobs/complete
-pageledger verify jobs/complete
-```
-
-The report opens with what happened: the job's status, how many pages need a
-person and why, and the one command to run next. Here all three pages need a
-person: each holds one short sentence, and a page with very little text is
-held (`sparse`, shown as `coverage_defect`) in case text is missing. Hashes, readings and custody
-come last, for the record. It shows unknown cost because the local adapter
-supplies no charge.
-Unknown cost is different from a known zero. The selected text remains subject
-to source review even though processing completed.
-
-## Write the configuration out
-
-To change what a job does, write its configuration to a file and pass it with
-`--config`. This is the configuration the first job used; its comments say
-what each setting does and which stages need an OCR engine. The recovery step
-below uses it.
-
-```bash pageledger-tutorial
-pageledger init --engine none --out document-job.yml
-grep -v '^ *#' document-job.yml
-```
-
-A job started with this file records the same configuration as the job above,
-so `verify`, `resume` and `review --apply` treat the two alike.
-
-## Optional: interrupt after saving a response, then resume
-
-The checked-in recovery helper uses a test-only hook outside PageLedger's
-production code. It interrupts immediately after the first response record is
-saved to disk, resumes the same job, and logs adapter calls. This demonstrates
-that PageLedger reuses the saved response and does not extract page 1 twice.
+The first block interrupts a job just after its first reading is saved,
+resumes it, and checks from a call log that page 1 was not read twice. The
+helper it runs is `examples/run_document_recovery.py`, which `run_first_run.py`
+passes as `PAGELEDGER_TUTORIAL_RECOVERY_HELPER`.
 
 ```bash pageledger-tutorial
 CALLS_PATH="$PWD/calls-interrupted.jsonl"
@@ -112,15 +183,8 @@ print("DOCUMENT_JOURNEY_RECOVERY_OK")
 PY
 ```
 
-The helper prints an interruption receipt before resuming. The call log is
-concrete evidence that completed calls were not duplicated.
-
-## Apply a review record tied to a page and output
-
-Review records are tied to this source page and exact output. This example
-first rejects a stale record without making an adapter call, then reviews only
-page 1 with a clearly synthetic reviewer name. That name documents the
-fixture; it is not a claim of human review.
+The second applies a review file written by hand: one tied to the wrong source,
+which is refused, and one tied to page 1's exact reading, which is recorded.
 
 ```bash pageledger-tutorial
 "$PYTHON" - <<'PY'
@@ -163,84 +227,6 @@ if pageledger review jobs/complete --apply stale-review.json; then
 fi
 echo DOCUMENT_JOURNEY_STALE_RECEIPT_REJECTED
 pageledger review jobs/complete --apply valid-review.json
-pageledger inspect jobs/complete
 pageledger verify jobs/complete
 echo DOCUMENT_JOURNEY_REVIEW_OK
 ```
-
-The report now contains one reviewed page and two pages that still need
-review. A completed processing status, a source review decision, and cost
-evidence are separate facts.
-
-## Correct a word
-
-When the text is wrong, a reviewer records the right text rather than editing
-the engine's. The job keeps both, with a receipt saying who changed what, from
-which reading, so a later reader can check the correction against the page as
-well as the engine.
-
-Here page 2 is corrected in a text file named in the review sheet. The word
-"review" becomes "correction"; the synthetic reviewer name again documents the
-fixture.
-
-```bash pageledger-tutorial
-pageledger review jobs/complete --sheet correct/review.csv
-"$PYTHON" - <<'PY'
-import csv
-from pathlib import Path
-
-Path("correct/p0002.txt").write_text(
-    "Synthetic page two: a second paragraph for the correction example.",
-    encoding="utf-8",
-)
-sheet = Path("correct/review.csv")
-with sheet.open(encoding="utf-8-sig", newline="") as stream:
-    rows = list(csv.DictReader(stream))
-rows[1]["decision"] = "correct:p0002.txt"
-rows[1]["note"] = "Synthetic fixture correction of one word."
-with sheet.open("w", encoding="utf-8-sig", newline="") as stream:
-    writer = csv.DictWriter(stream, fieldnames=list(rows[0]))
-    writer.writeheader()
-    writer.writerows(rows)
-PY
-pageledger review jobs/complete --apply correct/review.csv \
-  --reviewer "synthetic tutorial reviewer" --dry-run
-pageledger review jobs/complete --apply correct/review.csv \
-  --reviewer "synthetic tutorial reviewer"
-"$PYTHON" - <<'PY'
-import json
-from pathlib import Path
-
-job = json.loads(Path("jobs/complete/job.json").read_text())["payload"]
-print(json.dumps(job["pages"][1]["review"]["decisions"][0]["correction"], indent=2))
-PY
-pageledger verify jobs/complete
-echo DOCUMENT_JOURNEY_CORRECTION_OK
-```
-
-The dry run prints `Correction of page 2, from …: 1 word changed, 0 added, 0
-removed` and records nothing. The receipt's `correction` names the corrected
-text's file under `corrections/`, its SHA-256, the SHA-256 of the engine's
-reading it started from, and the word counts. The engine's reading is still in
-the job, unchanged; the report and transcript now show page 2 as a correction
-by a person. See [correct the text](processing-spec.md#correct-the-text).
-
-## Review beside the page image
-
-Checking a transcript means reading it against the page it came from, line by
-line; with the image beside the text, a dropped line or a supplied word shows
-at once. `review --out` writes a folder you open in a browser, with each page's
-image next to its selected text and the other readings compared word by word:
-
-```bash
-pageledger review jobs/complete --out review --images none
-```
-
-This synthetic source is a text file, so it has no page images; a PDF's pages
-are rendered with Poppler unless you pass `--images none`. Choose a decision
-under a page, or correct its text in the box below it, download `review.json`
-into the `review` folder, and apply it with `pageledger review jobs/complete
---apply review/review.json --reviewer "Your Name"`. Nothing is recorded until
-you do.
-[Review and correct](review-and-correct.md) goes through each step; the
-reference is [review beside the page image](processing-spec.md#review-beside-the-page-image).
