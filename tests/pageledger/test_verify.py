@@ -1715,3 +1715,20 @@ def test_a_job_copied_with_finder_files_still_verifies(tmp_path):
     ):
         path.write_bytes(b"\x00\x05\x16\x07")
     assert verify_job(job)["status"] == "pass"
+
+
+@pytest.mark.parametrize("name", ["transcript.md", "report.md"])
+def test_a_changed_rendering_of_a_job_is_named(tmp_path, name):
+    from pageledger import cli
+    from pageledger.processing import verify_job
+
+    source = tmp_path / "one.txt"
+    source.write_text("a page of text\n", encoding="utf-8")
+    job = tmp_path / "job"
+    assert cli.main(["process", str(source), "--out", str(job)]) == 0
+    with (job / name).open("a", encoding="utf-8") as handle:
+        handle.write(" ")
+    assert verify_job(job)["error"] == (
+        "Derived document report does not match document.json: "
+        f"{name} differs from what document.json renders"
+    )

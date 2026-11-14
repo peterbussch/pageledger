@@ -111,7 +111,8 @@ def test_tampering_with_a_moved_job_still_fails(setup, tmp_path):  # noqa: F811
         ),
         (
             lambda copy: (copy / "report.md").write_text("changed"),
-            "Derived document report does not match document.json",
+            "Derived document report does not match document.json: "
+            "report.md differs from what document.json renders",
         ),
         (lambda copy: shutil.rmtree(copy / image["run_path"]), "Completed child run is missing"),
         (

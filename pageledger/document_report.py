@@ -1799,12 +1799,28 @@ def verify_document_report(root: Path) -> dict:
     try:
         report = json.loads((root / "document.json").read_bytes())
         transcript = (root / "transcript.md").read_bytes()
-        if (
-            transcript != render_transcript(report).encode("utf-8")
-            or hashlib.sha256(transcript).hexdigest() != report["transcript"]["sha256"]
-            or (root / "report.md").read_bytes() != render_document_report(report).encode("utf-8")
-        ):
-            raise ValueError("Derived document report does not match document.json")
+        changed = [
+            name
+            for name, differs in (
+                (
+                    "transcript.md",
+                    transcript != render_transcript(report).encode("utf-8")
+                    or hashlib.sha256(transcript).hexdigest() != report["transcript"]["sha256"],
+                ),
+                (
+                    "report.md",
+                    (root / "report.md").read_bytes()
+                    != render_document_report(report).encode("utf-8"),
+                ),
+            )
+            if differs
+        ]
+        if changed:
+            verb = "differ" if len(changed) > 1 else "differs"
+            raise ValueError(
+                "Derived document report does not match document.json: "
+                f"{' and '.join(changed)} {verb} from what document.json renders"
+            )
         for page in report["pages"]:
             for attempt in page["attempts"]:
                 if attempt["raw_artifact"] is not None:
