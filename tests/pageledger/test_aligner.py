@@ -855,3 +855,12 @@ def test_align_removes_obsolete_external_schema_snapshot(tmp_path):
     align_run(out)
 
     assert not (out / "align-schema-snapshot.yml").exists()
+
+
+def test_json_content_aligns_as_its_raw_artifact_does():
+    """Rows given as tuples are written as JSON lists, and are aligned as such."""
+    content = {"headers": ["place", "total"], "rows": [("Kazan", 1200), ("Tver", 30)]}
+    from_objects = _align(content, "json")
+    from_raw = _align(json.dumps(content), "json")
+    assert from_objects == from_raw
+    assert from_objects["metrics"]["row_count"] == 2

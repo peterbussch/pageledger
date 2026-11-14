@@ -1732,3 +1732,34 @@ def test_a_changed_rendering_of_a_job_is_named(tmp_path, name):
         "Derived document report does not match document.json: "
         f"{name} differs from what document.json renders"
     )
+
+
+def test_hostile_derivation_inputs_are_reported_not_raised(tmp_path):
+    """A provenance format that is not text, or a schema snapshot that is a link out."""
+    from pageledger.verify import verify_run
+
+    run = _schema_run(tmp_path)
+
+    def change(rows):
+        rows[0]["result"]["format"] = ["markdown_table"]
+
+    _rewrite_jsonl(run / "provenance.jsonl", change)
+    assert verify_run(run)["status"] == "fail"
+
+    (tmp_path / "linked").mkdir()
+    run = _schema_run(tmp_path / "linked")
+    outside = tmp_path / "outside.yml"
+    outside.write_text("not: [a, schema\n", encoding="utf-8")
+    manifest = json.loads((run / "manifest.json").read_text(encoding="utf-8"))
+    manifest["alignment"] = {
+        "aligned_at": "2026-11-13T00:00:00Z",
+        "schema_source": str(outside),
+        "schema_sha256": "0" * 64,
+        "pageledger_version": "0.9.0",
+    }
+    (run / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+    (run / "align-schema-snapshot.yml").symlink_to(outside)
+    report = verify_run(run)
+    assert report["status"] == "fail"
+    assert "alignment_schema_snapshot_invalid" in _codes(report, "errors")
+    assert all("not: [a" not in issue["message"] for issue in report["errors"])

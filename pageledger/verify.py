@@ -1047,9 +1047,10 @@ def _check_derived(
         )
         thresholds = configuration.grading_thresholds
         if isinstance(alignment, dict) and alignment.get("schema_source") != "config_snapshot":
-            loaded = yaml.safe_load(
-                (root / "align-schema-snapshot.yml").read_text(encoding="utf-8")
-            )
+            snapshot = _safe_resolve(root / "align-schema-snapshot.yml")
+            if snapshot is None or snapshot.parent != root or not snapshot.is_file():
+                return  # reported with the alignment schema hash check
+            loaded = yaml.safe_load(snapshot.read_text(encoding="utf-8"))
             spec = load_schema_spec({"schema": loaded.get("schema", loaded)})
         else:
             spec = load_schema_spec(config)
@@ -1071,7 +1072,8 @@ def _check_derived(
             spec is None
             or route_page is None
             or not isinstance(result, dict)
-            or result.get("format") not in ALIGNABLE_FORMATS
+            or not isinstance(result.get("format"), str)
+            or result["format"] not in ALIGNABLE_FORMATS
         ):
             continue
         raw_name = str(raw_path.relative_to(root))

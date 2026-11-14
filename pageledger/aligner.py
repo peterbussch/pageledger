@@ -694,7 +694,12 @@ def _parse_json(content: Any) -> tuple[list[str], list[list[Any]], int]:
         except json.JSONDecodeError:
             raise _ParseError("invalid_json") from None
     else:
-        payload = content
+        # Align what the raw artifact holds, so the record is the same whether it is
+        # derived from the adapter's objects or from the raw file (tuples become lists).
+        try:
+            payload = json.loads(json.dumps(content, ensure_ascii=False, allow_nan=False))
+        except (TypeError, ValueError, RecursionError):
+            raise _ParseError("unrecognized_json_shape") from None
 
     if isinstance(payload, list):
         if not payload:
