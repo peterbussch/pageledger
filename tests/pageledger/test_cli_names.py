@@ -829,6 +829,15 @@ def test_an_interrupt_names_the_options_the_rest_needs(tmp_path: Path) -> None:
     assert cli._interrupted(process).endswith(
         f"pageledger resume {folder} --adapter-path '{tmp_path / 'my ad'}'"
     )
+    (folder / "job.json").write_text(
+        json.dumps({"payload": {"policy": {"local_text": {"adapter": "their_reader:Adapter"}}}}),
+        encoding="utf-8",
+    )
+    process.adapter_path = None
+    assert cli._interrupted(process).endswith(
+        f"pageledger resume {folder} --adapter-path DIR\n(DIR is the folder of its own adapter "
+        "code; for an adapter installed with pip, its package folder inside site-packages.)"
+    )
     fetch = argparse.Namespace(
         command="fetch",
         out=folder,

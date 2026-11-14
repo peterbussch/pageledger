@@ -145,8 +145,10 @@ environment. Its limits are:
 - `exact` means the replay produced the same bytes as the original on every
   page. When `raw.equal` is 0, no page produced any output (every page was
   skipped, for example), so `exact` shows nothing about the engine.
-- Replay startup does not process editable-install `.pth` hooks. Install adapter
-  code normally or supply it through `--adapter-path`.
+- Replay startup does not process editable-install `.pth` hooks. A custom
+  adapter, installed or not, runs only from the folder given with
+  `--adapter-path`; for an adapter installed with pip that is its own package
+  folder inside site-packages, never site-packages itself.
 - Replay runs code a bundle names only from a folder you give with
   `--adapter-path`, and sends pages to a model server off this machine only if
   you name it with `--trust-endpoint`; see

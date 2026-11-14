@@ -25,8 +25,7 @@ from .adapters import (
     PageLedgerDiagnostic,
     PdfTextAdapter,
     adapter_page_count,
-    check_named_code,
-    check_named_endpoint,
+    check_recorded_names,
     load_adapter,
     named_by_record,
     native_page_pixels,
@@ -397,18 +396,23 @@ def resume(
                 "resumed": True,
             }
         checkpoint = Checkpoint(root, existing=True)
+        snapshot = root / "config-snapshot.yml"
+        # The snapshot came with the run folder: code it names runs only from --adapter-path,
+        # and pages go off this machine only to a server the user named. Both are refused
+        # before recovery touches anything.
+        recorded = load_config(snapshot, validate_adapter=False)
+        endpoints = trusted_endpoints(trust_endpoints)
+        check_recorded_names(
+            recorded.named_adapters,
+            [recorded.classify_hook] if recorded.classify_hook else [],
+            "run",
+            root,
+            adapter_path,
+            endpoints,
+        )
         checkpoint.require_resumable()
         assert checkpoint.job is not None
         job = checkpoint.job
-        snapshot = root / "config-snapshot.yml"
-        # The snapshot came with the run folder: code it names runs only from --adapter-path,
-        # and pages go off this machine only to a server the user named.
-        recorded = load_config(snapshot, validate_adapter=False)
-        for spec in recorded.named_code:
-            check_named_code(spec, "run", root, adapter_path)
-        endpoints = trusted_endpoints(trust_endpoints)
-        for name, options in recorded.named_adapters:
-            check_named_endpoint(name, options, "run", endpoints)
         # The checkpoint keeps the recorded paths as source identity; reads go
         # wherever the verified bytes are now (the source index may relocate them).
         with named_by_record("run", root, adapter_path, endpoints):

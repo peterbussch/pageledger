@@ -1472,7 +1472,7 @@ def _adapter_contract_issues(adapter: Any) -> list[str]:
 
 def _load_custom_adapter(spec: str, opts: dict[str, Any] | None = None) -> Any:
     opts = dict(opts or {})
-    candidate = _import_object(spec, description="Custom adapter")
+    candidate = _import_object(spec, description="Custom adapter", methods=ADAPTER_METHODS)
 
     adapter = candidate
     if isinstance(adapter, type):
@@ -1570,15 +1570,83 @@ def check_named_code(spec: str, what: str, record: Path, adapter_path: Path | No
     module_name = spec.split(":", 1)[0]
     top = module_name.split(".")[0]
     folder = adapter_path.expanduser().resolve() if adapter_path is not None else None
-    if folder is not None and top and _module_inside(top, folder, record.resolve()):
-        return
+    if folder is not None:
+        _refuse_package_root(folder, what)
+        if top and _module_inside(top, folder, record.resolve()):
+            return
     where = f"; it is not in the --adapter-path folder {folder}" if folder is not None else ""
     raise UntrustedCode(
         f"This {what} names its own adapter, {spec}, which would run Python code from "
         f"outside PageLedger{where}. PageLedger runs such code only from a folder you name: "
-        f"if you trust where this {what} came from and that code, pass --adapter-path "
-        f"with the folder that holds {module_name}."
+        f"if you trust where this {what} came from and that adapter, pass --adapter-path "
+        "with the folder of the adapter's own code (for an installed adapter, its package "
+        "folder inside site-packages, never site-packages itself)."
     )
+
+
+def _package_roots() -> set[Path]:
+    """Where Python keeps the standard library and installed packages."""
+    import site
+    import sysconfig
+
+    places = [
+        sysconfig.get_paths().get(key) for key in ("stdlib", "platstdlib", "purelib", "platlib")
+    ]
+    try:
+        places += site.getsitepackages()
+    except AttributeError:
+        pass
+    places.append(site.getusersitepackages())
+    return {Path(place).resolve() for place in places if place}
+
+
+def _refuse_package_root(folder: Path, what: str) -> None:
+    """A received record could reach any module in such a folder, so it is never trusted
+    whole: name the folder of the one adapter instead."""
+    roots = _package_roots()
+    if folder.name in {"site-packages", "dist-packages"} or any(
+        root.is_relative_to(folder) for root in roots
+    ):
+        raise UntrustedCode(
+            f"--adapter-path {folder} holds Python's own library or installed packages, any of "
+            f"which this {what} could then name. Pass the folder of the adapter's own code "
+            "instead (for an installed adapter, its package folder inside site-packages)."
+        )
+
+
+# What an object named by a received record must offer before PageLedger builds it:
+# only an adapter class or object is called, never a plain function.
+ADAPTER_METHODS = ("supports", "extract")
+HOOK_METHODS = ("classify_page",)
+
+
+def check_recorded_names(
+    adapters: Iterable[tuple[str, dict[str, Any]]],
+    hooks: Iterable[str],
+    what: str,
+    record: Path,
+    adapter_path: Path | None,
+    endpoints: Iterable[str] | None = None,
+) -> None:
+    """Every refusal a record can meet, before anything in it changes: each named
+    ``module:object`` is resolved to the end and must be an adapter (or hook) defined in
+    the --adapter-path folder, and each model server off this machine must be named.
+    Only code inside the trusted folder is imported; nothing is constructed or called."""
+    if adapter_path is not None:
+        folder = adapter_path.expanduser().resolve()
+        _refuse_package_root(folder, what)
+        # The trusted folder is where the run will import from, as --adapter-path does.
+        if folder.is_dir() and str(folder) not in sys.path:
+            sys.path.insert(0, str(folder))
+    with named_by_record(what, record, adapter_path, endpoints):
+        named = trusted_endpoints(None)
+        for name, options in adapters:
+            check_named_endpoint(name, options, what, named)
+            if ":" in name:
+                _import_object(name, description="Custom adapter", methods=ADAPTER_METHODS)
+        for hook in hooks:
+            if ":" in hook:
+                _import_object(hook, description="Classifier hook", methods=HOOK_METHODS)
 
 
 def _module_inside(top: str, folder: Path, record: Path) -> bool:
@@ -1610,7 +1678,7 @@ def _module_inside(top: str, folder: Path, record: Path) -> bool:
     return True
 
 
-def _import_object(spec: str, *, description: str) -> Any:
+def _import_object(spec: str, *, description: str, methods: tuple[str, ...] = ()) -> Any:
     """Import a ``module.path:object`` without deciding how to construct it."""
     if ":" not in spec:
         raise ValueError(f"{description} specs must use module.path:object")
@@ -1648,6 +1716,13 @@ def _import_object(spec: str, *, description: str) -> Any:
         raise ValueError(
             f"{description} object '{object_path}' not found in {module_name}"
         ) from exc
+    if _RECORDS and not all(callable(getattr(candidate, name, None)) for name in methods):
+        raise UntrustedCode(
+            f"This {_RECORDS[-1][0]} names {spec}, which is not an adapter class or object: "
+            "from a received record PageLedger builds only a class with "
+            + " and ".join(f"{name}()" for name in methods)
+            + ", never a plain function."
+        )
     return candidate
 
 

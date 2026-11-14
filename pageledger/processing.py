@@ -23,8 +23,7 @@ import yaml
 from . import adjudication, corrections, processing_policy, runner
 from .adapters import (
     PageLedgerDiagnostic,
-    check_named_code,
-    check_named_endpoint,
+    check_recorded_names,
     named_by_record,
     trusted_endpoints,
 )
@@ -1916,10 +1915,14 @@ def _resume_job(
         # A job folder may come from anyone: code it names runs only from --adapter-path,
         # pages go off this machine only to a server the user named, and either is
         # refused before anything in the job changes.
-        for spec in _named_code(job, root):
-            check_named_code(spec, "job", root, adapter_path)
-        for name, options in _named_adapters(job, root):
-            check_named_endpoint(name, options, "job", endpoints)
+        check_recorded_names(
+            _named_adapters(job, root),
+            [config.classify_hook for config in _job_configs(job, root) if config.classify_hook],
+            "job",
+            root,
+            adapter_path,
+            endpoints,
+        )
         # Refuse changes in any retained attempt before starting a pending one.
         _refresh(job, root)
         if raise_limits:

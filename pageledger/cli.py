@@ -1981,6 +1981,23 @@ class _Progress:
             self.width = 0
 
 
+def _custom_code(folder: Path) -> bool:
+    """Whether the job or run in ``folder`` names its own adapter code (module:object)."""
+    try:
+        job = json.loads((folder / "job.json").read_text(encoding="utf-8"))["payload"]
+        names = [p.get("adapter") for p in job["policy"].values() if isinstance(p, dict)]
+    except (OSError, ValueError, KeyError, TypeError, AttributeError):
+        from .config import load_config
+
+        try:
+            names = list(
+                load_config(folder / "config-snapshot.yml", validate_adapter=False).named_code
+            )
+        except (OSError, ValueError):
+            return False
+    return any(isinstance(name, str) and ":" in name for name in names)
+
+
 def _remote_endpoints(folder: Path) -> list[str]:
     """The model servers off this machine that the job or run in ``folder`` names."""
     import urllib.parse
@@ -1991,7 +2008,7 @@ def _remote_endpoints(folder: Path) -> list[str]:
     options: list[object] = []
     try:
         job = json.loads((folder / "job.json").read_text(encoding="utf-8"))["payload"]
-        options = [profile.get("adapter_options") for profile in job["policy"].values()]
+        options = [p.get("adapter_options") for p in job["policy"].values() if isinstance(p, dict)]
     except (OSError, ValueError, KeyError, TypeError, AttributeError):
         try:
             run = load_config(folder / "config-snapshot.yml", validate_adapter=False)
@@ -2037,9 +2054,15 @@ def _interrupted(args: argparse.Namespace) -> str:
         kept += "".join(
             f" --trust-endpoint {shlex.quote(url)}" for url in _remote_endpoints(folder)
         )
+        needs = ""
+        if getattr(args, "adapter_path", None) is None and _custom_code(folder):
+            needs = (
+                " --adapter-path DIR\n(DIR is the folder of its own adapter code; for an "
+                "adapter installed with pip, its package folder inside site-packages.)"
+            )
         return (
             f"Interrupted. The pages read so far are kept in {folder}.\n"
-            f"To continue: pageledger resume {shown}{kept}"
+            f"To continue: pageledger resume {shown}{kept}{needs}"
         )
     if command == "run" and (folder / "manifest.json").is_file():
         return "Interrupted after the run was written."

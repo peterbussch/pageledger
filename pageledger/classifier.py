@@ -11,7 +11,7 @@ from typing import Any
 
 import yaml
 
-from .adapters import _import_object, adapter_page_count, load_adapter
+from .adapters import HOOK_METHODS, _import_object, adapter_page_count, load_adapter
 from .artifacts import build_route_map, read_jsonl, write_jsonl, write_yaml
 from .config import PageLedgerConfig, load_config
 from .image_source import KIND, is_image_source, source_identity
@@ -257,7 +257,7 @@ def classifier_conformance_check(hook: Any) -> list[str]:
 def load_classifier_hook(spec: str, options: dict[str, Any] | None = None) -> Any:
     """Load and validate a classifier hook class, factory, or instance."""
     opts = dict(options or {})
-    candidate = _import_object(spec, description="Classifier hook")
+    candidate = _import_object(spec, description="Classifier hook", methods=HOOK_METHODS)
     hook = candidate
     if isinstance(hook, type) or (
         callable(hook) and not callable(getattr(hook, "classify_page", None))

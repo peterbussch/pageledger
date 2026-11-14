@@ -114,7 +114,10 @@ again.
 - **Code it names.** A configuration may name its own adapter as Python code
   (`module:object`). PageLedger's built-in engines load as always. Any other
   code runs only from a folder you name with `--adapter-path`, never from the
-  received folder itself, and the object must be defined in that folder. Give
+  received folder itself, and the object must be an adapter class defined in
+  that folder; a plain function is never called. For an adapter installed with
+  pip, give its own package folder inside site-packages; site-packages itself
+  is refused, since any installed code could then be named. Give
   `--adapter-path` only if you trust where the job came from and the code in
   that folder: an adapter is ordinary Python and can do anything you can.
 - **Servers it names.** A configuration may send page images, and the API key

@@ -688,11 +688,9 @@ def _replay_bundle_in_process(
         sys.path.insert(0, str(trusted_path))
     from .adapters import (
         UntrustedCode,
-        check_named_code,
-        check_named_endpoint,
+        check_recorded_names,
         load_adapter,
         named_by_record,
-        trusted_endpoints,
     )
     from .aligner import align_run
     from .compare import compare_runs
@@ -710,13 +708,17 @@ def _replay_bundle_in_process(
     if adapter_name is None:
         raise ReplayError("extractor_identity_mismatch", "Bundle config has no effective adapter")
     try:
-        # A bundle may come from anyone: code it names runs only from --adapter-path.
-        for spec in config.named_code:
-            check_named_code(spec, "bundle", root, trusted_path)
-        # ...and pages go off this machine only to a server the user named.
+        # A bundle may come from anyone: code it names runs only from --adapter-path, and
+        # pages go off this machine only to a server the user named.
         endpoints = [url for url in os.environ.get(_ENDPOINTS_ENV, "").split("\n") if url]
-        for name, options in config.named_adapters:
-            check_named_endpoint(name, options, "bundle", trusted_endpoints(endpoints))
+        check_recorded_names(
+            config.named_adapters,
+            [config.classify_hook] if config.classify_hook else [],
+            "bundle",
+            root,
+            trusted_path,
+            endpoints,
+        )
         with named_by_record("bundle", root, trusted_path, endpoints):
             adapter = load_adapter(adapter_name, adapter_options)
     except UntrustedCode as exc:

@@ -322,8 +322,12 @@ The contract
   and must be defined there. They no longer send page images, or an API key, to
   a model server off this machine that the record names, unless you name it
   with `--trust-endpoint URL`; the refusal gives the option. `verify` says when
-  an unfinished job names its own adapter code. Both refusals come before
-  anything changes. Your own `--config` stays trusted. See
+  an unfinished job names its own adapter code. The rule applies to your own
+  folders too: to resume your own job or run, or replay your own bundle, that
+  uses custom adapter code, give `--adapter-path` again (for an adapter
+  installed with pip, its own package folder, never site-packages). Only an
+  adapter class is built from such a folder, never a plain function. Both
+  refusals come before anything changes. Your own `--config` stays trusted. See
   [jobs, runs and bundles you receive](docs/share-and-cite.md#jobs-runs-and-bundles-you-receive)
   and [SECURITY.md](SECURITY.md).
 - **Nothing is written over.** `export --out` refuses the job's source, a path

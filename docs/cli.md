@@ -333,8 +333,12 @@ individual-run recovery rules, see the [checkpoint contract](checkpoint-spec.md)
 machine-readable result. Resuming runs the adapters the folder's own records
 name. A built-in adapter loads as always, but a custom one (`module:object`)
 runs only if its module is in a folder given with `--adapter-path`, outside the
-job or run, and the object is defined there; otherwise `resume` refuses before
-anything changes. A model server off this machine that the records name is used
+job or run, and the object is defined there. From these records only an adapter
+class or object (with `supports` and `extract`) is built, never a plain function.
+An adapter installed with pip is allowed by giving its own package folder, for
+example `.../site-packages/their_reader`; site-packages itself, or a folder above
+it, is refused. Otherwise `resume` refuses before anything changes. The same holds
+for your own jobs and runs. A model server off this machine that the records name is used
 only when given with `--trust-endpoint URL` (one per server; not shown in
 `--help`, and named in the refusal); a server on this machine needs nothing.
 Give either only for a folder whose origin you trust: see
@@ -604,8 +608,10 @@ loads the locally available adapter named by the bundle, and runs the ordinary
 PageLedger extraction path against the bundled sources. A built-in adapter loads
 as always. A custom one (`module:object`) runs only if its module is in the
 folder given with `--adapter-path DIR`, a locally trusted import path that must
-not be equal to, inside, or above the bundle, and the object is defined there;
-otherwise replay stops with `adapter_not_trusted` before anything is imported.
+not be equal to, inside, or above the bundle, and the object is defined there.
+Only an adapter class or object is built from a bundle, never a plain function;
+for an installed adapter give its own package folder, never site-packages itself.
+Otherwise replay stops with `adapter_not_trusted` before anything is imported.
 A model server off this machine that the bundle names is used only when given
 with `--trust-endpoint URL` (not shown in `--help`). See
 [jobs, runs and bundles you receive](share-and-cite.md#jobs-runs-and-bundles-you-receive). `--out DIR` is required and must

@@ -298,3 +298,98 @@ def test_a_server_on_this_machine_needs_no_naming(tmp_path):
 
         with pytest.raises(UntrustedCode, match="--trust-endpoint"):
             load_adapter("vision", VISION)
+
+
+def _snapshot(folder: Path) -> dict[str, bytes]:
+    return {
+        str(path.relative_to(folder)): path.read_bytes()
+        for path in sorted(folder.rglob("*"))
+        if path.is_file()
+    }
+
+
+def test_site_packages_is_never_a_trusted_folder(tmp_path):
+    import sysconfig
+
+    marker = tmp_path / "PWNED"
+    options = {"stream": f"!!python/object/apply:os.system ['touch {marker}']"}
+    job_dir = _evil_job(tmp_path, marker, "yaml:unsafe_load", options)
+    before = _snapshot(job_dir)
+    site = sysconfig.get_paths()["purelib"]
+    resumed = _cli("resume", str(job_dir), "--adapter-path", site, cwd=tmp_path)
+    assert resumed.returncode != 0
+    assert "installed packages" in resumed.stderr
+    assert not marker.exists()
+    assert _snapshot(job_dir) == before
+
+
+@pytest.mark.parametrize(
+    "source,spec",
+    [
+        ("import subprocess as sp\n", "innocent:sp.run"),
+        (
+            "from pathlib import Path\ndef make(**options):\n    Path(options['name']).mkdir()\n",
+            "innocent:make",
+        ),
+    ],
+)
+def test_a_refused_job_is_byte_identical(tmp_path, source, spec):
+    mine = tmp_path / "mine"
+    mine.mkdir()
+    (mine / "innocent.py").write_text(source, encoding="utf-8")
+    marker = tmp_path / "PWNED"
+    job_dir = _evil_job(tmp_path, marker, spec, {"name": str(marker)})
+    before = _snapshot(job_dir)
+    for _ in range(2):
+        resumed = _cli("resume", str(job_dir), "--adapter-path", str(mine), cwd=tmp_path)
+        assert resumed.returncode != 0
+        assert spec in resumed.stderr
+    assert not marker.exists()
+    assert _snapshot(job_dir) == before
+
+
+def test_a_refused_run_is_byte_identical(tmp_path):
+    marker = tmp_path / "PWNED"
+    run_dir = _evil_run(tmp_path, marker)
+    (run_dir / "raw" / ".pending-abc").write_text("cut short", encoding="utf-8")
+    page = run_dir / ".checkpoint" / "pages" / "doc_0001_page_0002.json"
+    envelope = json.loads(page.read_text(encoding="utf-8"))
+    envelope["payload"] = {**envelope["payload"], "state": "started", "started_at": "x"}
+    envelope["sha256"] = digest(envelope["payload"])
+    page.write_text(json.dumps(envelope), encoding="utf-8")
+    before = _snapshot(run_dir)
+    resumed = _cli("resume", str(run_dir), cwd=tmp_path)
+    assert resumed.returncode != 0
+    assert "os:makedirs" in resumed.stderr
+    assert not marker.exists()
+    assert _snapshot(run_dir) == before
+
+
+def test_an_installed_adapter_resumes_from_its_own_package_folder(tmp_path):
+    installed = tmp_path / "installed"
+    package = installed / "their_reader"
+    package.mkdir(parents=True)
+    (package / "__init__.py").write_text("", encoding="utf-8")
+    (package / "reader.py").write_text(
+        "from pageledger.adapters import TextAdapter\nclass Adapter(TextAdapter):\n    pass\n",
+        encoding="utf-8",
+    )
+    job_dir = _evil_job(tmp_path, tmp_path / "unused", "their_reader.reader:Adapter", {})
+    env = {**os.environ, "PYTHONPATH": str(installed)}
+    resumed = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "pageledger",
+            "resume",
+            str(job_dir),
+            "--adapter-path",
+            str(package),
+        ],
+        capture_output=True,
+        text=True,
+        timeout=60,
+        cwd=tmp_path,
+        env=env,
+    )
+    assert resumed.returncode == 0, resumed.stderr
