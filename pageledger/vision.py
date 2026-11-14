@@ -16,6 +16,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from datetime import timezone
 from pathlib import Path
 from typing import Any
 
@@ -111,15 +112,54 @@ def _image_record(
     }
 
 
+# A reported amount above this is not a page's usage but a broken or hostile response.
+_MAX_AMOUNT = 10**15
+
+
+def _amount(value: Any, key: str) -> int | float | None:
+    """A usage number the endpoint reported, or None when it is missing or unusable.
+
+    Tokens are whole numbers; a cost may be a fraction. A huge JSON integer is
+    refused before any float conversion, which would overflow.
+    """
+    if type(value) is int:
+        return value if 0 <= value <= _MAX_AMOUNT else None
+    if type(value) is float and key == "cost_usd":
+        return value if math.isfinite(value) and 0 <= value <= _MAX_AMOUNT else None
+    return None
+
+
 def _summed(usages: list[Any]) -> dict[str, Any]:
     """A tiled page's usage: each total only when every request reported it."""
     total: dict[str, Any] = {}
     for key in ("total_tokens", "cost_usd"):
-        values = [usage.get(key) if isinstance(usage, dict) else None for usage in usages]
-        numbers = [v for v in values if type(v) in {int, float} and math.isfinite(float(v or 0))]
+        values = [
+            _amount(usage.get(key), key) if isinstance(usage, dict) else None for usage in usages
+        ]
+        numbers = [value for value in values if value is not None]
         if values and len(numbers) == len(values):
             total[key] = sum(numbers)
     return total
+
+
+def _read_before(response: Any, deadline: float) -> bytes:
+    """The response body, up to one byte past the size limit, or MODEL_TIMEOUT at ``deadline``.
+
+    The socket timeout bounds each receive only, so a server sending a byte at a
+    time could otherwise hold the page for ever.
+    """
+    read = getattr(response, "read1", response.read)
+    chunks: list[bytes] = []
+    total = 0
+    while total <= MAX_RESPONSE_BYTES:
+        chunk = read(min(1024 * 1024, MAX_RESPONSE_BYTES + 1 - total))
+        if not chunk:
+            break
+        chunks.append(chunk)
+        total += len(chunk)
+        if time.monotonic() > deadline:
+            raise TimeoutError("the response did not arrive before the deadline")
+    return b"".join(chunks)
 
 
 class _NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -266,6 +306,9 @@ class VisionAdapter:
         if not _PAGE_ID.match(page_id):
             raise ValueError(f"Unsafe page id: {page_id!r}")
         prompt = prompt if prompt and prompt.strip() else DEFAULT_PROMPT
+        # Checked before any page is rendered or paid for: the image takes the rest of the request.
+        if len(self._request_body(prompt, b"")) > MAX_REQUEST_BYTES - 4 * -(-_JPEG_BUDGET // 3):
+            raise ValueError("The vision prompt is too long to send with a page image")
         started = time.perf_counter()
         if self.tiles is not None:
             return self._extract_tiles(source, page_id, page_number, prompt, started)
@@ -569,7 +612,7 @@ class VisionAdapter:
                 with opener.open(
                     request, timeout=max(0.001, deadline - time.monotonic())
                 ) as response:
-                    data = response.read(MAX_RESPONSE_BYTES + 1)
+                    data = _read_before(response, deadline)
                 break
             except urllib.error.HTTPError as error:
                 status = error.code
@@ -581,10 +624,11 @@ class VisionAdapter:
                         delay = float(retry_after)
                     except ValueError:
                         try:
-                            delay = (
-                                email.utils.parsedate_to_datetime(retry_after).timestamp()
-                                - time.time()
-                            )
+                            date = email.utils.parsedate_to_datetime(retry_after)
+                            # An HTTP date is GMT; "-0000" parses without a zone.
+                            if date.tzinfo is None:
+                                date = date.replace(tzinfo=timezone.utc)
+                            delay = date.timestamp() - time.time()
                         except (ValueError, TypeError, OverflowError):
                             pass
                     if not math.isfinite(delay):
@@ -606,7 +650,7 @@ class VisionAdapter:
                 raise AdapterFailure("MODEL_NETWORK_ERROR") from None
         try:
             value = json.loads(data) if len(data) <= MAX_RESPONSE_BYTES else None
-        except ValueError:
+        except (ValueError, RecursionError):
             value = None
         if not isinstance(value, dict):
             raise AdapterFailure("MODEL_INVALID_RESPONSE")
@@ -631,7 +675,8 @@ class VisionAdapter:
             )
             model = f"{name}; {_pdftoppm_model_string()}; scale-to={side}"
         usage = usage if isinstance(usage, dict) else {}
-        tokens, cost = usage.get("total_tokens"), usage.get("cost_usd")
+        tokens = _amount(usage.get("total_tokens"), "total_tokens")
+        cost = _amount(usage.get("cost_usd"), "cost_usd")
         return ExtractionResult(
             text,
             "text",
@@ -640,11 +685,9 @@ class VisionAdapter:
             warnings,
             {
                 "pages": 1,
-                "tokens": tokens if type(tokens) is int and tokens >= 0 else None,
+                "tokens": tokens,
                 "compute_seconds": round(time.perf_counter() - started, 3),
-                "cost_usd": cost
-                if type(cost) in {int, float} and math.isfinite(cost) and cost >= 0
-                else None,
+                "cost_usd": cost,
             },
             input_evidence=evidence,
         )

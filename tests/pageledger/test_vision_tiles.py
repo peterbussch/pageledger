@@ -417,3 +417,32 @@ def test_stub_jpeg_header_matches_the_reader():
         + b"\xff\xda\x00\x0c\x03\x01\x00\x02\x11\x03\x11\x00\x3f\x00\x00\xff\xd9"
     )
     assert vision.jpeg_dimensions(jpeg) == (width, height)
+
+
+def test_an_unusable_usage_number_on_one_tile_keeps_every_paid_tile(tiled):
+    read, plan, run, _, _ = tiled
+    count = len(plan["tiles"])
+    answers = [reply(f"text {n}") for n in range(count)]
+    # A JSON integer too large for a float, as a broken gateway might report.
+    answers[-1]["usage"] = {"total_tokens": 5, "cost_usd": 10**400}
+    result, _ = read(answers)
+    assert result.content.startswith("text 0")
+    assert result.usage["tokens"] == 5 * count and result.usage["cost_usd"] is None
+    assert len(result.input_evidence["tiles"]) == count
+
+
+def test_a_prompt_too_long_for_any_tile_is_refused_before_anything_is_paid(tiled, monkeypatch):
+    _, plan, run, source, log = tiled
+    adapter = vision.VisionAdapter(
+        base_url="http://127.0.0.1:9/v1",
+        model="requested",
+        max_image_side=plan["settings"]["max_image_side"],
+        evidence_dir=str(run / "evidence"),
+        tiles=plan,
+    )
+    monkeypatch.setattr(adapter, "_post", lambda body: pytest.fail("nothing may be sent"))
+    with pytest.raises(ValueError, match="prompt is too long"):
+        adapter.extract(
+            source, page_id="p1", page_number=1, action="transcribe_text", prompt="x" * 70_000
+        )
+    assert not log.exists() or not log.read_text()

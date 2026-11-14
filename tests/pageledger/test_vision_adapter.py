@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import io
 import json
 import shutil
 import threading
@@ -380,3 +381,49 @@ def test_long_retry_after_is_retained_without_retrying_early(monkeypatch):
     with pytest.raises(AdapterFailure) as caught:
         vision.VisionAdapter(base_url="http://localhost/v1", model="m")._post(b"{}")
     assert caught.value.http_status == 429 and len(calls) == 1
+
+
+def _post_with(monkeypatch, response, **options):
+    class Opener:
+        def open(self, request, timeout):
+            return response
+
+    monkeypatch.setattr(vision.urllib.request, "build_opener", lambda *args: Opener())
+    adapter = vision.VisionAdapter(base_url="http://localhost/v1", model="m", **options)
+    return adapter._post(b"{}")
+
+
+def test_a_response_that_trickles_in_times_out_at_the_deadline(monkeypatch):
+    class Drip(io.BytesIO):
+        def read1(self, amount=-1):
+            time.sleep(0.05)
+            return super().read1(1)
+
+    started = time.monotonic()
+    with pytest.raises(AdapterFailure) as caught:
+        _post_with(monkeypatch, Drip(b" " * 10_000), timeout_seconds=0.3)
+    assert caught.value.code == "MODEL_TIMEOUT"
+    assert time.monotonic() - started < 2
+
+
+def test_a_deeply_nested_response_is_an_invalid_response(monkeypatch):
+    body = b"[" * 200_000 + b"]" * 200_000
+    with pytest.raises(AdapterFailure) as caught:
+        _post_with(monkeypatch, io.BytesIO(body))
+    assert caught.value.code == "MODEL_INVALID_RESPONSE"
+
+
+def test_a_usage_number_too_large_for_a_float_counts_as_not_reported(pdf, endpoint):
+    Endpoint.reply = {**READING, "usage": {"total_tokens": 10**400, "cost_usd": 10**400}}
+    result = _read(pdf, endpoint)
+    assert result.content == "page text"
+    assert result.usage["tokens"] is None and result.usage["cost_usd"] is None
+
+
+def test_a_prompt_too_long_to_send_is_refused_before_the_page_is_sent(pdf, endpoint):
+    adapter = load_adapter("vision", {"base_url": endpoint, "model": "requested"})
+    with pytest.raises(ValueError, match="prompt is too long"):
+        adapter.extract(
+            pdf, page_id="p1", page_number=1, action="transcribe_text", prompt="x" * 70_000
+        )
+    assert Endpoint.requests == []
