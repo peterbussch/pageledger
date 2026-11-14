@@ -72,6 +72,19 @@ def load_route_map(
         document = by_source[source]
         expected_count = page_counts[source]
         declared_count = document.get("page_count")
+        dropped: int | None = None
+        if (
+            isinstance(declared_count, int)
+            and declared_count == expected_count + 1
+            and _closing_form_feed(source)
+        ):
+            # Before 0.9 a text file's closing form feed counted as one more, empty page.
+            dropped = declared_count
+            warnings.append(
+                f"Route map counts {declared_count} pages for {source}; the last is the empty "
+                "page after its closing form feed, which is no longer read, so it is dropped"
+            )
+            declared_count = expected_count
         if declared_count is None:
             warnings.append(f"Route map has no page_count for {source}; using {expected_count}")
         elif (
@@ -92,6 +105,12 @@ def load_route_map(
         expected_numbers = set(range(1, expected_count + 1))
         actual_numbers: set[int] = set()
         normalized_pages: list[dict[str, Any]] = []
+        if dropped is not None:
+            pages = [
+                page
+                for page in pages
+                if not (isinstance(page, dict) and page.get("page_number") == dropped)
+            ]
         for page_index, page in enumerate(pages):
             prefix = f"Route map {source} pages[{page_index}]"
             if not isinstance(page, dict):
@@ -141,3 +160,15 @@ def load_route_map(
     normalized = dict(loaded)
     normalized["documents"] = normalized_documents
     return normalized, warnings
+
+
+def _closing_form_feed(source: Path) -> bool:
+    """Whether a text source ends in a form feed followed only by white space."""
+    if source.suffix.lower() == ".pdf" or not source.is_file():
+        return False
+    try:
+        text = source.read_bytes().decode("utf-8-sig")
+    except (OSError, UnicodeDecodeError):
+        return False
+    head, separator, tail = text.rpartition("\f")
+    return bool(separator) and not tail.strip()

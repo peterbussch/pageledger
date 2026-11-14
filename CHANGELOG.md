@@ -351,6 +351,9 @@ The contract
   and by `run` with `unreadable_text`. The `text`
   and `pdf_ocr` adapters are version 0.2 (`pdf_ocr` also asks Tesseract for no
   page separator, and a sharp logo no longer raises its render resolution).
+  A route map written before 0.9 that counts the empty page after a closing
+  form feed still runs: that page is dropped with a warning. An earlier run's
+  rerun plan that lists that empty page cannot be rerun; run the file again.
 - **Right-to-left rows.** `alto`, RapidOCR's `rows` order (adapter version
   0.2) and tiled readings write a Hebrew or Arabic-script row from its
   right-hand end instead of reversing it, and the reading's engine description
