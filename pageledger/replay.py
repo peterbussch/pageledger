@@ -183,11 +183,6 @@ def profiles_match(local: Mapping[str, Any], recorded: Mapping[str, Any]) -> boo
             for key in ("preferred_encoding", "filesystem_encoding"):
                 if isinstance(runtime.get(key), str):
                     runtime[key] = _codec_name(runtime[key])
-            # The OS release and Python's patch level are context, not identity: an OS
-            # point update or a Python bug-fix release does not change what is read.
-            runtime.pop("release", None)
-            if isinstance(runtime.get("python_version"), str):
-                runtime["python_version"] = ".".join(runtime["python_version"].split(".")[:2])
         return payload
 
     return profile_sha256(comparable(local)) == profile_sha256(comparable(recorded))

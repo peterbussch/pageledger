@@ -632,24 +632,6 @@ def test_a_deterministic_adapter_without_a_profile_replays_as_compared_not_exact
     assert result["profile_match"] is None
 
 
-def test_profiles_match_across_an_os_point_release_and_python_patch_release(
-    tmp_path: Path,
-) -> None:
-    from pageledger.replay import profiles_match
-
-    run_dir, _, _ = _run_text(tmp_path)
-    recorded = json.loads((run_dir / "manifest.json").read_text(encoding="utf-8"))["extractors"][0][
-        "reproducibility_profile"
-    ]
-    local = json.loads(json.dumps(recorded))
-    local["runtime"]["release"] = "99.0.1"
-    major, minor, *_ = local["runtime"]["python_version"].split(".")
-    local["runtime"]["python_version"] = f"{major}.{minor}.99"
-    assert profiles_match(local, recorded)
-    local["runtime"]["machine"] = "elsewhere"
-    assert not profiles_match(local, recorded)
-
-
 def test_bundle_text_run_has_portable_layout(tmp_path: Path) -> None:
     from pageledger.replay import bundle_run, validate_bundle
 
