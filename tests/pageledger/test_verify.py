@@ -1411,11 +1411,39 @@ def test_verify_run_warns_on_incomplete_legacy_provenance(tmp_path):
     provenance_path.write_text(
         "".join(json.dumps(entry) + "\n" for entry in provenance), encoding="utf-8"
     )
+    manifest = json.loads((out_dir / "manifest.json").read_text())
+    manifest.pop("pageledger_version")
+    (out_dir / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
 
     report = verify_run(out_dir)
 
     assert report["status"] == "pass"
     assert "legacy_evidence_incomplete" in _codes(report, "warnings")
+
+
+@pytest.mark.parametrize("field", ["sha256", "route"])
+def test_verify_run_rejects_provenance_stripped_of_its_source_or_route(tmp_path, field):
+    """A run that records its PageLedger version always recorded both."""
+    from pageledger.verify import verify_run
+
+    out_dir, _ = _run(tmp_path)
+    provenance_path = out_dir / "provenance.jsonl"
+    provenance = [json.loads(line) for line in provenance_path.read_text().splitlines()]
+    if field == "route":
+        provenance[0].pop("route")
+    else:
+        provenance[0]["source"] = {"path": "sample.txt", "page_number": 99}
+    provenance_path.write_text(
+        "".join(json.dumps(entry) + "\n" for entry in provenance), encoding="utf-8"
+    )
+
+    report = verify_run(out_dir)
+
+    assert report["status"] == "fail"
+    if field == "route":
+        assert "route_evidence_mismatch" in _codes(report, "errors")
+    else:
+        assert {"source_identity_missing", "page_number_mismatch"} <= _codes(report, "errors")
 
 
 def test_verify_run_returns_structured_failure_for_malformed_artifact(tmp_path):
@@ -1444,3 +1472,246 @@ def test_verify_run_reports_missing_or_malformed_manifest(tmp_path):
     malformed = verify_run(out_dir)
     assert malformed["status"] == "fail"
     assert _codes(malformed, "errors") == {"manifest_malformed"}
+
+
+_TABLE_ADAPTER = """\
+from pageledger.adapters import ExtractionResult
+
+
+class Table:
+    name = "table_test"
+    version = "0.1"
+    deterministic = True
+    input_types = ("text",)
+    output_types = ("markdown_table",)
+    capabilities = ("local",)
+
+    def supports(self, action):
+        return True
+
+    def extract(self, source, *, page_id, page_number, action, prompt=None):
+        pages = source.read_text(encoding="utf-8").split("\\f")
+        return ExtractionResult(
+            content=pages[page_number - 1],
+            format="markdown_table",
+            confidence=0.95,
+            model=None,
+            warnings=[],
+            usage={"pages": 1, "tokens": None, "compute_seconds": None, "cost_usd": None},
+        )
+"""
+
+_SCHEMA_CONFIG = """\
+schema_version: "0.1"
+taxonomy:
+  page_types:
+    prose:
+      default_action: transcribe_text
+schema:
+  name: places
+  columns:
+    - {name: place, type: string, required: true}
+    - {name: total, type: integer, required: true}
+run:
+  adapter: table_adapter:Table
+  grading:
+    review_below_grade: C
+  quarantine_if:
+    - grade_below: D
+"""
+
+
+def _schema_run(tmp_path: Path) -> Path:
+    """Page 1 aligns to two records; page 2 holds no table, so it grades F and is quarantined."""
+    from pageledger.runner import run
+
+    (tmp_path / "table_adapter.py").write_text(_TABLE_ADAPTER, encoding="utf-8")
+    source = tmp_path / "tables.txt"
+    source.write_text(
+        "| place | total |\n|---|---|\n| Kazan | 1,200 |\n| Tver | 30 |\n\fno table here\n",
+        encoding="utf-8",
+    )
+    config = tmp_path / "pageledger.yml"
+    config.write_text(_SCHEMA_CONFIG, encoding="utf-8")
+    out_dir = tmp_path / "run"
+    run(
+        inputs=[source],
+        config_path=config,
+        out_dir=out_dir,
+        dry_run=False,
+        adapter_path=tmp_path,
+    )
+    return out_dir
+
+
+def _rewrite_jsonl(path: Path, change) -> None:
+    rows = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
+    change(rows)
+    path.write_text("".join(json.dumps(row) + "\n" for row in rows), encoding="utf-8")
+
+
+def _edit_record(run: Path) -> None:
+    path = run / "normalized" / "doc_0001_page_0001.json"
+    page = json.loads(path.read_text(encoding="utf-8"))
+    page["records"][0]["total"] = 12000
+    path.write_text(json.dumps(page), encoding="utf-8")
+
+
+def _raise_grade(run: Path) -> None:
+    def change(rows):
+        rows[1]["grade"] = "A"
+        rows[1]["grade_detail"]["schema_grade"] = "A"
+        rows[1]["grade_detail"]["reasons"] = []
+
+    _rewrite_jsonl(run / "quality.jsonl", change)
+
+
+def _drop_engine_warning(run: Path) -> None:
+    def change(rows):
+        rows[0]["confidence"] = 0.99
+
+    _rewrite_jsonl(run / "quality.jsonl", change)
+
+
+def _empty_quarantine(run: Path) -> None:
+    from pageledger.artifacts import render_audit_markdown
+
+    audit = json.loads((run / "audit.json").read_text(encoding="utf-8"))
+    audit["quarantine_queue"] = []
+    (run / "audit.json").write_text(json.dumps(audit), encoding="utf-8")
+    (run / "audit.md").write_text(render_audit_markdown(audit), encoding="utf-8")
+
+
+@pytest.mark.parametrize(
+    ("tamper", "code"),
+    [
+        (_edit_record, "normalized_evidence_mismatch"),
+        (
+            lambda run: (run / "normalized" / "doc_0001_page_0002.json").unlink(),
+            "normalized_artifact_missing",
+        ),
+        (
+            lambda run: (
+                (run / "normalized" / "x").mkdir()
+                or (run / "normalized" / "doc_0001_page_0001.json").rename(
+                    run / "normalized" / "x" / "doc_0001_page_0001.json"
+                )
+            ),
+            "page_identity_mismatch",
+        ),
+        (_raise_grade, "grade_evidence_mismatch"),
+        (_drop_engine_warning, "quality_evidence_mismatch"),
+        (_empty_quarantine, "audit_queue_mismatch"),
+    ],
+    ids=["record", "deleted page", "moved page", "grade", "confidence", "queue"],
+)
+def test_verify_run_derives_normalized_pages_grades_and_queues_again(tmp_path, tamper, code):
+    """An edit to one derived file no longer passes: verify derives it from the raw reading."""
+    from pageledger.verify import verify_run
+
+    run = _schema_run(tmp_path)
+    assert verify_run(run)["status"] == "pass"
+    tamper(run)
+    report = verify_run(run)
+    assert report["status"] == "fail"
+    assert code in _codes(report, "errors")
+
+
+def test_an_older_run_whose_rules_differ_gets_a_warning_not_a_failure(tmp_path):
+    """A run written before the current rules records what its own version derived."""
+    from pageledger.verify import verify_run
+
+    run = _schema_run(tmp_path)
+    _edit_record(run)
+    manifest = json.loads((run / "manifest.json").read_text(encoding="utf-8"))
+    manifest["pageledger_version"] = "0.8.0"
+    (run / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+    report = verify_run(run)
+    assert report["status"] == "pass"
+    [warning] = [w for w in report["warnings"] if w["code"] == "derived_evidence_differs"]
+    assert "normalized/doc_0001_page_0001.json" in warning["message"]
+    assert "PageLedger 0.8.0" in warning["message"]
+
+
+@pytest.mark.parametrize("name", [".DS_Store", "._doc_0001_page_0001.txt", ".pending-x1y2"])
+def test_hidden_files_beside_a_run_are_named_and_ignored(tmp_path, name):
+    """Finder and copies to exFAT leave these; they are warnings, not a broken run."""
+    from pageledger.verify import verify_run
+
+    out_dir, _ = _run(tmp_path)
+    (out_dir / "raw" / name).write_bytes(b"\x00\x05\x16\x07")
+    (out_dir / "normalized").mkdir(exist_ok=True)
+    (out_dir / "normalized" / name).write_bytes(b"\x00\x05\x16\x07")
+    report = verify_run(out_dir)
+    assert report["status"] == "pass"
+    assert [w["artifact"] for w in report["warnings"] if w["code"] == "stray_file"] == [
+        f"raw/{name}",
+        f"normalized/{name}",
+    ]
+
+
+def test_an_unreadable_source_is_a_warning(tmp_path, monkeypatch):
+    from pageledger import verify
+    from pageledger.checkpoint import file_digest
+
+    out_dir, source = _run(tmp_path)
+
+    def digest(path):
+        if path == source:
+            raise PermissionError(13, "Permission denied")
+        return file_digest(path)
+
+    monkeypatch.setattr(verify, "_sha256", digest)
+    report = verify.verify_run(out_dir)
+    assert report["status"] == "pass"
+    assert "source_unreadable" in _codes(report, "warnings")
+
+
+def test_a_manifest_input_the_route_map_never_routed_fails(tmp_path):
+    from pageledger.verify import verify_run
+
+    out_dir, _ = _run(tmp_path)
+    manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
+    manifest["inputs"].append(dict(manifest["inputs"][0]))
+    (out_dir / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+    assert "source_identity_mismatch" in _codes(verify_run(out_dir), "errors")
+
+
+def test_a_malformed_checkpoint_is_reported_not_raised(tmp_path):
+    from pageledger.checkpoint import read_record, write_record
+    from pageledger.runner import run
+    from pageledger.verify import verify_run
+
+    source = tmp_path / "doc.txt"
+    source.write_text("one\ftwo\n", encoding="utf-8")
+    config = tmp_path / "pageledger.yml"
+    config.write_text(MINIMAL, encoding="utf-8")
+    out_dir = tmp_path / "run"
+    run(inputs=[source], config_path=config, out_dir=out_dir, dry_run=False, resumable=True)
+    (out_dir / "manifest.json").unlink()
+    job = read_record(out_dir / "checkpoint.json")
+    job["inputs"][0]["pages"] = 5
+    write_record(out_dir / "checkpoint.json", job)
+    report = verify_run(out_dir)
+    assert report["status"] == "fail"
+    assert "checkpoint_invalid" in _codes(report, "errors")
+
+
+def test_a_job_copied_with_finder_files_still_verifies(tmp_path):
+    """An exFAT copy adds ._ sidecars and .DS_Store inside a job's stage run."""
+    from pageledger import cli
+    from pageledger.processing import verify_job
+
+    source = tmp_path / "two.txt"
+    source.write_text("first page of text here\fsecond page of text here\n", encoding="utf-8")
+    job = tmp_path / "job"
+    assert cli.main(["process", str(source), "--out", str(job)]) == 0
+    stage = job / "attempts" / "local_text"
+    for path in (
+        stage / "raw" / "._doc_0001_page_0001.txt",
+        stage / "raw" / ".DS_Store",
+        stage / ".checkpoint" / "pages" / ".DS_Store",
+        job / ".DS_Store",
+    ):
+        path.write_bytes(b"\x00\x05\x16\x07")
+    assert verify_job(job)["status"] == "pass"

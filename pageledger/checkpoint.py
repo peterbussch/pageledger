@@ -371,7 +371,7 @@ class Checkpoint:
         pages_dir = self.root / ".checkpoint" / "pages"
         if pages_dir.is_symlink() or pages_dir.parent.is_symlink() or not pages_dir.is_dir():
             raise ValueError("Missing or unsafe recovery inventory")
-        actual = {p.name for p in pages_dir.iterdir() if not p.name.startswith(".pending-")}
+        actual = {p.name for p in pages_dir.iterdir() if not p.name.startswith(".")}
         if actual != {f"{page_id}.json" for page_id in expected}:
             raise ValueError("Recovery page inventory mismatch: missing or unexpected receipt")
         raw_expected: set[str] = set()
@@ -537,7 +537,7 @@ class Checkpoint:
             if path.is_symlink() or (path.exists() and not path.is_dir()):
                 raise ValueError("Unsafe recovery output directory")
             if path.is_dir() and any(
-                p.name not in allowed and not p.name.startswith(".pending-") for p in path.iterdir()
+                p.name not in allowed and not p.name.startswith(".") for p in path.iterdir()
             ):
                 raise ValueError("Unexpected recovery output artifact")
         if sources:
