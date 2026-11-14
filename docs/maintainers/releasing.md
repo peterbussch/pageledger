@@ -95,12 +95,12 @@ replace reading the reviews.
    `production_confirmation`. This production run repeats every source gate,
    builds once, records and retains the hashes, and passes that same run's
    artifact to the protected `pypi` job. Approve the environment only after
-   inspecting the run and its retained artifact. That artifact is a new build:
-   nothing compares its hashes with the verify run's, and the two builds are
-   not guaranteed to be byte-identical, so the wheel exercised in step 2 is not
-   necessarily the one uploaded. Compare the two runs' `SHA256SUMS` by hand.
-   Nothing checks that the tag's commit is on `main` either: confirm it with
-   `git merge-base --is-ancestor vX.Y.Z origin/main`.
+   inspecting the run and its retained artifact. That artifact is a new build.
+   Both runs build with a pinned setuptools and the tag commit's time as
+   `SOURCE_DATE_EPOCH`, so the wheel comes out byte-identical; the sdist may
+   not. Before approving, compare the wheel's line in the two runs' printed
+   `SHA256SUMS`: nothing compares them automatically. Both runs refuse a tag
+   whose commit is not on `main`.
 5. Verify the public PyPI version, filenames, metadata, and hashes independently.
    Record public status separately as `not published`, `PyPI verified`, and
    `GitHub release verified`; neither a local build nor an uploaded Actions
