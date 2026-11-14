@@ -12,7 +12,7 @@ import pytest
 import yaml
 
 from pageledger import __version__
-from scripts.check_distributions import REQUIRED_SDIST_FILES, check_distributions
+from scripts.check_distributions import LOCAL_ONLY, REQUIRED_SDIST_FILES, check_distributions
 from scripts.check_release import check_release
 
 REPO = Path(__file__).resolve().parents[2]
@@ -145,7 +145,11 @@ def test_package_workflows_validate_schema_and_document_inventories() -> None:
         assert "python scripts/check_distributions.py dist" in workflow
 
 
-@pytest.mark.parametrize("defect", [None, "schema", "document", "validation", "private"])
+@pytest.mark.parametrize(
+    "defect",
+    [None, "schema", "document", "validation", ".planning/private.json", "brand/logo.svg"]
+    + ["tests/pageledger/test_cli.py", "scripts/pageledger_bench/oracle.py"],
+)
 def test_distribution_check_reads_archives_and_rejects_missing_or_private_files(
     tmp_path: Path,
     defect: str | None,
@@ -168,13 +172,24 @@ def test_distribution_check_reads_archives_and_rejects_missing_or_private_files(
         for path in REQUIRED_SDIST_FILES:
             if path != omitted:
                 archive.addfile(TarInfo("pageledger-1.2.3/" + path))
-        if defect == "private":
-            archive.addfile(TarInfo("pageledger-1.2.3/.planning/private.json"))
+        if defect and "/" in defect:
+            archive.addfile(TarInfo("pageledger-1.2.3/" + defect))
     if defect is None:
         check_distributions(tmp_path, dist)
     else:
         with pytest.raises(ValueError, match="missing|local-only"):
             check_distributions(tmp_path, dist)
+
+
+def test_distribution_check_denies_everything_manifest_in_leaves_out() -> None:
+    left_out = [
+        line.split()[1]
+        for line in (REPO / "MANIFEST.in").read_text(encoding="utf-8").splitlines()
+        if line.split()[:1] in (["prune"], ["exclude"], ["recursive-exclude"])
+    ]
+    assert left_out
+    assert set(left_out) <= set(LOCAL_ONLY)
+    assert not any(path.startswith(LOCAL_ONLY) for path in REQUIRED_SDIST_FILES)
 
 
 def test_all_github_actions_are_pinned_and_ci_has_a_frozen_lane() -> None:
@@ -183,11 +198,33 @@ def test_all_github_actions_are_pinned_and_ci_has_a_frozen_lane() -> None:
         for name in ("ci.yml", "publish.yml")
     ]
 
-    uses = re.findall(r"^\s*- uses: [^@\s]+@([^\s#]+)", "\n".join(workflows), re.MULTILINE)
-    assert uses
-    assert all(re.fullmatch(r"[0-9a-f]{40}", revision) for revision in uses)
+    steps = [
+        step
+        for text in workflows
+        for job in yaml.safe_load(text)["jobs"].values()
+        for step in job["steps"]
+        if "uses" in step
+    ]
+    uses = re.findall(r"^\s*(?:- )?uses:\s*(\S+)", "\n".join(workflows), re.MULTILINE)
+    assert len(uses) == len(steps)
+    assert "pypa/gh-action-pypi-publish" in "\n".join(uses)
+    assert all(re.fullmatch(r"[^@\s]+@[0-9a-f]{40}", action) for action in uses), uses
     assert "sh scripts/check.sh" in workflows[0]
     assert "uv sync --frozen" in (REPO / "scripts" / "check.sh").read_text(encoding="utf-8")
+
+
+def test_workflows_pin_their_tools_and_limit_the_token() -> None:
+    ci = yaml.safe_load((REPO / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8"))
+    publish = (REPO / ".github" / "workflows" / "publish.yml").read_text(encoding="utf-8")
+    assert ci["permissions"] == {"contents": "read"}
+    lock = (REPO / "uv.lock").read_text(encoding="utf-8")
+    lint = "\n".join(step.get("run", "") for step in ci["jobs"]["lint"]["steps"])
+    for tool in ("ruff", "mypy"):
+        locked = re.search(rf'^name = "{tool}"\nversion = "([^"]+)"', lock, re.MULTILINE)
+        assert locked and f"{tool}=={locked[1]}" in lint, tool
+    assert re.search(r"setuptools==\d+\.\d+\.\d+", publish)
+    assert "SOURCE_DATE_EPOCH=" in publish
+    assert "git merge-base --is-ancestor HEAD origin/main" in publish
 
 
 def test_brand_archive_carries_font_license_and_no_release_version() -> None:

@@ -1918,7 +1918,7 @@ def _pdf_readers():
 def test_pdf_extra_installs_aes_support() -> None:
     root = Path(__file__).resolve().parents[2]
     pyproject = (root / "pyproject.toml").read_text(encoding="utf-8")
-    assert '"pypdf[crypto]>=6"' in pyproject
+    assert '"pypdf[crypto]>=6.21.4,<7"' in pyproject
 
 
 @pytest.mark.parametrize("algorithm", ["RC4-128", "AES-128", "AES-256"])

@@ -6,6 +6,9 @@ on:
   pull_request:
     branches: [main]
 
+permissions:
+  contents: read
+
 jobs:
   lint:
     runs-on: ubuntu-latest
@@ -15,9 +18,12 @@ jobs:
         with:
           python-version: "3.13"
       - name: Install lint tools
-        run: pip install ".[dev]"
+        # The same ruff and mypy as uv.lock, so a new release can't turn this job red alone.
+        run: pip install ".[dev]" ruff==0.15.21 mypy==2.2.0
       - name: Ruff check
-        run: ruff check pageledger/ tests/ examples/
+        run: |
+          ruff check pageledger/ tests/ examples/ scripts/
+          ruff format --check pageledger/ tests/ examples/ scripts/
       - name: Mypy
         run: mypy pageledger/
 
