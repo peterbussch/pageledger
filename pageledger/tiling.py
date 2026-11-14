@@ -225,7 +225,8 @@ def _row_groups(boxes: Sequence[_Box], gap: int) -> list[list[_Box]]:
 def _row_text(row: Sequence[_Box]) -> str:
     """A row's text in its reading direction: from the right when it reads right to left."""
     in_layout_order = sorted(row, key=lambda box: box.index)
-    ordered = reversed(row) if right_to_left(box.text for box in in_layout_order) else row
+    reads = right_to_left([(box.text, box.cx2) for box in in_layout_order])
+    ordered = reversed(row) if reads else row
     return " ".join(box.text for box in ordered if box.text)
 
 
@@ -250,7 +251,8 @@ def _runs(boxes: list[_Box], level: str, gap: int) -> list[_Box]:
 def _reading_order(words: list[_Box]) -> list[_Box]:
     """Words left to right, or in the layout's own order when that reads right to left."""
     in_layout_order = sorted(words, key=lambda word: word.index)
-    return in_layout_order if right_to_left(word.text for word in in_layout_order) else words
+    reads = right_to_left([(word.text, word.cx2) for word in in_layout_order])
+    return in_layout_order if reads else words
 
 
 def _join(words: list[_Box]) -> _Box:

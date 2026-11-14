@@ -16,10 +16,10 @@ the page image's file name without its extension, so ``{stem}.xml`` finds
 The text is built from words, never from ``TextLine`` grouping, because ALTO lines
 can run across columns. Words are kept as printed (``CONTENT``, never
 ``SUBS_CONTENT``); a ``HYP`` element adds its printed hyphen to the word before
-it. A row that reads right to left (its first strong letter, in the file's
-order, is Hebrew or Arabic script) is written from its right-hand end, its words
-in the file's order, which ALTO gives in reading order; the column order stays
-left to right. Text is not Unicode-normalised, as with every other adapter; comparisons
+it. A row that reads right to left (it holds Hebrew or Arabic-script letters and
+the file lists its words leftward across the page) is written from its
+right-hand end, its words in the file's order, which ALTO gives in reading
+order; the column order stays left to right. Text is not Unicode-normalised, as with every other adapter; comparisons
 normalise when they compare.
 """
 
@@ -319,7 +319,8 @@ def _page_text(page: AltoPage) -> tuple[str, int]:
     rows, backwards = [], 0
     for block in blocks:
         for row in _row_groups(block):
-            reverse = right_to_left(item["text"] for item in sorted(row, key=lambda i: i["index"]))
+            in_file_order = sorted(row, key=lambda item: item["index"])
+            reverse = right_to_left([(item["text"], item["cx"]) for item in in_file_order])
             backwards += reverse
             ordered = sorted(row, key=lambda item: item["cx"], reverse=reverse)
             rows.append(" ".join(item["text"] for item in ordered))
@@ -377,7 +378,8 @@ def _in_file_order_if_right_to_left(run: list[dict[str, Any]]) -> list[dict[str,
     Hebrew line the right way round.
     """
     in_file_order = sorted(run, key=lambda word: word["index"])
-    return in_file_order if right_to_left(word["text"] for word in in_file_order) else run
+    reads = right_to_left([(word["text"], word["cx"]) for word in in_file_order])
+    return in_file_order if reads else run
 
 
 def confidence_detail(page: AltoPage) -> dict[str, Any] | None:

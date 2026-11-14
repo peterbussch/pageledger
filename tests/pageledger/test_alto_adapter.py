@@ -888,3 +888,21 @@ def test_the_reading_says_how_many_rows_it_read_right_to_left_and_claims_no_part
     assert result.content == "אחד שתיים\none two"
     assert result.model.endswith("; right-to-left-rows=1")
     assert result.confidence is None and result.confidence_detail["unscored_count"] == 2
+
+
+def test_a_hebrew_line_that_opens_with_a_latin_word_is_not_reversed():
+    line = [
+        _string("IBM", 800, 100, 100, 30),
+        _string("הודיעה", 620, 100, 160, 30),
+        _string("היום", 480, 100, 120, 30),
+    ]
+    assert page_text(parse_alto(alto([line]))) == "IBM הודיעה היום"
+
+
+def test_a_latin_line_quoting_hebrew_stays_left_to_right():
+    line = [
+        _string("He", 50, 100, 60, 30),
+        _string("wrote", 120, 100, 100, 30),
+        _string("שלום", 230, 100, 100, 30),
+    ]
+    assert page_text(parse_alto(alto([line]))) == "He wrote שלום"

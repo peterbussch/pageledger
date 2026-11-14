@@ -18,7 +18,7 @@ import subprocess
 import tempfile
 import time
 import unicodedata
-from collections.abc import Iterable
+from collections.abc import Sequence
 from dataclasses import dataclass
 from functools import cached_property
 from pathlib import Path
@@ -267,18 +267,27 @@ def _assemble(lines: list[dict[str, Any]], reading_order: str) -> tuple[str, int
     return _rows(lines)
 
 
-def right_to_left(texts: Iterable[str]) -> bool:
-    """Whether ``texts``, in the engine's or the file's order, read right to left.
+def right_to_left(items: Sequence[tuple[str, float]]) -> bool:
+    """Whether a row's ``(text, centre x)`` items, in the engine's or the file's order, read
+    right to left.
 
-    As in the Unicode bidirectional algorithm, the first letter with a strong
-    direction decides: Hebrew or Arabic script makes the row right to left,
-    a Latin, Cyrillic or Greek letter left to right; digits and punctuation
-    have no say. Engines give a line's text in reading order but place lines
-    and words by their boxes, so such a row is read from its right-hand end.
+    Engines give a line's text in reading order but place lines and words by their
+    boxes, so such a row is written from its right-hand end. A row without Hebrew
+    or Arabic-script letters reads left to right. One with them reads right to left
+    when its items, in order, run leftward across the page (ALTO lists words in
+    reading order, so this holds even when the line opens with a Latin word).
+    Otherwise, as in the Unicode bidirectional algorithm, the first letter with a
+    strong direction decides; digits and punctuation have no say. RapidOCR's order
+    is its detection order, not the reading order, so a right-to-left row whose
+    first detected line opens with a Latin letter is still read left to right.
     """
-    for text in texts:
-        for character in text:
-            kind = unicodedata.bidirectional(character)
+    kinds = [[unicodedata.bidirectional(character) for character in text] for text, _ in items]
+    if not any(kind in ("R", "AL") for text in kinds for kind in text):
+        return False
+    if len(items) > 1 and items[0][1] > items[-1][1]:
+        return True
+    for text in kinds:
+        for kind in text:
             if kind in ("R", "AL"):
                 return True
             if kind == "L":
@@ -418,13 +427,13 @@ def _rows(lines: list[dict[str, Any]]) -> tuple[str, int]:
     """Write each visual row in its reading direction, its lines joined by " | ".
 
     A row that reads right to left (``right_to_left``, over its lines in the
-    engine's order) is written from its right-hand end, and counted.
+    engine's detection order) is written from its right-hand end, and counted.
     """
     position = {id(line): index for index, line in enumerate(lines)}
     texts, count = [], 0
     for row in _row_groups(lines):
         found = sorted(row, key=lambda item: position[id(item)])
-        backwards = right_to_left(item["text"] for item in found)
+        backwards = right_to_left([(item["text"], item["cx"]) for item in found])
         count += backwards
         ordered = sorted(row, key=lambda item: item["cx"], reverse=backwards)
         texts.append(" | ".join(item["text"] for item in ordered))
