@@ -1488,6 +1488,9 @@ def test_misspelt_budget_key_is_refused(tmp_path):
     with pytest.raises(ValueError, match="run.budget has no key 'max_dollars'"):
         run(inputs=[source], config_path=config, out_dir=out_dir, dry_run=False)
     assert not out_dir.exists()
+    # A recorded config with the same slip still loads, so an old run stays readable.
+    loaded = config_module.load_config(config)
+    assert any("Unknown run.budget key 'max_dollars'" in item for item in loaded.warnings)
 
 
 def test_dry_run_does_not_load_configured_adapter(tmp_path, monkeypatch):
@@ -2134,3 +2137,17 @@ def test_json_content_with_number_keys_is_an_invalid_result():
     result = ExtractionResult([{1: "5"}], "json", None, None, [], {"pages": 1})
     with pytest.raises(ValueError, match="content keys must be strings"):
         _validate_extraction_result("custom", result)
+
+
+def test_a_misnamed_later_chain_step_is_refused_before_a_run_starts(tmp_path):
+    source = tmp_path / "s.txt"
+    source.write_text("one\ftwo", encoding="utf-8")
+    config = tmp_path / "chain.yml"
+    config.write_text(
+        'schema_version: "0.1"\ntaxonomy:\n  page_types:\n    prose:\n'
+        "      default_action: transcribe_text\nrun:\n  adapter_order: [text, txet]\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="Unsupported adapter 'txet'"):
+        run(inputs=[source], config_path=config, out_dir=tmp_path / "run", dry_run=False)
+    assert not (tmp_path / "run").exists()

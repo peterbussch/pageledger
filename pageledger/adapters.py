@@ -1369,6 +1369,18 @@ def _pdf_page_text(source: Path, page_number: int) -> str:
     return text
 
 
+BUILTIN_ADAPTERS = ("text", "pdf_text", "pdf_ocr", "vision", "rapidocr", "indra", "alto")
+
+
+def check_adapter_name(name: str) -> None:
+    """Refuse a name that is neither a built-in adapter nor a module.path:object spec,
+    without importing or constructing anything."""
+    if name in BUILTIN_ADAPTERS or name in PDF_ADAPTER_NAMES or ":" in name:
+        return
+    valid = ", ".join([*BUILTIN_ADAPTERS, "module.path:object"])
+    raise ValueError(f"Unsupported adapter '{name}'. Valid adapters: {valid}")
+
+
 def load_adapter(name: str, options: dict[str, Any] | None = None) -> Any:
     opts = dict(options or {})
     if name == "text":
@@ -1396,19 +1408,7 @@ def load_adapter(name: str, options: dict[str, Any] | None = None) -> Any:
     elif ":" in name:
         adapter = _load_custom_adapter(name, opts)
     else:
-        valid = ", ".join(
-            [
-                "text",
-                "pdf_text",
-                "pdf_ocr",
-                "vision",
-                "rapidocr",
-                "indra",
-                "alto",
-                "module.path:object",
-            ]
-        )
-        raise ValueError(f"Unsupported adapter '{name}'. Valid adapters: {valid}")
+        check_adapter_name(name)
     issues = _adapter_contract_issues(adapter)
     if issues:
         prefix = f"Adapter '{getattr(adapter, 'name', 'unknown')}':"

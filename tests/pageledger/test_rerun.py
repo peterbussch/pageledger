@@ -584,3 +584,6 @@ def test_rerun_keeps_each_page_routed_type_prompt_and_hold(tmp_path):
     audit = json.loads((child / "audit.json").read_text(encoding="utf-8"))
     held = {item["page_id"] for item in audit["review_queue"]}
     assert set(sparse) <= held
+    from pageledger.verify import verify_run
+
+    assert verify_run(child)["status"] == "pass"

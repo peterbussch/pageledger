@@ -656,3 +656,22 @@ def test_a_lone_surrogate_is_a_failed_reading_not_a_stranded_request(job):
         launch(job)
     record = json.loads((job[2] / ".checkpoint/pages/doc_0001_page_0001.json").read_text())
     assert record["payload"]["state"] == "failed"
+
+
+def test_an_invalid_partial_keeps_the_adapter_failure_code(job):
+    from pageledger.adapters import AdapterFailure
+
+    partial = ExtractionResult(
+        content="cut",
+        format="text",
+        confidence=None,
+        model=None,
+        warnings=[],
+        usage={"tokens": 4096, "cost_usd": 0.02},
+    )
+    job[3].failure = AdapterFailure("MODEL_OUTPUT_TRUNCATED", partial_result=partial)
+    with pytest.raises(RuntimeError):
+        launch(job)
+    record = json.loads((job[2] / ".checkpoint/pages/doc_0001_page_0001.json").read_text())
+    assert record["payload"]["error"]["code"] == "MODEL_OUTPUT_TRUNCATED"
+    assert "partial_result" not in record["payload"]

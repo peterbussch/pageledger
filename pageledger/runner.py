@@ -460,6 +460,10 @@ def _run_pages(
     # Construct adapters once in the execution path. Direct callers of
     # load_config retain its validation behavior.
     config = load_config(config_path, validate_adapter=False)
+    if _checkpoint is None or _checkpoint.job is None:
+        if _loaded_adapter is None:
+            # A new run starts from the user's own config (replay reruns a recorded one).
+            config.refuse_new_run_slips()
     effective_adapter_name, effective_adapter_options = _effective_adapter(config, run_depth)
     adapter_order = config.adapter_order
     adapter_order_names = (
@@ -956,7 +960,9 @@ def _run_pages(
                 break
             continue
         assert result is not None
-        check_evidence(result)
+        if _checkpoint is not None:
+            # A fresh call was checked in extraction; a saved one is checked again here.
+            check_evidence(result)
         consecutive_failures = 0
         phase_clock.switch("raw_artifact")
         raw_artifact = Path("raw") / f"{page_id}.{_artifact_extension(result.format)}"

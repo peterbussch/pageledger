@@ -10,7 +10,7 @@ from typing import Any
 
 import yaml
 
-from .adapters import load_adapter
+from .adapters import check_adapter_name, load_adapter
 from .aligner import load_schema_spec
 from .grading import GRADES, merge_thresholds, validate_thresholds
 from .policy import validate_policy_rules
@@ -62,6 +62,8 @@ _BUDGET_KEYS = frozenset(
     }
 )
 _SECTION_KEYS = {
+    "run.budget": _BUDGET_KEYS,
+    "run.pricing": frozenset({"cost_per_page", "cost_per_1k_tokens"}),
     "run.retry": frozenset({"max_retries", "backoff"}),
     "run.grading": frozenset({"review_below_grade", "thresholds"}),
     "classify": frozenset(
@@ -254,6 +256,20 @@ class PageLedgerConfig:
             _walk(self.data, "run", "budget", "max_usd"),
             "run.budget.max_usd",
         )
+
+    def refuse_new_run_slips(self) -> None:
+        """Slips a new run refuses before it starts, though a recorded config with them
+        still loads (with a warning), so old runs stay readable: a misspelt budget key,
+        which would silently drop a spending limit, and a misnamed later chain step."""
+        for entry in self.adapter_order or []:
+            check_adapter_name(entry["adapter"])
+        budget = _mapping_at(self.data, "run", "budget")
+        unknown = sorted(str(key) for key in budget if key not in _BUDGET_KEYS)
+        if unknown:
+            raise ValueError(
+                f"run.budget has no key {unknown[0]!r}; the keys it takes are "
+                + ", ".join(sorted(_BUDGET_KEYS))
+            )
 
     @property
     def budget_unknown_usage(self) -> str:
@@ -483,14 +499,8 @@ def _validate_config(config: PageLedgerConfig, *, validate_adapter: bool) -> Non
         "quarantine_rules",
     ):
         getattr(config, prop)
-    if validate_adapter:
-        for name, options in (
-            [(entry["adapter"], entry["adapter_options"]) for entry in config.adapter_order]
-            if config.adapter_order is not None
-            else [(config.adapter_name, config.adapter_options)]
-        ):
-            if name is not None:
-                load_adapter(name, options)
+    if validate_adapter and config.adapter_name is not None:
+        load_adapter(config.adapter_name, config.adapter_options)
     if validate_adapter and config.classify_adapter is not None:
         load_adapter(config.classify_adapter, config.classify_adapter_options)
     if validate_adapter and config.classify_hook is not None:
@@ -512,13 +522,6 @@ def _validate_mapping_sections(data: dict[str, Any]) -> None:
     for key in ("adapter_options", "hook_options", "thresholds"):
         if key in classify and not isinstance(classify[key], dict):
             raise ValueError(f"classify.{key} must be a mapping")
-    # A misspelt budget key would silently drop a spending limit, so it is refused.
-    unknown = sorted(str(key) for key in run.get("budget") or {} if key not in _BUDGET_KEYS)
-    if unknown:
-        raise ValueError(
-            f"run.budget has no key {unknown[0]!r}; the keys it takes are "
-            + ", ".join(sorted(_BUDGET_KEYS))
-        )
 
 
 def _validate_dataset_citation(data: dict[str, Any]) -> None:
