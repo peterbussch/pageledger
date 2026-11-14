@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
-"""Exercise PageLedger from a clean install against a real PDF/OCR workflow."""
+"""Exercise PageLedger from a clean install against a real PDF/OCR workflow.
+
+It builds a wheel and installs it into fresh environments, so it needs the network
+for pip. Nothing leaves the machine otherwise: the cloud probe, which renders page 1
+and sends it to a provider whose API key is set, runs only with --max-cloud-pages 1.
+"""
 
 from __future__ import annotations
 
@@ -11,7 +16,7 @@ import subprocess
 import sys
 import textwrap
 import time
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -38,6 +43,7 @@ class CommandResult:
     skipped: bool = False
     classification: str = "ok"
     note: str = ""
+    stdout: str = field(default="", repr=False)
 
     @property
     def ok(self) -> bool:
@@ -47,7 +53,13 @@ class CommandResult:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--pdf", required=True, type=Path)
-    parser.add_argument("--max-cloud-pages", type=int, default=1)
+    parser.add_argument(
+        "--max-cloud-pages",
+        type=int,
+        choices=(0, 1),
+        default=0,
+        help="1 sends page 1 of the PDF to a cloud OCR/VLM provider whose key is set",
+    )
     parser.add_argument("--max-heavy-pages", type=int, default=2)
     parser.add_argument("--stress-dir", type=Path, default=None)
     parser.add_argument("--pdftoppm-bin", type=Path, default=None)
@@ -193,8 +205,8 @@ def clean_install_checks(
     run([str(pageledger_bin), "run", "--help"], "pageledger-run-help", summary)
     doctor = run([str(pageledger_bin), "doctor", "--json"], "pageledger-doctor-json", summary)
     if doctor.ok:
-        summary["checks"]["doctor"] = json.loads(doctor.stdout_tail)
-        text = doctor.stdout_tail + doctor.stderr_tail
+        summary["checks"]["doctor"] = json.loads(doctor.stdout)
+        text = doctor.stdout + doctor.stderr_tail
         for _, key in CLOUD_ENV_ORDER:
             value = os.environ.get(key)
             if value and value in text:
@@ -241,6 +253,23 @@ def run_pageledger_builtin_checks(
         encoding="utf-8",
     )
 
+    counted = run(
+        [
+            str(python),
+            "-c",
+            "import sys; from pageledger.adapters import pdf_page_count; "
+            "print(pdf_page_count(__import__('pathlib').Path(sys.argv[1])))",
+            str(pdf),
+        ],
+        "count-pdf-pages",
+        summary,
+    )
+    if not counted.ok:
+        summary["critical_failures"].append("could not count the PDF's pages")
+        return
+    pages = int(counted.stdout)
+    summary["checks"]["pdf_pages"] = pages
+
     dry_out = stress_dir / "runs" / "pdf-text-dry"
     run(
         [
@@ -260,8 +289,8 @@ def run_pageledger_builtin_checks(
     )
     dry_manifest = read_manifest(dry_out)
     summary["checks"]["pdf_text_dry_run"] = dry_manifest
-    if dry_manifest.get("summary", {}).get("pages_total") != 72:
-        summary["critical_failures"].append("pdf_text dry-run did not report 72 pages")
+    if dry_manifest.get("summary", {}).get("pages_total") != pages:
+        summary["critical_failures"].append(f"pdf_text dry-run did not report {pages} pages")
 
     exec_out = stress_dir / "runs" / "pdf-text-execute"
     run(
@@ -288,12 +317,12 @@ def run_pageledger_builtin_checks(
         "provenance_lines": provenance_lines,
     }
     if (
-        exec_manifest.get("summary", {}).get("pages_extracted") != 72
-        or raw_count != 72
-        or provenance_lines != 72
+        exec_manifest.get("summary", {}).get("pages_extracted") != pages
+        or raw_count != pages
+        or provenance_lines != pages
     ):
         summary["critical_failures"].append(
-            "pdf_text execute did not produce 72 raw/provenance outputs"
+            f"pdf_text execute did not produce {pages} raw/provenance outputs"
         )
 
     mismatch_out = stress_dir / "runs" / "text-on-pdf"
@@ -674,6 +703,7 @@ def run(
             stdout_tail=tail(completed.stdout),
             stderr_tail=tail(completed.stderr),
             classification="ok" if completed.returncode == 0 else "package UX gap",
+            stdout=completed.stdout,
         )
     except subprocess.TimeoutExpired as exc:
         result = CommandResult(
@@ -686,7 +716,7 @@ def run(
             classification="external tool/environment",
             note=f"Timed out after {timeout} seconds",
         )
-    summary["commands"].append(asdict(result))
+    summary["commands"].append({k: v for k, v in asdict(result).items() if k != "stdout"})
     print(f"[{name}] rc={result.returncode} class={result.classification}")
     return result
 
@@ -714,7 +744,7 @@ def record_skip(summary: dict[str, Any], name: str, classification: str, note: s
         classification=classification,
         note=note,
     )
-    summary["commands"].append(asdict(result))
+    summary["commands"].append({k: v for k, v in asdict(result).items() if k != "stdout"})
     print(f"[{name}] skipped class={classification}: {note}")
 
 

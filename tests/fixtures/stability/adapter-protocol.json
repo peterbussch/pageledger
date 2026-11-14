@@ -1,0 +1,23 @@
+{
+  "extraction_result_optional": [
+    "confidence_detail",
+    "input_evidence",
+    "layout"
+  ],
+  "extraction_result_required": [
+    "content",
+    "format",
+    "confidence",
+    "model",
+    "warnings",
+    "usage"
+  ],
+  "required_attributes": [
+    "name",
+    "version",
+    "deterministic",
+    "input_types",
+    "output_types",
+    "capabilities"
+  ]
+}

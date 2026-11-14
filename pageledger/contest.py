@@ -10,6 +10,7 @@ page image.
 
 from __future__ import annotations
 
+import functools
 import hashlib
 import re
 import unicodedata
@@ -69,20 +70,82 @@ RULE_SETS: dict[str, dict[str, Any]] = {
         }
     }
 }
+# 0.2 files a grouped span (words only one side has, or an unpaired run) with a digit
+# on either side as `number`, as paired words always were: 0.1 called them `word`.
+RULE_SETS["ru-print-0.2"] = {**RULE_SETS["ru-print-0.1"], "grouped_numbers": True}
+# Latin print: the shapes RapidOCR's English model misread at least three times in
+# the 1934 telephone directory tiles (October 2026), where the reader's word was
+# the printed one, judged from the line and the recurring exchange names rather
+# than each against the image. Not a for o: Soloman and Solomon are both printed surnames. Not
+# c for o, rn for m or cl for d, seen twice or less. Pairs are listed exactly,
+# since I for l crosses case.
+RULE_SETS["latin-print-0.1"] = {
+    "script": "latin",
+    "grouped_numbers": True,
+    # Words as ru-print-0.3 finds them (below).
+    "tokens": "marks",
+    "glyph_pairs": {
+        "rapidocr": [
+            ("e", "c"),
+            ("i", "l"),
+            ("i", "I"),
+            ("i", "t"),
+            ("I", "l"),
+            ("l", "i"),
+            ("l", "I"),
+            ("t", "l"),
+            ("h", "b"),
+            ("r", "t"),
+            ("f", "t"),
+            ("y", "v"),
+            ("m", "n"),
+            ("u", "n"),
+        ]
+    },
+}
+# ru-print-0.3 (and latin-print-0.1) keep a word whole with every combining mark that
+# follows a letter (stress accents, titlo, Indic vowel signs), and rejoin a word broken
+# by a line-end hyphen whenever the next line goes on in lower case, in any script
+# (при-ѣхалъ, Ver-änderung, ré-égalité). A second half the witness read elsewhere
+# on the page is no longer taken for the rest of a hyphenated word.
+RULE_SETS["ru-print-0.3"] = {**RULE_SETS["ru-print-0.2"], "tokens": "marks"}
 
 
 def _span_id(*parts: object) -> str:
     return "sp_" + hashlib.sha256("\x1f".join(map(str, parts)).encode("utf-8")).hexdigest()[:16]
 
 
-def _tokens(text: str, skip: list[tuple[int, int]] | None = None) -> list[tuple[int, int, str]]:
+@functools.cache
+def _marked_token() -> re.Pattern[str]:
+    """A word with all its combining marks, and the halves of a line-end hyphenation."""
+    marks = "".join(
+        re.escape(chr(code))
+        for code in range(0x300, 0x20000)
+        if unicodedata.category(chr(code)).startswith("M")
+    )
+    part = rf"(?:[^\W_]|[{marks}])+"
+    return re.compile(rf"{part}(?:[-‐­][ \t]*\n\s*{part})?")
+
+
+def _tokens(
+    text: str, skip: list[tuple[int, int]] | None = None, *, marks: bool = False
+) -> list[tuple[int, int, str]]:
     """(start, end, normalized word) for each word outside the skipped ranges."""
+    spans = []
+    for match in (_marked_token() if marks else _TOKEN).finditer(text):
+        broken = _BREAK.search(match.group()) if marks else None
+        if broken is not None and not text[match.start() + broken.end()].islower():
+            # A line that goes on in capitals or digits starts a new word.
+            spans.append((match.start(), match.start() + broken.start()))
+            spans.append((match.start() + broken.end(), match.end()))
+        else:
+            spans.append((match.start(), match.end()))
     tokens = []
-    for match in _TOKEN.finditer(text):
-        if any(match.start() < end and start < match.end() for start, end in skip or ()):
+    for first, last in spans:
+        if any(first < end and start < last for start, end in skip or ()):
             continue
-        word = unicodedata.normalize("NFC", _BREAK.sub("", match.group()))
-        tokens.append((match.start(), match.end(), word))
+        word = unicodedata.normalize("NFC", _BREAK.sub("", text[first:last]))
+        tokens.append((first, last, word))
     return tokens
 
 
@@ -125,13 +188,17 @@ def _only_pairs(literal: str, reader: str, pairs: set[tuple[str, str]]) -> bool:
 
 
 def _kind(
-    literal: str, reader: str, known: Callable[[str], bool] | None, pairs: set[tuple[str, str]]
+    literal: str,
+    reader: str,
+    known: Callable[[str], bool] | None,
+    pairs: set[tuple[str, str]],
+    letters: re.Pattern[str] = _CYRILLIC,
 ) -> str:
     if _DIGIT.search(literal) or _DIGIT.search(reader):
         return "number"
     if _homoglyph(literal, reader):
         return "homoglyph"
-    if known is None or not (_CYRILLIC.search(literal) and _CYRILLIC.search(reader)):
+    if known is None or not (letters.search(literal) and letters.search(reader)):
         return "word"
     if known(reader) and not known(literal):
         # A non-word the engine's habits do not explain may be what the page prints.
@@ -242,16 +309,26 @@ def contest(
     there, so either one, given as the answer, rebuilds that reading.
     """
     listed = RULE_SETS[rules]["glyph_pairs"].get(engine, ())
+    grouped_numbers = RULE_SETS[rules].get("grouped_numbers", False)
+    latin = RULE_SETS[rules].get("script") == "latin"
+    letters = _LATIN if latin else _CYRILLIC
+    marks = RULE_SETS[rules].get("tokens") == "marks"
+
+    def grouped(base_part: str, witness_part: str) -> str:
+        digits = _DIGIT.search(base_part) or _DIGIT.search(witness_part)
+        return "number" if grouped_numbers and digits else "word"
+
     # A pair holds in either case, never across cases: print's capitals are evidence.
-    pairs = {*listed, *((a.upper(), b.upper()) for a, b in listed)}
+    # A Latin set lists its pairs exactly, since I and l are one confusion across cases.
+    pairs = set(listed) if latin else {*listed, *((a.upper(), b.upper()) for a, b in listed)}
     regions = [(m.start(), m.end()) for m in _REGION.finditer(base)]
     # One placeholder per region, so a formula aligns as a unit and not as letters.
     stream: list[tuple[int, int, str, int | None]] = sorted(
-        [(s, e, w, None) for s, e, w in _tokens(base, regions)]
+        [(s, e, w, None) for s, e, w in _tokens(base, regions, marks=marks)]
         + [(s, e, f"\x00{n}", n) for n, (s, e) in enumerate(regions)],
         key=lambda token: token[0],
     )
-    other = _tokens(witness)
+    other = _tokens(witness, marks=marks)
     words = [t[2] for t in stream]
     read = [t[2] for t in other]
     # Where in the base each witness word sits, for anchoring words only it has.
@@ -324,7 +401,7 @@ def contest(
                 right.remove(j + 1)
                 after[j] = after[j + 1] = stream[i][1]
                 break
-            if read[j] == parts[0] and hyphen_after(witness, other[j][1]):
+            if not marks and read[j] == parts[0] and hyphen_after(witness, other[j][1]):
                 second = next((k for k in right if k != j and read[k] == parts[1]), None)
                 if second is not None:
                     left.remove(i)
@@ -389,7 +466,7 @@ def contest(
 
     spans: list[dict[str, Any]] = [
         {
-            "kind": _kind(read[j], words[i], known, pairs),
+            "kind": _kind(read[j], words[i], known, pairs, letters),
             "start": stream[i][0],
             "end": stream[i][1],
             "base": base[slice(*stream[i][:2])],
@@ -419,20 +496,28 @@ def contest(
             runs = _runs(here)
             for number, run in enumerate(runs):
                 start, end = stream[run[0]][0], stream[run[-1]][1]
+                witness_part = raw(there) if number == 0 else ""
                 spans.append(
                     {
-                        "kind": "word",
+                        "kind": grouped(base[start:end], witness_part),
                         "start": start,
                         "end": end,
                         "base": base[start:end],
-                        "witness": raw(there) if number == 0 else "",
+                        "witness": witness_part,
                     }
                 )
             if not runs:
                 for group in _runs(there):
                     at = anchor(group[0])
+                    witness_part = raw(group)
                     spans.append(
-                        {"kind": "word", "start": at, "end": at, "base": "", "witness": raw(group)}
+                        {
+                            "kind": grouped("", witness_part),
+                            "start": at,
+                            "end": at,
+                            "base": "",
+                            "witness": witness_part,
+                        }
                     )
     for number, (start, end) in enumerate(regions):
         spans.append(

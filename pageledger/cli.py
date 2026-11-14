@@ -3,18 +3,27 @@
 from __future__ import annotations
 
 import argparse
+import difflib
 import json
 import os
+import shlex
+import shutil
 import sys
 import tempfile
 import textwrap
+import time
+from collections.abc import Callable
 from pathlib import Path
 
+import yaml
+
 from ._version import __version__
+from .adapters import _LANG_PATTERN, PageLedgerDiagnostic, capture_pypdf_repairs, load_adapter
 from .aligner import align_run
 from .classifier import classify
 from .compare import compare_runs, render_comparison
-from .doctor import build_doctor_report
+from .corrections import describe
+from .doctor import NOT_LANGUAGES, build_doctor_report
 from .export import FORMATS, export_job
 from .grading import GRADES, grade_basis_label
 from .replay import bundle_run, replay_bundle
@@ -55,6 +64,9 @@ ADAPTER_OPTION_TEMPLATES = {
 
 BUILTIN_ADAPTERS = ["text", "pdf_text", "pdf_ocr"]
 
+# The export format a file's ending names.
+EXPORT_SUFFIXES = {".txt": "txt", ".md": "md", ".jsonl": "jsonl", ".xml": "tei", ".tei": "tei"}
+
 
 def _config_template(adapter: str) -> str:
     text = MINIMAL_CONFIG
@@ -63,36 +75,461 @@ def _config_template(adapter: str) -> str:
     return text + ADAPTER_OPTION_TEMPLATES.get(adapter, "")
 
 
-def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="pageledger")
-    parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
-    subparsers = parser.add_subparsers(dest="command", required=True)
+# The local OCR engines a document job can start with. pdf_ocr is the default, and
+# none (no OCR stage) the default for a plain-text source, which has no page images.
+OCR_ENGINES = ("pdf_ocr", "rapidocr", "indra", "none")
+DEFAULT_OCR_LANG = "eng"
+_SPEC = "https://github.com/peterbussch/pageledger/blob/main/docs/processing-spec.md"
+# The docs of this release, for messages: a pip install has no docs/ folder.
+_DOCS = f"https://github.com/peterbussch/pageledger/blob/v{__version__}/docs/"
 
-    process_parser = subparsers.add_parser(
-        "process", help="Process one document through local text, OCR and bounded image stages"
+PROCESSING_HEADER = f"""\
+# A PageLedger document job, as written by `pageledger init`.
+# The job reads the text each page already carries{{then_ocr}}
+# Nothing below calls a paid service. Every stage and setting is explained in
+# {_SPEC}
+schema_version: "0.1"
+processing:
+  # local_text is read first. It is left out so that the source decides it:
+  # pdf_text reads a PDF's own text layer, text reads a plain-text file.
+"""
+
+PROCESSING_OPTIONAL = f"""\
+
+  # Optional stages. To use one, remove the leading "# " from its lines.
+  #
+  # second_ocr reads a page with a second literal engine when the first OCR
+  # reading is held for review. {_SPEC}#the-ladder-a-second-ocr-engine-and-a-local-model
+  # second_ocr:
+  #   adapter: {{second_engine}}
+  #
+  # local_image sends the page image to a vision model on this machine; it needs
+  # limits.max_local_image_pages above 0. {_SPEC}#the-ladder-a-second-ocr-engine-and-a-local-model
+  # local_image:
+  #   adapter: vision
+  #   adapter_options:
+  #     base_url: http://127.0.0.1:8080/v1
+  #     model: YOUR_LOCAL_MODEL
+  #
+  # image sends the pages the local stages could not settle to a vision model,
+  # which may be a paid service; it needs limits.max_image_pages above 0.
+  # {_SPEC}#image-adapter-boundary
+  # image:
+  #   adapter: vision
+  #   adapter_options:
+  #     base_url: http://127.0.0.1:8080/v1
+  #     model: YOUR_VISION_MODEL
+  #
+  # second_opinion asks a second model to read the pages the image stage read;
+  # its calls count against limits.max_image_pages. {_SPEC}#image-adapter-boundary
+  # second_opinion:
+  #   adapter: vision
+  #   adapter_options:
+  #     base_url: http://127.0.0.1:8081/v1
+  #     model: YOUR_SECOND_MODEL
+  #
+  # contest compares a model's reading word by word with the best OCR reading
+  # and records every place they differ; it needs an image or local_image stage.
+  # {_SPEC}#contest-a-models-reading
+  # contest:
+  #   rules: ru-print-0.3   # Russian print; latin-print-0.1 for Latin-script print
+"""
+
+
+PROCESSING_NO_OCR = f"""\
+
+  # The second_ocr, local_image, image, second_opinion and contest stages all
+  # build on a local_ocr stage. {_SPEC}#policy-and-configuration
+"""
+
+
+def _ocr_options(engine: str, lang: str | None, model_dir: str | None) -> str:
+    """The adapter_options lines for the chosen engine, or a usage error."""
+    if engine == "pdf_ocr":
+        if model_dir is not None:
+            raise _UsageError("--model-dir applies to rapidocr and indra, not pdf_ocr")
+        lang = lang or DEFAULT_OCR_LANG
+        if not _LANG_PATTERN.match(lang):
+            raise _UsageError("--lang must be Tesseract language codes such as eng or eng+deu")
+        return (
+            f"      lang: {lang}   # Tesseract languages; `pageledger doctor` lists those installed\n"
+            "      dpi: 300\n"
+        )
+    if lang is not None:
+        reason = (
+            "its language is the recognizer model in --model-dir"
+            if engine == "rapidocr"
+            else "it chooses a recognizer for each line's script"
+        )
+        raise _UsageError(f"--lang applies to pdf_ocr; {engine} takes none, because {reason}")
+    if engine == "rapidocr":
+        if model_dir is None:
+            raise _UsageError(
+                "rapidocr needs --model-dir, a PP-OCRv5 recognizer directory with "
+                f"inference.onnx and keys.txt (see {_DOCS}engine-recipes.md)"
+            )
+        return f"      rec_model_dir: {json.dumps(_absolute(model_dir))}\n"
+    options = "      mode: ocr\n"
+    if model_dir is not None:
+        options += f"      model_dir: {json.dumps(_absolute(model_dir))}\n"
+    return options
+
+
+def _absolute(path: str) -> str:
+    return str(Path(path).expanduser().resolve())
+
+
+def _processing_template(engine: str, lang: str | None, model_dir: str | None) -> str:
+    limits = (
+        "  limits:\n"
+        "    max_image_pages: 0   # pages a paid image stage may read; 0 allows none\n"
+        "    # max_attempt_pages: 500   # pause after this many page attempts, all stages together\n"
     )
-    process_parser.add_argument("source", type=Path)
-    process_parser.add_argument("--config", type=Path, required=True)
-    process_parser.add_argument("--out", type=Path, required=True)
-    process_parser.add_argument("--pages", default=None)
-    process_parser.add_argument("--adapter-path", type=Path, default=None)
+    if engine == "none":
+        if lang is not None or model_dir is not None:
+            raise _UsageError(
+                "--lang and --model-dir need an OCR engine, and the engine is none "
+                "(the default for a text file); name one with --engine"
+            )
+        return (
+            PROCESSING_HEADER.replace("{then_ocr}", ".")
+            + "  # No OCR: every page is read only from its own text.\n"
+            + "  local_ocr: null\n"
+            + limits
+            + PROCESSING_NO_OCR
+        )
+    return (
+        PROCESSING_HEADER.replace(
+            "{then_ocr}", ", then sends the pages\n# that look wrong to OCR on this machine."
+        )
+        + f"  local_ocr:\n    adapter: {engine}\n    adapter_options:\n"
+        + _ocr_options(engine, lang, model_dir)
+        + limits
+        + "    # max_local_image_pages: 20   # needed by a local_image stage\n"
+        + PROCESSING_OPTIONAL.replace(
+            "{second_engine}", "indra" if engine == "pdf_ocr" else "pdf_ocr"
+        )
+    )
+
+
+def _engine(args: argparse.Namespace) -> str:
+    """The chosen engine, or its documented default."""
+    if args.engine is not None:
+        return args.engine
+    source = getattr(args, "source", None)
+    if source is None:
+        return "pdf_ocr"
+    from .processing_source import source_kind
+
+    try:
+        return "none" if source_kind(source) == "text" else "pdf_ocr"
+    except (OSError, ValueError) as exc:
+        raise _UsageError(str(exc)) from exc
+
+
+# What a pass means, said under it: the screen a scholar quotes.
+VERIFIED = "The record is intact: every file matches what was recorded. This does not check that the text is right."
+
+
+class _UsageError(Exception):
+    """A combination of options that argparse cannot express; exits 2 like other usage errors."""
+
+
+TUTORIAL = f"{_DOCS}document-first-run.md"
+
+# What `pageledger --help` lists, in order, and what each command's own --help
+# opens with: (one-line summary, a sentence or two, an example).
+COMMAND_GROUPS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    (
+        "Read a document and check it",
+        ("process", "review", "export", "verify", "inspect", "resume"),
+    ),
+    ("Set up", ("init", "doctor", "fetch")),
+)
+
+# What `pageledger help pipelines` lists: the commands of the other world.
+PIPELINE_GROUPS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("Runs", ("run", "rerun", "compare", "classify", "align", "bundle", "replay")),
+    ("For jobs with a model stage", ("adjudicate",)),
+)
+
+COMMAND_HELP: dict[str, tuple[str, str, str]] = {
+    "process": (
+        "Read a document (PDF, text file or page images) into a job",
+        "Reads one document into a new job folder: each page's own text first, then OCR "
+        "on this machine for the pages whose text is missing or looks wrong. Every reading "
+        "and every page that needs a person is recorded.",
+        "pageledger process book.pdf --out jobs/book",
+    ),
+    "review": (
+        "Look at the pages that need a person and record your decisions",
+        "Writes the review view, a folder of web pages showing each page's image beside "
+        "its text, next to the job (JOB-review) or where --out says; or only a spreadsheet "
+        "to fill in (--sheet). Then --apply records the decisions you made in either one.",
+        "pageledger review jobs/book\n"
+        "  pageledger review jobs/book --apply review.json --reviewer 'Your Name'",
+    ),
+    "export": (
+        "Write a job's text as plain text, Markdown, JSON lines or TEI",
+        "Writes the text chosen for each page, with its review state and a link to the "
+        "source page, after checking that the job is intact. The format follows the file's "
+        "ending (.txt, .md, .jsonl, .xml) unless --format names it.",
+        "pageledger export jobs/book --out book.md",
+    ),
+    "verify": (
+        "Check that a job or run is intact and consistent",
+        "Checks that the files in a job or run folder agree with one another and with the "
+        "source. It does not judge whether the text is right.",
+        "pageledger verify jobs/book",
+    ),
+    "inspect": (
+        "Show a job's report or a run's summary",
+        "Prints a job's report, pages that need a person first, or a run's summary.",
+        "pageledger inspect jobs/book",
+    ),
+    "adjudicate": (
+        "Settle the words where a model's reading and OCR disagree",
+        "Writes one packet per page of disputed words for someone to decide (--packets), "
+        "then records their answers (--decisions).",
+        "pageledger adjudicate jobs/book --packets packets/",
+    ),
+    "init": (
+        "Write a config file to edit, for process (or for run with --run)",
+        "Writes a commented config for process: which OCR engine reads the pages, in which "
+        "languages, and the optional stages. With --run, writes a config for run instead.",
+        "pageledger init --lang rus+eng --out processing.yml",
+    ),
+    "fetch": (
+        "Download a document's page images from a library's IIIF server",
+        "Downloads the page images a IIIF manifest lists into a new folder, with a record "
+        "of where each came from.",
+        "pageledger fetch https://example.org/iiif/item/manifest.json --out sources/item",
+    ),
+    "doctor": (
+        "Show which OCR engines, tools and languages are installed",
+        "Reports the optional packages, external tools and OCR languages this machine has. "
+        "It changes nothing.",
+        "pageledger doctor",
+    ),
+    "run": (
+        "Extract every page of some files with one tool",
+        "Extracts every page of the inputs with one adapter (an extraction tool) into a new "
+        "run folder, recording each page's text, warnings and cost.",
+        "pageledger run scans/ --adapter pdf_ocr --out runs/first",
+    ),
+    "resume": (
+        "Continue an interrupted job (or run) where it stopped",
+        "Continues a job, or a run started with --resumable, in its own folder, without "
+        "redoing the pages already read.",
+        "pageledger resume jobs/book",
+    ),
+    "rerun": (
+        "Extract a run's flagged pages again, usually with another tool",
+        "Extracts again only the pages a run flagged, into a new run that records which "
+        "run it continues.",
+        "pageledger rerun runs/first --config stronger.yml --out runs/second",
+    ),
+    "compare": (
+        "Compare two runs page by page",
+        "Compares the pages two runs share: text length, warnings, grades and cost.",
+        "pageledger compare runs/first runs/second",
+    ),
+    "classify": (
+        "Sort pages by kind and write a route map for run",
+        "Takes a quick look at every page and writes a route map (which pages to extract, "
+        "skip or review) that you can check before run uses it.",
+        "pageledger classify scans/ --out route-map.yml",
+    ),
+    "align": (
+        "Match a run's table pages to a schema again, without extracting",
+        "Fits a run's table records to a schema again and regrades them, without "
+        "extracting anything.",
+        "pageledger align runs/first --schema table.yml",
+    ),
+    "bundle": (
+        "Package a run with its sources so it can be replayed",
+        "Copies a verified run and its sources into a new folder that replay can run again.",
+        "pageledger bundle runs/first --out bundles/first",
+    ),
+    "replay": (
+        "Run a bundle again on this machine and compare the results",
+        "Runs a bundle's extraction again here and records how the new pages compare with "
+        "the bundled ones.",
+        "pageledger replay bundles/first --out runs/replayed",
+    ),
+}
+
+
+def _listing(groups: tuple[tuple[str, tuple[str, ...]], ...]) -> list[str]:
+    width = max(len(name) for name in COMMAND_HELP) + 2
+    lines = []
+    for heading, names in groups:
+        lines += ["", f"{heading}:"]
+        lines += [f"  {name.ljust(width)}{COMMAND_HELP[name][0]}" for name in names]
+    return lines
+
+
+def _overview() -> str:
+    pipeline = ", ".join(name for _, names in PIPELINE_GROUPS[:1] for name in names)
+    return "\n".join(
+        [
+            "Records how each page of a document was read, so the text can be checked and cited.",
+            *_listing(COMMAND_GROUPS),
+            "",
+            f"Building a pipeline ({pipeline}):",
+            "  pageledger help pipelines",
+        ]
+    )
+
+
+def _pipelines_help() -> str:
+    return "\n".join(
+        [
+            "usage: pageledger COMMAND ...",
+            "",
+            "A run reads every page of some files with one extraction tool, for building and",
+            "testing a pipeline. A run folder is not a document job: process, review and",
+            "export work on jobs.",
+            *_listing(PIPELINE_GROUPS),
+            "",
+            "Run `pageledger help COMMAND` for a command's options.",
+        ]
+    )
+
+
+def _help(parser: argparse.ArgumentParser, topics: list[str]) -> int:
+    """`pageledger help`, `help pipelines` and `help COMMAND`."""
+    if not topics:
+        parser.print_help()
+        return 0
+    if topics[0] == "pipelines":
+        print(_pipelines_help())
+        return 0
+    if topics[0] not in COMMAND_HELP:
+        parser.error(
+            f"no help for {topics[0]!r}; `pageledger help` lists the commands "
+            "and `pageledger help pipelines` the rest"
+        )
+    try:
+        parser.parse_args([topics[0], "--help"])
+    except SystemExit as exc:
+        return exc.code if isinstance(exc.code, int) else 0
+    return 0
+
+
+class _Parser(argparse.ArgumentParser):
+    def _check_value(self, action: argparse.Action, value: object) -> None:
+        # Name only the listed commands, not every earlier name that still works.
+        if isinstance(action, argparse._SubParsersAction) and value not in action.choices:
+            close = difflib.get_close_matches(str(value), list(COMMAND_HELP), n=1)
+            hint = f"; did you mean {close[0]}?" if close else ""
+            raise argparse.ArgumentError(
+                action, f"unknown command {value!r}{hint} (pageledger --help lists them)"
+            )
+        super()._check_value(action, value)
+
+
+def _command(
+    subparsers: argparse._SubParsersAction[_CommandParser], name: str, note: str = "", **kwargs
+) -> _CommandParser:
+    """A listed command, whose --help opens with its description and an example."""
+    _, about, example = COMMAND_HELP[name]
+    return subparsers.add_parser(
+        name,
+        description=textwrap.fill(about, 79),
+        epilog=f"example:\n  {example}" + (f"\n\n{textwrap.fill(note, 79)}" if note else ""),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        **kwargs,
+    )
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = _Parser(
+        prog="pageledger",
+        usage="%(prog)s [-h] [--version] COMMAND ...",
+        description=_overview(),
+        epilog=(
+            "Run `pageledger help COMMAND` for a command's options.\n"
+            f"New to PageLedger? Start with the first-run tutorial: {TUTORIAL}"
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
+    # Earlier command names (inspect-job, verify-run, ...) are parsers with no
+    # help=, so they still work but are never listed.
+    subparsers = parser.add_subparsers(
+        dest="command",
+        required=True,
+        metavar="COMMAND",
+        help=argparse.SUPPRESS,
+        prog="pageledger",
+        parser_class=_CommandParser,
+    )
+
+    process_parser = _command(
+        subparsers,
+        "process",
+        note="Without --config, the pages are read on this machine and nothing is sent "
+        "anywhere. For another OCR engine (RapidOCR, Indra) or other settings, write a "
+        "config with `pageledger init` and pass it with --config.",
+    )
+    process_parser.add_argument(
+        "source",
+        type=Path,
+        metavar="SOURCE",
+        help="The document: a PDF, a text file, an image or a folder of page images",
+    )
+    process_parser.add_argument(
+        "--out", type=Path, required=True, metavar="DIR", help="New folder for the job"
+    )
+    process_parser.add_argument(
+        "--lang",
+        default=None,
+        metavar="CODE",
+        help="The document's language, for OCR: eng (the default), rus, fra, deu, or two "
+        "joined as rus+eng. `pageledger doctor` lists the languages installed",
+    )
+    process_parser.add_argument(
+        "--config",
+        type=Path,
+        default=None,
+        metavar="FILE",
+        help="A config file written by `pageledger init`, for another engine or other settings",
+    )
+    process_parser.add_argument("--engine", choices=OCR_ENGINES, help=argparse.SUPPRESS)
+    process_parser.add_argument("--model-dir", help=argparse.SUPPRESS)
+    process_parser.add_argument(
+        "--pages",
+        default=None,
+        metavar="RANGE",
+        help="Only these pages, e.g. '1-10,15'; pages keep their numbers",
+    )
+    process_parser.add_argument(
+        "--adapter-path",
+        type=Path,
+        default=None,
+        metavar="DIR",
+        help="Folder to import custom adapters from (trusted code)",
+    )
     process_parser.add_argument(
         "--review",
         type=Path,
         default=None,
-        help="Source-bound review receipts, including known blank or damaged pages",
+        metavar="FILE",
+        help="Review decisions to apply before reading, such as pages known to be blank",
     )
-    process_parser.add_argument("--json", action="store_true", dest="json_output")
-    for command, help_text in (
-        ("inspect-job", "Show a document report"),
-        ("verify-job", "Verify document source, attempts, selection and report"),
-        ("review-job", "Apply source/output-bound human review without extraction"),
-        ("review-sheet", "Write a CSV for reviewing a document job in a spreadsheet"),
-        ("adjudicate", "Write packets for contested spans, or record decisions that settle them"),
-    ):
-        job_parser = subparsers.add_parser(command, help=help_text)
-        job_parser.add_argument("job_dir", type=Path)
-        job_parser.add_argument("--json", action="store_true", dest="json_output")
+    process_parser.add_argument(
+        "--json", action="store_true", dest="json_output", help="Print the result as JSON"
+    )
+    for command in ("inspect-job", "verify-job", "review-job", "review-sheet", "adjudicate"):
+        if command == "adjudicate":
+            job_parser = _command(subparsers, command)
+        else:
+            job_parser = subparsers.add_parser(command)
+        job_parser.add_argument("job_dir", type=Path, metavar="JOB_DIR", help="A job folder")
+        job_parser.add_argument(
+            "--json", action="store_true", dest="json_output", help="Print the result as JSON"
+        )
         if command == "review-job":
             job_parser.add_argument("--review", type=Path, required=True)
             job_parser.add_argument(
@@ -109,7 +546,9 @@ def build_parser() -> argparse.ArgumentParser:
         elif command == "adjudicate":
             mode = job_parser.add_mutually_exclusive_group(required=True)
             mode.add_argument(
-                "--packets", type=Path, help="Directory for one packet per page with open spans"
+                "--packets",
+                type=Path,
+                help="New folder: one packet per page with disputed words still open",
             )
             mode.add_argument(
                 "--decisions", type=Path, help="Directory of <page_id>.decisions.json answers"
@@ -117,31 +556,97 @@ def build_parser() -> argparse.ArgumentParser:
             job_parser.add_argument(
                 "--reviewer",
                 default="",
-                help="Who settled the spans, e.g. agent:sol or person:NAME",
+                help="With --decisions: who decided, e.g. person:NAME or agent:NAME",
+            )
+            job_parser.add_argument(
+                "--term",
+                action="append",
+                default=[],
+                help="With --packets: only disputed words near this word or phrase (repeatable)",
             )
             job_parser.add_argument(
                 "--dry-run", action="store_true", help="Check every decision without recording any"
             )
 
-    export_parser = subparsers.add_parser(
-        "export", help="Write a verified document job's text as txt, md, jsonl or TEI"
+    review_parser = _command(
+        subparsers,
+        "review",
+        note="Decisions, in the review view or in the sheet's decision column: accept, "
+        "blank, illustration, handwriting, unreadable, source_defect, use:READING (another "
+        "reading of the page) and correct:FILE (a text file beside the sheet).",
     )
-    export_parser.add_argument("job_dir", type=Path)
-    export_parser.add_argument("--format", choices=FORMATS, required=True)
-    export_parser.add_argument("--out", type=Path, required=True)
+    review_parser.add_argument("job_dir", type=Path, metavar="JOB", help="A job folder")
+    review_mode = review_parser.add_mutually_exclusive_group()
+    review_mode.add_argument(
+        "--out",
+        type=Path,
+        metavar="DIR",
+        help="New folder for the review view, instead of JOB-review beside the job",
+    )
+    review_mode.add_argument(
+        "--sheet",
+        type=Path,
+        metavar="FILE",
+        help="Write only the review sheet, a CSV for a spreadsheet, here",
+    )
+    review_mode.add_argument(
+        "--apply",
+        type=Path,
+        metavar="FILE",
+        help="Record your decisions: the review.json the review view downloads, or a "
+        "filled-in review sheet",
+    )
+    review_parser.add_argument(
+        "--images",
+        choices=("all", "held", "none"),
+        default=None,
+        help="For the review view: images of every page (all, the default), only the pages "
+        "that need a person (held), or none (needs no Poppler)",
+    )
+    review_parser.add_argument(
+        "--reviewer",
+        metavar="NAME",
+        help="With --apply: your name, recorded with each decision from a sheet "
+        "(or set PAGELEDGER_REVIEWER)",
+    )
+    review_parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="With --apply: check every decision without recording any",
+    )
+    review_parser.add_argument(
+        "--json", action="store_true", dest="json_output", help="Print the result as JSON"
+    )
+
+    export_parser = _command(
+        subparsers,
+        "export",
+        note="Plain text and Markdown give each page a short header (its state, review "
+        "and the reading the text comes from) before its text, so the export can be cited.",
+    )
+    export_parser.add_argument("job_dir", type=Path, metavar="JOB", help="A job folder")
+    export_parser.add_argument(
+        "--out", type=Path, required=True, metavar="FILE", help="File to write"
+    )
+    export_parser.add_argument(
+        "--format",
+        choices=FORMATS,
+        help="txt, md, jsonl or tei; needed only when --out ends in none of "
+        + ", ".join(EXPORT_SUFFIXES),
+    )
     export_parser.add_argument(
         "--reviewed-only", action="store_true", help="Only pages with a human review receipt"
     )
 
-    run_parser = subparsers.add_parser(
-        "run",
-        help="Run extraction with a built-in/custom adapter or configured adapter chain",
-    )
+    run_parser = _command(subparsers, "run")
     run_parser.add_argument(
         "inputs",
         nargs="+",
         type=Path,
-        help="Input files or directories; directories are expanded to direct child files",
+        help=(
+            "Input files or directories; a directory expands to its direct child files, "
+            "or is one document when it holds JPEG or PNG page images"
+        ),
     )
     run_config = run_parser.add_mutually_exclusive_group(required=True)
     run_config.add_argument("--config", type=Path, help="PageLedger YAML config")
@@ -150,7 +655,9 @@ def build_parser() -> argparse.ArgumentParser:
         choices=BUILTIN_ADAPTERS,
         help="Run a built-in adapter with a generated default config (no YAML needed)",
     )
-    run_parser.add_argument("--out", required=True, type=Path, help="New empty run directory")
+    run_parser.add_argument(
+        "--out", required=True, type=Path, metavar="DIR", help="New empty run directory"
+    )
     run_parser.add_argument(
         "--pages",
         default=None,
@@ -160,15 +667,21 @@ def build_parser() -> argparse.ArgumentParser:
         "--routes",
         type=Path,
         default=None,
-        help="Execute a complete reviewed route-map.yml (requires --config)",
+        help="Extract pages as this route map (from classify, checked by you) says; needs --config",
     )
     run_parser.add_argument(
         "--resumable",
         action="store_true",
-        help="Retain durable responses and resume interrupted work in place",
+        help="Keep each page as it is read, so an interrupted run can continue with resume",
     )
-    run_parser.add_argument("--dry-run", action="store_true")
-    run_parser.add_argument("--json", action="store_true", dest="json_output")
+    run_parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Write the route map and plan without reading any page",
+    )
+    run_parser.add_argument(
+        "--json", action="store_true", dest="json_output", help="Print the result as JSON"
+    )
     run_parser.add_argument(
         "--log-level",
         default="INFO",
@@ -181,9 +694,30 @@ def build_parser() -> argparse.ArgumentParser:
         help="Directory added to sys.path so custom adapter modules can be imported",
     )
 
-    resume_parser = subparsers.add_parser("resume", help="Resume verified pending work in place")
-    resume_parser.add_argument("run_dir", type=Path)
-    resume_parser.add_argument("--adapter-path", type=Path, default=None)
+    resume_parser = _command(
+        subparsers,
+        "resume",
+        note="A source file that has moved is found by SHA-256 through the source index: "
+        "PAGELEDGER_SOURCE_INDEX (TSV files of sha256<TAB>path), or "
+        "~/.config/pageledger/source-index.tsv when unset. Records keep the recorded path.",
+    )
+    resume_parser.add_argument(
+        "run_dir", type=Path, metavar="DIR", help="A job folder, or a run started with --resumable"
+    )
+    resume_parser.add_argument(
+        "--adapter-path",
+        type=Path,
+        default=None,
+        metavar="DIR",
+        help="Folder to import custom adapters from (trusted code)",
+    )
+    resume_parser.add_argument(
+        "--trust-endpoint",
+        action="append",
+        default=[],
+        metavar="URL",
+        help=argparse.SUPPRESS,  # named by the refusal that needs it
+    )
     resume_parser.add_argument(
         "--raise-limit",
         action="append",
@@ -191,16 +725,15 @@ def build_parser() -> argparse.ArgumentParser:
         metavar="LIMIT=VALUE",
         help="Raise a processing limit of a document job paused by it, e.g. max_attempt_pages=50",
     )
-    resume_parser.add_argument("--json", action="store_true", dest="json_output")
-
-    rerun_parser = subparsers.add_parser(
-        "rerun",
-        help="Re-extract the pages listed in a previous run's rerun-manifest.yml",
+    resume_parser.add_argument(
+        "--json", action="store_true", dest="json_output", help="Print the result as JSON"
     )
+
+    rerun_parser = _command(subparsers, "rerun")
     rerun_parser.add_argument(
         "parent_dir",
         type=Path,
-        help="Previous run directory containing manifest.json and rerun-manifest.yml",
+        help="The earlier run, whose rerun-manifest.yml lists the flagged pages",
     )
     rerun_parser.add_argument(
         "--config",
@@ -208,9 +741,17 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         help="PageLedger YAML config for the rerun (plain adapter or adapter chain)",
     )
-    rerun_parser.add_argument("--out", required=True, type=Path, help="New empty run directory")
-    rerun_parser.add_argument("--dry-run", action="store_true")
-    rerun_parser.add_argument("--json", action="store_true", dest="json_output")
+    rerun_parser.add_argument(
+        "--out", required=True, type=Path, metavar="DIR", help="New empty run directory"
+    )
+    rerun_parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Write the plan for the pages to read again without reading any",
+    )
+    rerun_parser.add_argument(
+        "--json", action="store_true", dest="json_output", help="Print the result as JSON"
+    )
     rerun_parser.add_argument(
         "--log-level",
         default="INFO",
@@ -223,10 +764,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="Directory added to sys.path so custom adapter modules can be imported",
     )
 
-    classify_parser = subparsers.add_parser(
-        "classify",
-        help="Classify pages and emit an executable route map plus evidence sidecar",
-    )
+    classify_parser = _command(subparsers, "classify")
     classify_parser.add_argument(
         "inputs",
         nargs="*",
@@ -234,12 +772,14 @@ def build_parser() -> argparse.ArgumentParser:
         help="Input files or directories; omit when using --from-run",
     )
     classify_parser.add_argument("--config", type=Path, help="Optional PageLedger YAML config")
-    classify_parser.add_argument("--out", required=True, type=Path, help="Output route-map YAML")
+    classify_parser.add_argument(
+        "--out", required=True, type=Path, help="Route map (YAML) to write"
+    )
     classify_parser.add_argument(
         "--from-run",
         type=Path,
         default=None,
-        help="Reclassify retained raw evidence from a full, non-rerun extraction",
+        help="Classify again from the pages a finished run kept, without reading the files again",
     )
     classify_parser.add_argument(
         "--adapter",
@@ -252,23 +792,27 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Directory added to sys.path for custom probe adapters or classifier hooks",
     )
-    classify_parser.add_argument("--json", action="store_true", dest="json_output")
-
-    doctor_parser = subparsers.add_parser(
-        "doctor",
-        help="Report optional dependencies, external tools, and redacted OCR/VLM env state",
+    classify_parser.add_argument(
+        "--json", action="store_true", dest="json_output", help="Print the result as JSON"
     )
+
+    doctor_parser = _command(subparsers, "doctor")
     doctor_parser.add_argument(
         "--config",
         type=Path,
         help="Also report the environment variables this config's adapters name by env_key",
     )
-    doctor_parser.add_argument("--json", action="store_true", dest="json_output")
-
-    init_parser = subparsers.add_parser(
-        "init-config",
-        help="Write a minimal valid pageledger.yml to stdout or a file",
+    doctor_parser.add_argument(
+        "--all",
+        action="store_true",
+        dest="show_all",
+        help="Print every package, command, language and key checked, after the summary",
     )
+    doctor_parser.add_argument(
+        "--json", action="store_true", dest="json_output", help="Print the result as JSON"
+    )
+
+    init_parser = subparsers.add_parser("init-config")
     init_parser.add_argument(
         "--out",
         type=Path,
@@ -281,11 +825,14 @@ def build_parser() -> argparse.ArgumentParser:
         default="text",
         help="Default adapter for the generated config (default: text)",
     )
-
-    inspect_parser = subparsers.add_parser(
-        "inspect-run",
-        help="Summarize a completed or failed run directory",
+    init_parser.add_argument(
+        "--processing",
+        action="store_true",
+        help="Write a commented processing.yml for pageledger process instead",
     )
+    _add_engine_options(init_parser, "with --processing")
+
+    inspect_parser = subparsers.add_parser("inspect-run")
     inspect_parser.add_argument(
         "run_dir",
         type=Path,
@@ -300,10 +847,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="One CSV row per page: counts, confidence, warnings, cost, timing",
     )
 
-    align_parser = subparsers.add_parser(
-        "align",
-        help="Re-align an existing run's raw pages against a schema and regrade, without re-extracting",
-    )
+    align_parser = _command(subparsers, "align")
     align_parser.add_argument(
         "run_dir",
         type=Path,
@@ -315,48 +859,174 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Schema YAML (bare schema mapping or a config with a schema: section); defaults to the run's config-snapshot.yml",
     )
-    align_parser.add_argument("--json", action="store_true", dest="json_output")
+    align_parser.add_argument(
+        "--json", action="store_true", dest="json_output", help="Print the result as JSON"
+    )
     align_parser.add_argument(
         "--dry-run",
         action="store_true",
         help="Preview normalized records, grades, and audit changes without writing",
     )
 
-    compare_parser = subparsers.add_parser(
-        "compare-runs",
-        help="Compare two run directories page-by-page (quality, warnings, cost)",
-    )
+    compare_parser = subparsers.add_parser("compare-runs")
     compare_parser.add_argument("run_a", type=Path, help="First run directory")
     compare_parser.add_argument("run_b", type=Path, help="Second run directory")
     compare_parser.add_argument("--json", action="store_true", dest="json_output")
 
-    verify_parser = subparsers.add_parser(
-        "verify-run",
-        help="Verify cross-artifact ledger coherence without judging extraction accuracy",
-    )
+    verify_parser = subparsers.add_parser("verify-run")
     verify_parser.add_argument("run_dir", type=Path, help="Path to a run output directory")
     verify_parser.add_argument("--json", action="store_true", dest="json_output")
 
-    bundle_parser = subparsers.add_parser(
-        "bundle", help="Create an inspectable verified replay bundle", allow_abbrev=False
+    bundle_parser = _command(subparsers, "bundle", allow_abbrev=False)
+    bundle_parser.add_argument("run_dir", type=Path, metavar="RUN", help="A verified run folder")
+    bundle_parser.add_argument(
+        "--out", required=True, type=Path, metavar="DIR", help="New folder for the bundle"
     )
-    bundle_parser.add_argument("run_dir", type=Path)
-    bundle_parser.add_argument("--out", required=True, type=Path)
-    bundle_parser.add_argument("--json", action="store_true", dest="json_output")
+    bundle_parser.add_argument(
+        "--json", action="store_true", dest="json_output", help="Print the result as JSON"
+    )
 
-    replay_parser = subparsers.add_parser(
-        "replay", help="Replay a verified bundle on this machine", allow_abbrev=False
+    replay_parser = _command(subparsers, "replay", allow_abbrev=False)
+    replay_parser.add_argument("bundle_dir", type=Path, metavar="BUNDLE", help="A bundle folder")
+    replay_parser.add_argument(
+        "--out", required=True, type=Path, metavar="DIR", help="New folder for the replayed run"
     )
-    replay_parser.add_argument("bundle_dir", type=Path)
-    replay_parser.add_argument("--out", required=True, type=Path)
-    replay_parser.add_argument("--adapter-path", type=Path, default=None)
-    replay_parser.add_argument("--json", action="store_true", dest="json_output")
+    replay_parser.add_argument(
+        "--adapter-path",
+        type=Path,
+        default=None,
+        metavar="DIR",
+        help="Folder to import the bundle's adapter from (trusted code)",
+    )
+    replay_parser.add_argument(
+        "--trust-endpoint",
+        action="append",
+        default=[],
+        metavar="URL",
+        help=argparse.SUPPRESS,  # named by the refusal that needs it
+    )
+    replay_parser.add_argument(
+        "--json", action="store_true", dest="json_output", help="Print the result as JSON"
+    )
+
+    iiif_parser = _command(subparsers, "fetch", allow_abbrev=False)
+    iiif_parser.add_argument(
+        "url", metavar="URL", help="A IIIF manifest, an info.json, or an image service URL"
+    )
+    iiif_parser.add_argument(
+        "--out", required=True, type=Path, metavar="DIR", help="New folder for the page images"
+    )
+    iiif_parser.add_argument(
+        "--pages", default=None, help="Canvases by position in the manifest, e.g. '1-8,81'"
+    )
+    iiif_parser.add_argument(
+        "--delay", type=float, default=1.0, help="Seconds between requests (default 1.0)"
+    )
+    iiif_parser.add_argument(
+        "--max-image-bytes",
+        type=int,
+        default=256 * 1024 * 1024,
+        help="Refuse any image larger than this (default 268435456)",
+    )
+    iiif_parser.add_argument(
+        "--resume", action="store_true", help="Fetch only what an earlier fetch into --out missed"
+    )
+    iiif_parser.add_argument(
+        "--json", action="store_true", dest="json_output", help="Print the result as JSON"
+    )
+
+    verify_parser = _command(subparsers, "verify")
+    verify_parser.add_argument("dir", type=Path, metavar="DIR", help="A job folder or a run folder")
+    verify_parser.add_argument(
+        "--json", action="store_true", dest="json_output", help="Print the full report as JSON"
+    )
+
+    inspect_parser = _command(subparsers, "inspect")
+    inspect_parser.add_argument(
+        "dir", type=Path, metavar="DIR", help="A job folder or a run folder"
+    )
+    inspect_format = inspect_parser.add_mutually_exclusive_group()
+    inspect_format.add_argument(
+        "--json",
+        action="store_true",
+        dest="json_output",
+        help="Print document.json for a job, or the summary for a run, as JSON",
+    )
+    inspect_format.add_argument(
+        "--csv",
+        action="store_true",
+        dest="csv_output",
+        help="For a run: one CSV row per page (counts, confidence, warnings, cost, timing)",
+    )
+
+    compare_parser = _command(subparsers, "compare")
+    compare_parser.add_argument("run_a", type=Path, help="First run folder")
+    compare_parser.add_argument("run_b", type=Path, help="Second run folder")
+    compare_parser.add_argument(
+        "--json", action="store_true", dest="json_output", help="Print the comparison as JSON"
+    )
+
+    init_parser = _command(subparsers, "init")
+    init_parser.add_argument(
+        "--out",
+        type=Path,
+        default=None,
+        metavar="FILE",
+        help="Write the config to this file, not the screen",
+    )
+    init_parser.add_argument(
+        "--run", action="store_true", help="Write a config for pageledger run instead"
+    )
+    init_parser.add_argument(
+        "--adapter",
+        choices=BUILTIN_ADAPTERS,
+        default=None,
+        help="With --run: the extraction tool the config names (default: text)",
+    )
+    _add_engine_options(init_parser, "without --run")
 
     return parser
 
 
+def _add_engine_options(parser: argparse.ArgumentParser, when: str) -> None:
+    parser.add_argument(
+        "--engine",
+        choices=OCR_ENGINES,
+        default=None,
+        help=f"Local OCR engine or none, {when} (default: pdf_ocr; process uses none for a text file)",
+    )
+    parser.add_argument(
+        "--lang",
+        default=None,
+        help=f"Tesseract languages for pdf_ocr, {when} (default: {DEFAULT_OCR_LANG})",
+    )
+    parser.add_argument(
+        "--model-dir",
+        default=None,
+        help=f"Recognizer directory for rapidocr (required) or model directory for indra, {when}",
+    )
+
+
+def _engine_options_given(args: argparse.Namespace) -> bool:
+    return any(value is not None for value in (args.engine, args.lang, args.model_dir))
+
+
 def main(argv: list[str] | None = None) -> int:
-    args = build_parser().parse_args(argv)
+    parser = build_parser()
+    argv = sys.argv[1:] if argv is None else list(argv)
+    if not argv:
+        # Bare `pageledger` asks what there is to do.
+        parser.print_help()
+        return 0
+    if argv[:1] == ["help"]:
+        return _help(parser, argv[1:])
+    args = parser.parse_args(argv)
+    try:
+        _check_usage(args)
+    except _UsageError as exc:
+        # The sentence says what to change; pageledger's own usage line would not.
+        print(f"pageledger: error: {exc}", file=sys.stderr)
+        return 2
     handlers = {
         "process": _cmd_job,
         "inspect-job": _cmd_job,
@@ -364,9 +1034,14 @@ def main(argv: list[str] | None = None) -> int:
         "review-job": _cmd_job,
         "review-sheet": _cmd_job,
         "adjudicate": _cmd_job,
+        "review": _cmd_review,
         "export": _cmd_export,
+        "verify": _cmd_verify,
+        "inspect": _cmd_inspect,
+        "init": _cmd_init,
         "init-config": _cmd_init_config,
         "inspect-run": _cmd_inspect_run,
+        "compare": _cmd_compare_runs,
         "compare-runs": _cmd_compare_runs,
         "verify-run": _cmd_verify_run,
         "bundle": _cmd_bundle,
@@ -377,9 +1052,13 @@ def main(argv: list[str] | None = None) -> int:
         "resume": _cmd_resume,
         "rerun": _cmd_rerun,
         "doctor": _cmd_doctor,
+        "fetch": _cmd_fetch_iiif,
     }
     try:
         return handlers[args.command](args)
+    except KeyboardInterrupt:
+        print(f"\n{_interrupted(args)}", file=sys.stderr)
+        return 130
     except (RuntimeError, ValueError, OSError) as exc:
         if getattr(args, "json_output", False):
             result = {"status": "error", "error": str(exc)}
@@ -387,21 +1066,184 @@ def main(argv: list[str] | None = None) -> int:
             if isinstance(code, str) and code:
                 result["code"] = code
             print(json.dumps(result, ensure_ascii=False))
-        print(f"pageledger: error: {exc}", file=sys.stderr)
+        message = str(exc)
+        if args.command == "process" and isinstance(exc, PageLedgerDiagnostic):
+            # The sentence first; the code, for looking up, last.
+            message = f"{message.removeprefix(exc.code + ': ')} ({exc.code})"
+        print(f"pageledger: error: {message}", file=sys.stderr)
         return 1
 
 
-# -- init-config --------------------------------------------------------------
+# -- init ---------------------------------------------------------------------
+
+
+def _check_usage(args: argparse.Namespace) -> None:
+    if args.command == "init":
+        if args.run:
+            if _engine_options_given(args):
+                raise _UsageError(
+                    "--engine, --lang and --model-dir write a config for process; "
+                    "they do not go with --run"
+                )
+        elif args.adapter is not None:
+            raise _UsageError("--adapter goes with --run, which writes a config for pageledger run")
+        else:
+            _processing_template(_engine(args), args.lang, args.model_dir)
+    elif args.command == "review":
+        if args.images is not None and (args.sheet or args.apply):
+            raise _UsageError("--images is for the review view, not --sheet or --apply")
+        if (args.reviewer is not None or args.dry_run) and args.apply is None:
+            raise _UsageError("--reviewer and --dry-run go with --apply, which records decisions")
+    elif args.command == "init-config":
+        if args.processing:
+            if args.adapter != "text":
+                raise _UsageError("--adapter writes a run config; it does not go with --processing")
+            _processing_template(_engine(args), args.lang, args.model_dir)
+        elif _engine_options_given(args):
+            raise _UsageError("--engine, --lang and --model-dir go with --processing")
+    elif args.command == "export":
+        if args.format is None:
+            args.format = _export_format(args.out)
+    elif args.command == "process":
+        if args.config is None:
+            engine = _engine(args)
+            if engine == "none" and args.engine is None and args.lang is not None:
+                raise _UsageError(
+                    "a text file is read as it is, without OCR, so --lang does not apply to it"
+                )
+            _processing_template(engine, args.lang, args.model_dir)
+        elif _engine_options_given(args):
+            raise _UsageError(
+                "--engine, --lang and --model-dir choose the config when there is no --config; "
+                "set them in the config file instead"
+            )
+
+
+def _export_format(out: Path) -> str:
+    """The format --out's ending names, or a usage error that lists them."""
+    name = out.name.lower()
+    for suffix, kind in EXPORT_SUFFIXES.items():
+        if name.endswith(suffix):
+            return kind
+    raise _UsageError(
+        f"cannot tell the format from {out.name}: end --out in "
+        f"{', '.join(EXPORT_SUFFIXES)}, or name it with --format ({', '.join(FORMATS)})"
+    )
+
+
+def _cmd_init(args: argparse.Namespace) -> int:
+    args.processing = not args.run
+    args.adapter = args.adapter or "text"
+    return _cmd_init_config(args)
 
 
 def _cmd_init_config(args: argparse.Namespace) -> int:
-    config_text = _config_template(args.adapter)
+    if args.processing:
+        config_text = _processing_template(_engine(args), args.lang, args.model_dir)
+    else:
+        config_text = _config_template(args.adapter)
     if args.out:
-        args.out.write_text(config_text, encoding="utf-8")
+        if args.out.expanduser().exists() or args.out.is_symlink():
+            raise ValueError(
+                f"{args.out} already exists; init never writes over a file, which may hold "
+                "your own settings. Choose another --out, or remove it first."
+            )
+        args.out.expanduser().write_text(config_text, encoding="utf-8")
         print(f"Wrote {args.out}", file=sys.stderr)
     else:
         sys.stdout.write(config_text)
     return 0
+
+
+# -- verify and inspect: a job or a run ---------------------------------------
+
+
+def _directory_kind(path: Path) -> str:
+    """ "job" or "run", from the record that marks each; anything else is refused."""
+    looked_for = (
+        "looked for job.json (a document job, from process) or manifest.json or "
+        "checkpoint.json (a run, from run or a job's stage under attempts/)"
+    )
+    if not path.exists():
+        raise ValueError(f"{path} does not exist")
+    if not path.is_dir():
+        raise ValueError(f"{path} is a file; give the folder of a job or a run ({looked_for})")
+    job = (path / "job.json").is_file()
+    run = (path / "manifest.json").is_file() or (path / "checkpoint.json").is_file()
+    if job and run:
+        raise ValueError(f"{path} has the records of both a job and a run; {looked_for}")
+    if not job and not run:
+        raise ValueError(f"{path} is not a job or a run folder: {looked_for}")
+    return "job" if job else "run"
+
+
+_JOB_COMMANDS = {"review", "export", "adjudicate"}
+_RUN_COMMANDS = {"compare", "rerun", "align"}
+
+
+def _other_kind(command: str, folder: Path) -> str | None:
+    """Why a job command cannot take this run folder, or a run command this job."""
+    try:
+        job = (folder / "job.json").is_file()
+        run = (folder / "manifest.json").is_file() or (folder / "checkpoint.json").is_file()
+    except OSError:
+        return None
+    shown = shlex.quote(str(folder))
+    if command in _JOB_COMMANDS and run and not job:
+        return (
+            f"`{command}` takes a document job, and {folder} is a run folder (made by "
+            f"`pageledger run`, or one stage of a job). To see the run: pageledger inspect {shown}"
+        )
+    if command in _RUN_COMMANDS and job:
+        return (
+            f"`{command}` takes a run folder, and {folder} is a document job. To see the job's "
+            f"pages and readings: pageledger review {shown}"
+        )
+    return None
+
+
+def _refuse_other_kind(folder: Path, command: str) -> None:
+    message = _other_kind(command, folder)
+    if message:
+        raise ValueError(message)
+
+
+class _CommandParser(argparse.ArgumentParser):
+    """A command's parser, whose usage errors first say when a folder is of the other kind."""
+
+    def parse_known_args(self, args=None, namespace=None):  # type: ignore[override]
+        self._given = list(args or [])
+        return super().parse_known_args(args, namespace)
+
+    def error(self, message: str):  # type: ignore[override]
+        command = self.prog.split()[-1]
+        for given in getattr(self, "_given", []):
+            other = _other_kind(command, Path(given))
+            if other:
+                super().error(other)
+        if command == "run" and "--config --adapter" in message:
+            message += (
+                "\nTo read one document into a job instead: pageledger process SOURCE --out DIR"
+            )
+        super().error(message)
+
+
+def _cmd_verify(args: argparse.Namespace) -> int:
+    if _directory_kind(args.dir) == "job":
+        args.command, args.job_dir = "verify-job", args.dir
+        return _cmd_job(args)
+    args.run_dir = args.dir
+    return _cmd_verify_run(args)
+
+
+def _cmd_inspect(args: argparse.Namespace) -> int:
+    if _directory_kind(args.dir) == "job":
+        if args.csv_output:
+            raise ValueError("--csv lists a run's pages; for a job, use review --sheet")
+        args.command, args.job_dir = "inspect-job", args.dir
+        return _cmd_job(args)
+    args.run_dir = args.dir
+    return _cmd_inspect_run(args)
 
 
 # -- inspect-run --------------------------------------------------------------
@@ -463,6 +1305,7 @@ def _print_inspect_report(report: dict, *, cost_basis: str | None = None) -> Non
 
 
 def _cmd_align(args: argparse.Namespace) -> int:
+    _refuse_other_kind(args.run_dir, args.command)
     report = align_run(args.run_dir, schema_path=args.schema, dry_run=args.dry_run)
     if args.json_output:
         print(json.dumps(report, ensure_ascii=False, sort_keys=True))
@@ -490,6 +1333,8 @@ def _cmd_verify_run(args: argparse.Namespace) -> int:
         print(json.dumps(report, ensure_ascii=False, sort_keys=True))
     else:
         sys.stdout.write(render_verification(report))
+        if report["status"] == "pass":
+            print(VERIFIED)
     return 0 if report["status"] == "pass" else 1
 
 
@@ -509,7 +1354,12 @@ def _cmd_bundle(args: argparse.Namespace) -> int:
 
 
 def _cmd_replay(args: argparse.Namespace) -> int:
-    result = replay_bundle(args.bundle_dir, args.out, adapter_path=args.adapter_path)
+    result = replay_bundle(
+        args.bundle_dir,
+        args.out,
+        adapter_path=args.adapter_path,
+        trust_endpoints=args.trust_endpoint,
+    )
     if args.json_output:
         print(json.dumps(result, ensure_ascii=False, sort_keys=True))
     else:
@@ -523,10 +1373,45 @@ def _cmd_replay(args: argparse.Namespace) -> int:
     return 0 if result.get("outcome") in {"exact", "evidence_compared"} else 1
 
 
-# -- compare-runs --------------------------------------------------------------
+# -- fetch --------------------------------------------------------------------
+
+
+def _cmd_fetch_iiif(args: argparse.Namespace) -> int:
+    from .iiif import fetch_iiif
+
+    def progress(message: str) -> None:
+        print(message, file=sys.stderr)
+
+    summary = fetch_iiif(
+        args.url,
+        args.out,
+        pages=args.pages,
+        delay=args.delay,
+        max_image_bytes=args.max_image_bytes,
+        resume=args.resume,
+        progress=None if args.json_output else progress,
+    )
+    if args.json_output:
+        print(json.dumps(summary, ensure_ascii=False, sort_keys=True))
+    else:
+        print(
+            f"{summary['status'].capitalize()}: {summary['fetched']} of "
+            f"{summary['fetched'] + len(summary['missing'])} selected canvases in {summary['out']} "
+            f"({summary['fetched_now']} fetched now)"
+        )
+        for warning in summary["warnings"]:
+            print(f"warning: {warning['code']}: {warning['message']}")
+        for item in summary["missing"]:
+            print(f"missing: canvas {item['canvas_index']}: {item['error'] or 'not fetched yet'}")
+    return 0 if summary["status"] == "complete" else 1
+
+
+# -- compare ------------------------------------------------------------------
 
 
 def _cmd_compare_runs(args: argparse.Namespace) -> int:
+    _refuse_other_kind(args.run_a, args.command)
+    _refuse_other_kind(args.run_b, args.command)
     report = compare_runs(args.run_a, args.run_b)
     if args.json_output:
         print(json.dumps(report, ensure_ascii=False, sort_keys=True))
@@ -597,7 +1482,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
     config_path = args.config
     temp_config: str | None = None
     if config_path is None:
-        # --adapter mode: synthesize the same config init-config would write.
+        # --adapter mode: synthesize the same config init --run would write.
         # Never read an implicit config file from the working directory.
         fd, temp_config = tempfile.mkstemp(prefix="pageledger-", suffix=".yml")
         with os.fdopen(fd, "w", encoding="utf-8") as handle:
@@ -605,17 +1490,18 @@ def _cmd_run(args: argparse.Namespace) -> int:
         config_path = Path(temp_config)
     cost_existed = (args.out / "cost.json").exists()
     try:
-        result = run(
-            inputs=args.inputs,
-            config_path=config_path,
-            out_dir=args.out,
-            dry_run=args.dry_run,
-            log_level=args.log_level,
-            pages=args.pages,
-            adapter_path=args.adapter_path,
-            routes_path=args.routes,
-            resumable=args.resumable,
-        )
+        with capture_pypdf_repairs():
+            result = run(
+                inputs=args.inputs,
+                config_path=config_path,
+                out_dir=args.out,
+                dry_run=args.dry_run,
+                log_level=args.log_level,
+                pages=args.pages,
+                adapter_path=args.adapter_path,
+                routes_path=args.routes,
+                resumable=args.resumable,
+            )
     except (RuntimeError, ValueError, OSError):
         if not args.json_output and not cost_existed:
             _print_persisted_budget_alerts(args.out)
@@ -688,16 +1574,32 @@ def _parse_limit_raises(items: list[str]) -> dict[str, int | float]:
 
 def _cmd_resume(args: argparse.Namespace) -> int:
     raised = _parse_limit_raises(args.raise_limit)
-    if (args.run_dir / "job.json").exists():
+    job = _directory_kind(args.run_dir) == "job"
+    if job:
         from .processing import resume_job
 
-        result = resume_job(args.run_dir, adapter_path=args.adapter_path, raise_limits=raised)
+        progress = _Progress(show=not args.json_output)
+        try:
+            result = resume_job(
+                args.run_dir,
+                adapter_path=args.adapter_path,
+                raise_limits=raised,
+                progress=progress,
+                trust_endpoints=args.trust_endpoint,
+            )
+        finally:
+            progress.clear()
     elif raised:
         raise ValueError("--raise-limit applies to document jobs made by pageledger process")
     else:
-        result = resume(args.run_dir, adapter_path=args.adapter_path)
+        result = resume(
+            args.run_dir, adapter_path=args.adapter_path, trust_endpoints=args.trust_endpoint
+        )
     if args.json_output:
         print(json.dumps(result, ensure_ascii=False, sort_keys=True))
+    elif job and result.get("report"):
+        _print_job_summary(args.run_dir)
+        _print_language_advice(args.run_dir, args)
     else:
         print(f"PageLedger {result.get('job_id', result.get('run_id'))} wrote {result['out_dir']}")
         print(f"Status: {result['status']}")
@@ -716,15 +1618,26 @@ def _cmd_job(args: argparse.Namespace) -> int:
         verify_job,
     )
 
+    if args.command == "adjudicate":
+        _refuse_other_kind(args.job_dir, "adjudicate")
     if args.command == "process":
-        result = process(
-            source=args.source,
-            config_path=args.config,
-            out_dir=args.out,
-            pages=args.pages,
-            adapter_path=args.adapter_path,
-            review_path=args.review,
-        )
+        progress = _Progress(show=not args.json_output)
+        with capture_pypdf_repairs():
+            try:
+                if args.config is None:
+                    result = _process_without_config(args, process, progress)
+                else:
+                    result = process(
+                        source=args.source,
+                        config_path=args.config,
+                        out_dir=args.out,
+                        pages=args.pages,
+                        adapter_path=args.adapter_path,
+                        review_path=args.review,
+                        progress=progress,
+                    )
+            finally:
+                progress.clear()
     elif args.command == "review-job":
         result = review_job(args.job_dir, args.review, reviewer=args.reviewer, dry_run=args.dry_run)
     elif args.command == "review-sheet":
@@ -732,8 +1645,10 @@ def _cmd_job(args: argparse.Namespace) -> int:
     elif args.command == "adjudicate" and args.packets:
         if args.reviewer or args.dry_run:
             raise ValueError("--reviewer and --dry-run go with --decisions, not --packets")
-        result = adjudication_packets(args.job_dir, args.packets)
+        result = adjudication_packets(args.job_dir, args.packets, args.term)
     elif args.command == "adjudicate":
+        if args.term:
+            raise ValueError("--term goes with --packets: it chooses which spans to send")
         result = adjudicate_job(
             args.job_dir, args.decisions, reviewer=args.reviewer, dry_run=args.dry_run
         )
@@ -746,30 +1661,490 @@ def _cmd_job(args: argparse.Namespace) -> int:
         result = json.loads((args.job_dir / "document.json").read_text(encoding="utf-8"))
     if args.json_output:
         print(json.dumps(result, ensure_ascii=False, sort_keys=True))
+    elif args.command == "process" and result.get("report"):
+        _print_job_summary(args.out)
+        for warning in result.get("config_warnings", []):
+            print(f"Config warning: {warning}")
+        _print_language_advice(args.out, args)
+    elif args.command == "review-job" and getattr(args, "apply", None) is not None:
+        # review --apply; the earlier name review-job keeps its released output.
+        _print_review_result(args.job_dir, result, dry_run=args.dry_run)
     else:
-        print(f"Status: {result['status']}")
+        reason = f" ({result['reason']})" if result.get("reason") else ""
+        if args.command != "review-sheet":
+            # A written sheet is told by the lines below, not by a status code.
+            print(f"Status: {result['status']}{reason}")
+        if args.command == "verify-job" and result["status"] == "pass":
+            print(VERIFIED)
         if "decisions" in result:
             counts = sorted(result["decisions"].items())
             print("Decisions: " + (", ".join(f"{name} {n}" for name, n in counts) or "none"))
+        for item in result.get("corrections", []):
+            page, start = item["page_number"], item["from"]
+            print(f"Correction of page {page}, from {start}: {describe(item['words'])}")
+            if item["large"]:
+                print(
+                    f"Warning: the correction of page {page} changes more than half the words "
+                    f"of {start}. Check that it is this page's text."
+                )
         if "packets" in result:
             print(f"Packets: {result['packets']} pages in {result['out']}")
+            print(f"Open spans: {result['open_spans']}; in packets: {result['spans']}")
+            if "terms" in result:
+                print(
+                    f"Left out (no term nearby, still open): {result['left_out']}; "
+                    f"terms: {', '.join(result['terms'])}"
+                )
         if "decisions_high" in result:
             print(f"Pages answered: {result['pages']}; spans settled: {result['decisions_high']}")
         if "binding" in result:
             print(f"Review sheet: {result['out']} ({result['rows']} pages)")
             print(f"Binding: {result['binding']}")
+            if result.get("guide"):
+                print(f"How to fill it in: {result['guide']}")
         if result.get("report"):
             print(f"Report: {result['report']}")
         if result.get("next_action"):
             print(result["next_action"])
         for warning in result.get("config_warnings", []):
             print(f"Config warning: {warning}")
+        for issue in result.get("warnings", []):
+            print(f"Warning: [{issue['code']}] {issue['message']}")
         if result.get("error"):
             print(result["error"], file=sys.stderr)
     return 1 if result.get("status") in {"halted", "failed", "fail"} else 0
 
 
+def _process_without_config(
+    args: argparse.Namespace, process: Callable[..., dict], progress: Callable[[dict], None]
+) -> dict:
+    """Run a job with the config init writes for these options.
+
+    Nothing is read from the working directory or guessed from the machine; the
+    job records this config exactly as it would record the same file.
+    """
+    _check_process_paths(args.source, args.out)
+    engine = _engine(args)
+    config_text = _processing_template(engine, args.lang, args.model_dir)
+    options = None
+    if engine != "none":
+        options = yaml.safe_load(config_text)["processing"]["local_ocr"]["adapter_options"]
+        _check_engine(engine, options, args.source)
+    print(_reading_line(args.source, engine, options), file=sys.stderr)
+    fd, temp_config = tempfile.mkstemp(prefix="pageledger-", suffix=".yml")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(config_text)
+        return process(
+            source=args.source,
+            config_path=Path(temp_config),
+            out_dir=args.out,
+            pages=args.pages,
+            adapter_path=args.adapter_path,
+            review_path=args.review,
+            progress=progress,
+        )
+    finally:
+        os.unlink(temp_config)
+
+
+_ENGINE_NAMES = {"pdf_ocr": "Tesseract OCR", "rapidocr": "RapidOCR", "indra": "Indra OCR"}
+
+
+def _reading_line(source: Path, engine: str, options: dict | None) -> str:
+    """What a config-free job will do, in one line."""
+    from .image_source import KIND
+    from .language_hint import language_names
+    from .processing_source import source_kind
+
+    ocr = _ENGINE_NAMES[engine] if engine != "none" else None
+    if ocr and options and "lang" in options:
+        ocr += f" in {language_names(options['lang'])}"
+    kind = source_kind(source)
+    if kind == "text":
+        how = "the text of each page, as it is"
+    elif kind == KIND:
+        how = f"{ocr}, page by page" if ocr else "the page images, without OCR"
+    else:
+        how = (
+            f"each page's own text, then {ocr} for pages that need it"
+            if ocr
+            else "each page's own text, without OCR"
+        )
+    return f"Reading {source.name}: {how}. Nothing is sent anywhere."
+
+
+def _check_engine(engine: str, options: dict, source: Path) -> None:
+    """Refuse before the job exists when the engine or its tools are missing."""
+    try:
+        adapter = load_adapter(engine, options)
+        preflight = getattr(adapter, "preflight", None)
+        if callable(preflight):
+            preflight([source])
+    except PageLedgerDiagnostic:
+        raise
+    except (ValueError, RuntimeError, OSError) as exc:
+        message = str(exc).rstrip(".")
+        if "install" in message and "doctor" not in message:
+            message += ". Run 'pageledger doctor' to see which tools are installed"
+        named = message if engine in message else f"{engine}: {message}"
+        raise ValueError(f"{named}.") from exc
+
+
+def _check_process_paths(source: Path, out: Path) -> None:
+    source = source.expanduser()
+    if not source.exists():
+        raise ValueError(f"Source file was not found: {source}")
+    if out.expanduser().exists():
+        raise ValueError(
+            f"A job or another file is already at {out}. Use `pageledger inspect {out}`, "
+            f"`pageledger resume {out}`, or choose another --out directory."
+        )
+
+
+def _print_job_summary(out: Path) -> None:
+    """Where the job is, what needs a person and why, and the one next command."""
+    from .document_report import closing_lines
+
+    document = json.loads((out / "document.json").read_text(encoding="utf-8"))
+    print("\n".join(closing_lines(document, out)))
+
+
+_DECISION_WORDS = {
+    "reviewed_blank": "blank",
+    "illustration": "an illustration",
+    "handwriting": "handwriting",
+    "unreadable": "unreadable",
+    "source_defect": "damaged or missing in the source",
+}
+
+
+def _print_review_result(job: Path, result: dict, *, dry_run: bool) -> None:
+    """What review --apply recorded, what is left, and the next step, in plain words."""
+    from .document_report import closing_lines, export_command, needs_person
+
+    decisions = dict(result.get("decisions", {}))
+    corrected = len(result.get("corrections", []))
+    accepted = decisions.pop("reviewed_text", 0) - corrected
+    parts = [f"{accepted} accepted"] if accepted else []
+    parts += [f"{corrected} corrected"] if corrected else []
+    parts += [f"{n} {_DECISION_WORDS.get(name, name)}" for name, n in sorted(decisions.items())]
+    total = accepted + corrected + sum(decisions.values())
+    pages = "page" if total == 1 else "pages"
+    verb = "Checked, and nothing recorded (dry run)" if dry_run else "Recorded"
+    print(f"{verb}: {total} {pages}: {', '.join(parts)}." if parts else f"{verb}: no decisions.")
+    report = json.loads((job / "document.json").read_text(encoding="utf-8"))
+    for item in result.get("corrections", []):
+        page, start = item["page_number"], _started_from(report, item)
+        print(f"Correction of page {page}, from {start}: {describe(item['words'])}")
+        if item["large"]:
+            print(
+                f"Warning: the correction of page {page} changes more than half the words "
+                f"of {start}. Check that it is this page's text."
+            )
+    for issue in result.get("warnings", []):
+        print(f"Warning: [{issue['code']}] {issue['message']}")
+    if dry_run:
+        return
+    if result["status"] != "completed":
+        # Where the job stands and the one next command, as process says it.
+        print("\n".join(closing_lines(report, job)))
+        return
+    held = [page for page in report["pages"] if needs_person(page, report)]
+    shown = shlex.quote(str(job))
+    if any(page["disposition"] == "source_defect" for page in report["pages"]):
+        print(result["next_action"])
+    if held:
+        print(f"Still needing a person: {len(held)} {'page' if len(held) == 1 else 'pages'}.")
+        print(f"Next: pageledger review {shown}")
+    else:
+        print("No page needs a person now.")
+        print(f"Next: {export_command(job)}")
+
+
+def _started_from(report: dict, item: dict) -> str:
+    """The reading a correction started from, named as the report names it."""
+    from .document_report import reader_name
+
+    start = item["from"]
+    edition = start.startswith("the edition of ")
+    attempt_id = start.removeprefix("the edition of ")
+    page = next((p for p in report["pages"] if p["page_number"] == item["page_number"]), None)
+    attempt = next(
+        (a for a in (page or {}).get("attempts", []) if a["attempt_id"] == attempt_id), None
+    )
+    if attempt is None:
+        return start
+    name = reader_name(report, attempt)
+    return f"the edition of {name}" if edition else name
+
+
+def _retry_command(args: argparse.Namespace) -> str:
+    """The process command as given, with {lang} for the language and a new --out: every
+    other option still applies to a second reading of the same pages."""
+    lang = "@@lang@@"
+    argv = ["pageledger", "process", str(args.source), "--lang", lang]
+    for option, value in (
+        ("--engine", args.engine),
+        ("--model-dir", args.model_dir),
+        ("--pages", args.pages),
+        ("--adapter-path", args.adapter_path),
+        ("--review", args.review),
+    ):
+        if value is not None:
+            argv += [option, str(value)]
+    argv += ["--out", f"{args.out}-{lang}"]
+    joined = shlex.join(argv).replace("{", "{{").replace("}", "}}")
+    return joined.replace(lang, "{lang}")
+
+
+def _print_language_advice(job: Path, args: argparse.Namespace) -> None:
+    from .language_hint import advice
+
+    retry = None
+    if args.command == "process" and args.config is None:
+        retry = _retry_command(args)
+    # After resume, the config the job was made with may have been a passing one.
+    lines = advice(job, retry, from_config=args.command == "process")
+    if lines:
+        print("\n" + "\n".join(lines))
+
+
+_STAGE_WORDS = {
+    "local_text": "checking for text the pages already carry",
+    "local_ocr": "OCR",
+    "second_ocr": "a second OCR engine",
+    "local_image": "the image model on this machine",
+    "image": "the image model",
+    "second_opinion": "a second model",
+}
+
+
+class _Progress:
+    """How far a job has got, on stderr: one line rewritten in place on a terminal,
+    and on anything else a plain line now and then, once the job has run a while."""
+
+    QUIET = 15.0
+    EVERY = 30.0
+
+    def __init__(self, *, show: bool = True, stream=None) -> None:
+        self.stream = stream or sys.stderr
+        self.show = show
+        try:
+            self.tty = self.stream.isatty()
+        except (AttributeError, ValueError):
+            self.tty = False
+        self.started = time.monotonic()
+        self.printed: float | None = None
+        self.stage: str | None = None
+        self.width = 0
+
+    def __call__(self, event: dict) -> None:
+        if "notice" in event:
+            self.clear()
+            print(event["notice"], file=self.stream)
+            return
+        if not self.show:
+            return
+        line = self.line(event)
+        if self.tty:
+            line = line[: shutil.get_terminal_size().columns - 1]
+            self.stream.write("\r" + line.ljust(self.width))
+            self.stream.flush()
+            self.width = len(line)
+            return
+        now = time.monotonic()
+        if now - self.started < self.QUIET:
+            return
+        if self.printed is None or now - self.printed >= self.EVERY or event["stage"] != self.stage:
+            print(line, file=self.stream, flush=True)
+            self.printed, self.stage = now, event["stage"]
+
+    @staticmethod
+    def line(event: dict) -> str:
+        pages, stage = event["pages"], event["stage"]
+        doing = _STAGE_WORDS.get(stage, stage)
+        if stage == "local_text" and event.get("page_images"):
+            doing = "preparing the page images"
+        elif stage != "local_text":
+            doing = (
+                f"{doing}, page {pages[0]}" if len(pages) == 1 else f"{doing}, {len(pages)} pages"
+            )
+        verb = "needs" if event["held"] == 1 else "need"
+        held = f"; {event['held']} {verb} a person so far" if event["held"] else ""
+        return f"{event['done']} of {event['selected']} pages done{held}. Now: {doing}"
+
+    def clear(self) -> None:
+        if self.tty and self.width:
+            self.stream.write("\r" + " " * self.width + "\r")
+            self.stream.flush()
+            self.width = 0
+
+
+def _custom_code(folder: Path) -> bool:
+    """Whether the job or run in ``folder`` names its own adapter code (module:object)."""
+    try:
+        job = json.loads((folder / "job.json").read_text(encoding="utf-8"))["payload"]
+        names = [p.get("adapter") for p in job["policy"].values() if isinstance(p, dict)]
+    except (OSError, ValueError, KeyError, TypeError, AttributeError):
+        from .config import load_config
+
+        try:
+            names = list(
+                load_config(folder / "config-snapshot.yml", validate_adapter=False).named_code
+            )
+        except (OSError, ValueError):
+            return False
+    return any(isinstance(name, str) and ":" in name for name in names)
+
+
+def _remote_endpoints(folder: Path) -> list[str]:
+    """The model servers off this machine that the job or run in ``folder`` names."""
+    import urllib.parse
+
+    from .config import load_config
+    from .vision import _on_this_machine
+
+    options: list[object] = []
+    try:
+        job = json.loads((folder / "job.json").read_text(encoding="utf-8"))["payload"]
+        options = [p.get("adapter_options") for p in job["policy"].values() if isinstance(p, dict)]
+    except (OSError, ValueError, KeyError, TypeError, AttributeError):
+        try:
+            run = load_config(folder / "config-snapshot.yml", validate_adapter=False)
+            options = [opts for _, opts in run.named_adapters]
+        except (OSError, ValueError):
+            return []
+    urls = []
+    for option in options:
+        url = option.get("base_url") if isinstance(option, dict) else None
+        if isinstance(url, str) and url not in urls:
+            host = urllib.parse.urlsplit(url).hostname
+            if host and not _on_this_machine(host):
+                urls.append(url)
+    return urls
+
+
+def _interrupted(args: argparse.Namespace) -> str:
+    """What an interrupt left, and how to go on."""
+    command = args.command
+    folder = getattr(args, "out", None) if command in {"process", "run", "fetch"} else None
+    if command == "resume":
+        folder = args.run_dir
+    if folder is None:
+        if command == "review" and args.apply is None and args.sheet is None:
+            return "Interrupted. No review view was written; run the command again."
+        return "Interrupted."
+    shown = shlex.quote(str(folder))
+    if command == "fetch":
+        if not folder.exists():
+            return "Interrupted before any image was fetched."
+        # The options that shaped the fetch go on shaping the rest of it.
+        kept = _given_options(args, ("--pages", "pages"), ("--delay", "delay"))
+        kept += _given_options(args, ("--max-image-bytes", "max_image_bytes"))
+        return (
+            f"Interrupted. The images fetched so far are kept in {folder}.\n"
+            f"To fetch the rest: pageledger fetch {shlex.quote(args.url)} --out {shown}"
+            f"{kept} --resume"
+        )
+    if (folder / "job.json").is_file() or (folder / "checkpoint.json").is_file():
+        # A custom adapter is found again only where it was found the first time, and a
+        # model server off this machine is used again only when named.
+        kept = _given_options(args, ("--adapter-path", "adapter_path"))
+        kept += "".join(
+            f" --trust-endpoint {shlex.quote(url)}" for url in _remote_endpoints(folder)
+        )
+        needs = ""
+        if getattr(args, "adapter_path", None) is None and _custom_code(folder):
+            needs = (
+                " --adapter-path DIR\n(DIR is the folder of its own adapter code; for an "
+                "adapter installed with pip, its package folder inside site-packages.)"
+            )
+        return (
+            f"Interrupted. The pages read so far are kept in {folder}.\n"
+            f"To continue: pageledger resume {shown}{kept}{needs}"
+        )
+    if command == "run" and (folder / "manifest.json").is_file():
+        return "Interrupted after the run was written."
+    if folder.exists():
+        what = (
+            "the run was not started with --resumable"
+            if command == "run"
+            else "it holds no job yet"
+        )
+        return (
+            f"Interrupted. {folder} cannot be continued, since {what}. Remove it and start again."
+        )
+    return "Interrupted before anything was written."
+
+
+_DEFAULTS = {"delay": 1.0, "max_image_bytes": 256 * 1024 * 1024}
+
+
+def _given_options(args: argparse.Namespace, *options: tuple[str, str]) -> str:
+    """Options the command was given (not left at their defaults), ready to append."""
+    given = ""
+    for flag, name in options:
+        value = getattr(args, name, None)
+        if value is not None and value != _DEFAULTS.get(name):
+            given += f" {flag} {shlex.quote(str(value))}"
+    return given
+
+
+def _cmd_review(args: argparse.Namespace) -> int:
+    _refuse_other_kind(args.job_dir, "review")
+    if args.apply is not None:
+        args.command, args.review = "review-job", args.apply
+        return _cmd_job(args)
+    if args.sheet is not None:
+        args.command, args.out = "review-sheet", args.sheet
+        return _cmd_job(args)
+    from .review_html import view_state, write_review_html
+
+    out = args.out
+    if out is None:
+        job = args.job_dir if args.job_dir.name not in {"", ".."} else args.job_dir.resolve()
+        out = job.with_name(f"{job.name}-review")
+        if out.exists() or out.is_symlink():
+            # A view asked for with other images is a new view, never the old one; a view
+            # without images is the one --images none asks for.
+            same_images = args.images is None or (
+                args.images == "none" and not (out / "images").exists()
+            )
+            asked = out.is_symlink() or not same_images
+            state = "other" if asked else view_state(args.job_dir, out)
+            if state == "current":
+                page = out / "index.html"
+                if args.json_output:
+                    print(json.dumps({"status": "current", "out": str(page)}, sort_keys=True))
+                else:
+                    print(f"The review view in {out} is up to date with the job.")
+                    print(f"Open {page} in a web browser to see the pages.")
+                return 0
+            if state == "stale":
+                raise ValueError(
+                    f"{out} shows the job as it was before its last change. Write the view "
+                    f"of the job as it is now elsewhere with --out DIR, or remove {out} first."
+                )
+            raise ValueError(
+                f"{out} already exists, perhaps from an earlier review. Open its index.html, "
+                "or write a new review view elsewhere with --out DIR."
+            )
+    result = write_review_html(args.job_dir, out, images=args.images or "all")
+    if args.json_output:
+        print(json.dumps(result, ensure_ascii=False, sort_keys=True))
+    else:
+        print(f"Review view: {result['out']} ({result['pages']} pages, {result['images']} images)")
+        print(
+            "Open that file in a web browser to see the pages and record your decisions; "
+            f"to use a spreadsheet instead, fill in {Path(result['sheet']).name} beside it, "
+            f"as {Path(result.get('guide', 'review-decisions.txt')).name} there explains."
+        )
+    return 0
+
+
 def _cmd_export(args: argparse.Namespace) -> int:
+    _refuse_other_kind(args.job_dir, "export")
     count = export_job(args.job_dir, args.out, format=args.format, reviewed_only=args.reviewed_only)
     print(f"Exported {count} pages to {args.out}")
     return 0
@@ -779,6 +2154,7 @@ def _cmd_export(args: argparse.Namespace) -> int:
 
 
 def _cmd_rerun(args: argparse.Namespace) -> int:
+    _refuse_other_kind(args.parent_dir, "rerun")
     cost_existed = (args.out / "cost.json").exists()
     try:
         result = rerun(
@@ -836,16 +2212,77 @@ def _print_persisted_budget_alerts(out_dir: Path) -> None:
 # -- doctor -------------------------------------------------------------------
 
 
+_COMMON_LANGUAGES = ("eng", "rus", "ukr", "bel", "pol", "deu", "fra", "ita", "spa", "lat", "heb")
+
+
+def _doctor_summary(report: dict, *, details: bool = True) -> list[str]:
+    """What `process` can do on this machine, in the few lines a person acts on."""
+    packages, commands = report["optional_packages"], report["external_commands"]
+    tesseract, pdftoppm = commands["tesseract"], commands["pdftoppm"]
+    lines = ["What process can do on this machine:"]
+    if packages["pypdf"]["available"]:
+        lines.append("  Read the text a PDF carries (pypdf).")
+    else:
+        lines.append("  PDFs cannot be read: install pageledger[pdf].")
+    if tesseract["available"]:
+        version = (tesseract.get("version") or "Tesseract").replace("tesseract", "Tesseract")
+        drawn = (
+            "page images and scanned PDFs"
+            if pdftoppm["available"]
+            else "page images (scanned PDFs also need pdftoppm: " + pdftoppm["install_hint"] + ")"
+        )
+        lines.append(f"  Read {drawn} with {version} OCR.")
+        languages = report["ocr_languages"]
+        installed = [code for code in languages["languages"] if code not in NOT_LANGUAGES]
+        if languages["available"] and installed:
+            # The common ones first; with none of them, the first few installed.
+            shown = [code for code in _COMMON_LANGUAGES if code in installed] or installed[:6]
+            more = len(installed) > len(shown)
+            lines.append(
+                f"  Languages for --lang ({len(installed)} installed): "
+                + ", ".join(shown)
+                + ((", and more, listed below." if details else ", and more.") if more else ".")
+            )
+    else:
+        lines.append(
+            "  No OCR: Tesseract is not installed, so pages without their own text cannot be "
+            f"read. {tesseract['install_hint']}"
+        )
+    others = {
+        "RapidOCR": packages["rapidocr"]["available"] and packages["onnxruntime"]["available"],
+        "Indra OCR": packages["indra_ocr"]["available"],
+    }
+    ready = [name for name, available in others.items() if available]
+    missing = [name for name, available in others.items() if not available]
+    if ready:
+        lines.append(
+            f"  Other OCR engines ready (choose one with pageledger init): {', '.join(ready)}."
+        )
+    if missing:
+        lines.append(
+            f"  Not installed, optional: {', '.join(missing)}. See {_DOCS}engine-recipes.md"
+        )
+    return lines
+
+
 def _cmd_doctor(args: argparse.Namespace) -> int:
     report = build_doctor_report(args.config)
     if args.json_output:
         print(json.dumps(report, ensure_ascii=False, sort_keys=True))
     else:
+        details = args.show_all or args.config is not None
+        print("\n".join(_doctor_summary(report, details=details)))
+        if not details:
+            print("\n`pageledger doctor --all` shows every package, command, language and key.")
+            return 0
+        print("\nDetails:")
         print(f"PageLedger {report['pageledger_version']}")
         print(f"Python: {report['python']['executable']}")
         for name, info in report["optional_packages"].items():
             status = "available" if info["available"] else "missing"
             print(f"Optional package {name}: {status}")
+            if info["available"] and info.get("license"):
+                print(f"  License: {info['license']}")
         for name, info in report["external_commands"].items():
             status = info["path"] or "missing"
             version = f" ({info['version']})" if info.get("version") else ""
@@ -860,7 +2297,13 @@ def _cmd_doctor(args: argparse.Namespace) -> int:
             )
         else:
             print(f"OCR languages: unavailable ({ocr_langs['explanation']})")
-        for name, info in report["cloud_environment"].items():
-            status = "set" if info["set"] else "missing"
+        keys = report["cloud_environment"].items()
+        if args.config is not None:
+            # Only the keys this config needs; the others are beside the point.
+            keys = [(name, info) for name, info in keys if info.get("named_by_config")]
+            if not keys:
+                print(f"API keys: {args.config.name} names none (no env_key).")
+        for name, info in keys:
+            status = "set" if info["set"] else "not set"
             print(f"Env {name}: {status} ({info['explanation']})")
     return 0

@@ -8,7 +8,7 @@ the [image evidence schema](../schemas/image-evidence.schema.json).
 | Field | Meaning |
 |---|---|
 | `schema_version`, `kind` | Exactly `0.1`, `page_image` |
-| `source_sha256`, `page_number` | Source document hash and one-based source page |
+| `source_sha256`, `page_number` | Hash of the file the image was rendered from, and one-based source page. For a PDF this is the source document's hash. For page images it is the hash of the run's carrier PDF (the manifest input's `carrier.sha256`), or of the page's own image when the adapter reads images itself. |
 | `artifact` | Relative JPEG path below the child run's `evidence/` directory |
 | `sha256`, `bytes` | Hash and byte count of the exact transmitted JPEG |
 | `media_type`, `color_space` | Exactly `image/jpeg`, `RGB` |
@@ -24,9 +24,43 @@ All hashes are lowercase SHA-256. The descriptor accepts no other top-level
 fields. A crop is `{"kind":"box","units":"pdf_points","x":0,"y":0,
 "width":100,"height":200}`: x/y are nonnegative, width/height positive, and all
 coordinates finite. They describe the actual source box transmitted, without
-implicitly treating a crop as a full page. The optional example currently
-renders full pages only. Crop origin and transformation details belong in the
-renderer parameters when an adapter uses crops.
+implicitly treating a crop as a full page. The box is in PDF points of the page
+as rendered: its media box after `/Rotate`, with the origin at the top-left
+corner, `x` to the right and `y` downward, which is how `pdftoppm -x -y -W -H`
+counts. The renderer's own arguments stay in `renderer.parameters`.
+
+## Page tiles
+
+A page read in tiles ([Read dense pages in tiles](processing-spec.md#read-dense-pages-in-tiles))
+has one descriptor of kind `page_tiles` for all its images:
+
+| Field | Meaning |
+|---|---|
+| `schema_version`, `kind` | Exactly `0.1`, `page_tiles` |
+| `source_sha256`, `page_number`, `requested_model`, `prompt_sha256`, `system_prompt_sha256` | As for `page_image`; every tile is sent with the same prompt |
+| `model`, `provider` | The model and provider every tile that answered reported, or null when none did or they differ (a page whose tiles were served by different models fails) |
+| `plan_sha256` | SHA-256 of the tile plan the page was read from (`pageledger.tiling.plan_sha256`) |
+| `page_box` | `{"units": "pdf_points", "width", "height"}`: the page as rendered |
+| `separator` | Exactly `"\n"`: what joins the tiles' texts into the reading |
+| `tiles` | The tiles sent, in plan order (tiles never sent are not listed; the plan lists every tile) |
+
+Each tile has the image fields of a `page_image` descriptor (`artifact`,
+`sha256`, `bytes`, `media_type`, `color_space`, `width`, `height`, `crop` and
+`renderer`, the crop being the box actually rendered), and:
+
+| Field | Meaning |
+|---|---|
+| `tile_id` | The plan's id, `t01`, `t02`, ... |
+| `outcome`, `failure_code` | `completed` with a null code, or `failed` with the adapter failure code (`MODEL_OUTPUT_TRUNCATED`, `MODEL_QUOTA`, ...) |
+| `model`, `provider` | What the server reported for this tile, or null |
+| `text_offset`, `text_length`, `text_sha256` | Where a completed tile's text lies in the reading (in characters) and the SHA-256 of its UTF-8; null for a failed tile |
+
+A failed tile's text is not in the reading. The completed tiles' texts, in
+order and joined by `separator`, are the reading exactly;
+`pageledger.image_evidence.validate_tile_text(evidence, text)` checks this
+when a run saves the result, when a recovery record is read, and in
+`verify` against the raw artifact. `validate_input_evidence` checks every
+tile image's bytes, hash and dimensions.
 
 JPEGs must contain three 8-bit color components, have a supported baseline or
 progressive frame and a scan header, and stay at or below 3 MiB. Core inspects

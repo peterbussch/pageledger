@@ -8,7 +8,7 @@ is the durable pointer to every other artifact in the run directory.
 ```json
 {
   "schema_version": "0.1",
-  "pageledger_version": "0.7.0",
+  "pageledger_version": "0.9.0",
   "run_id": "run-20260619T193000000000Z",
   "parent_run_id": null,
   "run_depth": 0,
@@ -93,7 +93,7 @@ is the durable pointer to every other artifact in the run directory.
 | `inputs` | array | Source files and checksums. Each entry carries `path`, `sha256`, and `page_count` (the source's full size). When `--pages` or a rerun limits the run, the entry also carries the selection expression as `pages` (e.g. `"1-8,81"`). |
 | `skipped_inputs` | array | Optional. Names of hidden files (such as `.DS_Store` and `._*` sidecars) found in input directories and skipped. Present only when a file was skipped. |
 | `config` | object | Run-directory config snapshot path, checksum, and source config paths. |
-| `extractors` | array | Extractor adapters and model/version metadata. Current writers may add an optional `reproducibility_profile` containing the profile envelope and `profile_sha256`; it is path-free and omitted when an adapter has no hook. |
+| `extractors` | array | Extractor adapters and model/version metadata. Current writers may add an optional `reproducibility_profile` containing the profile envelope and `profile_sha256`; it is path-free and omitted when an adapter has no hook. See [the reproducibility profile](#the-reproducibility-profile). |
 | `dataset_citation` | object or null | Optional user-provided source citation for the input collection. |
 | `artifacts` | object | Relative paths to route, raw, normalized, audit, and provenance artifacts. |
 | `summary` | object | Counts and cost summary for quick inspection. |
@@ -109,12 +109,12 @@ Current writers emit `pages_total`, `pages_extracted`, `pages_skipped`,
 `pages_routed_review`, `pages_quarantined`, `records_normalized` (rows written
 to `normalized/` by the schema aligner), `estimated_cost_usd`, and
 `quality_warning_pages`. `pages_routed_review` remains optional in the schema
-so older schema-0.1 manifests can still be read; `verify-run` warns when the
+so older schema-0.1 manifests can still be read; `verify` warns when the
 field is absent.
 
 Current writers also emit top-level `pageledger_version`. It remains optional
 in the schema only so older schema-0.1 manifests remain readable;
-`verify-run` warns when that generator identity is absent.
+`verify` warns when that generator identity is absent.
 
 Current writers emit `run_depth` on every manifest. For older original runs
 without it, generation 0 can be inferred from `parent_run_id: null`. An older
@@ -145,6 +145,39 @@ Use `partial` for dry runs, runs with failures, and execute-mode runs that
 intentionally defer one or more pages through a `review` route. `completed`
 means every routed extraction/skip decision finished without a review-only gap;
 it does not claim extraction accuracy.
+
+## Page-image sources
+
+An input that is an image file or a folder of page images adds three optional
+fields to its `inputs` entry, and a IIIF snapshot a fourth. Its `path` is the folder or the file, and its
+`sha256` is the hash of the page manifest, not of any one file.
+
+| Field | Type | Meaning |
+|---|---|---|
+| `kind` | string | `page_images`. |
+| `images` | array | The page manifest, one entry per page in page order: `name` (the file name), `sha256` (of the file), `bytes`, `width` and `height` (pixels, from the image header). |
+| `carrier` | object | Present when an engine read the pages through a PDF carrier: its `sha256`, `derived: true`, and `pages`, the pages whose images it holds. Absent for a dry run and for an adapter that reads the images themselves. |
+| `iiif` | object | Present when the folder is a snapshot `fetch` wrote: `sha256` of its `iiif-fetch.json` as read, `requested_url`, `status` (`complete` or `incomplete`), and `canvases`, one `{name, canvas_index, canvas_id}` per page in page order. Context, not identity: `sha256` above does not cover it. See [reading a snapshot as a source](iiif-fetch-spec.md#reading-a-snapshot-as-a-source). |
+
+The identity is the SHA-256 of the UTF-8 JSON text of
+`{"kind": "page_images", "pages": <images>}`, written with keys sorted and no
+spaces (Python's `json.dumps(..., sort_keys=True, separators=(",", ":"),
+ensure_ascii=False)`). A changed, missing, added or reordered image changes it.
+Pages follow the natural order of their file names: runs of digits compare as
+numbers and letters without regard to case.
+
+The carrier is a PDF PageLedger writes for the run and deletes afterwards. Each
+page it reads holds that page's image: a JPEG's bytes unchanged, a PNG's
+compressed data unchanged (an image with an alpha channel is decompressed and
+split into an image and a soft mask, each keeping PNG's row filters and stored
+in uncompressed deflate blocks, so no zlib build changes the bytes), with the page size the
+image's density gives (JFIF, then EXIF, for a JPEG; `pHYs` for a PNG; 300 pixels
+per inch when none is declared or the declared density is below 20 or above
+4,800) and EXIF rotation as the page's rotation. Pages the run does not read
+are empty pages of the same size, and so is every page for the built-in
+`pdf_text`, which reads text layers and renders nothing. The same images and pages always give the
+same bytes, so `verify` can rebuild the carrier and compare its hash. The
+carrier is never the record of custody: the images are.
 
 ## Adapter escalation
 
@@ -204,9 +237,46 @@ The current generation's effective adapter is also the extractor recorded in
   the rollups contain extracted pages only because they are derived from
   `provenance.jsonl`.
 
+## The reproducibility profile
+
+`extractors[].reproducibility_profile` records what a later replay must find
+again to call its output exact. `profile_version` is `"0.1"`; `pageledger`
+gives the `version` and a `code_sha256` of the package's code; `adapter` its
+`module`, `name`, `version` and `code_sha256`; `runtime` the
+`python_implementation`, `python_version`, `system`, `release` (the operating
+system's release), `machine`, `preferred_encoding` and `filesystem_encoding`;
+and `materials` each binary, package, model or asset the adapter declares, by
+`kind`, `name`, `version` and `sha256`. `profile_sha256` is the hash of the
+rest. Replay compares the whole profile, so an operating-system update or a
+Python bug-fix release makes it refuse with `incompatible_environment`. A
+`binary` material is the file found on `PATH`, which may be a wrapper script
+rather than the engine and its libraries.
+
+## cost.json
+
+| Field | Meaning |
+|---|---|
+| `schema_version` | `"0.1"`. |
+| `run_id` | The run. |
+| `execution_mode` | `execute`, or `dry_run` for a run that extracted nothing. |
+| `currency` | Always `USD`. |
+| `canonical_unit` | Always `pages`: the one unit every adapter reports. |
+| `pages_extracted` | Pages the adapter returned a result for. |
+| `tokens_total` | Tokens the adapters reported, summed; 0 when none did. |
+| `pricing` | The `run.pricing` rates from the config, or null when none are set. |
+| `usage` | Totals: `pages`, `tokens`, `compute_seconds` (adapter-reported) and `extraction_seconds` (measured by PageLedger). A total no adapter reported is null. |
+| `cost_usd` | The known part of the cost: the sum over pages whose cost is known. Null when none is known; 0 when nothing was extracted. |
+| `cost_known` | True only when every extracted page's cost is known. |
+| `cost_basis` | `adapter_reported`, `configured_rate`, `mixed` or `none`. |
+| `budget` | Present when a cap is set: for each capped unit, `max`, `current` and `exceeded`; with `warn_at_percent`, also `warn_at` (the amount that warns) and `warning`. |
+| `alerts` | The first crossing of each warning: its `unit`, `threshold`, `kind` (`absolute` or `percent`), `current`, `page_id` and `timestamp`. |
+| `by_adapter`, `by_page_type` | The same totals grouped by adapter and by routed page type. |
+
 ## Compatibility policy
 
 PageLedger artifacts carry `schema_version: "0.1"` as their release contract.
+[Stability](stability.md) lists everything else that stays stable from 1.0
+(commands, configuration, the adapter protocol, codes) and how it is tested.
 
 The package release and artifact schema are versioned independently.
 PageLedger keeps artifact `schema_version: "0.1"`: its newer classifier,
@@ -248,7 +318,7 @@ Additions that do NOT require a schema-version bump:
 
 PageLedger is designed to produce inspectable artifacts even when a run fails.
 The behavior below describes ordinary `run` and `rerun` execution. Resumable
-runs and document jobs retain separate request/response checkpoints; see the
+runs and jobs retain separate request/response checkpoints; see the
 [checkpoint specification](checkpoint-spec.md) for their failure states.
 
 ### Artifact write order
@@ -269,7 +339,7 @@ Artifacts are written in this order, which matters for interrupted-run recovery:
 If the process is killed during artifact writing, artifacts written earlier
 may survive while later ones do not. The presence of `manifest.json` is the
 canonical signal that PageLedger finished writing every artifact it points to;
-`pageledger verify-run` diagnoses an interrupted or manually altered directory.
+`pageledger verify` diagnoses an interrupted or manually altered directory.
 
 ### Failure scenarios
 
@@ -326,7 +396,7 @@ canonical signal that PageLedger finished writing every artifact it points to;
 
 ### Common errors and user action
 
-For quality warnings and document-job dispositions, see the
+For quality warnings and job dispositions, see the
 [warnings reference](warnings.md).
 
 | Error | Likely cause | Action |

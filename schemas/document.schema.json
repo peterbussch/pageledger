@@ -9,8 +9,8 @@
       "const": "0.1"
     },
     "report_format": {
-      "enum": ["0.5.1", "0.6"],
-      "description": "0.5.1 uses the historical absolute source links; 0.6 uses paths relative to the job directory. Reports without this marker use the 0.5.0 renderer."
+      "enum": ["0.5.1", "0.6", "0.9"],
+      "description": "0.5.1 uses the historical absolute source links; 0.6 uses paths relative to the job directory; 0.9 keeps the 0.6 paths, renders report.md for a reader (what happened and what to do first, the record last) and records hold_causes. Reports without this marker use the 0.5.0 renderer."
     },
     "limits_history": {
       "type": "array",
@@ -20,16 +20,59 @@
         "required": ["at", "limit", "previous", "value"],
         "properties": {
           "at": {"type": "string", "minLength": 1},
-          "limit": {"enum": ["max_attempt_pages", "max_image_pages", "max_tokens", "max_cost_usd"]},
+          "limit": {"enum": ["max_attempt_pages", "max_image_pages", "max_local_image_pages", "max_tokens", "max_cost_usd", "max_image_requests"]},
           "previous": {"type": "number"},
           "value": {"type": "number"}
         },
         "additionalProperties": false
       }
     },
+    "relocations": {
+      "type": "array",
+      "description": "Each change review-job or adjudicate made to the job in a directory other than the one it was written in, oldest first. Absent until such a change.",
+      "items": {
+        "type": "object",
+        "required": ["root", "command", "at"],
+        "properties": {
+          "root": {"type": "string", "minLength": 1},
+          "command": {"enum": ["review-job", "adjudicate"]},
+          "at": {"type": "string", "minLength": 1}
+        },
+        "additionalProperties": false
+      }
+    },
+    "stage_accounting": {
+      "type": "array",
+      "description": "Configured stage attempt counts. A zero-page stage includes the recorded reason it did not run. Absent in older reports.",
+      "items": {
+        "type": "object",
+        "properties": {
+          "stage": {"enum": ["local_text", "local_ocr", "second_ocr", "local_image", "image", "second_opinion"]},
+          "pages_read": {"type": "integer", "minimum": 0},
+          "reason": {"type": ["string", "null"]}
+        },
+        "required": ["stage", "pages_read", "reason"],
+        "additionalProperties": false
+      }
+    },
+    "engines": {
+      "type": "object",
+      "description": "Since report format 0.9. The engine each configured stage ran, copied from the job's policy so that report.md can name each reading by what made it: the adapter, the Tesseract language of pdf_ocr, and the model a vision stage asked for (the model the endpoint served is in the attempt's image evidence). Absent in older reports.",
+      "propertyNames": {"enum": ["local_text", "local_ocr", "second_ocr", "local_image", "image", "second_opinion"]},
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "adapter": {"type": "string", "minLength": 1},
+          "lang": {"type": "string", "minLength": 1},
+          "model": {"type": "string"}
+        },
+        "required": ["adapter"],
+        "additionalProperties": false
+      }
+    },
     "hold_policy": {
-      "enum": ["0.6", "0.6.1"],
-      "description": "Warning-to-hold mapping the job used; 0.6.1 lets clean text from a later engine clear a blank candidate. Absent on reports written before 0.6, whose jobs filed low_confidence under coverage_defect."
+      "enum": ["0.6", "0.6.1", "0.8", "0.9"],
+      "description": "Warning-to-hold mapping the job used; 0.6.1 lets clean text from a later engine clear a blank candidate; 0.8 also holds a text layer two agreeing later readings outvote, and a reader with under half the literal OCR's words; 0.9 keeps an inherited OCR layer as a witness beside the job's own OCR, holds a literal reading that lost the pre-reform letters another kept, ranks readings that are all held by evidence, and raises no hold from an attempt that never finished. Absent on reports written before 0.6, whose jobs filed low_confidence under coverage_defect."
     },
     "job_id": {
       "type": "string",
@@ -80,6 +123,102 @@
             "count"
           ],
           "additionalProperties": false
+        },
+        "kind": {
+          "const": "page_images"
+        },
+        "iiif": {
+          "type": "object",
+          "description": "Present when the folder is a snapshot fetch-iiif wrote: its fetch record when the source was read. Context, not identity: the source sha256 does not cover it.",
+          "properties": {
+            "sha256": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$",
+              "description": "SHA-256 of iiif-fetch.json when the source was read."
+            },
+            "requested_url": {
+              "type": "string",
+              "minLength": 1
+            },
+            "status": {
+              "enum": [
+                "complete",
+                "incomplete"
+              ]
+            },
+            "canvases": {
+              "type": "array",
+              "description": "One entry per page, in page order: the canvas each image came from.",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "canvas_index": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "canvas_id": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                },
+                "required": [
+                  "name",
+                  "canvas_index",
+                  "canvas_id"
+                ],
+                "additionalProperties": false
+              }
+            }
+          },
+          "required": [
+            "sha256",
+            "requested_url",
+            "status",
+            "canvases"
+          ],
+          "additionalProperties": false
+        },
+        "images": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1
+              },
+              "sha256": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              },
+              "bytes": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "width": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "height": {
+                "type": "integer",
+                "minimum": 1
+              }
+            },
+            "required": [
+              "name",
+              "sha256",
+              "bytes",
+              "width",
+              "height"
+            ],
+            "additionalProperties": false
+          }
         }
       },
       "required": [
@@ -123,6 +262,10 @@
             "type": "string",
             "pattern": "^[0-9a-f]{64}$"
           },
+          "source_image_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
           "attempts": {
             "type": "array",
             "items": {
@@ -136,6 +279,8 @@
                   "enum": [
                     "local_text",
                     "local_ocr",
+                    "second_ocr",
+                    "local_image",
                     "image",
                     "second_opinion"
                   ]
@@ -229,7 +374,12 @@
                   "items": {
                     "type": "string"
                   }
-                }
+                },
+                "layout_sha256": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$"
+                },
+                "tiling": {"type": "object", "description": "A reading in tiles: its plan, the layout it was cut along, and what the tiles found. Present only in jobs with processing.tiling.", "properties": {"plan_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}, "layout_attempt": {"type": ["string", "null"]}, "tiles": {"type": "integer", "minimum": 1}, "sent": {"type": "integer", "minimum": 0}, "failed": {"type": "array", "items": {"type": "string", "pattern": "^t[0-9]{2}$"}}, "edge_cut": {"type": "array", "items": {"type": "string", "pattern": "^t[0-9]{2}$"}}}, "required": ["plan_sha256", "layout_attempt", "tiles", "sent", "failed", "edge_cut"], "additionalProperties": false}
               },
               "required": [
                 "attempt_id",
@@ -345,6 +495,27 @@
                         "reviewed_at": {
                           "type": "string",
                           "format": "date-time"
+                        },
+                        "correction": {
+                          "description": "Present when a person corrected the page's text; see job-review.schema.json.",
+                          "type": "object",
+                          "properties": {
+                            "artifact": {"type": "string", "pattern": "^corrections/[^/]+-[0-9a-f]{64}\\.txt$"},
+                            "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+                            "from_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+                            "words": {
+                              "type": "object",
+                              "properties": {
+                                "changed": {"type": "integer", "minimum": 0},
+                                "added": {"type": "integer", "minimum": 0},
+                                "removed": {"type": "integer", "minimum": 0}
+                              },
+                              "required": ["changed", "added", "removed"],
+                              "additionalProperties": false
+                            }
+                          },
+                          "required": ["artifact", "sha256", "from_sha256", "words"],
+                          "additionalProperties": false
                         }
                       },
                       "required": [
@@ -454,6 +625,29 @@
                   "edition": {
                     "const": true,
                     "description": "Present when the text is the selected attempt's edition: its adjudicated changes applied."
+                  },
+                  "correction": {
+                    "description": "Present when the text is a person's correction, recorded in the page's review receipt. path and sha256 then name the corrected text; from_path and from_sha256 the text it was made from (the attempt's output, its edition, or an earlier correction); words what it changed; reviewer, reviewed_at and reason come from the receipt that first recorded it, which a later accept does not replace.",
+                    "type": "object",
+                    "properties": {
+                      "reviewer": {"type": "string", "minLength": 1},
+                      "reviewed_at": {"type": "string", "minLength": 1},
+                      "reason": {"type": "string", "minLength": 1},
+                      "from_path": {"type": "string", "minLength": 1},
+                      "from_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+                      "words": {
+                        "type": "object",
+                        "properties": {
+                          "changed": {"type": "integer", "minimum": 0},
+                          "added": {"type": "integer", "minimum": 0},
+                          "removed": {"type": "integer", "minimum": 0}
+                        },
+                        "required": ["changed", "added", "removed"],
+                        "additionalProperties": false
+                      }
+                    },
+                    "required": ["from_path", "from_sha256", "words", "reviewer", "reviewed_at", "reason"],
+                    "additionalProperties": false
                   }
                 },
                 "required": [
@@ -499,7 +693,8 @@
                   "required": ["reason", "attempt"],
                   "additionalProperties": false
                 }
-              }
+              },
+              "witness_projection": {"type": "object", "description": "The witness regrouped in the tile order of a reading in tiles (tiling.project_witness), kept as an artifact.", "properties": {"plan_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}, "artifact": {"type": "string", "pattern": "^witnesses/doc_[0-9]{4}_page_[0-9]{4,}\\.txt$"}, "outside_items": {"type": "integer", "minimum": 0}, "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}}, "required": ["plan_sha256", "artifact", "outside_items", "sha256"], "additionalProperties": false}
             },
             "required": ["artifact", "sha256", "base_attempt", "witness_attempt", "kinds", "open", "by_rule", "by_review", "superseded"],
             "additionalProperties": false
@@ -521,7 +716,7 @@
             "items": {
               "type": "object",
               "properties": {
-                "schema_version": {"const": "0.2"},
+                "schema_version": {"enum": ["0.2", "0.3"], "description": "0.3 since 0.9: a high answer that is neither reading settles nothing; 0.2 receipts keep their meaning."},
                 "source_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
                 "page_id": {"type": "string", "minLength": 1},
                 "page_number": {"type": "integer", "minimum": 1},
@@ -555,7 +750,7 @@
             "items": {
               "type": "object",
               "properties": {
-                "trigger": {"enum": ["rough", "disagreement", "always"]},
+                "trigger": {"enum": ["rough", "disagreement", "always", "ocr_layer", "uncorroborated"]},
                 "attempt": {"type": "string", "minLength": 1}
               },
               "required": ["trigger", "attempt"]
@@ -599,6 +794,25 @@
                 "number_differences",
                 "truncated"
               ],
+              "additionalProperties": false
+            }
+          },
+          "hold_causes": {
+            "type": "array",
+            "description": "Report format 0.9: every hold on each of the page's readings and what caused it, as the job's hold policy derived them. Absent when no reading is held.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "attempt_id": {"type": "string"},
+                "hold": {"type": "string"},
+                "cause": {
+                  "type": "string",
+                  "description": "The warning or classification code that files the hold; empty_reading (a reading with no text), alignment (the table check); or a hold the policy places itself: layer_outvoted, reader_short, letters_lost."
+                },
+                "yat_words": {"type": "integer", "minimum": 0},
+                "most_yat_words": {"type": "integer", "minimum": 0}
+              },
+              "required": ["attempt_id", "hold", "cause"],
               "additionalProperties": false
             }
           },
@@ -665,6 +879,27 @@
                       "reviewed_at": {
                         "type": "string",
                         "format": "date-time"
+                      },
+                      "correction": {
+                        "description": "Present when a person corrected the page's text; see job-review.schema.json.",
+                        "type": "object",
+                        "properties": {
+                          "artifact": {"type": "string", "pattern": "^corrections/[^/]+-[0-9a-f]{64}\\.txt$"},
+                          "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+                          "from_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+                          "words": {
+                            "type": "object",
+                            "properties": {
+                              "changed": {"type": "integer", "minimum": 0},
+                              "added": {"type": "integer", "minimum": 0},
+                              "removed": {"type": "integer", "minimum": 0}
+                            },
+                            "required": ["changed", "added", "removed"],
+                            "additionalProperties": false
+                          }
+                        },
+                        "required": ["artifact", "sha256", "from_sha256", "words"],
+                        "additionalProperties": false
                       }
                     },
                     "required": [
@@ -767,6 +1002,12 @@
         "image_calls": {
           "type": "integer",
           "minimum": 0
+        },
+        "image_requests": {"type": "integer", "minimum": 0, "description": "Image requests the paid stages sent: one per tile of a reading in tiles, one per other page. Present only in jobs with processing.tiling."},
+        "local_image_calls": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Calls to the local_image stage. Present only in jobs that configure one."
         },
         "tokens": {
           "type": [
@@ -891,6 +1132,11 @@
           "type": "integer",
           "minimum": 0,
           "description": "Pages whose every difference from the literal reading is settled, none of them read by a person. Counted apart from unresolved_pages, which keeps its 0.6 meaning. Present only in jobs with processing.contest."
+        },
+        "corrected_pages": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Pages whose selected text is a person's correction. Present only when there is one."
         }
       },
       "required": [

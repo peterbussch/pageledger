@@ -9,9 +9,9 @@ A vision model writes its reading rather than reading it off the page. It can
 invent, drop or modernize text, so PageLedger marks every `vision` attempt as
 generative and holds its pages for review as `unconfirmed_model_output`. A
 plain `run` holds every such page in the review queue of `audit.json`; a
-document job holds it until a clean reading from another engine agrees with it
+job holds it until a clean reading from another engine agrees with it
 or a person confirms it. After a plain run, `pageledger rerun` with another
-engine reads the held pages again, and `compare-runs` compares the two runs
+engine reads the held pages again, and `compare` compares the two runs
 page by page.
 
 ## Plug in a model
@@ -114,7 +114,7 @@ taxonomy:
 ```
 
 Each page's provenance records the prompt's hash, so readings made with
-different prompts stay distinguishable. In a document job, the stage's
+different prompts stay distinguishable. In a job, the stage's
 `prompt` does the same.
 
 ## Models that reason before answering
@@ -124,21 +124,23 @@ well as the reading. On a dense page it can run out before the reading ends,
 and the page fails with `MODEL_OUTPUT_TRUNCATED`. Set `reasoning_effort: none`
 or `low` if the server supports it, or raise `max_tokens`. In the evaluation,
 a hosted Gemini Flash model that reasons by default ran out on 9 of the 14
-pages it read at the default 8192 tokens; with `reasoning_effort: none` it
-read all 19 pages.
+pages it read at the default 8192 tokens; with `reasoning_effort: none` and
+`max_tokens: 16384` it read all 19 pages. With reasoning left on, the densest
+page still ran out even at 16384.
 
 ## Local models: time, heat and loops
 
 A local model keeps the machine's GPU busy for the whole run. On a Mac mini
 with an M4 Pro, Qwen3.5-9B took a median of 38 seconds for each page it
-finished (17 to 79 seconds), and the GPU ran at 90 °C and above through a
-sustained run. Read one document at a time.
+finished (17 to 79 seconds). The GPU ran at 90 °C and above, a heat governor
+paused the server 34 times, and the run was stopped after 12 of its 19 pages
+because of the heat. Read one document at a time.
 
 A local model can also loop, writing the same dots or table rules until it
-reaches `max_tokens`. In the evaluation, 4 of 12 pages did, for several
-minutes each, and failed with `MODEL_OUTPUT_TRUNCATED`. The finished readings
-needed at most about 3,000 output tokens, so a lower `max_tokens`, such as
-4096, ends a loop sooner; it can also cut short an unusually long page.
+reaches `max_tokens`. In that run, 4 of the 12 pages did, for several
+minutes each, and failed with `MODEL_OUTPUT_TRUNCATED`. A lower `max_tokens`
+ends a loop sooner, but can also cut short a long page; check the longest
+reading you expect before lowering it.
 
 ## Options
 
@@ -149,18 +151,29 @@ needed at most about 3,000 output tokens, so a lower `max_tokens`, such as
 | `env_key` | none | Environment variable holding the API key; omit for servers without keys. |
 | `allow_remote` | `false` | Must be `true` for any other machine, which must also use `https://`. |
 | `max_tokens` | 8192 | Longest reading to request. |
-| `timeout_seconds` | 300 | Longest wait to connect or for the next data, at most 600. |
+| `timeout_seconds` | 300 | Longest wait for the whole answer, at most 600. A response that is still trickling in at that point fails as `MODEL_TIMEOUT`. |
 | `max_image_side` | 2048 | Longest side of the page image in pixels, from 256 to 4096. |
 | `reasoning_effort` | not sent | `none`, `minimal`, `low`, `medium` or `high`, sent as the request's `reasoning_effort` for models that reason before answering. |
 
+A job can have the adapter read a page in tiles
+([Read dense pages in tiles](processing-spec.md#read-dense-pages-in-tiles)):
+processing then passes a `tiles` option, the page's tile plan, as it passes
+`evidence_dir`; a configuration may not set it. The adapter declares the
+capability `page_tiles`. It renders each planned box with
+`pdftoppm -r DPI -x -y -W -H`, at the resolution that fits the box's longer side
+in `max_image_side` (never above the page image's own resolution), checks that
+the image has the size asked for, and sends it as its own request with the
+same prompt. The reading is the tiles' texts joined by line breaks, and the
+evidence is one `page_tiles` record of every tile image sent.
+
 ## What it records
 
-In a plain `run`, and in the local stages of a document job, each page's
+In a plain `run`, and in the local stages of a job, each page's
 `model` in provenance names the requested model, the model the server reported
 when that differs, the renderer and the image size, for example
 `qwen3.5-9b (served as Qwen3.5-9B-4bit); pdftoppm version 25.01.0; scale-to=2048`.
 
-In a document job's image and second-opinion stages, the adapter also keeps
+In a job's image stages (`local_image`, `image` and `second_opinion`), the adapter also keeps
 the exact JPEG it sent, described by an
 [image evidence record](image-evidence-spec.md): the image's hash and size,
 the renderer and its arguments, the requested model, the model and provider the
@@ -168,28 +181,52 @@ server reported, and the prompt's hash. The page's `model` is then the model
 the server reported.
 
 Token counts come from the response's `usage.total_tokens`. A cost is recorded
-only when the endpoint reports `usage.cost_usd`, as some gateways do.
+when the endpoint reports `usage.cost_usd`, as some gateways do, or, in a run,
+when `run.pricing` sets a rate. A usage number that is not a sensible count
+(negative, fractional, not a number) is recorded as not reported, and the
+reading is kept.
+
+The adapter counts as local when `base_url` is on this machine (`localhost`, a
+loopback address) and as remote otherwise. A local server costs nothing to ask
+again, so a dollar or token cap does not stop a run for want of a reported
+cost; a remote one does (see [budgets](cli.md)).
 
 ## Limits and failures
 
-A request is at most 4 MiB, which leaves about 3 MiB for the page image. A page
+A request is at most 4 MiB, which leaves about 3 MiB for the page image. A
+prompt too long to fit beside a full-size page image, over about 64 KB, is
+refused before any page is rendered or sent. A page
 that renders larger is rendered smaller and compressed harder, twice at most.
 A response is at most 8 MiB. Redirects are refused and proxy settings from the
 environment are ignored, so neither can carry a key elsewhere.
 
 | What happened | Failure code |
 |---|---|
-| The model stopped at `max_tokens` | `MODEL_OUTPUT_TRUNCATED`; resumable runs and document jobs keep the partial text |
+| The model stopped at `max_tokens` | `MODEL_OUTPUT_TRUNCATED`; resumable runs and jobs keep the partial text |
 | The provider filtered the content | `MODEL_CONTENT_FILTERED` |
 | The provider declined to recite a source | `MODEL_RECITATION` |
 | The reading was empty | `MODEL_EMPTY_RESPONSE` |
 | HTTP 402 or 429 | `MODEL_QUOTA` |
 | Any other HTTP error, including a redirect | `MODEL_HTTP_ERROR` |
-| No answer within `timeout_seconds` | `MODEL_TIMEOUT` |
+| No complete answer within `timeout_seconds` | `MODEL_TIMEOUT` |
 | No connection | `MODEL_NETWORK_ERROR` |
 | The response is not a chat completion, or is too large | `MODEL_INVALID_RESPONSE` |
 | `env_key` names a variable that is not set | `MODEL_UNAVAILABLE` |
 | The page could not be rendered small enough | `IMAGE_RENDER_ERROR` |
+
+HTTP 429 is retried at most twice, using `Retry-After` seconds or an HTTP date,
+with 1 s then 2 s backoff when the header is absent or malformed. A delay of
+60 s or more, or one beyond the remaining request timeout, returns `MODEL_QUOTA`
+without retrying early. HTTP 402, timeouts, network errors and other HTTP errors
+are not retried by the adapter. No key or provider response body enters failure records.
+
+In a job's image stages, every failed request keeps the image it sent, with an
+empty reading, as the failure's partial result. In a job that counts as reading nothing: a
+page that times out or meets a network, HTTP or availability error is requested
+once more by the job, and held if that fails too (see
+[Failed remote reads](processing-spec.md#failed-remote-reads)). A page read in
+tiles stops at the tile that failed so; the tiles already read are kept and
+the page is held.
 
 A missing `pdftoppm` stops the run before any page is read, with the
 diagnostic `missing_binary`.

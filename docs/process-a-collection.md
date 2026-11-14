@@ -1,143 +1,151 @@
 # Process a collection
 
-This guide takes a folder of documents from a small test to reviewed exports.
-A document job processes one source file and keeps the attempts, decisions and
-limits for that document. Repeat the job for each file; PageLedger does not
-combine a folder into one job. See [processing](processing-spec.md) for the
-complete config and artifact rules.
+This guide takes real documents, scanned PDFs or folders of page images, from
+a small test to reviewed text. A *job* processes one document and keeps every
+reading, decision and limit for it, so a collection of documents is a set of
+jobs, one per document. See [document processing](processing-spec.md) for the
+complete configuration and the files a job writes.
 
-## 1. Inventory and choose a representative sample
+## 1. Inventory and choose a sample
 
-Keep the source files unchanged. Record their names, page counts, formats and
-known problems. PageLedger accepts PDF and text inputs for its built-in paths.
-A folder of TIFF, JPEG or PNG page images has no built-in processing path; see
-[Image-only collections](#image-only-collections) below.
+Keep the source files unchanged: a job records each file's SHA-256 hash and
+`verify` later checks it. Record their names, page counts, formats and known
+problems. A document can be a PDF, a UTF-8 text file, one JPEG or PNG image, or
+a folder of page images ([below](#page-images)).
 
 Choose a few documents that represent the collection, including difficult
-layouts and languages. Start with a short range of pages from one file. The
-`--pages` option selects source page numbers and preserves them in the ledger:
+layouts and languages, and start with a short range of pages from one of them.
+`--pages` selects source page numbers and keeps them in the record:
 
 ```bash
+pageledger init --out processing.yml
 pageledger process scans/volume.pdf --config processing.yml \
   --pages "1-5,41-45" --out jobs/volume-sample
-pageledger verify-job jobs/volume-sample
+pageledger inspect jobs/volume-sample
 ```
 
-Inspect the report, transcript, attempts and retained page evidence. A sample
-can reveal poor OCR, missing language packs, or a need for a different stage.
-For Russian and historical material, see [multilingual OCR](multilingual-ocr.md)
-and [choosing OCR settings](choose-ocr-settings.md).
+`init` writes the configuration a job without `--config` would use, with
+comments describing each optional stage; edit it as the sample suggests.
+Read the report and compare the transcript with the pages. A sample can reveal
+poor OCR, a missing language pack or the need for another stage. For Russian
+and historical material, see [non-English and historical OCR](multilingual-ocr.md).
 
-## 2. Dry-run the full document
-
-After the sample, plan a representative full-source run without extraction.
-`--dry-run` belongs to `run`, which writes a route map and run-planning
-artifacts; `process` has no dry-run mode:
+`process` has no dry run. To see a document's page count and route plan
+without reading anything, use `run --dry-run`, which writes planning records
+for a [run](cli.md#run), not a job:
 
 ```bash
-pageledger run scans/volume.pdf --adapter pdf_ocr \
-  --out runs/volume-plan --dry-run
-pageledger verify-run runs/volume-plan
+pageledger run scans/volume.pdf --adapter pdf_ocr --out runs/volume-plan --dry-run
 ```
 
-A dry run writes the route and planning artifacts, but does not call extraction
-adapters. It does not measure OCR quality or predict processing time or cost.
-Use [Plan time and cost](plan-time-and-cost.md) to estimate from your sample.
-The dry-run directory is a run-planning record, not a document job to resume;
-choose a new output path for the actual process job. `run --adapter pdf_ocr`
-uses the built-in PDF OCR adapter without a YAML config. The actual job needs a
-processing config, such as [`docs/examples/processing.yml`](examples/processing.yml).
+A dry run does not measure OCR quality or predict time or cost;
+[plan time and cost](plan-time-and-cost.md) estimates those from your sample.
 
-## 3. Set limits from the sample
+## 2. Set limits from the sample
 
-Set `processing.limits.max_attempt_pages` high enough for the pages and stages
-you intend to attempt, while keeping the total work bounded. Every attempted
-page at every stage counts, including failed attempts. A local batch is cut to
-fit the remaining limit. Reaching the limit pauses the job; raise it to continue:
+`processing.limits.max_attempt_pages` counts readings, not pages: every page
+read at every stage counts, failed readings included. Reaching the limit pauses
+the job, keeping everything done so far; raise it to continue:
 
 ```bash
 pageledger resume jobs/volume --raise-limit max_attempt_pages=200
 ```
 
-This example assumes the job was configured with a lower limit and paused.
-Choose a new limit based on the work left, not just the number of source pages.
-Image attempts have their own required positive `max_image_pages` limit when
-the image stage is enabled. Token and cost limits are thresholds, not provider
-billing ceilings; a call already in progress can exceed them. Use provider-side
-spending controls for a hard monetary ceiling. Details are in
-[processing limits](processing-spec.md#one-budget-for-the-job).
+Choose the new limit from the work left, not from the number of pages. Paid
+image stages have their own limits, and token and cost limits are thresholds,
+not provider billing ceilings. See [plan time and cost](plan-time-and-cost.md#set-spending-and-work-limits)
+and [one budget for the job](processing-spec.md#one-budget-for-the-job).
 
-## 4. Process each document
+## 3. Process each document
 
-Use the tested configuration and a distinct output directory for every source:
+Use the tested configuration and a new output folder for every document:
 
 ```bash
 pageledger process scans/volume.pdf --config processing.yml --out jobs/volume
-pageledger verify-job jobs/volume
 pageledger process scans/letter.pdf --config processing.yml --out jobs/letter
-pageledger verify-job jobs/letter
 ```
 
-Do not overwrite an existing output directory. Check `report.md` and
-`document.json` for status, unresolved pages, failures and next actions. A
-`completed` job means its configured work finished, not that a person reviewed
-every page. A `paused_budget` job can continue after a limit is raised. A
-`halted` job retains evidence but is not automatically retried; investigate its
-reported cause before starting any new work.
+Each command ends by saying how many pages need a person and what to run next;
+`report.md` in the job folder says the same at greater length. A finished job
+means its configured stages ran, not that anyone reviewed its pages. A job
+paused by a limit continues after the limit is raised; a halted job keeps its
+evidence and names the cause in its report.
 
-## 5. Triage and review
+## 4. Review
 
-Start with the job report. Check pages held for review, uncertain or failed
-attempts, and disagreements between engines. Compare selected text with the
-source image or PDF page. Record review decisions with a spreadsheet:
+Start with the pages that need a person. The review view shows each page's
+image beside its text:
 
 ```bash
-pageledger review-sheet jobs/volume --out reviews/volume.csv
+pageledger review jobs/volume --out reviews/volume
 ```
 
-Open the CSV, fill the `decision` and `note` columns, and save it as CSV. Check
-it before recording decisions, then import it:
+Open `reviews/volume/index.html` in a browser, choose a decision for each page
+or correct its text, and download `review.json` into that folder. If you
+prefer a spreadsheet, `pageledger review jobs/volume --sheet reviews/volume.csv`
+writes a sheet to fill in. Check the decisions, then record them:
 
 ```bash
-pageledger review-job jobs/volume --review reviews/volume.csv \
+pageledger review jobs/volume --apply reviews/volume/review.json \
   --reviewer "A. Reader" --dry-run
-pageledger review-job jobs/volume --review reviews/volume.csv \
+pageledger review jobs/volume --apply reviews/volume/review.json \
   --reviewer "A. Reader"
-pageledger verify-job jobs/volume
+pageledger verify jobs/volume
 ```
 
-The dry run validates the sheet without recording decisions. Review receipts
-are bound to the job evidence; do not reuse a sheet after the job or its
-selected outputs change. See [review sheets](processing-spec.md#review-in-a-spreadsheet)
-for accepted decisions and validation rules.
+The dry run checks every decision without recording any. Decisions are bound
+to the job as it was when the view or sheet was written; write a new one if the
+job has changed since. See [reports and review](processing-spec.md#reports-and-review)
+for each decision and what it does.
 
-## 6. Export and verify
-
-Export the reviewed text, then verify the source job again:
+## 5. Export
 
 ```bash
 pageledger export jobs/volume --format txt --out exports/volume.txt --reviewed-only
 pageledger export jobs/volume --format tei --out exports/volume.xml --reviewed-only
-pageledger verify-job jobs/volume
 ```
 
-Create the `reviews/` and `exports/` parent directories before these commands;
-PageLedger writes the named file but does not create arbitrary parent folders.
-Exports preserve page boundaries and identify review state. They do not certify
-transcription accuracy. See [Export document text](export.md) for formats and
-citation guidance.
+Exports keep page boundaries and say each page's review state. They do not
+certify the transcription. See [export document text](export.md).
 
-## Image-only collections
+## Page images
 
-The built-in `pdf_ocr` adapter reads pages in PDFs. There is no built-in path for
-a directory of TIFF, JPEG or PNG pages. Convert the images into a PDF before
-using the built-in PDF stages, for example with `img2pdf`, or use OCRmyPDF to
-produce a searchable PDF and then process its text layer with `pdf_text`. These
-are external tools and must be installed separately. Check page order and image
-orientation after conversion.
+Archives often deliver a book or a reel as one image file per page. Give
+PageLedger the folder, and it reads the images as one document:
 
-If conversion does not fit the collection, write or adapt a page-image
-extraction adapter. The adapter protocol and the
-[image evidence contract](image-evidence-spec.md) describe the boundary and
-retained evidence. Do not treat a directory of images as a supported built-in
-input merely because an adapter can be written for it.
+```bash
+ls scans/
+# page-1.jpg  page-2.jpg  ...  page-10.jpg
+pageledger process scans/ --out jobs/scans
+```
+
+The pages follow the file names in natural order, so `page-2.jpg` comes before
+`page-10.jpg`: number your files so that this order is the page order. The
+folder must hold only JPEG (`.jpg`, `.jpeg`) or PNG (`.png`) files. PageLedger
+skips hidden files such as `.DS_Store` and stops, before reading any page, at
+anything else, so a stray note or a subfolder of thumbnails is never read as a
+page. Convert TIFF or JPEG 2000 masters to PNG first; PNG keeps every pixel,
+and the error message names a command that does it. A single image file is a
+one-page document.
+
+What PageLedger records is the images themselves. Each image is hashed, and
+the source's identity is a hash over the list of file names, hashes and pixel
+sizes, so `verify` later names any image that changed, went missing or was
+added.
+
+A page's number is its place in the folder, which need not be the number in
+its file name: if the folder starts at `0081.jpg`, that image is page 1. The
+report, the transcript and the review view show both, as `1 (0081.jpg)`.
+
+Page images have no text of their own, so the job's first stage records an
+empty reading with the warning `no_text_layer` and the page goes on to OCR.
+The OCR engines read PDF pages, so PageLedger hands them a temporary PDF, the
+*carrier*, holding the images' own bytes; the run records its hash and deletes
+it. Its page size comes from the density the image declares, or 300 pixels per
+inch when it declares none. If an engine renders a page at much more than the
+image's own pixels, the page gets the warning `render_upsampled`: a small image
+read at high resolution holds no more detail, and a better scan is the fix.
+
+A folder that [`fetch`](iiif.md) wrote from a library's IIIF server is a
+folder of page images too; its fetch record, `iiif-fetch.json`, and the `iiif/`
+folder beside it are the only other things it may hold.

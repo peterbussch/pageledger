@@ -12,31 +12,35 @@ with:
 - the script/language, and the time period if the material is historical
 - the adapter and engine (`pageledger doctor` output helps)
 - the page count, and what PageLedger reported vs. what you expected
-- a few lines of redacted raw text plus the `quality.jsonl` line(s) they
-  produced
+- a few lines of redacted text as read and, for a job, the page's "Held for"
+  entry in `report.md` (for a run, the page's `quality.jsonl` line)
 
 ## Bugs and adapter requests
 
 Use the [bug report or adapter request
 forms](https://github.com/peterbussch/pageledger/issues/new/choose). For
 bugs, include `pageledger --version`, OS/Python, and the exact command.
+Report security problems privately, as [SECURITY.md](SECURITY.md) explains.
 
 ## Development
 
 ```bash
-uv sync --frozen --extra dev --extra pdf
-uv run --frozen --extra dev --extra pdf python -m pytest tests/pageledger/ -q
-uv run --frozen --extra dev --extra pdf ruff check pageledger/ tests/ examples/ scripts/
-uv run --frozen --extra dev --extra pdf ruff format --check pageledger/ tests/ examples/ scripts/
-uv run --frozen --extra dev --extra pdf mypy pageledger/
+sh scripts/check.sh              # what CI's locked job runs
+sh scripts/check.sh --all-lanes  # also without the pdf extra; run before pushing
+git config core.hooksPath scripts/git-hooks   # optional: lint on commit, run the gate on push
 ```
+
+The commit hook checks what is staged. The push hook runs the gate on each pushed
+commit in a temporary worktree with its own environment, so it takes a few minutes
+and leaves your `.venv` and uncommitted changes alone. Note that `scripts/check.sh`
+run by hand syncs `.venv` to exactly the dev and pdf extras.
 
 [AGENTS.md](AGENTS.md) covers repository structure, test requirements and
 implementation constraints. See [maintainer procedures](docs/maintainers/README.md)
 for release, performance, reader-trial, and tutorial-verification records.
 
-Use `ruff format` with the same paths to format changes. CI uses the version
-in `uv.lock` so local and automated checks agree.
+Use `uv run --frozen --extra dev --extra pdf ruff format` to format changes.
+CI uses the version in `uv.lock` so local and automated checks agree.
 
 Keep each change easy to review. Prefer direct control flow, descriptive names,
 and helpers with one clear responsibility. Validate external data before using

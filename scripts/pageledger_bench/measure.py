@@ -187,6 +187,10 @@ def canonical_sha256(value: Any) -> str:
     return hashlib.sha256(payload).hexdigest()
 
 
+# The protocol's floor (docs/maintainers/performance.md); a receipt may ask for more, not less.
+MIN_FREE_SPACE_FLOOR_BYTES = 75_000_000_000
+
+
 def load_approved_freeze(path: Path) -> ApprovedFreeze:
     """Load one strict external freeze receipt without trusting candidate files."""
     receipt_path = Path(path).expanduser().absolute()
@@ -233,9 +237,10 @@ def load_approved_freeze(path: Path) -> ApprovedFreeze:
         raise BenchmarkError(
             "freeze_receipt_invalid", "Every protected path hash must be 64 lowercase hex"
         )
-    if type(floor) is not int or floor <= 0:
+    if type(floor) is not int or floor < MIN_FREE_SPACE_FLOOR_BYTES:
         raise BenchmarkError(
-            "freeze_receipt_invalid", "free_space_floor_bytes must be a positive integer"
+            "freeze_receipt_invalid",
+            f"free_space_floor_bytes must be an integer of at least {MIN_FREE_SPACE_FLOOR_BYTES}",
         )
     if not isinstance(lock_value, str) or not lock_value:
         raise BenchmarkError("freeze_receipt_invalid", "lock_path must be a non-empty string")
@@ -503,7 +508,10 @@ def measure_run(
         )
         receipt: dict[str, Any] = {
             "receipt_version": 1,
-            "status": "pass" if validation.valid and schema_matched else "fail",
+            "status": "correctness_pass" if validation.valid and schema_matched else "fail",
+            # No baseline is recorded, so the manifest's performance_gates are not checked:
+            # the status says the run's artifacts are right, never that it was fast enough.
+            "performance_gates": {"evaluated": False, "reason": "no recorded baseline"},
             "command": list(command or sys.argv),
             "approved_freeze": _freeze_evidence(approved_freeze),
             "benchmark_lock": lock_identity,
@@ -534,7 +542,8 @@ def measure_run(
             "frozen_hashes": frozen_hashes,
             "git": before_boundary,
             "host": host,
-            "timing": timing,
+            # The measured call runs inside cProfile, so these are profiled times.
+            "timing": {**timing, "profiled": True},
             "run_mutations": {
                 "source": "untimed-trace-replay",
                 "run_dir": str(run_dir),
@@ -596,7 +605,7 @@ def measure_run(
             "receipt_sha256_sidecar": str(receipt_hash_path),
         }
         receipt["status"] = (
-            "pass"
+            "correctness_pass"
             if validation.valid
             and trace_validation.valid
             and equivalence.equivalent

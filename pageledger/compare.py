@@ -233,6 +233,10 @@ def render_comparison(report: dict[str, Any]) -> str:
         )
     if grade_comparable_pages == 0:
         lines.append("Grade changes: not assessed (0 grade-comparable pages)")
+        if any(page.get("comparability") == "incomparable_extractor" for page in report["pages"]):
+            lines.append(
+                "Grades from different extractors are not ranked; page lengths and warning changes are shown below."
+            )
     else:
         lines.append(
             f"Grades (matching basis/schema only): improved {report['grades_improved_total']}"
@@ -242,7 +246,8 @@ def render_comparison(report: dict[str, Any]) -> str:
     changed = [
         page
         for page in report["pages"]
-        if page["warnings_resolved"]
+        if grade_comparable_pages == 0
+        or page["warnings_resolved"]
         or page["warnings_introduced"]
         or (
             page["grade_a"] is not None
@@ -254,7 +259,9 @@ def render_comparison(report: dict[str, Any]) -> str:
         lines.extend(
             [
                 "",
-                "Pages with warning or grade changes:",
+                "Pages with warning or grade changes:"
+                if grade_comparable_pages
+                else "Pages, side by side (grades not compared):",
                 "| page_id | extraction | grade | chars A→B | grade A→B | resolved | introduced |",
                 "|---|---|---|---|---|---|---|",
             ]
@@ -285,20 +292,20 @@ def _load_run(run_dir: Path, *, label: str) -> dict[str, Any]:
 
     manifest_path = _contained_regular_file(out_dir, "manifest.json", label=label)
     assert manifest_path is not None
-    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest = _json_object(manifest_path, label)
 
     quality_path = _contained_regular_file(out_dir, "quality.jsonl", label=label)
     assert quality_path is not None
-    quality = {entry["page_id"]: entry for entry in read_jsonl(quality_path)}
+    quality = _by_page(quality_path, label)
 
     cost: dict[str, Any] = {}
     cost_path = _contained_regular_file(out_dir, "cost.json", label=label, required=False)
     if cost_path is not None:
-        cost = json.loads(cost_path.read_text(encoding="utf-8"))
+        cost = _json_object(cost_path, label)
 
     provenance_path = _contained_regular_file(out_dir, "provenance.jsonl", label=label)
     assert provenance_path is not None
-    provenance = {entry["page_id"]: entry for entry in read_jsonl(provenance_path)}
+    provenance = _by_page(provenance_path, label)
     config = _load_config_snapshot(out_dir, manifest)
     effective_schema, schema_known = _load_effective_grade_schema(out_dir, manifest, config)
     schema_identity = (
@@ -322,6 +329,33 @@ def _load_run(run_dir: Path, *, label: str) -> dict[str, Any]:
         "schema_identity": schema_identity,
         "grade_config_identity": grade_config_identity,
     }
+
+
+def _json_object(path: Path, label: str) -> dict[str, Any]:
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except (UnicodeError, ValueError) as exc:
+        raise ValueError(f"Run {label}: {path.name} is not valid JSON") from exc
+    if not isinstance(value, dict):
+        raise ValueError(f"Run {label}: {path.name} is not a JSON object")
+    return value
+
+
+def _by_page(path: Path, label: str) -> dict[str, dict[str, Any]]:
+    """One line per page; a damaged line or a repeated page is refused, never merged."""
+    try:
+        entries = read_jsonl(path)
+    except (UnicodeError, ValueError) as exc:
+        raise ValueError(f"Run {label}: {path.name} has a line that is not valid JSON") from exc
+    pages: dict[str, dict[str, Any]] = {}
+    for entry in entries:
+        page_id = entry.get("page_id") if isinstance(entry, dict) else None
+        if not isinstance(page_id, str):
+            raise ValueError(f"Run {label}: {path.name} has a line without a page_id")
+        if page_id in pages:
+            raise ValueError(f"Run {label}: {path.name} lists {page_id} twice")
+        pages[page_id] = entry
+    return pages
 
 
 def _run_summary(loaded: dict[str, Any]) -> dict[str, Any]:

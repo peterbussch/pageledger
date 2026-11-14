@@ -1,0 +1,189 @@
+{
+  "$id": "https://github.com/peterbussch/pageledger/schemas/contested.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "contested/<page_id>.json in a document job: where a reader's text (the base) differs from a literal engine's reading of the same page. Rebuilt from the retained readings by verify-job. Schema version 0.1.",
+  "properties": {
+    "base": {
+      "additionalProperties": false,
+      "properties": {
+        "attempt": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "text_sha256": {
+          "description": "SHA-256 of the UTF-8 text that span offsets index.",
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "attempt",
+        "text_sha256"
+      ],
+      "type": "object"
+    },
+    "page_id": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "rules": {
+      "description": "The versioned rule set that settled spans: ru-print-0.1, ru-print-0.2, ru-print-0.3 or latin-print-0.1.",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "0.1"
+    },
+    "spans": {
+      "items": {
+        "additionalProperties": false,
+        "else": {
+          "not": {
+            "anyOf": [
+              {
+                "required": [
+                  "settled_by"
+                ]
+              },
+              {
+                "required": [
+                  "text"
+                ]
+              }
+            ]
+          }
+        },
+        "if": {
+          "properties": {
+            "status": {
+              "const": "settled"
+            }
+          }
+        },
+        "properties": {
+          "base": {
+            "description": "The base text between start and end; empty where only the witness has words.",
+            "type": "string"
+          },
+          "end": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "kind": {
+            "description": "homoglyph and glyph are settled by rule; misprint_guard is a literal non-word the engine's known confusions do not explain, possibly a printed misprint, and is never settled by rule.",
+            "enum": [
+              "homoglyph",
+              "glyph",
+              "misprint_guard",
+              "word",
+              "number",
+              "region"
+            ]
+          },
+          "settled_by": {
+            "pattern": "^rule:",
+            "type": "string"
+          },
+          "span_id": {
+            "pattern": "^sp_[0-9a-f]{16}$",
+            "type": "string"
+          },
+          "start": {
+            "description": "Offset in the base text, in code points.",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "status": {
+            "enum": [
+              "open",
+              "settled"
+            ]
+          },
+          "text": {
+            "description": "The text a settled span keeps.",
+            "type": "string"
+          },
+          "witness": {
+            "description": "What the literal engine read here; empty where only the base has words.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "span_id",
+          "kind",
+          "start",
+          "end",
+          "base",
+          "witness",
+          "status"
+        ],
+        "then": {
+          "required": [
+            "settled_by",
+            "text"
+          ]
+        },
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "witness": {
+      "additionalProperties": false,
+      "properties": {
+        "adapter": {
+          "description": "The literal engine; glyph pairs are listed per engine.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "attempt": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "projection": {
+          "additionalProperties": false,
+          "description": "The witness regrouped in the tile order of a reading in tiles (tiling.project_witness), kept as an artifact.",
+          "properties": {
+            "artifact": {
+              "pattern": "^witnesses/doc_[0-9]{4}_page_[0-9]{4,}\\.txt$",
+              "type": "string"
+            },
+            "outside_items": {
+              "minimum": 0,
+              "type": "integer"
+            },
+            "plan_sha256": {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            }
+          },
+          "required": [
+            "plan_sha256",
+            "artifact",
+            "outside_items"
+          ],
+          "type": "object"
+        },
+        "text_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "attempt",
+        "text_sha256",
+        "adapter"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "schema_version",
+    "page_id",
+    "rules",
+    "base",
+    "witness",
+    "spans"
+  ],
+  "title": "PageLedger Contested Spans",
+  "type": "object"
+}

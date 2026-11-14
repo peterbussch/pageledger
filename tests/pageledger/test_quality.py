@@ -17,10 +17,15 @@ Covers all 7 documented warning types plus:
 from __future__ import annotations
 
 import json
+import os
 import sys
 import textwrap
+from pathlib import Path
 
 import pytest
+
+# Child processes import this checkout's package, never another one's.
+CHECKOUT = str(Path(__file__).resolve().parents[2])
 
 
 def _run(inputs, config_text, tmp_path, *, dry_run=False):
@@ -514,7 +519,6 @@ def test_multi_page_mixed_quality_counts(tmp_path):
 
 def test_custom_adapter_output_quality_diagnostics(tmp_path):
     """Custom adapter output gets quality diagnostics and audit wiring."""
-    import os
 
     # Write custom adapter module
     adapter_py = tmp_path / "custom_ocr.py"
@@ -562,7 +566,7 @@ def test_custom_adapter_output_quality_diagnostics(tmp_path):
           adapter: {adapter_py.stem}:CustomOcrAdapter
         """)
 
-    env = {**os.environ, "PYTHONPATH": str(tmp_path)}
+    env = {**os.environ, "PYTHONPATH": os.pathsep.join([CHECKOUT, str(tmp_path)])}
     import subprocess
 
     result = subprocess.run(

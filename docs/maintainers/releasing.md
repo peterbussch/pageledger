@@ -9,16 +9,13 @@ uploading to PyPI also requires approval through the `pypi` environment.
 1. Choose a version that is not already present on PyPI.
 2. Update `pyproject.toml`, `pageledger/_version.py`, `CITATION.cff`, the dated
    `CHANGELOG.md` heading, and the editable PageLedger entry in `uv.lock`.
-   Update version assertions, workflow smoke commands and active documentation
-   examples too. Artifact schema versions change only when their contracts do.
-3. Run the complete local source gate:
+   Update workflow smoke commands and active documentation examples too.
+   Artifact schema versions change only when their contracts do.
+3. Run the complete local source gate, then the release metadata check:
 
    ```bash
-   uv sync --frozen --extra dev --extra pdf
-   uv run --frozen --extra dev --extra pdf ruff check pageledger/ tests/ examples/ scripts/
-   uv run --frozen --extra dev --extra pdf mypy pageledger/
-   uv run --frozen --extra dev --extra pdf python -m pytest tests/pageledger/ -q -m "not stress"
-   uv run --frozen --extra dev python scripts/check_release.py vX.Y.Z
+   sh scripts/check.sh --all-lanes
+   uv run --frozen --extra dev --extra pdf python scripts/check_release.py vX.Y.Z
    ```
 
 4. Review `git diff` and `git status --ignored`. No run directories, PDFs,
@@ -58,11 +55,19 @@ uploading to PyPI also requires approval through the `pypi` environment.
 The release checker fails if the tag, package/runtime versions, citation,
 changelog date, or committed lock disagree.
 
+When a release changes how runs are aligned, graded or queued (`aligner.py`,
+`grading.py`, `policy.py`), raise the matching `_NORMALIZED_RULES_SINCE`,
+`_GRADE_RULES_SINCE` or `_QUEUE_RULES_SINCE` in `verify.py` to that release.
+`verify` derives those files again and holds runs from that release on to the
+new rules exactly, while older runs whose files differ only get a
+`derived_evidence_differs` warning. A job's `report_format` plays the same
+part for its reports.
+
 Use a pull request for the release. Before merging, read its reviews and inline
 comments, including Copilot's findings, as well as the check results. Confirm
 that substantive findings are fixed or have a documented technical response.
-Request a fresh Copilot review after fixes when available, and wait for pending
-reviews. Check the review threads again immediately before approving publication;
+Request a Copilot review only when the maintainer asks for one, and wait for
+pending reviews. Check the review threads again immediately before approving publication;
 a review can finish after CI or after the merge. A green check list does not
 replace reading the reviews.
 
@@ -90,7 +95,12 @@ replace reading the reviews.
    `production_confirmation`. This production run repeats every source gate,
    builds once, records and retains the hashes, and passes that same run's
    artifact to the protected `pypi` job. Approve the environment only after
-   inspecting the run and its retained artifact.
+   inspecting the run and its retained artifact. That artifact is a new build.
+   Both runs build with a pinned setuptools and the tag commit's time as
+   `SOURCE_DATE_EPOCH`, which made two local builds give byte-identical wheels;
+   the sdist differs between builds. Before approving, compare the wheel's line
+   in the two runs' printed `SHA256SUMS`: nothing compares them automatically.
+   Both runs refuse a tag whose commit is not on `main`.
 5. Verify the public PyPI version, filenames, metadata, and hashes independently.
    Record public status separately as `not published`, `PyPI verified`, and
    `GitHub release verified`; neither a local build nor an uploaded Actions

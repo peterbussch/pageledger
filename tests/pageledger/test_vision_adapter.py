@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import io
 import json
 import shutil
 import threading
@@ -17,7 +18,6 @@ from pageledger.cli import main
 from pageledger.image_evidence import validate_input_evidence
 from pageledger.processing import process
 
-pytestmark = pytest.mark.skipif(shutil.which("pdftoppm") is None, reason="needs Poppler")
 READING = {
     "model": "served-model",
     "choices": [{"message": {"content": "page text"}, "finish_reason": "stop"}],
@@ -66,7 +66,10 @@ def endpoint():
 
 @pytest.fixture
 def pdf(tmp_path):
+    """A one-page PDF that the adapter renders, so its tests need Poppler too."""
     pypdf = pytest.importorskip("pypdf")
+    if shutil.which("pdftoppm") is None:
+        pytest.skip("needs Poppler's pdftoppm")
     writer = pypdf.PdfWriter()
     writer.add_blank_page(width=612, height=792)
     path = tmp_path / "page.pdf"
@@ -170,7 +173,7 @@ def test_endpoint_failures_become_typed_failures(pdf, endpoint, status, reply, c
     failure = _failure(pdf, endpoint)
 
     assert failure.code == code
-    assert len(Endpoint.requests) == 1
+    assert len(Endpoint.requests) == (3 if status == 429 else 1)
 
 
 def test_a_slow_endpoint_times_out(pdf, endpoint):
@@ -215,7 +218,7 @@ def test_endpoints_on_this_machine_and_allowed_remote_ones():
     for base_url in ("http://localhost:8080/v1", "http://127.0.0.1/v1", "http://[::1]:8080/v1"):
         assert "remote" not in vision.VisionAdapter(base_url=base_url, model="m").capabilities
     remote = vision.VisionAdapter(base_url="https://example.org/v1", model="m", allow_remote=True)
-    assert remote.capabilities == ("ocr", "page_image", "generative", "remote")
+    assert remote.capabilities == ("ocr", "page_image", "generative", "page_tiles", "remote")
 
 
 def test_a_page_that_cannot_fit_the_request_is_a_render_error(pdf, endpoint, monkeypatch):
@@ -330,3 +333,99 @@ def test_a_document_job_can_send_empty_pages_to_a_vision_model(pdf, endpoint, tm
     assert page["selected_output"]["attempt_id"].startswith("image-")
     assert page["disposition"] == "unconfirmed_model_output"
     assert any((tmp_path / "job" / "attempts").glob("image-*/evidence/*"))
+
+
+@pytest.mark.parametrize("header, expected", [("7", 7.0), (None, 1.0), ("bad", 1.0)])
+def test_quota_retry_honors_retry_after_and_recovers(monkeypatch, header, expected):
+    import io
+    import urllib.error
+    from email.message import Message
+
+    headers = Message()
+    if header is not None:
+        headers["Retry-After"] = header
+    replies = [
+        urllib.error.HTTPError("http://localhost", 429, "quota", headers, None),
+        io.BytesIO(json.dumps(READING).encode()),
+    ]
+    calls, sleeps = [], []
+
+    class Opener:
+        def open(self, request, timeout):
+            calls.append(timeout)
+            reply = replies.pop(0)
+            if isinstance(reply, Exception):
+                raise reply
+            return reply
+
+    monkeypatch.setattr(vision.urllib.request, "build_opener", lambda *args: Opener())
+    monkeypatch.setattr(vision.time, "sleep", sleeps.append)
+    result = vision.VisionAdapter(base_url="http://localhost/v1", model="m")._post(b"{}")
+    assert result == READING and len(calls) == 2 and sleeps == [expected]
+
+
+def test_long_retry_after_is_retained_without_retrying_early(monkeypatch):
+    import urllib.error
+    from email.message import Message
+
+    headers = Message()
+    headers["Retry-After"] = "Thu, 15 Oct 2026 16:00:00 GMT"
+    calls = []
+
+    class Opener:
+        def open(self, request, timeout):
+            calls.append(timeout)
+            raise urllib.error.HTTPError("http://localhost", 429, "quota", headers, None)
+
+    monkeypatch.setattr(vision.urllib.request, "build_opener", lambda *args: Opener())
+    monkeypatch.setattr(vision.time, "time", lambda: 1792076400.0)  # 15:00 UTC
+    monkeypatch.setattr(vision.time, "sleep", lambda seconds: pytest.fail("must not sleep"))
+    with pytest.raises(AdapterFailure) as caught:
+        vision.VisionAdapter(base_url="http://localhost/v1", model="m")._post(b"{}")
+    assert caught.value.http_status == 429 and len(calls) == 1
+
+
+def _post_with(monkeypatch, response, **options):
+    class Opener:
+        def open(self, request, timeout):
+            return response
+
+    monkeypatch.setattr(vision.urllib.request, "build_opener", lambda *args: Opener())
+    adapter = vision.VisionAdapter(base_url="http://localhost/v1", model="m", **options)
+    return adapter._post(b"{}")
+
+
+def test_a_response_that_trickles_in_times_out_at_the_deadline(monkeypatch):
+    class Drip(io.BytesIO):
+        def read1(self, amount=-1):
+            time.sleep(0.05)
+            return super().read1(1)
+
+    started = time.monotonic()
+    with pytest.raises(AdapterFailure) as caught:
+        _post_with(monkeypatch, Drip(b" " * 10_000), timeout_seconds=0.3)
+    assert caught.value.code == "MODEL_TIMEOUT"
+    assert time.monotonic() - started < 2
+
+
+def test_a_deeply_nested_response_is_an_invalid_response(monkeypatch):
+    body = b"[" * 200_000 + b"]" * 200_000
+    with pytest.raises(AdapterFailure) as caught:
+        _post_with(monkeypatch, io.BytesIO(body))
+    assert caught.value.code == "MODEL_INVALID_RESPONSE"
+
+
+def test_a_usage_number_too_large_for_a_float_counts_as_not_reported(pdf, endpoint):
+    Endpoint.reply = {**READING, "usage": {"total_tokens": 10**400, "cost_usd": 10**400}}
+    result = _read(pdf, endpoint)
+    assert result.content == "page text"
+    assert result.usage["tokens"] is None and result.usage["cost_usd"] is None
+
+
+def test_a_prompt_too_long_to_send_is_refused_before_the_page_is_sent(pdf, endpoint):
+    adapter = load_adapter("vision", {"base_url": endpoint, "model": "requested"})
+    with pytest.raises(ValueError, match="prompt is too long"):
+        adapter.extract(
+            pdf, page_id="p1", page_number=1, action="transcribe_text", prompt="x" * 70_000
+        )
+    assert Endpoint.requests == []

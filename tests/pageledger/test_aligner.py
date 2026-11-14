@@ -21,7 +21,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from pageledger.aligner import align_page, align_run, load_schema_spec
+from pageledger.aligner import _coerce, align_page, align_run, load_schema_spec
 
 PAGE = {"page_id": "doc_0001_page_0001", "page_number": 1}
 
@@ -606,6 +606,28 @@ def test_period_thousands_grouping_coerces_for_integers():
     assert result["coercion_errors"][0]["error"] == "not_integer"
 
 
+@pytest.mark.parametrize(
+    ("raw", "column_type", "expected"),
+    [
+        ("1,084,598", "integer", 1084598),
+        ("1 084 598", "integer", 1084598),
+        ("1\u2009084", "integer", 1084),
+        ("-1,234.5", "number", -1234.5),
+        ("1\xa0084\u202f598", "integer", None),
+        ("1,5", "number", None),
+        ("3,14", "integer", None),
+        ("12 34", "integer", None),
+        ("1,2,3", "integer", None),
+        ("1.000,5", "number", None),
+    ],
+)
+def test_separators_are_removed_only_where_they_group_thousands(raw, column_type, expected):
+    """A decimal comma or two numbers run together is recorded, never read as one number."""
+    value, error = _coerce(raw, column_type)
+    assert value == expected
+    assert (error is None) == (expected is not None)
+
+
 # =========================================================================
 # Existing-run preview/apply
 # =========================================================================
@@ -833,3 +855,12 @@ def test_align_removes_obsolete_external_schema_snapshot(tmp_path):
     align_run(out)
 
     assert not (out / "align-schema-snapshot.yml").exists()
+
+
+def test_json_content_aligns_as_its_raw_artifact_does():
+    """Rows given as tuples are written as JSON lists, and are aligned as such."""
+    content = {"headers": ["place", "total"], "rows": [("Kazan", 1200), ("Tver", 30)]}
+    from_objects = _align(content, "json")
+    from_raw = _align(json.dumps(content), "json")
+    assert from_objects == from_raw
+    assert from_objects["metrics"]["row_count"] == 2

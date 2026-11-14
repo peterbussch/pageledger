@@ -28,7 +28,7 @@ That keeps the un-normalized parent run as the original evidence
 (canonicalization must preserve the original — Piotrowski, *NLP for
 Historical Texts*, 2012, ch. 4). `rerun` normalizes only pages listed in the
 parent's rerun manifest; use a separate `run` with this adapter for a
-whole-document normalization. `pageledger compare-runs` shows changed pages.
+whole-document normalization. `pageledger compare` shows changed pages.
 The character count of applied
 replacements is recorded as a result warning so the rewrite is visible in
 provenance, never silent.

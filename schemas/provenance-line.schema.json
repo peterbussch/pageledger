@@ -18,7 +18,34 @@
       "properties": {
         "path": { "type": "string" },
         "page_number": { "type": "integer", "minimum": 1 },
-        "sha256": { "type": "string" }
+        "sha256": { "type": "string" },
+        "image": {
+          "type": "object",
+          "description": "The page's own image, for a source of page images. The first five fields equal the manifest's entry for this page.",
+          "required": ["name", "sha256", "bytes", "width", "height", "media_type", "ppi", "ppi_basis", "rotation"],
+          "properties": {
+            "name": { "type": "string", "minLength": 1 },
+            "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+            "bytes": { "type": "integer", "minimum": 1 },
+            "width": { "type": "integer", "minimum": 1 },
+            "height": { "type": "integer", "minimum": 1 },
+            "media_type": { "enum": ["image/jpeg", "image/png"] },
+            "ppi": { "type": "array", "items": { "type": "number", "exclusiveMinimum": 0 }, "minItems": 2, "maxItems": 2 },
+            "ppi_basis": { "enum": ["jfif", "exif", "png_phys", "default"] },
+            "rotation": { "enum": [0, 90, 180, 270] }
+          },
+          "additionalProperties": false
+        },
+        "native_pixels": {
+          "type": "object",
+          "description": "Pixel size of the image that is the page, when known: a page image, or a scanned PDF page's image.",
+          "required": ["width", "height"],
+          "properties": {
+            "width": { "type": "integer", "minimum": 1 },
+            "height": { "type": "integer", "minimum": 1 }
+          },
+          "additionalProperties": false
+        }
       },
       "additionalProperties": false
     },
@@ -104,6 +131,11 @@
       "description": "Wall-clock seconds for the successful extraction attempt, measured by the runner. Null in artifacts predating this field."
     },
     "input_evidence": {"anyOf": [{"type": "null"}, {"$ref": "image-evidence.schema.json"}]},
+    "layout_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$",
+      "description": "SHA-256 of the canonical JSON of the layout the adapter returned (pageledger/layout.py); absent when it returned none. The layout itself is kept in the run's recovery record."
+    },
     "timestamp": { "type": "string", "description": "Extraction time in UTC ISO 8601." }
   },
   "additionalProperties": false

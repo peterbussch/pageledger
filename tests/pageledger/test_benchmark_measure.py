@@ -298,6 +298,9 @@ def test_measure_small_smoke_records_complete_receipt_and_external_evidence(
     assert receipt["validation"]["verify_report"]["status"] == "pass"
     assert receipt["validation"]["oracle"]["valid"] is True
     assert receipt["validation"]["schema_state"]["status"] == "matched"
+    assert receipt["status"] == "correctness_pass"
+    assert receipt["performance_gates"] == {"evaluated": False, "reason": "no recorded baseline"}
+    assert receipt["timing"]["profiled"] is True
     assert receipt["approved_freeze"]["harness_sha"] == approval.harness_sha
     assert receipt["benchmark_lock"]["path"] == str(approval.lock_path)
     assert receipt["benchmark_lock"]["acquired"] is True
@@ -442,7 +445,7 @@ def test_cli_forwards_exact_command_and_refusal_is_nonzero(
 
     def fake_measure(workload_name: str, out_dir: Path, **kwargs: object):
         seen.update(workload=workload_name, out=out_dir, kwargs=kwargs)
-        return {"status": "pass", "receipt": str(out_dir / "measurement.json")}
+        return {"status": "correctness_pass", "receipt": str(out_dir / "measurement.json")}
 
     monkeypatch.setattr(measure_module, "measure_run", fake_measure)
     approval = _approved_freeze(tmp_path)
@@ -463,7 +466,7 @@ def test_cli_forwards_exact_command_and_refusal_is_nonzero(
     ]
     assert main(argv) == 0
     printed = json.loads(capsys.readouterr().out)
-    assert printed["status"] == "pass"
+    assert printed["status"] == "correctness_pass"
     assert seen["workload"] == "generalization"
     assert seen["out"] == out
     assert seen["kwargs"]["approved_freeze"] is approval
@@ -642,12 +645,12 @@ def test_freeze_receipt_requires_exact_external_contract(tmp_path: Path) -> None
         "protected_paths_sha256": {
             relative: "3" * 64 for relative in measure_module.REQUIRED_FREEZE_PATHS
         },
-        "free_space_floor_bytes": 1024,
+        "free_space_floor_bytes": 75_000_000_000,
         "lock_path": str((tmp_path / "lock").resolve()),
     }
     path.write_text(json.dumps(payload), encoding="utf-8")
     approval = measure_module.load_approved_freeze(path)
-    assert approval.free_space_floor_bytes == 1024
+    assert approval.free_space_floor_bytes == 75_000_000_000
     assert approval.receipt_sha256 == sha256_path(path)
 
     payload["unexpected"] = True
@@ -656,10 +659,11 @@ def test_freeze_receipt_requires_exact_external_contract(tmp_path: Path) -> None
         measure_module.load_approved_freeze(path)
 
     payload.pop("unexpected")
-    payload["free_space_floor_bytes"] = 0
-    path.write_text(json.dumps(payload), encoding="utf-8")
-    with pytest.raises(BenchmarkError, match="positive integer"):
-        measure_module.load_approved_freeze(path)
+    for floor in (0, 1, 74_999_999_999, 75e9):
+        payload["free_space_floor_bytes"] = floor
+        path.write_text(json.dumps(payload), encoding="utf-8")
+        with pytest.raises(BenchmarkError, match="at least 75000000000"):
+            measure_module.load_approved_freeze(path)
 
 
 def test_evidence_root_must_be_outside_candidate_worktree(tmp_path: Path) -> None:

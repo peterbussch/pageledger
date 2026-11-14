@@ -56,7 +56,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"pageledger-bench: error: {exc}", file=sys.stderr)
         return 2
     print(json.dumps(receipt, ensure_ascii=False, sort_keys=True))
-    return 0 if receipt.get("status") == "pass" else 1
+    return 0 if receipt.get("status") == "correctness_pass" else 1
 
 
 if __name__ == "__main__":

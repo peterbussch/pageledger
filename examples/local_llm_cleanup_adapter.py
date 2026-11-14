@@ -45,7 +45,8 @@ this adapter now guards against:
 
 A page the model cannot clean confidently should end up back in the review
 queue via quality warnings, not silently degraded. Cleanup output is model
-output: compare-runs against the plain OCR run before trusting it.
+output: compare its run with the plain OCR run (`pageledger compare`) before
+trusting it.
 """
 
 from __future__ import annotations

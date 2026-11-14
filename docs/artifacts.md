@@ -1,12 +1,12 @@
-# Run and document-job artifacts
+# Run and job artifacts
 
-Runs and document jobs are directories of plain files that you can inspect
+Runs and jobs are directories of plain files that you can inspect
 with a text editor or command-line tools. JSON/JSONL artifacts validate
 against schemas in [`schemas/`](../schemas/); YAML artifacts use documented
 field contracts, also tested in CI. The [glossary](glossary.md) defines the
 terms used here.
 
-## Document jobs
+## Jobs
 
 `process` creates a job directory containing its attempts and combined report:
 
@@ -17,14 +17,16 @@ jobs/book/
 ├── report.md         # human rendering of document.json
 ├── transcript.md     # selected text with source-page and attempt links
 ├── attempts/         # ordinary resumable runs for the processing stages
-├── partials/         # retained failed output, excluded from transcript selection
+├── partials/         # when a stage failed with partial output: kept, never selected
 ├── contested/        # with processing.contest: where a model and the literal engine differ
+├── witnesses/        # with tiling: the literal engine's text rearranged to the tile plan
 ├── editions/         # a model's reading with its adjudicated changes applied
+├── corrections/      # texts a reviewer corrected, each named by its own SHA-256
 └── .job/             # exact child configuration snapshots
 ```
 
-Use `inspect-job` to read the report, `verify-job` to check its retained evidence,
-and `review-job` to apply human review receipts. A job's `completed` status does
+Use `inspect` to read the report, `verify` to check its retained evidence,
+and `review --apply` to apply human review receipts. A job's `completed` status does
 not mean every page has passed review. See [document processing](processing-spec.md)
 and the [report contract](document-report-spec.md).
 
@@ -179,7 +181,7 @@ strings such as `rerun_if:grade_below` and
 confidence, including real confidence from `pageledger classify`; null still
 means the classifier could not make a confident decision or no classifier
 ran.
-`verify-run` regenerates the Markdown rendering in memory and fails when
+`verify` regenerates the Markdown rendering in memory and fails when
 `audit.md` is stale or edited. It also requires and verifies
 `result.raw_sha256` for every provenance line; records from older versions
 that lack it stay readable but fail integrity verification.
@@ -188,9 +190,24 @@ Spec: [`audit-spec.md`](audit-spec.md).
 Record human decisions outside the run directory, keyed by `run_id` and
 `page_id`. A project spreadsheet can add the source/page, decision, reason,
 reviewer/date, and selected downstream output without inventing a new
-PageLedger artifact. Editing `audit.md`, `audit.json`, or `raw/` in place changes
-verified evidence and makes the run fail integrity checks. See the executable
-[first-run review-sheet example](first-run.md#record-review-decisions-outside-the-run).
+PageLedger artifact. Editing `audit.md`, `audit.json`, `raw/`, `normalized/` or
+`quality.jsonl` in place changes verified evidence and makes the run fail
+integrity checks.
+
+`verify` does not take the derived files on trust. From the raw readings,
+provenance and config snapshot it derives again each page's normalized record,
+its grade and the review and quarantine queues, as the run did, and fails when
+a file differs. A later release may grade the same text differently, so each
+derivation carries the first release whose rules it shares: a run written by
+that release or later must match exactly, and an older run whose files differ
+gets the warning `derived_evidence_differs`, naming the file, and still passes.
+Text quality signals themselves (shape, repetition, language and model-remark
+warnings) are not derived again, since that would need the source PDF, the
+parent run and the declared language; verify does check each quality line's
+confidence and the engine's own warnings against the provenance. Hidden files under `raw/` or `normalized/`, such as the
+`.DS_Store` and `._` files Finder and exFAT copies leave, are named in a
+`stray_file` warning and otherwise ignored. See the executable
+[first-run review example](first-run.md#record-review-decisions-outside-the-run).
 
 `rerun-manifest.yml` records what to do next. It is an executable list of flagged
 pages that `pageledger rerun` re-extracts with the config you give it,
@@ -224,12 +241,12 @@ when the preview is applied.
 
 ## Verification
 
-`pageledger verify-run <run-dir>` checks whether the files in a run agree about
+`pageledger verify <run-dir>` checks whether the files in a run agree about
 identifiers, hashes, page counts, output references, quality totals, review and
 rerun queues, adapter chains, and cost. Internal inconsistency is an error;
 missing or changed source files are warnings. It also checks raw-byte hashes and
 that `audit.md` matches `audit.json`. Verification does not judge OCR accuracy
-or replace the build-time schema tests. `compare-runs` also rejects symbolic
+or replace the build-time schema tests. `compare` also rejects symbolic
 links in the files it reads. See the [manifest specification](run-manifest-spec.md)
 for containment and compatibility details.
 
@@ -282,5 +299,7 @@ compatible within a schema version. The current package therefore retains
 `schema_version: "0.1"` for its optional classifier, escalation, alert, and
 rollup, and replay-linkage fields. The schemas in
 [`schemas/`](../schemas/) define the machine-readable contract, enforced by
-`tests/pageledger/test_schemas.py`. Built wheels install the same contracts
-under the environment's `share/pageledger/schemas/` directory.
+`tests/pageledger/test_schemas.py`. `tests/pageledger/test_stability.py`
+checks that each schema still accepts everything the 0.8.0 schema did; see
+[stability](stability.md). Built wheels install the same contracts under the
+environment's `share/pageledger/schemas/` directory.

@@ -1,24 +1,25 @@
 cff-version: 1.2.0
-title: "PageLedger: Auditable OCR/VLM Extraction Workflows"
-message: "If you use PageLedger in research, please cite the software and separately cite the source dataset or extraction run you created with it."
+title: "PageLedger: Text from Scanned Documents, with a Record of How Each Page Was Read"
+message: "If you use PageLedger in research, please cite the software, and separately cite the source documents and the PageLedger job or run behind the text you quote."
 type: software
 authors:
   - family-names: Busscher
     given-names: Peter
     orcid: "https://orcid.org/0000-0002-0902-8195"
-abstract: "PageLedger is an alpha toolkit for routing, auditing, budgeting, and preserving filesystem-native provenance around OCR/VLM document extraction workflows."
+abstract: "PageLedger turns scanned and born-digital documents into text one page at a time, for historians, archivists and others who must say where a transcription came from. For every page it keeps, as plain files, which source file it came from, which OCR engine or model read it with which settings, what each reading said, why a page was held for a person to check, and who reviewed or corrected it. A record can be verified wherever it is deposited, so readers of an edition can trace any page back to its source. Verification shows that the record is intact; it does not certify that the text is right."
 keywords:
-  - document extraction
   - OCR
-  - vision-language models
+  - transcription
   - digital humanities
+  - archives
   - provenance
-  - corpus infrastructure
+  - historical documents
+  - document extraction
 license: MIT
 identifiers:
   - type: doi
     value: 10.5281/zenodo.21340651
     description: "Concept DOI resolving to the latest archived version of PageLedger."
 repository-code: "https://github.com/peterbussch/pageledger"
-version: "0.7.0"
-date-released: "2026-10-01"
+version: "0.9.0"
+date-released: "2026-11-13"

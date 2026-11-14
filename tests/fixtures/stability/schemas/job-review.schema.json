@@ -1,0 +1,186 @@
+{
+  "$id": "https://github.com/peterbussch/pageledger/schemas/job-review.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "decisions": {
+      "items": {
+        "additionalProperties": false,
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "disposition": {
+                  "const": "reviewed_text"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "output_sha256": {
+                  "pattern": "^[0-9a-f]{64}$",
+                  "type": "string"
+                },
+                "selected_attempt": {
+                  "minLength": 1,
+                  "type": "string"
+                }
+              }
+            }
+          },
+          {
+            "else": {
+              "properties": {
+                "output_sha256": {
+                  "pattern": "^[0-9a-f]{64}$",
+                  "type": "string"
+                },
+                "selected_attempt": {
+                  "minLength": 1,
+                  "type": "string"
+                }
+              }
+            },
+            "if": {
+              "properties": {
+                "selected_attempt": {
+                  "type": "null"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "output_sha256": {
+                  "type": "null"
+                }
+              }
+            }
+          }
+        ],
+        "properties": {
+          "correction": {
+            "additionalProperties": false,
+            "description": "Present when a person corrected the page's text. The corrected text is kept at artifact; from_sha256 is the hash of the text the correction started from: the output named by selected_attempt and output_sha256, or an earlier correction of the same page. words counts the whitespace-separated words it changed, added and removed. Only on reviewed_text.",
+            "properties": {
+              "artifact": {
+                "pattern": "^corrections/[^/]+-[0-9a-f]{64}\\.txt$",
+                "type": "string"
+              },
+              "from_sha256": {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              "sha256": {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              "words": {
+                "additionalProperties": false,
+                "properties": {
+                  "added": {
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "changed": {
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "removed": {
+                    "minimum": 0,
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "changed",
+                  "added",
+                  "removed"
+                ],
+                "type": "object"
+              }
+            },
+            "required": [
+              "artifact",
+              "sha256",
+              "from_sha256",
+              "words"
+            ],
+            "type": "object"
+          },
+          "disposition": {
+            "enum": [
+              "reviewed_text",
+              "reviewed_blank",
+              "illustration",
+              "handwriting",
+              "unreadable",
+              "source_defect"
+            ]
+          },
+          "output_sha256": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "page_id": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "page_number": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "reason": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "reviewed_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "reviewer": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "selected_attempt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "page_id",
+          "page_number",
+          "disposition",
+          "selected_attempt",
+          "output_sha256",
+          "reason",
+          "reviewer",
+          "reviewed_at"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "schema_version": {
+      "const": "0.1"
+    },
+    "source_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema_version",
+    "source_sha256",
+    "decisions"
+  ],
+  "title": "PageLedger Job Review Receipt",
+  "type": "object"
+}

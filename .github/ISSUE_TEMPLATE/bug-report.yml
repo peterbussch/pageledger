@@ -1,12 +1,13 @@
 name: Bug report
-description: Something broke or behaved incorrectly
+description: Something broke or behaved incorrectly (report security problems privately, as SECURITY.md explains)
 labels: ["bug"]
 body:
   - type: input
     id: version
     attributes:
       label: Version and environment
-      placeholder: "e.g. pageledger 0.3.0a1, Python 3.12, macOS 15"
+      description: The output of `pageledger --version`, your Python version and operating system.
+      placeholder: "e.g. pageledger X.Y.Z, Python 3.12, macOS 15"
     validations:
       required: true
   - type: textarea

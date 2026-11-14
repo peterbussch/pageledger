@@ -6,18 +6,51 @@ validate extraction accuracy or replace the JSON Schemas in ``schemas/``.
 
 from __future__ import annotations
 
-import hashlib
 import json
+import re
 from pathlib import Path
 from typing import Any, cast
 
 import yaml
 
+from .aligner import ALIGNABLE_FORMATS, align_page, load_schema_spec
 from .artifacts import ARTIFACT_PATHS, _safe_resolve, build_rerun_manifest, render_audit_markdown
+from .checkpoint import file_digest as _sha256
 from .config import PageLedgerConfig
+from .grading import grade_page
+from .image_source import (
+    KIND,
+    carrier_sha256,
+    manifest_changes,
+    manifest_sha256,
+    read_image_source,
+    read_sha256,
+    snapshot_warnings,
+)
+from .policy import generative_page_ids, rebuild_policy_queues
 from .replay import ReplayError, _validate_reproducibility_profile
+from .source_index import find_indexed
 
 REQUIRED_ARTIFACTS = set(ARTIFACT_PATHS)
+
+# The first PageLedger whose rules this verifier shares, for each kind of evidence
+# a run derives from its readings. A run written by that version or a later one
+# must match what verify derives; an older run that differs gets a warning, since
+# its rules may have differed. Raise a version here when its rules change.
+_NORMALIZED_RULES_SINCE = (0, 9, 0)  # numbers are read only where separators group thousands
+_GRADE_RULES_SINCE = (0, 3, 0)
+_QUEUE_RULES_SINCE = (0, 6, 0)  # model readings join the review queue
+# Errors from deriving evidence out of a run's own files, which may be hostile.
+_DERIVATION_ERRORS = (
+    ArithmeticError,
+    AttributeError,
+    KeyError,
+    RecursionError,
+    TypeError,
+    UnicodeError,
+    ValueError,
+    yaml.YAMLError,
+)
 
 
 def verify_run(
@@ -77,7 +110,13 @@ def verify_run(
                 from .checkpoint import read_record
 
                 checkpoint.job = read_record(root / "checkpoint.json")
-                checkpoint.validate(sources=check_external_sources)
+                checkpoint.validate(sources=False)
+                if check_external_sources:
+                    # As for a finished run, a missing or changed source is a warning here.
+                    try:
+                        checkpoint.check_sources()
+                    except (OSError, RuntimeError, ValueError) as exc:
+                        _add(warnings, "source_missing", str(exc), artifact="checkpoint.json")
                 states = [record["state"] for record in checkpoint.records.values()]
                 counts["routed_pages"] = len(states)
                 counts["extracted_pages"] = states.count("completed")
@@ -87,8 +126,16 @@ def verify_run(
                     "Recovery records verify, but manifest is not committed",
                     artifact="checkpoint.json",
                 )
-            except (OSError, ValueError, TypeError, KeyError) as exc:
+            except (OSError, ValueError) as exc:
                 _add(errors, "checkpoint_invalid", str(exc), artifact="checkpoint.json")
+            except (TypeError, KeyError, AttributeError, RecursionError) as exc:
+                _add(
+                    errors,
+                    "checkpoint_invalid",
+                    "checkpoint.json is not a recovery record PageLedger wrote "
+                    f"({type(exc).__name__}: {exc})",
+                    artifact="checkpoint.json",
+                )
         else:
             _add(errors, "manifest_missing", "No manifest.json found", artifact="manifest.json")
         return _report(root, errors, warnings, counts)
@@ -96,7 +143,7 @@ def verify_run(
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
         if not isinstance(manifest, dict):
             raise ValueError("top level must be a mapping")
-    except (OSError, UnicodeError, json.JSONDecodeError, ValueError) as exc:
+    except (OSError, UnicodeError, ValueError, RecursionError) as exc:
         _add(
             errors,
             "manifest_malformed",
@@ -143,6 +190,7 @@ def verify_run(
 
     loaded: dict[str, Any] = {}
     paths: dict[str, Path] = {}
+    absent: set[str] = set()
     for key, relative in declarations.items():
         if not isinstance(relative, str) or not relative:
             _add(
@@ -171,6 +219,11 @@ def verify_run(
             continue
         paths[key] = path
         expects_directory = key in {"raw_dir", "normalized_dir"}
+        if expects_directory and not path.exists() and not path.is_symlink():
+            # Git and some archive tools drop empty directories. Every raw file is named
+            # by provenance; normalized files are not, so they are checked after the loop.
+            absent.add(key)
+            continue
         exists = path.is_dir() if expects_directory else path.is_file()
         if not exists:
             _add(
@@ -188,7 +241,7 @@ def verify_run(
             continue
         try:
             loaded[key] = _load_artifact(key, path)
-        except (OSError, UnicodeError, json.JSONDecodeError, yaml.YAMLError, ValueError) as exc:
+        except (OSError, UnicodeError, yaml.YAMLError, ValueError, RecursionError) as exc:
             _add(
                 errors,
                 "replay_artifact_malformed" if key == "replay" else "artifact_malformed",
@@ -209,6 +262,19 @@ def verify_run(
                 artifact=relative,
             )
 
+    snapshot = loaded.get("config_snapshot")
+    if "normalized_dir" in absent and (
+        not isinstance(snapshot, dict)
+        or snapshot.get("schema") is not None
+        or manifest.get("alignment") is not None
+    ):
+        # Only a run with no schema can never have written a normalized page.
+        _add(
+            errors,
+            "artifact_missing",
+            f"Manifest-declared artifact is missing: {declarations['normalized_dir']}",
+            artifact=declarations["normalized_dir"],
+        )
     manifest_config = manifest.get("config")
     if not isinstance(manifest_config, dict):
         manifest_config = {}
@@ -217,6 +283,9 @@ def verify_run(
     if not isinstance(manifest_inputs, list):
         manifest_inputs = []
         _add(errors, "manifest_structure_invalid", "Manifest inputs must be a list")
+    for entry in manifest_inputs:
+        if isinstance(entry, dict) and "kind" in entry:
+            _check_image_input(entry, errors)
     summary = manifest.get("summary")
     if not isinstance(summary, dict):
         summary = {}
@@ -392,10 +461,19 @@ def verify_run(
                         "page_number": page.get("page_number"),
                         "source": source,
                         "source_sha256": source_sha256,
+                        "input": manifest_input if isinstance(manifest_input, dict) else None,
                         "type": page.get("type"),
                         "action": page.get("action"),
                         "confidence": page.get("confidence"),
                     }
+            if len(documents) != len(manifest_inputs):
+                _add(
+                    errors,
+                    "source_identity_mismatch",
+                    f"manifest.json lists {len(manifest_inputs)} inputs, but route-map.yml "
+                    f"routes {len(documents)} documents",
+                    artifact="manifest.json",
+                )
     if summary.get("pages_total") != counts["routed_pages"]:
         _add(
             errors,
@@ -481,7 +559,10 @@ def verify_run(
             quality_only=sorted(set(quality) - set(provenance)),
         )
 
+    # Every run that records its PageLedger version records each page's source and route.
+    versioned = isinstance(manifest.get("pageledger_version"), str)
     raw_references: set[Path] = set()
+    verified_raw: dict[str, Path] = {}
     for page_id, entry in provenance.items():
         _check_identity(entry, run_id, schema_version, errors, "provenance.jsonl", page_id)
         route_page = route_pages.get(page_id)
@@ -502,11 +583,20 @@ def verify_run(
         source = entry.get("source")
         if not isinstance(source, dict) or not isinstance(source.get("sha256"), str):
             _add(
-                warnings,
-                "legacy_evidence_incomplete",
-                f"Provenance lacks source identity evidence for {page_id}",
+                errors if versioned else warnings,
+                "source_identity_missing" if versioned else "legacy_evidence_incomplete",
+                f"provenance.jsonl lacks the source identity of {page_id}",
+                artifact="provenance.jsonl",
                 page_id=page_id,
             )
+            if isinstance(source, dict) and route_page is not None and "page_number" in source:
+                _check_page_number(
+                    page_id,
+                    source.get("page_number"),
+                    route_page["page_number"],
+                    errors,
+                    "provenance.jsonl",
+                )
         else:
             expected_source_hash = (
                 route_page.get("source_sha256") if route_page is not None else None
@@ -526,6 +616,7 @@ def verify_run(
                     errors,
                     "provenance.jsonl",
                 )
+                _check_page_image(page_id, source, route_page.get("input"), errors)
         evidence = entry.get("input_evidence")
         if evidence is not None:
             from .image_evidence import validate_input_evidence
@@ -534,7 +625,7 @@ def verify_run(
                 validate_input_evidence(
                     evidence,
                     root=root,
-                    source_sha256=source.get("sha256") if isinstance(source, dict) else None,
+                    source_sha256=_read_hash(source, route_page),
                     page_number=source.get("page_number") if isinstance(source, dict) else None,
                     prompt_sha256=entry.get("extractor", {}).get("prompt_hash"),
                 )
@@ -544,6 +635,14 @@ def verify_run(
                 _add(errors, "input_evidence_invalid", str(exc), page_id=page_id)
         result = entry.get("result")
         recorded_route = entry.get("route")
+        if versioned and not isinstance(recorded_route, dict):
+            _add(
+                errors,
+                "route_evidence_mismatch",
+                f"provenance.jsonl lacks the route of {page_id}",
+                artifact="provenance.jsonl",
+                page_id=page_id,
+            )
         if isinstance(recorded_route, dict) and route_page is not None:
             expected_route = {
                 "type": route_page["type"],
@@ -606,6 +705,9 @@ def verify_run(
             )
         else:
             expected_raw_hash = result.get("raw_sha256")
+            actual_raw_hash = _sha256(raw_path)
+            if expected_raw_hash == actual_raw_hash:
+                verified_raw[page_id] = raw_path
             if expected_raw_hash is None:
                 _add(
                     errors,
@@ -613,7 +715,7 @@ def verify_run(
                     f"Provenance lacks a raw artifact hash for {page_id}",
                     page_id=page_id,
                 )
-            elif not isinstance(expected_raw_hash, str) or _sha256(raw_path) != expected_raw_hash:
+            elif not isinstance(expected_raw_hash, str) or actual_raw_hash != expected_raw_hash:
                 _add(
                     errors,
                     "raw_artifact_hash_mismatch",
@@ -621,6 +723,13 @@ def verify_run(
                     page_id=page_id,
                     artifact=raw_name,
                 )
+            elif isinstance(evidence, dict) and evidence.get("kind") == "page_tiles":
+                from .image_evidence import validate_tile_text
+
+                try:
+                    validate_tile_text(evidence, raw_path.read_text(encoding="utf-8"))
+                except (ValueError, KeyError, TypeError, UnicodeError) as exc:
+                    _add(errors, "input_evidence_invalid", str(exc), page_id=page_id)
 
     for page_id, entry in quality.items():
         _check_schema(entry, schema_version, errors, "quality.jsonl", page_id)
@@ -674,6 +783,8 @@ def verify_run(
                 continue
             if not candidate.is_file():
                 continue
+            if _stray(candidate, raw_dir, root, warnings):
+                continue
             resolved = _safe_resolve(candidate)
             if resolved is None:
                 _add(
@@ -701,7 +812,7 @@ def verify_run(
                 artifact=str(extra.relative_to(root)),
             )
 
-    _check_normalized(
+    normalized = _check_normalized(
         paths.get("normalized_dir"),
         root,
         run_id,
@@ -710,6 +821,7 @@ def verify_run(
         route_pages,
         provenance,
         errors,
+        warnings,
         counts,
     )
 
@@ -757,6 +869,22 @@ def verify_run(
                         "audit.md is not the current rendering of audit.json",
                         artifact=paths["audit_md"].name,
                     )
+
+    if isinstance(config, dict) and isinstance(route, dict):
+        _check_derived(
+            root,
+            manifest,
+            config,
+            route,
+            audit if isinstance(audit, dict) else None,
+            route_pages,
+            provenance,
+            quality,
+            verified_raw,
+            normalized,
+            errors,
+            warnings,
+        )
 
     rerun = loaded.get("rerun_manifest")
     if isinstance(rerun, dict):
@@ -868,6 +996,239 @@ def verify_run(
     _check_replay_linkage(manifest, declarations, loaded, provenance, manifest_identities, errors)
 
     return _report(root, errors, warnings, counts)
+
+
+def _check_derived(
+    root: Path,
+    manifest: dict[str, Any],
+    config: dict[str, Any],
+    route: dict[str, Any],
+    audit: dict[str, Any] | None,
+    route_pages: dict[str, dict[str, Any]],
+    provenance: dict[str, dict[str, Any]],
+    quality: dict[str, dict[str, Any]],
+    verified_raw: dict[str, Path],
+    normalized: dict[str, dict[str, Any]],
+    errors: list[dict[str, Any]],
+    warnings: list[dict[str, Any]],
+) -> None:
+    """Derive normalized pages, grades and audit queues again, as the run did, and compare.
+
+    Each is derived from evidence bound elsewhere: a raw reading whose hash provenance
+    records, the schema and policy in the hashed config snapshot, and the route map.
+    """
+    alignment = manifest.get("alignment")
+    writer = (
+        alignment.get("pageledger_version")
+        if isinstance(alignment, dict)
+        else manifest.get("pageledger_version")
+    )
+    written = _version(writer)
+    written_by = (
+        f"PageLedger {writer}"
+        if isinstance(writer, str)
+        else "a PageLedger that did not record its version"
+    )
+
+    def differs(since: tuple[int, ...], code: str, message: str, **details: Any) -> None:
+        if written is not None and written >= since:
+            _add(errors, code, message, **details)
+        else:
+            _add(
+                warnings,
+                "derived_evidence_differs",
+                f"{message}; the run was written by {written_by}, whose rules may differ",
+                **details,
+            )
+
+    try:
+        configuration = PageLedgerConfig(
+            schema_version=str(manifest.get("schema_version")), data=config
+        )
+        thresholds = configuration.grading_thresholds
+        if isinstance(alignment, dict) and alignment.get("schema_source") != "config_snapshot":
+            snapshot = _safe_resolve(root / "align-schema-snapshot.yml")
+            if snapshot is None or snapshot.parent != root or not snapshot.is_file():
+                return  # reported with the alignment schema hash check
+            loaded = yaml.safe_load(snapshot.read_text(encoding="utf-8"))
+            spec = load_schema_spec({"schema": loaded.get("schema", loaded)})
+        else:
+            spec = load_schema_spec(config)
+    except (*_DERIVATION_ERRORS, OSError) as exc:
+        _add(
+            errors,
+            "config_snapshot_invalid",
+            f"The schema or grading in the run's config cannot be read: {exc}",
+            artifact="config-snapshot.yml",
+        )
+        return
+
+    normalized_name = "normalized"
+    derived: dict[str, dict[str, Any]] = {}
+    for page_id, raw_path in verified_raw.items():
+        result = provenance[page_id].get("result")
+        route_page = route_pages.get(page_id)
+        if (
+            spec is None
+            or route_page is None
+            or not isinstance(result, dict)
+            or not isinstance(result.get("format"), str)
+            or result["format"] not in ALIGNABLE_FORMATS
+        ):
+            continue
+        raw_name = str(raw_path.relative_to(root))
+        target = f"{normalized_name}/{page_id}.json"
+        try:
+            page = align_page(
+                raw_path.read_text(encoding="utf-8"),
+                result["format"],
+                spec,
+                page={"page_id": page_id, "page_number": route_page["page_number"]},
+                run_id=cast(str, manifest.get("run_id")),
+                schema_version=cast(str, manifest.get("schema_version")),
+                raw_artifact=result["raw_artifact"],
+            )
+        except (*_DERIVATION_ERRORS, OSError) as exc:
+            differs(
+                _NORMALIZED_RULES_SINCE,
+                "normalized_evidence_mismatch",
+                f"{raw_name} cannot be aligned to the run's schema: {exc}",
+                artifact=raw_name,
+                page_id=page_id,
+            )
+            continue
+        if page is None:
+            continue
+        derived[page_id] = page
+        if page_id not in normalized:
+            differs(
+                _NORMALIZED_RULES_SINCE,
+                "normalized_artifact_missing",
+                f"{target} is missing; aligning {raw_name} to the run's schema gives it",
+                artifact=target,
+                page_id=page_id,
+            )
+        elif normalized[page_id] != page:
+            differs(
+                _NORMALIZED_RULES_SINCE,
+                "normalized_evidence_mismatch",
+                f"{target} is not what aligning {raw_name} to the run's schema gives",
+                artifact=target,
+                page_id=page_id,
+            )
+    for page_id in sorted(normalized.keys() - derived.keys()):
+        if page_id in verified_raw:
+            differs(
+                _NORMALIZED_RULES_SINCE,
+                "normalized_evidence_mismatch",
+                f"{normalized_name}/{page_id}.json exists, but the run's schema does not "
+                f"align that page's reading",
+                artifact=f"{normalized_name}/{page_id}.json",
+                page_id=page_id,
+            )
+    # Grades and queues follow the normalized pages the run's own rules give.
+    strict_alignment = written is not None and written >= _NORMALIZED_RULES_SINCE
+    alignments = derived if strict_alignment else {**derived, **normalized}
+
+    for page_id, entry in quality.items():
+        prov = provenance.get(page_id)
+        result = prov.get("result") if isinstance(prov, dict) else None
+        if isinstance(result, dict):
+            adapter_warnings = result.get("warnings")
+            recorded_warnings = entry.get("warnings")
+            if entry.get("confidence") != result.get("confidence") or not (
+                isinstance(adapter_warnings, list)
+                and isinstance(recorded_warnings, list)
+                and all(warning in recorded_warnings for warning in adapter_warnings)
+            ):
+                differs(
+                    _GRADE_RULES_SINCE,
+                    "quality_evidence_mismatch",
+                    f"quality.jsonl gives {page_id} a confidence or warnings other than "
+                    f"its engine reported in provenance.jsonl",
+                    artifact="quality.jsonl",
+                    page_id=page_id,
+                )
+        if "grade" not in entry:
+            continue
+        try:
+            expected = grade_page(
+                entry,
+                alignments.get(page_id),
+                thresholds,
+                quality_floors=spec.quality if spec is not None else None,
+            )
+        except _DERIVATION_ERRORS as exc:
+            differs(
+                _GRADE_RULES_SINCE,
+                "grade_evidence_mismatch",
+                f"The grade of {page_id} in quality.jsonl cannot be derived: {exc}",
+                artifact="quality.jsonl",
+                page_id=page_id,
+            )
+            continue
+        if any(entry.get(key) != value for key, value in expected.items()):
+            differs(
+                _GRADE_RULES_SINCE,
+                "grade_evidence_mismatch",
+                f"quality.jsonl grades {page_id} {entry.get('grade')}, but its signals "
+                f"give {expected['grade']}",
+                artifact="quality.jsonl",
+                page_id=page_id,
+                expected=expected["grade"],
+                actual=entry.get("grade"),
+            )
+
+    if audit is None or not all(
+        isinstance(audit.get(name), list) for name in ("review_queue", "quarantine_queue")
+    ):
+        return
+    if any("grade" not in entry for entry in quality.values()):
+        return
+    routes = {
+        page["page_id"]: page
+        for document in route.get("documents") or []
+        if isinstance(document, dict) and isinstance(document.get("pages"), list)
+        for page in document["pages"]
+        if isinstance(page, dict) and isinstance(page.get("page_id"), str)
+    }
+    try:
+        review, quarantine = rebuild_policy_queues(
+            config=configuration,
+            quality_entries=list(quality.values()),
+            alignments=alignments,
+            routes=routes,
+            review_queue=audit["review_queue"],
+            quarantine_queue=audit["quarantine_queue"],
+            generative_pages=generative_page_ids(list(provenance.values())),
+        )
+    except _DERIVATION_ERRORS as exc:
+        differs(
+            _QUEUE_RULES_SINCE,
+            "audit_queue_mismatch",
+            f"audit.json's queues cannot be derived: {exc}",
+            artifact="audit.json",
+        )
+        return
+    for name, queue in (("review_queue", review), ("quarantine_queue", quarantine)):
+        if audit[name] != queue:
+            differs(
+                _QUEUE_RULES_SINCE,
+                "audit_queue_mismatch",
+                f"audit.json's {name} is not the one the route map, the grades in "
+                f"quality.jsonl and the config give",
+                artifact="audit.json",
+            )
+
+
+def _version(value: Any) -> tuple[int, ...] | None:
+    """A recorded PageLedger version as numbers; one that cannot be read counts as new."""
+    if not isinstance(value, str):
+        return None
+    match = re.match(r"(\d+)\.(\d+)(?:\.(\d+))?", value)
+    if match is None:
+        return (10**6,)
+    return tuple(int(part or 0) for part in match.groups())
 
 
 def _check_rerun_plan(
@@ -1447,10 +1808,15 @@ def _check_replay_linkage(
     deterministic = baseline_identity["deterministic"]
     capabilities = cast(list[str], baseline_identity["capabilities"])
     cloud = any(value.casefold() == "cloud" for value in capabilities)
-    if deterministic and not cloud:
+    # A deterministic local run recorded without a profile replays as compared evidence.
+    exact_possible = (
+        deterministic
+        and not cloud
+        and baseline_identity["reproducibility_profile_sha256"] is not None
+    )
+    if exact_possible:
         if (
-            baseline_identity["reproducibility_profile_sha256"] is None
-            or local_identity is None
+            local_identity is None
             or local_identity["reproducibility_profile_sha256"] is None
             or baseline_identity["reproducibility_profile_sha256"]
             != local_identity["reproducibility_profile_sha256"]
@@ -1471,8 +1837,7 @@ def _check_replay_linkage(
         )
     outcome = replay.get("outcome")
     if outcome == "exact" and (
-        not deterministic
-        or cloud
+        not exact_possible
         or replay.get("profile_match") is not True
         or counts.get("different") != 0
         or counts.get("missing") != 0
@@ -1485,16 +1850,16 @@ def _check_replay_linkage(
             "Exact replay invariants are not satisfied",
             artifact="replay.json",
         )
-    elif outcome == "evidence_compared" and deterministic and not cloud:
+    elif outcome == "evidence_compared" and exact_possible:
         _add(
             errors,
             "replay_linkage_mismatch",
-            "Evidence-compared outcome requires a nondeterministic or cloud extractor",
+            "Evidence-compared outcome requires a nondeterministic or cloud extractor, "
+            "or one recorded without a reproducibility profile",
             artifact="replay.json",
         )
     elif outcome == "deterministic_mismatch" and (
-        not deterministic
-        or cloud
+        not exact_possible
         or (
             counts.get("different", 0) == 0
             and counts.get("missing", 0) == 0
@@ -1744,11 +2109,14 @@ def _check_normalized(
     route_pages: dict[str, dict[str, Any]],
     provenance: dict[str, dict[str, Any]],
     errors: list[dict[str, Any]],
+    warnings: list[dict[str, Any]],
     counts: dict[str, int],
-) -> None:
-    if normalized_dir is None or not normalized_dir.is_dir():
-        return
-    for declared_path in sorted(normalized_dir.rglob("*")):
+) -> dict[str, dict[str, Any]]:
+    """Check each normalized page's identity; return the pages by page_id."""
+    pages: dict[str, dict[str, Any]] = {}
+    if normalized_dir is None:
+        return pages
+    for declared_path in sorted(normalized_dir.rglob("*") if normalized_dir.is_dir() else ()):
         if declared_path.is_symlink():
             _add(
                 errors,
@@ -1758,6 +2126,8 @@ def _check_normalized(
             )
             continue
         if not declared_path.is_file():
+            continue
+        if _stray(declared_path, normalized_dir, root, warnings):
             continue
         path = _safe_resolve(declared_path)
         if path is None or (path != normalized_dir and normalized_dir not in path.parents):
@@ -1773,7 +2143,7 @@ def _check_normalized(
             entry = json.loads(path.read_text(encoding="utf-8"))
             if not isinstance(entry, dict):
                 raise ValueError("top level must be a mapping")
-        except (OSError, UnicodeError, json.JSONDecodeError, ValueError) as exc:
+        except (OSError, UnicodeError, ValueError, RecursionError) as exc:
             _add(
                 errors,
                 "artifact_malformed",
@@ -1805,14 +2175,16 @@ def _check_normalized(
                 f"Normalized artifact references unknown page {page_id}",
                 page_id=page_id,
             )
-        if path.stem != page_id:
+        if path.stem != page_id or path.parent != normalized_dir:
             _add(
                 errors,
                 "page_identity_mismatch",
-                f"Normalized filename does not match page_id {page_id}",
+                f"{path.relative_to(root)} is not where the normalized page {page_id} belongs",
                 page_id=page_id,
                 artifact=str(path.relative_to(root)),
             )
+        else:
+            pages[page_id] = entry
         records = entry.get("records")
         if not isinstance(records, list):
             _add(
@@ -1841,6 +2213,24 @@ def _check_normalized(
             expected=summary.get("records_normalized"),
             actual=counts["normalized_records"],
         )
+    return pages
+
+
+def _stray(path: Path, directory: Path, root: Path, warnings: list[dict[str, Any]]) -> bool:
+    """A hidden file PageLedger never writes, such as .DS_Store or an AppleDouble ._ file.
+
+    Finder and copies to exFAT or network volumes leave these beside a run's files.
+    They are named, and otherwise ignored like hidden inputs.
+    """
+    if not any(part.startswith(".") for part in path.relative_to(directory).parts):
+        return False
+    _add(
+        warnings,
+        "stray_file",
+        f"{path.relative_to(root)} is a hidden file PageLedger did not write; it is ignored",
+        artifact=str(path.relative_to(root)),
+    )
+    return True
 
 
 def _check_references(
@@ -1946,8 +2336,79 @@ def _check_schema(
         )
 
 
+def _check_image_input(entry: dict[str, Any], errors: list[dict[str, Any]]) -> None:
+    images, carrier = entry.get("images"), entry.get("carrier")
+    try:
+        valid = (
+            entry["kind"] == KIND
+            and isinstance(images, list)
+            and len(images) == entry.get("page_count")
+            and manifest_sha256(images) == entry.get("sha256")
+            and (
+                carrier is None
+                or (
+                    _is_sha256(carrier.get("sha256"))
+                    and all(
+                        type(n) is int and 1 <= n <= len(images) for n in carrier.get("pages", [])
+                    )
+                )
+            )
+        )
+    except (AttributeError, TypeError, ValueError):
+        valid = False
+    if not valid:
+        _add(
+            errors,
+            "source_identity_mismatch",
+            f"Manifest page-image list does not match its source identity: {entry.get('path')}",
+            source=entry.get("path"),
+        )
+
+
+def _check_page_image(
+    page_id: str, source: dict[str, Any], manifest_input: Any, errors: list[dict[str, Any]]
+) -> None:
+    """A page of page images names the image the manifest lists at its place."""
+    if not isinstance(manifest_input, dict) or manifest_input.get("kind") != KIND:
+        return
+    images = manifest_input.get("images")
+    number = source.get("page_number")
+    image = source.get("image")
+    expected = (
+        images[number - 1]
+        if isinstance(images, list) and type(number) is int and 1 <= number <= len(images)
+        else None
+    )
+    if (
+        not isinstance(expected, dict)
+        or not isinstance(image, dict)
+        or {key: image.get(key) for key in expected} != expected
+    ):
+        _add(
+            errors,
+            "source_identity_mismatch",
+            f"Provenance page image differs from the manifest's page {number} for {page_id}",
+            page_id=page_id,
+        )
+
+
+def _read_hash(source: Any, route_page: dict[str, Any] | None) -> str | None:
+    """The hash of the file the engine read: a page-image carrier, a page image, or the source."""
+    if not isinstance(source, dict):
+        return None
+    manifest_input = route_page.get("input") if route_page is not None else None
+    if isinstance(manifest_input, dict) and manifest_input.get("kind") == KIND:
+        try:
+            return read_sha256(manifest_input, source["page_number"])
+        except (KeyError, IndexError, TypeError):
+            return None
+    return source.get("sha256")
+
+
 def _check_external_sources(
-    inputs: Any, route_sources: list[Any], warnings: list[dict[str, Any]]
+    inputs: Any,
+    route_sources: list[Any],
+    warnings: list[dict[str, Any]],
 ) -> None:
     if not isinstance(inputs, list):
         return
@@ -1961,24 +2422,56 @@ def _check_external_sources(
             continue
         route_source = route_sources[index] if index < len(route_sources) else None
         source_path = route_source if isinstance(route_source, str) else entry["path"]
-        path = Path(source_path).expanduser()
-        if not path.is_file():
+        try:
+            path = Path(source_path).expanduser()
+        except (RuntimeError, ValueError):
+            path = Path(source_path)
+        expected = entry.get("sha256")
+        kind = entry.get("kind")
+        if kind == KIND:
+            located = _check_external_images(path, entry, warnings)
+            warnings.extend(snapshot_warnings(entry, located))
+            continue
+        try:
+            present = path.is_file()
+            matches = present and isinstance(expected, str) and _sha256(path) == expected
+        except OSError as exc:
             _add(
                 warnings,
-                "source_missing",
-                f"External source file is missing: {path}",
+                "source_unreadable",
+                f"External source file cannot be read: {path} ({exc.strerror or exc})",
                 source=str(path),
             )
             continue
-        expected = entry.get("sha256")
-        if not isinstance(expected, str):
+        if present and not isinstance(expected, str):
             _add(
                 warnings,
                 "legacy_evidence_incomplete",
                 f"Manifest input lacks a source hash: {path}",
                 source=str(path),
             )
-        elif _sha256(path) != expected:
+            continue
+        if matches:
+            continue
+        relocated = (
+            find_indexed(expected) if isinstance(expected, str) and _is_sha256(expected) else None
+        )
+        if relocated is not None:
+            _add(
+                warnings,
+                "source_relocated",
+                f"External source found through the source index: {path} -> {relocated}",
+                source=str(path),
+                located=str(relocated),
+            )
+        elif not present:
+            _add(
+                warnings,
+                "source_missing",
+                f"External source file is missing: {path}",
+                source=str(path),
+            )
+        else:
             _add(
                 warnings,
                 "source_changed",
@@ -1987,12 +2480,74 @@ def _check_external_sources(
             )
 
 
-def _sha256(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as handle:
-        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
+def _check_external_images(
+    path: Path, entry: dict[str, Any], warnings: list[dict[str, Any]]
+) -> Path | None:
+    """Name each image that changed, went missing, was added or moved; rebuild the carrier.
+
+    Returns where the recorded images are, if anywhere.
+    """
+    expected = entry.get("sha256")
+    if not path.exists():
+        relocated = find_indexed(expected, KIND) if isinstance(expected, str) else None
+        if relocated is not None:
+            _add(
+                warnings,
+                "source_relocated",
+                f"External source found through the source index: {path} -> {relocated}",
+                source=str(path),
+                located=str(relocated),
+            )
+            return relocated
+        _add(warnings, "source_missing", f"External source is missing: {path}", source=str(path))
+        return None
+    try:
+        current = read_image_source(path)
+    except (OSError, ValueError, RuntimeError) as exc:
+        _add(
+            warnings,
+            "source_changed",
+            f"External page images no longer match the manifest: {path}: {exc}",
+            source=str(path),
+        )
+        return None
+    if current.sha256 != expected:
+        relocated = find_indexed(expected, KIND) if isinstance(expected, str) else None
+        if relocated is not None:
+            _add(
+                warnings,
+                "source_relocated",
+                f"External source found through the source index: {path} -> {relocated}",
+                source=str(path),
+                located=str(relocated),
+            )
+            return relocated
+        try:
+            changes = manifest_changes(entry.get("images") or [], current.manifest())
+        except (AttributeError, KeyError, TypeError) as exc:
+            changes = [f"the recorded image list cannot be read ({type(exc).__name__})"]
+        _add(
+            warnings,
+            "source_changed",
+            f"External page images no longer match the manifest: {path} ({'; '.join(changes)})",
+            source=str(path),
+            changes=changes,
+        )
+        return None
+    recorded = entry.get("carrier")
+    if (
+        isinstance(recorded, dict)
+        and isinstance(recorded.get("pages"), list)
+        and carrier_sha256(current, recorded["pages"]) != recorded.get("sha256")
+    ):
+        _add(
+            warnings,
+            "carrier_not_reproduced",
+            f"The page-image carrier rebuilt from {path} differs from the recorded one; "
+            "the images match, so the PageLedger version that wrote it differs",
+            source=str(path),
+        )
+    return path
 
 
 def _is_sha256(value: Any) -> bool:

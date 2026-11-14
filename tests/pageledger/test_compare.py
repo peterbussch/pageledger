@@ -419,11 +419,12 @@ def test_compare_cross_adapter_changes_are_unranked(tmp_path):
     rendered = render_comparison(report)
     assert "Warning changes: not assessed (0 comparable pages)" in rendered
     assert "Grade changes: not assessed (0 grade-comparable pages)" in rendered
+    assert "Pages with warning or grade changes" not in rendered
 
 
 def test_compare_same_adapter_different_model_is_unranked(tmp_path):
     """A shared adapter name must not make different model pipelines rankable."""
-    from pageledger.compare import compare_runs
+    from pageledger.compare import compare_runs, render_comparison
 
     source = tmp_path / "doc.txt"
     source.write_text("short\n", encoding="utf-8")
@@ -454,6 +455,9 @@ def test_compare_same_adapter_different_model_is_unranked(tmp_path):
     assert report["pages_comparable_total"] == 0
     assert report["warnings_resolved_total"] == 0
     assert report["grades_improved_total"] == 0
+    rendered = render_comparison(report)
+    assert "Grades from different extractors are not ranked" in rendered
+    assert "chars A→B" in rendered
 
 
 def test_compare_same_adapter_different_options_is_unranked(tmp_path):
@@ -805,3 +809,17 @@ def test_compare_legacy_missing_provenance_is_unknown(tmp_path):
     assert report["pages"][0]["source_status"] == "unknown"
     assert report["pages"][0]["comparability"] == "incomparable_unknown"
     assert report["pages_incomparable_total"] == 1
+
+
+def test_compare_refuses_a_damaged_or_repeated_page_line(tmp_path):
+    import pytest
+
+    from pageledger.compare import _by_page
+
+    path = tmp_path / "quality.jsonl"
+    path.write_text('{"page_id": "a"}\n{"page_id": "a"}\n', encoding="utf-8")
+    with pytest.raises(ValueError, match="lists a twice"):
+        _by_page(path, "A")
+    path.write_text("{not json\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="not valid JSON"):
+        _by_page(path, "A")

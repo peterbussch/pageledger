@@ -2,9 +2,36 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
+import pageledger
 import pageledger.adapters as adapters_module
+
+_CHECKOUT = Path(__file__).resolve().parents[2]
+_IMPORTED = Path(pageledger.__file__).resolve()
+if not _IMPORTED.is_relative_to(_CHECKOUT):
+    # Another checkout's editable install (e.g. ~/Code/pageledger/.venv run
+    # from a worktree) would otherwise be tested silently in place of this one.
+    raise pytest.UsageError(
+        f"tests in {_CHECKOUT} imported pageledger from {_IMPORTED}; "
+        "use this checkout's own environment (uv run) or put it first on PYTHONPATH"
+    )
+
+
+@pytest.fixture(autouse=True)
+def _no_host_source_index(monkeypatch):
+    """Keep the host's ~/.config/pageledger/source-index.tsv out of every test."""
+    monkeypatch.setenv("PAGELEDGER_SOURCE_INDEX", "")
+
+
+@pytest.fixture(autouse=True)
+def _no_dns(monkeypatch):
+    """IIIF fetch resolves hosts other than the one named; every test name is public here."""
+    import pageledger.iiif as iiif
+
+    monkeypatch.setattr(iiif, "_addresses", lambda host: ["93.184.215.14"])
 
 
 @pytest.fixture(autouse=True)

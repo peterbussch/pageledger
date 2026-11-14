@@ -1,10 +1,10 @@
-# First PageLedger OCR run
+# First PDF and OCR run
 
-This tutorial takes a PDF through PageLedger: first its text layer, then OCR
-with Tesseract through the built-in `pdf_ocr` adapter.
-
-PageLedger counts pages, calls configured adapters, and records the output
-with provenance and quality signals. Install OCR engines separately.
+This tutorial takes a PDF through the run commands, which apply one extraction
+tool to every page and record what it did: first the PDF's text layer, then
+OCR with Tesseract through the built-in `pdf_ocr` adapter. Runs are the tool
+for building and testing a pipeline; to read one document into text with a
+list of pages to check, use [`process`](process-a-collection.md) instead.
 
 For choosing between local OCR, open-source document conversion, cloud OCR, VLM
 adapters, and hybrid workflows, see [OCR options](ocr-options.md).
@@ -134,11 +134,11 @@ two runs compared:
 
 ```bash pageledger-tutorial
 pageledger rerun runs/document-pdf-text --config pageledger-ocr.yml --out runs/document-rerun
-pageledger compare-runs runs/document-pdf-text runs/document-rerun
+pageledger compare runs/document-pdf-text runs/document-rerun
 ```
 
 The rerun keeps the original page IDs, records the parent run ID, and enforces
-`run.max_rerun_depth`. The two runs used different adapters, so `compare-runs`
+`run.max_rerun_depth`. The two runs used different adapters, so `compare`
 marks their pages `incomparable_adapter` and does not total the warning
 changes, but its page table still shows them: on a scan, pages the text layer
 left empty list `empty_text` as *resolved*. When OCR recovers text from an
@@ -182,10 +182,23 @@ than a rerun.
   entries. See [failure recovery and partial-run
   guarantees](run-manifest-spec.md#failure-recovery-and-partial-run-guarantees) for the full failure scenario table and common error actions.
 
-## Document jobs
+## 9. A folder of page scans
 
-For a document that needs both text-layer extraction and OCR, use
-[`process`](processing-spec.md). It manages attempts under one budget and
-produces a source-linked transcript and report. Jobs retain checkpoints
-automatically; individual `run` commands need `--resumable` at creation. Use
-[`pageledger resume DIR`](checkpoint-spec.md#get-started) to recover either.
+A folder of JPEG or PNG page images is one document, read in natural order of
+file name, and `run` takes it as it takes a PDF:
+
+```bash
+pageledger run scans/ --config pageledger-ocr.yml --out runs/scans-ocr --json
+```
+
+[Page images](process-a-collection.md#page-images) explains what the folder may
+hold, how pages are numbered and what is recorded.
+
+## Jobs
+
+To read a whole document with its own text first and OCR only where that text
+is missing or looks wrong, use [`process`](processing-spec.md) instead: it
+keeps every reading under one budget, lists the pages that need a person, and
+keeps recovery records automatically, where `run` needs `--resumable` when it
+starts. [`pageledger resume DIR`](checkpoint-spec.md#get-started) recovers
+either.

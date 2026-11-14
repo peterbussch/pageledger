@@ -1,0 +1,17 @@
+{
+  "quarantine_queue": [],
+  "review_queue": [
+    {
+      "action": "review",
+      "confidence": null,
+      "grade": "B",
+      "grade_basis": "signals_only",
+      "page_id": "doc_0001_page_0002",
+      "page_number": 2,
+      "reason": "quality_warning",
+      "type": "prose"
+    }
+  ],
+  "run_id": "run-20261110T225556864716Z",
+  "schema_version": "0.1"
+}

@@ -1,0 +1,14 @@
+#!/bin/sh
+# Run the full local gate, including the no-pdf lane, on each commit being pushed.
+# It runs in a temporary worktree with its own environment, so uncommitted changes
+# cannot hide a broken commit and this checkout's .venv keeps its extras.
+set -eu
+while read -r local_ref local_sha remote_ref remote_sha; do
+  case "$local_sha" in *[!0]*) ;; *) continue ;; esac # a deleted branch
+  tree=$(mktemp -d "${TMPDIR:-/tmp}/pageledger-pre-push.XXXXXX")
+  git worktree add --detach --quiet "$tree" "$local_sha"
+  status=0
+  sh "$tree/scripts/check.sh" --all-lanes || status=$?
+  git worktree remove --force "$tree"
+  [ "$status" = 0 ] || exit "$status"
+done

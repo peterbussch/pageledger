@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "PageLedger page layout: where an engine found a page's text",
+  "description": "Boxes are integers on a grid of 1,000,000 steps per page side, origin at the top-left of the page as rendered (after /Rotate). See pageledger/layout.py and docs/adapter-protocol.md.",
+  "type": "object",
+  "properties": {
+    "units": {"const": "page_millionths"},
+    "level": {"enum": ["line", "word"]},
+    "items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "box": {
+            "type": "array",
+            "items": {"type": "integer", "minimum": 0, "maximum": 1000000},
+            "minItems": 4,
+            "maxItems": 4
+          },
+          "text": {"type": "string"}
+        },
+        "required": ["box", "text"],
+        "additionalProperties": false
+      }
+    },
+    "source": {"type": "object"}
+  },
+  "required": ["units", "level", "items", "source"],
+  "additionalProperties": false
+}

@@ -1,6 +1,645 @@
 # Changelog
 
-Release changes follow the [artifact compatibility policy](docs/run-manifest-spec.md#compatibility-policy).
+Release changes follow the [artifact compatibility policy](docs/run-manifest-spec.md#compatibility-policy)
+and, from 1.0, [stability](docs/stability.md).
+
+## 0.9.0 - 2026-11-13
+
+0.9.0 is the candidate for 1.0. It writes down the contract that 1.0 will keep
+(commands and options, exit codes, configuration keys, the adapter protocol,
+artifact schemas, warning codes and holds) and tests the package against it;
+see [stability](docs/stability.md). And it closes the gaps real use found: page
+images and IIIF items as sources, a library's own OCR as a witness, dense pages
+read in tiles, Latin-script print, a review view with corrections, and a first
+job that needs no configuration file. Artifacts keep `schema_version: "0.1"`;
+every change to them is an addition. 0.8.0 was prepared but not published, so
+if you come from 0.7, read its notes below too.
+
+### Added
+
+Starting a job
+
+- `process SOURCE --out DIR` runs without `--config`: Tesseract in English for
+  a PDF or page images (`--lang` chooses another language), no OCR for a text
+  file, nothing paid. The job records exactly the configuration `init` writes,
+  and one line on the screen says what will be read and how. `--engine` and
+  `--model-dir` work on `process` too but are left out of its `--help`; `init`
+  is where an engine is chosen. A missing engine stops the command before the
+  job exists, naming what to install. See
+  [start with local text and OCR](docs/processing-spec.md#start-with-local-text-and-ocr).
+- `process` and `resume` show progress while a job runs: pages done, pages
+  that need a person so far, and what is being read now. `resume` of a job ends
+  with the same summary as `process`. See [process](docs/cli.md#process).
+- Ctrl-C stops a job without a traceback, keeps what was read and prints the
+  `resume` command (exit 130); `run`, `fetch` and `review` say the same for
+  their folders. See [process](docs/cli.md#process).
+- When most pages Tesseract read were held for low confidence, `process` says
+  the language may be wrong and, when Tesseract's script detection is sure,
+  which language to try, with the command to run: the same command with that
+  `--lang` and its `--pages` and other options, so a sample stays a sample; on
+  pre-1918 Russian read with `rus` it says only that the community `orus`
+  model keeps the old letters but made more errors overall in our test, with
+  the command to try it on a sample. After `resume` it gives both ways to
+  change the language. A missing language pack or tool is said as its
+  sentence, with the code last. See
+  [process](docs/cli.md#process).
+- `--lang orus` without that model installed names its recipe instead of
+  suggesting similar codes. See
+  [the orus recipe](docs/engine-recipes.md#tesseract-with-the-community-orus-model-macos-and-linux).
+- `init` writes a commented `processing.yml` with each optional stage as a
+  commented block; [`docs/examples/processing.yml`](docs/examples/processing.yml)
+  is that file. See [init](docs/cli.md#init).
+- `process` ends with the opening of the job's report: status, pages read, how
+  many need a person and why (each cause on a line of its own, with its count
+  of pages), the next command, and `export JOB --out NAME.md`, the one export
+  command `review --apply` and the report suggest too. It warns at the start when
+  the stages could read more pages than `max_attempt_pages` allows, and the
+  report says why a configured stage read no pages. See [process](docs/cli.md#process).
+
+Sources
+
+- Page images: a JPEG or PNG file is a one-page document, a folder of them one
+  document in natural order of file name. Hidden files are skipped; anything
+  else in the folder stops the command before a page is read. TIFF, JPEG 2000
+  and other formats are refused with `unsupported_image` and the conversion to
+  make, as is an image over 400 million pixels; a damaged one gives
+  `malformed_image`. Each image is hashed, and `verify` names one that changed,
+  went missing or was added. Reports show a page's file name after its number,
+  as `9 (0081.jpg)`. See [page images](docs/process-a-collection.md#page-images).
+- The built-in engines read page images through a *carrier*, a PDF holding the
+  images' own bytes, sized from the density each image declares (300 pixels
+  per inch when it declares none); the run records its hash. An adapter that
+  declares `image` and not `pdf` gets the image files. See
+  [page-image sources](docs/run-manifest-spec.md#page-image-sources).
+- `fetch URL --out DIR` copies a IIIF item's page images, at native size or the
+  largest the server allows (`iiif_below_native`), into a snapshot folder with
+  the manifest as served and a fetch record, `iiif-fetch.json`, binding each
+  image's hash to its URLs ([spec](docs/iiif-fetch-spec.md)). It is polite to
+  the server, and `--resume` fetches only what is missing. It refuses a JPEG
+  that a folder of page images could not read (stored mirrored, or with two
+  frame headers). A snapshot is a
+  source: the job records the fetch record and each page's canvas, so a page
+  can be cited by its canvas. See [fetch page images from a IIIF server](docs/iiif.md).
+- An `alto` adapter reads the OCR a library published with its scans as ALTO
+  XML, one file per page, found by page number (`{page:04d}.xml`) or by the
+  page image's name (`{stem}.xml`). Its readings are marked `ocr_text_layer`,
+  so in a job they are a witness beside the job's own OCR. Unsafe or oversized
+  files are refused. A page's confidence is given only when the file scores
+  every word (`unscored_count` says how many it did not). New warnings:
+  `alto_missing`, `alto_invalid`, `alto_geometry_mismatch`. See [the ALTO recipe](docs/engine-recipes.md#alto-from-a-library-any-platform-no-engine).
+
+Reading
+
+- Tiled reads: with `processing.tiling`, the `image` stage's `vision` model
+  reads a dense page in tiles cut along the white space of the OCR's or the
+  ALTO file's layout, one request per tile, bounded by the new limit
+  `max_image_requests` (counted in `usage.image_requests`). Every tile sent is
+  kept as evidence and checked by `verify`, and adjudication packets carry each
+  span's tile image. New warnings: `tile_failed` and `tile_edge_cut` (held),
+  `tile_text_small`, `tile_layout_missing` and `alto_layout_rejected`. See
+  [read dense pages in tiles](docs/processing-spec.md#read-dense-pages-in-tiles).
+- Adapters can return the boxes of the lines or words they found
+  (`ExtractionResult.layout`); `rapidocr` and `alto` do, and a run records the
+  layout's hash. See [result fields](docs/adapter-protocol.md#result-fields).
+- Contest rule sets `latin-print-0.1` for Latin-script print and
+  `ru-print-0.3` for Russian. Both keep accents, vowel signs and other
+  combining marks inside words, and rejoin a word hyphenated at a line end in
+  any script (`при-ѣхалъ`, `Ver-änderung`); `ru-print-0.1` and `ru-print-0.2`
+  keep their spans exactly. See
+  [contest a model's reading](docs/processing-spec.md#contest-a-models-reading).
+- A word list as the lexicon (`processing.lexicon: {provider: wordlist, path:
+  FILE}`), so the `rough` trigger and contest judge words in any language. The
+  job records the list's hash; `resume` and `verify` refuse the job if it
+  changes. See [a word list as the lexicon](docs/processing-spec.md#a-word-list-as-the-lexicon).
+- `adjudicate --packets DIR --term WORD` writes packets only for open spans
+  near the named words. See [settle contested spans](docs/processing-spec.md#settle-contested-spans).
+- Warnings that hold a page: `split_words` (words broken by stray spaces),
+  `capital_sign_in_word` (a capital Ъ or Ь inside a word, as modern OCR reads
+  pre-reform print) and `labels_without_values` (a table whose numbers were
+  lost). Warnings that hold nothing: `render_upsampled` (rendered at more
+  pixels than the source image has; custom adapters can add it with
+  `adapters.render_warnings`), `no_text_layer` (`pdf_text` on page images) and
+  `multi_column_rows` (RapidOCR read columns side by side). See [warnings](docs/warnings.md).
+- `rapidocr` reads a recognizer's dictionary from its `inference.yml` and
+  records the dictionary's hash. See
+  [the RapidOCR recipe](docs/engine-recipes.md#rapidocr-with-pp-ocrv5-english-macos-and-linux-cpu).
+
+Reviewing and exporting
+
+- `review JOB` writes a review view into `JOB-review` beside the job (or
+  `--out DIR`) to open in a browser: each page's
+  image beside its text, the other readings compared word by word, and why the
+  page needs a person in plain words, those pages first; codes and reading IDs
+  are folded under "From the record". Readings are named by what made them
+  ("Tesseract OCR (rus)", "the PDF's own text"), and a reading with no text is
+  not offered to use or to correct from (one made only of symbols, such as
+  `* * *`, is). The decisions are grouped as a person
+  decides ("The text is right", "Use another reading", "I corrected the text",
+  "This page has no text to transcribe", "The page cannot be read"), with what
+  each records. One download, `review.json`
+  ([schema](schemas/review-decisions.schema.json)), carries decisions and
+  corrections (a file written by hand may give `page_number` as a number), and
+  is recorded only by `review --apply`, given the path where the browser saved
+  it; the review sheet
+  route is folded under "Working in a spreadsheet instead". Page images of PDFs
+  and of image folders are rendered with Poppler; `--images held` renders only
+  held pages, and `--images none` needs no Poppler (a view of page images then
+  links to each image, and does not list the image's own, always empty, text).
+  `review` says what is in the folder for a person: the page to open, and the
+  sheet with its guide for a spreadsheet. Asked again, it says when the view
+  there is up to date (`--images none` included), or that the job has changed
+  since, by a resume, a review or anything else, and a new `--out` is needed. See [review and correct](docs/review-and-correct.md),
+  a new how-to, and
+  [review beside the page image](docs/processing-spec.md#review-beside-the-page-image).
+- Every review sheet, from `review --sheet` or in the review view's folder, has
+  `review-decisions.txt` beside it: the command that applies it, the decisions
+  and what each records, and the readings each page can use. The sheet's
+  `disposition`, `attempt_summary` and `review_reasons` cells lead with words,
+  the code or reading ID last; applying a sheet does not read them, so 0.8's
+  sheets apply as before. `review --sheet` never writes over an existing
+  sheet, its binding or someone's own `review-decisions.txt` (the guide is
+  then `NAME-decisions.txt`). A decided row of a sheet written before the
+  page's last review is refused rather than replacing that review; empty
+  spreadsheet rows are skipped; a sheet saved with semicolons, or not as UTF-8,
+  gets a sentence saying to save it as CSV UTF-8 (comma delimited). See
+  [review in a spreadsheet](docs/processing-spec.md#review-in-a-spreadsheet).
+- A reviewer can correct a page's text, in the view or with `correct:FILE` in a
+  sheet. The correction is a new file; the engine's reading is never edited.
+  The receipt names what it started from and the words changed (`--dry-run`
+  prints them first, naming the reading by its engine), `verify` checks it,
+  and the report, transcript and exports mark the text as a person's: a
+  corrected page's export header says whose correction of which reading the
+  text is, and gives the corrected reading's ID and hash after it. A plain JSON
+  receipt cannot replace a corrected page's text, and a receipt whose word
+  counts do not match its texts fails `verify`. See [correct the text](docs/processing-spec.md#correct-the-text).
+- A moved or copied job can be verified, exported and reviewed where it is.
+  `verify` reports `job_relocated`, and a review or adjudication made on a copy
+  is recorded (`relocations`) and reported as `job_changed_elsewhere`. See
+  [moved and copied jobs](docs/processing-spec.md#moved-and-copied-jobs).
+- One table of plain words for every hold, page state, review decision and
+  warning, shared by the report, `process`, `inspect` and the review view, and
+  repeated in [warnings](docs/warnings.md#in-plain-words). Where the job
+  records a hold's cause, the hold is said by it: which reading, and what is
+  wrong with it ("Tesseract OCR (rus) wrote a capital Ъ or Ь inside words, as
+  OCR for modern Russian does with pre-1918 letters"); when the flawed reading
+  is an earlier OCR layer and not the selected text, that nothing confirms the
+  selected text, and what a person can do. See
+  [what is wrong with a reading](docs/warnings.md#what-is-wrong-with-a-reading).
+- JSONL exports give each page's `state`, `review_reasons` and `warnings`;
+  TEI marks each page's state, holds and warnings, and gives each page's
+  reading, the SHA-256 of its text and its reviewer in a provenance note.
+  Text and Markdown export headers use the report's words: `State:`, and a
+  `Reading:` line saying what made the reading ("the PDF's own text (an earlier
+  OCR)") before naming the engine. An export claims an edition only when the
+  page's text is the edition. See [export](docs/export.md).
+- `review --apply` says what it recorded in plain words (accepted, corrected,
+  blank and so on), how many pages still need a person, and the next command:
+  `export` once none do. The earlier name `review-job` keeps its output. See
+  [review](docs/cli.md#review).
+- `export` takes the format from the end of `--out` (`.txt`, `.md`, `.jsonl`,
+  `.xml`) when `--format` is not given. See [export](docs/cli.md#export).
+- `review --apply` warns (`blank_with_text`) when a page recorded as blank has
+  a reading of 50 or more words. See
+  [troubleshooting](docs/troubleshooting.md#a-review-is-refused).
+
+The contract
+
+- [Stability](docs/stability.md): what stays stable from 1.0, what does not,
+  the deprecation rule, and which older runs and jobs verify. Tests hold the
+  package to it and to runs and jobs written by 0.5.2, 0.6.0, 0.7.0 and 0.8.0.
+
+### Changed
+
+- **Commands have single-word names:** `inspect-job` and `inspect-run` are
+  `inspect`; `verify-job` and `verify-run` are `verify`; `review-sheet --out`
+  is `review --sheet`; `review-job --review` is `review --apply`;
+  `init-config` is `init --run` and `init-config --processing` is `init`;
+  `compare-runs` is `compare`. `verify` and `inspect` tell a job from a run by
+  its folder. The earlier names work as before through every 1.x release, but
+  `--help` no longer lists them. `--help` (or `pageledger help`) lists only the
+  commands for reading a document and setting up; `pageledger help pipelines`
+  lists the commands for runs and `adjudicate`. A run command given a job, or
+  a job command given a run, says which kind of folder it is and which command
+  fits. See [earlier command names](docs/cli.md#earlier-command-names) and
+  [the CLI reference](docs/cli.md).
+- **A folder of JPEG or PNG files is one document,** not a set of one-page
+  documents, and every file in it must be a page image. An adapter that reads
+  images itself gets JPEG and PNG only; TIFF, JPEG 2000 and WebP are refused. See
+  [page images](docs/process-a-collection.md#page-images).
+- **`process` refuses an unsupported source before the job exists.** A source
+  is a PDF, page images, or text that reads as UTF-8; anything else, such as a
+  `.docx` or a folder without page images, is a usage error and no job folder
+  is written, where 0.8 wrote a halted job. So is an empty file of any kind.
+  A `.md` source no longer gets OCR. See
+  [troubleshooting](docs/troubleshooting.md#is-not-a-pdf-a-page-image-or-utf-8-text).
+- **New jobs record hold policy 0.9.** An earlier OCR in a PDF's text layer is
+  recognised in any font and kept as a witness beside the job's own OCR: its
+  disagreement holds the page, and two of the job's engines that agree outvote
+  it. A reading that lost the pre-reform ѣ another reading kept is held. When
+  every reading is held, the best supported one is shown. A reading that never
+  finished raises no hold, `suspicious_embedded_text_delta` measured against an
+  earlier OCR layer holds neither reading, and no climb is recorded toward a
+  stage the job does not have. A typeset text layer held only for a few stray
+  characters (at most 1% of its letters) stays the selected text, held, with
+  the OCR as a witness; earlier policies replaced it with the OCR. Jobs written
+  under earlier policies rebuild unchanged. See
+  [hold policy 0.9](docs/processing-spec.md#hold-policy-09).
+  `pdf_text` marks these layers `ocr_text_layer` in plain runs too, so more of
+  their pages enter the review queue.
+- **New jobs write report format 0.9:** `report.md` is the record of how the
+  text was made, with a summary on top. It opens with what happened, the pages
+  that need a person and why in plain words, and the one next command, to run
+  in the job's folder; the source by its file name, its path written
+  out once; then one table of the pages (what holds each, its selected text,
+  its review); then the record, a short list per page with every hold and its
+  cause, reading ID, outcome, warning and comparison, and hashes and custody
+  last. Readings are named by what made them, from `engines`, which
+  `document.json` gains with `hold_causes`; a scan page that another reason
+  holds is no longer also called blank, though the record keeps the reason. A
+  25-page scan's report falls from about 300 lines to about 120. `transcript.md`
+  names each selected reading the same way. `process` ends with a few plain
+  lines: what was read, how many pages need a person and why, where the job is,
+  and the next command. `process`, `inspect`, the review view and the exports
+  count pages that need a person the same way, and a page still waiting for a
+  stage of an unfinished job is shown as not finished. Reports of older jobs
+  render as before. See [report format 0.9](docs/document-report-spec.md#report-format-09).
+- **`verify` reports more and needs less.** It no longer needs the source: a
+  missing one is the warning `source_missing`, one found through the source
+  index `source_relocated`. Its result has a `warnings` list, which can also
+  hold `job_relocated`, `job_changed_elsewhere`, `carrier_not_reproduced`,
+  `iiif_snapshot_incomplete`, `iiif_record_changed` and `iiif_snapshot_grown`;
+  the status stays `pass`. A job that did not finish fails with
+  `"reason": "unfinished"` and says to run `resume`. A `raw/`, `partials/` or
+  (without a schema) `normalized/` folder that Git or an archive tool dropped
+  because it was empty is read as empty. A pass says what it means: "The
+  record is intact: every file matches what was recorded. This does not check
+  that the text is right." A failure names the changed file (`transcript.md`,
+  `report.md`, or a reading and its page). See
+  [troubleshooting](docs/troubleshooting.md#verify-reports-a-problem).
+- **`verify` on a run derives its normalized records, grades and review and
+  quarantine queues again** from the readings and the config, and fails when
+  one was edited. A run whose provenance has lost a page's source identity or
+  route now fails, where it was a warning. Runs written by an earlier release
+  whose rules differ get the warning `derived_evidence_differs`, naming the
+  file, and still pass. Hidden files that Finder or a copy to exFAT leaves
+  (`.DS_Store`, `._*`) are named in the warning `stray_file` and no longer
+  break `verify`; a damaged recovery record, a deeply nested file or an
+  unreadable source is reported, not a crash (an unreadable source is the
+  warning `source_unreadable`). See [verification](docs/artifacts.md#verification).
+- `review --apply` and `adjudicate --decisions` work on a moved job and without
+  its source. `resume` refuses a job that is not in the folder it was written
+  in. See
+  [moved and copied jobs](docs/processing-spec.md#moved-and-copied-jobs).
+- **`export` writes no machine text for a page a person reviewed as blank, an
+  illustration, handwriting, unreadable or a source defect** (null `text` in
+  JSONL, a `<gap/>` in TEI). Before, `--reviewed-only` exported such text as if
+  checked: a page reviewed as blank was exported with 1,295 words of OCR. See
+  [export](docs/export.md).
+- `render_upsampled` applies to PDF runs too: a new `pdf_ocr` run of a scan
+  under 200 pixels per inch warns on every page, which in a plain run puts
+  each page in the review queue and lowers its grade. `pdf_ocr` may now render
+  a page image below 72 DPI, down to half its own density, instead of stopping
+  with `render_limit`. See
+  [page size and rendering](docs/ocr-options.md#page-size-and-rendering).
+- `doctor` opens with what `process` can do on this machine (PDF text, which
+  OCR engine, the common languages installed for `--lang`, optional engines
+  not installed) and stops there; `doctor --all` adds the details as before;
+  `--json` is unchanged. See
+  [doctor](docs/cli.md#doctor).
+- A new job makes `partials/` only when it keeps a partial reading. See
+  [artifacts](docs/artifacts.md).
+- A review file for another document, or one that is not a review receipt, is
+  refused saying which. See
+  [troubleshooting](docs/troubleshooting.md#a-review-is-refused).
+- The README leads with `process`, and [the documentation](docs/README.md) is
+  arranged by task; "Choose OCR settings" is folded into
+  [non-English and historical OCR](docs/multilingual-ocr.md) and
+  [OCR options](docs/ocr-options.md).
+
+- **Jobs, runs and bundles you receive.** `resume` and `replay` no longer
+  run Python code that a job, run or bundle names: such an adapter runs only
+  from a folder you name with `--adapter-path`, never from the received folder,
+  and must be defined there. They no longer send page images, or an API key, to
+  a model server off this machine that the record names, unless you name it
+  with `--trust-endpoint URL`; the refusal gives the option. `verify` says when
+  an unfinished job names its own adapter code. The rule applies to your own
+  folders too: to resume your own job or run, or replay your own bundle, that
+  uses custom adapter code, give `--adapter-path` again (for an adapter
+  installed with pip, its own package folder, never site-packages). Only an
+  adapter class is built from such a folder, never a plain function. Both
+  refusals come before anything changes. Your own `--config` stays trusted. See
+  [jobs, runs and bundles you receive](docs/share-and-cite.md#jobs-runs-and-bundles-you-receive)
+  and [SECURITY.md](SECURITY.md).
+- **Nothing is written over.** `export --out` refuses the job's source, a path
+  inside the job, a folder or link, and a file that is not an earlier export of
+  the same job (it now works through symlinked folders such as `/tmp`).
+  `init --out` and `classify --out` refuse an existing file.
+- **Page text cannot pass for structure.** `transcript.md` and the Markdown
+  export put each page's text in a fenced block, so a line in the text such as
+  `## Page 2` or `<!--` cannot pass for a heading or hide a page, and names
+  are escaped. The text export gives each page's length in characters and
+  lines, so the text can be cut out exactly. The JSONL export escapes U+2028,
+  U+2029 and U+0085, and TEI keeps them. `inspect --csv` cannot carry
+  spreadsheet formulas.
+- **`fetch` records no credentials.** A URL with a key, token or password in
+  its query is refused before any request, and such a value in a URL a server
+  redirects to is recorded as `redacted`.
+- **Text files keep their bytes.** A text file's reading keeps its line
+  endings (CRLF and CR stay), so its hash matches the source page; a
+  byte-order mark and a closing form feed no longer make text or an empty
+  page; a file that is not UTF-8 is refused by `process` before the job exists,
+  and by `run` with `unreadable_text`. The `text`
+  and `pdf_ocr` adapters are version 0.2 (`pdf_ocr` also asks Tesseract for no
+  page separator, and a sharp logo no longer raises its render resolution).
+  A route map written before 0.9 that counts the empty page after a closing
+  form feed still runs: that page is dropped with a warning. An earlier run's
+  rerun plan that lists that empty page cannot be rerun; run the file again.
+- **Right-to-left rows.** `alto`, RapidOCR's `rows` order (adapter version
+  0.2) and tiled readings write a Hebrew or Arabic-script row from its
+  right-hand end instead of reversing it, and the reading's engine description
+  says how many rows were read that way. Columns are still taken left to right.
+- **Budgets.** Under `max_usd` or `max_tokens`, a run stops before the next
+  request when a paid adapter did not report what the last page used (new key
+  `run.budget.unknown_usage: stop | continue`). Adapters that run on this
+  machine are exempt: RapidOCR, and `vision` when its server is local, now
+  declare `local`. Every budget stop is written to `run.log`, and `max_pages`
+  counts only pages the adapter will read, so `--dry-run` is never refused for
+  it. A misspelt key under `run.budget` stops a new run; misspelt keys under
+  `run.retry`, `run.pricing`, `run.grading` and `classify` are warned about.
+- **Engine agreement in new jobs keeps combining marks,** so readings that
+  differ only in vowel signs, viramas or points (Hindi, pointed Hebrew) no
+  longer count as agreeing. The Russian lexicon judges pre-reform and stressed
+  words whole in new jobs.
+- **Climbing under hold policy 0.9.** A page whose readings are all held
+  climbs to the next stage whichever is shown first; a typeset layer kept for a
+  few stray characters no longer buys a model reading that could not replace
+  it; a local reader that fails with nothing after it is recorded as
+  `provider_failure`, and held pages name only stages the job has.
+- **Schema alignment** removes a separator only where it groups thousands
+  (thin and narrow no-break spaces included), so `1,5` and `12 34` are recorded
+  as coercion errors instead of read as 15 and 1234.
+- **`rerun`** keeps each page's type, prompt and review hold from the earlier
+  run, and refuses a rerun plan naming pages the earlier run did not route.
+- **A run whose adapter records no reproducibility profile** (`alto`,
+  `rapidocr`, `indra`) can be bundled; replay compares its output as evidence
+  (`evidence_compared`) and never calls it exact. `replay` stops after 6 hours
+  without a result (`replay_timeout`) and says which kind of error ended it.
+- `doctor` lists the languages `--lang` takes (not `osd` or `equ`) and, with
+  `--config`, only the API keys that config needs; a missing or unparsable
+  config is named in a sentence. Bare `pageledger` shows the commands; usage
+  mistakes print their sentence without the usage line; a missing review or
+  config file is named in plain words. After an interrupt, the command to
+  continue keeps `--adapter-path` (and `fetch`'s keeps `--pages`, `--delay` and
+  `--max-image-bytes`).
+- `indra` is no longer accepted as the layout for tiling, which it never
+  provided.
+- Report wording in format 0.9: a flawed other reading "cannot confirm the
+  selected text"; a page with very little text is no longer said to have had an
+  empty reading; engine agreement is again said to be evidence, not proof;
+  render advice no longer asks for more pixels when the render already exceeds
+  the scan; the `orus` advice says it made more errors overall in testing;
+  doc references are links to the release's documentation.
+
+### Fixed
+
+- A job whose stage could not start (an adapter that will not load, a folder
+  that cannot be made) says why and records the stage as `not_started`;
+  `resume` then reads those pages, for which nothing was sent. Resuming a
+  custom-adapter job without `--adapter-path` no longer halts it for good.
+- With `processing.batch`, a reader that fails on one page no longer skips the
+  other pages of its batch, and a failure part-way through a batch no longer
+  leaves a stale report.
+- A review applied to an interrupted job no longer stops it for good: `resume`
+  finishes it. `process --review` with a review file that does not fit leaves
+  no half-made job folder.
+- `fetch` stops a server that keeps a response trickling in, and no longer
+  retries a refused connection, a certificate that fails or an unknown host
+  name: it says which, stops asking for further canvases, and suggests
+  `--resume` only when there is a fetch to resume. It accepts `HTTPS://` in
+  capitals; deeply nested manifest labels no longer make an unusable fetch
+  record; a mistyped huge `--pages` range is refused at once, here and in
+  `process` and `run`; control characters in a manifest's ids are shown
+  quoted.
+- The `vision` adapter keeps the readings and tiles it paid for when an
+  endpoint reports a nonsensical usage number or a too-deeply nested body,
+  stops a response that trickles past `timeout_seconds`, and refuses an
+  over-long prompt (more than about 64 KB) before any page is paid for.
+- A JPEG page image that ends before its image data is refused as damaged, as
+  `fetch` already refused it.
+- `compare` and `bundle` refuse damaged run files with a sentence, and
+  `compare` says when no grades could be compared instead of listing every page
+  as a grade change.
+- A malformed configuration value (a list where a word belongs, a misnamed
+  later `adapter_order` step) is refused with a sentence, and a custom
+  adapter's import error shows its cause.
+- `foreign_script_characters` no longer counts the spacing caron (ˇ) that some
+  LaTeX fonts write beside a letter for "č": a born-digital page citing archives
+  in transliteration was held and sent to OCR. See
+  [warnings](docs/warnings.md#quality-warnings).
+- One timeout of the `vision` adapter halted a job. The page is now asked for
+  once more and, if that fails, held as `provider_failure` while the job goes
+  on, as 0.8 promised; a tiled page keeps the tiles already read. See
+  [failed remote reads](docs/processing-spec.md#failed-remote-reads).
+- An image page that failed just as `max_image_pages` was reached lost its
+  retry; it now gets it after `resume --raise-limit`. A page a person reviewed
+  while the job was paused is not read again. See
+  [failed remote reads](docs/processing-spec.md#failed-remote-reads).
+- `review --apply` also refuses a sheet note starting with a tab or carriage
+  return, which a spreadsheet can read as a formula. See
+  [review in a spreadsheet](docs/processing-spec.md#review-in-a-spreadsheet).
+- A resumable run, and so every job, of a folder holding `.DS_Store` or other
+  hidden files failed its own checkpoint check. See
+  [page images](docs/process-a-collection.md#page-images).
+- `resume` tells a job from a run as `verify` and `inspect` do. See
+  [resume](docs/cli.md#resume).
+- Clearer messages for a missing source, an existing output folder, a page
+  range past the end, a missing Tesseract language (with close installed
+  codes), and what `bundle` and `compare` refuse; a renamed review sheet finds
+  its binding when only one matches; pypdf's repair notices are summarized. See
+  [troubleshooting](docs/troubleshooting.md).
+
+### Compatibility
+
+- New fields are optional and new files are additions: among them `iiif`,
+  `relocations`, `hold_causes`, `layout_sha256`, `native_pixels`, `page_tiles`,
+  a receipt's `correction`, a packet's `terms`, and the schemas `iiif-fetch`
+  and `review-decisions`. See
+  [the schemas](schemas/).
+- Jobs and runs written by 0.5.2 to 0.8 verify, rebuild and render as before,
+  under the hold policy and report format they recorded, including after a
+  move. New jobs record hold policy `0.9` and report format `0.9`. See
+  [older runs and jobs](docs/stability.md#older-runs-and-jobs).
+- Earlier command names work through 1.x, and `process --json` output and
+  exit codes are unchanged. `verify` can now pass where 0.8 failed: on a job
+  or run whose source is missing (`source_missing`) and on a moved job
+  (`job_relocated`). A script that needs the source present must check the
+  `warnings` list, not only `pass`. An unfinished job still fails. See
+  [verify](docs/cli.md#verify).
+- `fetch` lets only the host of the URL you name be a loopback, private or
+  link-local address, and under an `https` URL fetches nothing over `http`
+  (an `http://` image service is asked for over `https`; the record keeps the
+  declared id). A service or redirect that breaks either rule fails its canvas. See
+  [IIIF limits](docs/iiif.md#limits).
+- Built-in adapter versions that changed: `text` and `pdf_ocr` 0.2 (line
+  endings kept, no closing form feed, render resolution), `rapidocr` 0.2
+  (right-to-left rows); `rapidocr` and a local `vision` server now declare
+  `local`, and `indra` no longer declares `layout`. Their extractor identities
+  differ from 0.8's, so replaying an older bundle made with them reports an
+  identity mismatch.
+- A new required adapter attribute, or a change to the `extract()` call, now
+  waits for a major release. See [the adapter protocol](docs/adapter-protocol.md).
+
+### Known limits
+
+- One OCR engine's unconfirmed reading of an image-only scan passes unless it
+  carries a warning of its own, as do two-page spreads read across the gutter
+  and books re-typeset from OCR without their scans; confidence is judged per
+  page, not per word. See
+  [hold policy 0.9](docs/processing-spec.md#hold-policy-09).
+- A born-digital page whose text lies under an opaque page-sized image, or one
+  made in an OCR program's editor, is taken for an earlier OCR layer. See
+  [hold policy 0.9](docs/processing-spec.md#hold-policy-09).
+- `alto` reads one page per file; `verify` does not read the ALTO file again;
+  its boxes are checked against the job's OCR only when tiles are planned from
+  them. hOCR, PAGE XML, ALTO as the contest witness and ALTO found through a
+  IIIF manifest are not supported. See
+  [capabilities and limits](docs/capabilities-and-limits.md#extract-pages).
+- A job on a IIIF snapshot that a later `fetch --resume` grew cannot be
+  resumed. See
+  [process the snapshot](docs/iiif.md#process-the-snapshot).
+- `render_upsampled` judges a PDF page's largest image by its proportions, not
+  its drawn size, so a small picture with the page's shape on a born-digital
+  page is warned about. See
+  [page images](docs/capabilities-and-limits.md#page-images).
+- Tiles follow a layout, never a blind grid; only the `image` stage and the
+  `vision` adapter read tiles; column order assumes left-to-right print, so a
+  right-to-left page in several columns reads its columns in the wrong order. See
+  [capabilities and limits](docs/capabilities-and-limits.md#process-a-document).
+- `classify`, `bundle` and `replay` refuse page images or runs of them
+  (`classify --from-run` works on such a run). See
+  [page images](docs/capabilities-and-limits.md#page-images).
+- A bundle replays exactly only where the recorded operating-system release
+  and Python patch version match, and the Tesseract identity is the hash of
+  whatever `tesseract` is on PATH. `fetch`'s private-address check can be
+  passed by a host whose name changes its answer between lookup and connection,
+  and a server that sends its headers slowly is bounded only per read. `verify`
+  does not re-derive a run's text-quality warnings, and holds a run to the
+  rules of the version its manifest names, which is not itself hashed. One
+  warning of any kind grades a run page B, and a table whose required cells
+  are all empty can still grade A or B on the schema axis. See
+  [known limits](docs/capabilities-and-limits.md#known-limits).
+
+### Measured
+
+Measurements on the pages named, not accuracy figures:
+
+- Hold policy 0.9 was set on 74 pages of 20 research PDFs, each classed against
+  its scan. Pages left wrong and not held fell from 28 under 0.8 to 8; wrong
+  and held rose from 34 to 54; no right page was held. The 12 right pages are
+  all born-digital, so no right OCR page was in the sample. Rebuilt under 0.9,
+  the 135 pages of the 0.8 dogfood keep every hold, and its 5 right pages
+  still pass. See [measured on the 74 dogfood pages](docs/processing-spec.md#measured-on-the-74-dogfood-pages).
+- `latin-print-0.1` settled 81 of 1,118 spans on the 54 directory tiles its
+  letter pairs were chosen on (not an independent test); the 8 settlements
+  checked were right. On 20 crops of later directories it settled 1 of
+  720. See
+  [contest](docs/processing-spec.md#contest-a-models-reading).
+- On those tiles a general English word list knew 56 to 58% of the words in
+  good and bad readings alike, so `rough` does not help on directories. See
+  [a word list as the lexicon](docs/processing-spec.md#a-word-list-as-the-lexicon).
+
+## 0.8.0 - 2026-10-19
+
+### Added
+
+- A built-in `indra` adapter for [Indra OCR](https://huggingface.co/datalab-to/indra-ocr), a small OCR model
+  that runs on the CPU: `pip install 'pageledger[indra]'`. It reads one page at a time in `mode: ocr` (the
+  default) or `auto`, at a chosen `dpi`, optionally with `math: true` (formulas as LaTeX) or `output:
+  markdown`. Provenance records the indra-ocr version, a hash of the model files, the mode and the dpi; line
+  confidences become quality evidence, with a line Indra found but could not read counted as unread, and the
+  layout blocks, rotation and skew are kept with them. The model weights are not shipped and have their own licence
+  (modified OpenRAIL-M); `THIRD_PARTY_NOTICES.md` and `doctor` say so.
+- Two optional ladder stages between local OCR and the image stage: `second_ocr`, a second literal engine,
+  and `local_image`, a vision model on this machine read through the `vision` adapter. A page climbs one rung
+  at a time on the configured triggers. The local model has its own budget, `max_local_image_pages`, keeps
+  the image it read as evidence, and a failed local call hands its page to the next stage instead of halting
+  the job. From `local_image` a page climbs to the paid `image` stage only on evidence against the local
+  reading (a hold, or disagreement with a literal reading); `always` does not lift a clean local reading. In
+  a contested job the paid reader is the base over the local one. See
+  [the ladder](docs/processing-spec.md#the-ladder-a-second-ocr-engine-and-a-local-model).
+- Contest rule set `ru-print-0.2`: a grouped span (an unpaired run, or words only one side has) with a digit
+  on either side is a `number`, as paired words always were. `ru-print-0.1` is unchanged.
+- `model_commentary` and `partial_transcription` warnings for a generative reader's own remarks: a note about
+  the image or its legibility, or a bracket saying what it left out. Both hold the page as a coverage defect.
+- `ocr_text_layer`, a `pdf_text` warning for a page whose text layer is drawn in an OCR font
+  (`GlyphLessFont`: Tesseract, OCRmyPDF and Internet Archive scans), that is, an earlier OCR of the scan. Like
+  any warning, it puts the page in a plain run's review queue and counts against its signals grade, so a `run`
+  of such a scan with `pdf_text` now queues every page that has layer text.
+- `doctor` reports the `pymorphy3` (`ru` extra) and `indra_ocr` packages, with the extra that installs each.
+- `processing.batch: {pages, concurrent}` rebuilds the job index once per batch instead of after every page, and
+  reads `image` and `second_opinion` pages concurrently. Records are those of an unbatched job. See
+  [batches](docs/processing-spec.md#batches-and-concurrent-readers).
+
+### Changed
+
+- New jobs record hold policy `0.8`, which adds four rules. A text layer that two agreeing later readings
+  both disagree with is held, and the length warning those readings carried for differing from it is set
+  aside, so a junk layer no longer wins the transcript. A reader that returns under half the literal OCR's
+  words is held as incomplete. A page with an `ocr_text_layer` climbs to local OCR (trigger `ocr_layer`), so
+  an inherited OCR is checked instead of accepted. And in a ladder with a `second_ocr` stage, a local OCR
+  reading that no other clean reading confirms climbs to the second engine, and on to a reader when that
+  engine's own reading is held (trigger `uncorroborated`); an inherited OCR layer that agrees counts as
+  confirmation. One engine's unconfirmed reading was how five of the six wrong-but-accepted truth pages of the
+  0.8 dogfood got through. Jobs written under 0.6 and 0.6.1 are rebuilt by their own rules and verify
+  unchanged.
+- `pdf_text` counts pages from the page tree and reads only the pages a job selects. A `--pages` sample of a
+  long PDF no longer extracts the whole document's text first.
+- A remote reader's page that times out or meets a network, HTTP or availability error is requested once more;
+  if the retry fails too, the page is held as `provider_failure` and the job goes on. Any failure of the
+  optional `second_opinion` witness now holds only its page. 0.7 halted the whole job, and the vault's intake
+  then started the document again: one Haiku timeout on page 159 of 274 cost a seven-hour job. See
+  [failed remote reads](docs/processing-spec.md#failed-remote-reads).
+
+### Fixed
+
+- An optional second opinion that reports `MODEL_QUOTA` without an HTTP status (a subscription reader's usage
+  limit) now holds its page like a 429 instead of halting the job.
+- `process` builds every configured stage's adapter before the job exists, so a bad option on a later stage
+  (a vision `timeout_seconds` above 600, say) fails at once and names the stage, instead of halting the job when
+  the first page reaches it.
+- A job halted while a child run was still setting up can be verified. The job recorded
+  `attempt_stopped:<stage>:<error>`, but `verify-job` rebuilt it as `initialization_incomplete` and refused the
+  job's own report.
+- `adjudicate --decisions` records an answer without a `note` with an empty note, and names a refused decision by
+  its position and what is wrong with it, instead of refusing the page as "an invalid or repeated decision".
+
+### Compatibility
+
+- `job.schema.json` and `document.schema.json` accept the stages `second_ocr` and `local_image`, hold policy
+  `0.8`, the triggers `ocr_layer` and `uncorroborated`, the usage field `local_image_calls` and the limit `max_local_image_pages`.
+  The new stages and limit appear in a job's policy only when configured, so older configs compile to the
+  policy their jobs recorded.
+
+## 0.7.1 - 2026-10-07
+
+### Added
+
+- A source index finds originals that have moved since a run or document job
+  started. Each line of the TSV maps a SHA-256 to an absolute path; PageLedger
+  reads `PAGELEDGER_SOURCE_INDEX` (one or more files, separated by the platform
+  path separator) or, when that is unset, `~/.config/pageledger/source-index.tsv`.
+  `resume`, `verify-job`, `rerun` and `bundle` read the indexed file only when
+  its digest matches the recorded one. Checkpoints, `job.json`, manifests and
+  provenance keep the recorded path; nothing sealed is rewritten. See
+  [moved source files](docs/checkpoint-spec.md#moved-source-files).
+- `verify-run` reports a source found through the index as the warning
+  `source_relocated` instead of `source_missing`.
+
+### Changed
+
+- A document job binds its stage runs to its source by SHA-256 and page count
+  rather than by path, so a stage started after the source moved, which records
+  the path it actually read, still belongs to the job.
 
 ## 0.7.0 - 2026-10-01
 

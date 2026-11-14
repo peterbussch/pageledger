@@ -1,1 +1,5 @@
 blank_issues_enabled: true
+contact_links:
+  - name: Security problem
+    url: https://github.com/peterbussch/pageledger/blob/main/SECURITY.md
+    about: Report security problems privately, not in a public issue.

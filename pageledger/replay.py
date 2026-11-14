@@ -18,7 +18,7 @@ import sys
 import sysconfig
 import tempfile
 import uuid
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from importlib import metadata
 from pathlib import Path
 from typing import Any, cast
@@ -48,6 +48,10 @@ _BUNDLE_VERSION = "0.1"
 _WORKER_PROTOCOL_VERSION = "0.1"
 _WORKER_GENERIC_CODE = "replay_worker_failed"
 _WORKER_GENERIC_MESSAGE = "Replay worker failed without a valid result."
+# A whole run is replayed in one worker; adapters keep their own per-call timeouts.
+REPLAY_TIMEOUT_SECONDS = 6 * 3600
+# How replay hands the worker the model servers the user named.
+_ENDPOINTS_ENV = "PAGELEDGER_TRUST_ENDPOINTS"
 _WORKER_MAX_RESULT_BYTES = 1_048_576
 _WORKER_BOOTSTRAP = """\
 import runpy
@@ -60,6 +64,7 @@ sys.argv = ["pageledger._replay_worker", *worker_args]
 runpy.run_module("pageledger._replay_worker", run_name="__main__")
 """
 _WORKER_SAFE_ERROR_CODES = {
+    "adapter_not_trusted",
     "adapter_path_inside_bundle",
     "artifact_declaration_missing",
     "artifact_declarations_invalid",
@@ -85,6 +90,7 @@ _WORKER_SAFE_ERROR_CODES = {
     "extractor_identity_mismatch",
     "extractor_invalid",
     "extractor_missing",
+    "image_evidence_unsupported",
     "incompatible_environment",
     "inventory_duplicate",
     "inventory_invalid",
@@ -389,11 +395,24 @@ def bundle_run(run_dir: Path, out_dir: Path) -> dict[str, Any]:
     """Create an inspectable, portable bundle from a verified execute run."""
     from .verify import verify_run
 
+    requested = Path(run_dir).expanduser()
+    if (requested / "job.json").is_file():
+        _fail(
+            "job_not_bundleable",
+            "`bundle` accepts a run, not a document job. Share the job as its folder; see "
+            f"https://github.com/peterbussch/pageledger/blob/v{__version__}/docs/"
+            "share-and-cite.md#deposit-a-job",
+        )
     run_root = _resolve_directory(run_dir, "run_path_invalid")
     report = verify_run(run_root)
     if report.get("status") != "pass":
         raise ReplayError("run_not_verified", "Run directory did not pass verification")
     manifest = _read_json_object(run_root / "manifest.json", "manifest")
+    if any(isinstance(entry, dict) and "kind" in entry for entry in manifest.get("inputs") or []):
+        _fail(
+            "image_source_unsupported",
+            "Bundles do not yet carry page-image sources; keep the run and its images together",
+        )
     _reject_image_evidence(run_root, manifest)
     _check_bundle_eligibility(manifest)
     _validate_manifest_artifacts(manifest)
@@ -406,7 +425,9 @@ def bundle_run(run_dir: Path, out_dir: Path) -> dict[str, Any]:
     source_records, source_paths = _bundle_sources(run_root, manifest)
     route_source = _declared_file(run_root, manifest, "route_map")
     route_map = _read_yaml_mapping(route_source, "route map")
-    _check_source_route(manifest, route_map, source_paths)
+    _check_source_route(
+        manifest, route_map, [Path(entry["path"]).expanduser() for entry in manifest["inputs"]]
+    )
 
     requested = Path(out_dir).expanduser()
     if requested.exists() or requested.is_symlink():
@@ -559,8 +580,13 @@ def replay_bundle(
     out_dir: Path,
     *,
     adapter_path: Path | None = None,
+    trust_endpoints: Iterable[str] = (),
 ) -> dict[str, Any]:
-    """Replay a verified bundle in one fresh, isolated Python interpreter."""
+    """Replay a verified bundle in one fresh, isolated Python interpreter.
+
+    ``trust_endpoints`` are the model servers the user named (--trust-endpoint); the
+    worker reads them from its environment.
+    """
     root = _resolve_directory(bundle_dir, "bundle_path_invalid")
     requested_out = Path(out_dir).expanduser()
     if requested_out.exists() or requested_out.is_symlink():
@@ -613,7 +639,15 @@ def replay_bundle(
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL,
                     check=False,
+                    timeout=REPLAY_TIMEOUT_SECONDS,
+                    env={**os.environ, _ENDPOINTS_ENV: "\n".join(sorted(set(trust_endpoints)))},
                 )
+            except subprocess.TimeoutExpired as exc:
+                raise ReplayError(
+                    "replay_timeout",
+                    f"Replay was stopped after {REPLAY_TIMEOUT_SECONDS // 3600} hours without "
+                    "a result; an engine it calls may be hanging.",
+                ) from exc
             except OSError as exc:
                 raise ReplayError(_WORKER_GENERIC_CODE, _WORKER_GENERIC_MESSAGE) from exc
             return _read_worker_response(
@@ -652,7 +686,12 @@ def _replay_bundle_in_process(
 
     if trusted_path is not None:
         sys.path.insert(0, str(trusted_path))
-    from .adapters import load_adapter
+    from .adapters import (
+        UntrustedCode,
+        check_recorded_names,
+        load_adapter,
+        named_by_record,
+    )
     from .aligner import align_run
     from .compare import compare_runs
     from .config import load_config
@@ -669,7 +708,21 @@ def _replay_bundle_in_process(
     if adapter_name is None:
         raise ReplayError("extractor_identity_mismatch", "Bundle config has no effective adapter")
     try:
-        adapter = load_adapter(adapter_name, adapter_options)
+        # A bundle may come from anyone: code it names runs only from --adapter-path, and
+        # pages go off this machine only to a server the user named.
+        endpoints = [url for url in os.environ.get(_ENDPOINTS_ENV, "").split("\n") if url]
+        check_recorded_names(
+            config.named_adapters,
+            [config.classify_hook] if config.classify_hook else [],
+            "bundle",
+            root,
+            trusted_path,
+            endpoints,
+        )
+        with named_by_record("bundle", root, trusted_path, endpoints):
+            adapter = load_adapter(adapter_name, adapter_options)
+    except UntrustedCode as exc:
+        raise ReplayError("adapter_not_trusted", str(exc)) from exc
     except ReplayError:
         raise
     except Exception as exc:
@@ -682,8 +735,7 @@ def _replay_bundle_in_process(
     local_extractor = _runtime_extractor_identity(adapter, adapter_options, None)
     if _identity_without_profile(local_extractor) != _identity_without_profile(baseline_extractor):
         raise ReplayError(
-            "extractor_identity_mismatch",
-            "Local adapter identity does not match the baseline",
+            "extractor_identity_mismatch", _identity_difference(local_extractor, baseline_extractor)
         )
     cloud = "cloud" in {str(value).casefold() for value in baseline_extractor["capabilities"]}
     try:
@@ -693,9 +745,17 @@ def _replay_bundle_in_process(
             "incompatible_environment",
             "Local reproducibility profile could not be established",
         ) from exc
-    if bool(getattr(adapter, "deterministic", False)) and not cloud:
-        recorded_profile = baseline_extractor.get("reproducibility_profile")
-        if not isinstance(recorded_profile, dict) or local_profile is None:
+    recorded_profile = baseline_extractor.get("reproducibility_profile")
+    # Exactness needs a deterministic local adapter whose environment was recorded; one
+    # recorded without a profile is replayed and compared, never claimed exact.
+    exact_possible = (
+        bool(baseline_extractor["deterministic"])
+        and not cloud
+        and isinstance(recorded_profile, dict)
+    )
+    if exact_possible:
+        assert isinstance(recorded_profile, dict)
+        if local_profile is None:
             raise ReplayError(
                 "incompatible_environment",
                 "Local reproducibility profile does not match the baseline",
@@ -763,7 +823,7 @@ def _replay_bundle_in_process(
         "different_page_ids": sorted(set(different_page_ids)),
         "missing_page_ids": sorted(set(missing_page_ids)),
     }
-    deterministic = bool(baseline_extractor["deterministic"]) and not cloud
+    deterministic = exact_possible
     outcome = (
         "exact"
         if deterministic and raw["different"] == 0 and raw["missing"] == 0
@@ -824,6 +884,26 @@ def _runtime_extractor_identity(
         "options": dict(options),
         "reproducibility_profile": profile,
     }
+
+
+def _identity_difference(local: dict[str, Any], baseline: dict[str, Any]) -> str:
+    """Why the adapter here is not the one the bundle was made with, in one sentence."""
+    message = "Local adapter identity does not match the baseline"
+    if local.get("adapter") == baseline.get("adapter"):
+        if local.get("version") != baseline.get("version"):
+            return (
+                f"{message}: the bundle was made with {baseline.get('adapter')} version "
+                f"{baseline.get('version')}, and this PageLedger has version "
+                f"{local.get('version')}, whose readings can differ, so it cannot replay it"
+            )
+        changed = sorted(
+            key
+            for key in ("deterministic", "input_types", "output_types", "capabilities", "options")
+            if local.get(key) != baseline.get(key)
+        )
+        if changed:
+            return f"{message}: its {', '.join(changed)} differ from the bundle's"
+    return message
 
 
 def _identity_without_profile(identity: dict[str, Any]) -> dict[str, Any]:
@@ -999,7 +1079,11 @@ def _check_bundle_eligibility(manifest: dict[str, Any]) -> None:
     if manifest.get("execution_mode") != "execute":
         _fail("run_ineligible", "Replay bundles require execute mode")
     if type(manifest.get("run_depth")) is not int or manifest.get("run_depth") != 0:
-        _fail("run_ineligible", "Replay bundles require generation zero")
+        _fail(
+            "run_ineligible",
+            "`bundle` accepts a run that was not itself a rerun. Bundle the original run; "
+            "reruns cannot be replayed yet.",
+        )
     if manifest.get("status") not in {"completed", "partial"}:
         _fail("run_ineligible", "Run status is not eligible for replay bundling")
     summary = manifest.get("summary")
@@ -1086,10 +1170,8 @@ def _validate_extractor_identity(identity: dict[str, Any]) -> None:
     if not isinstance(identity["options"], dict):
         _fail("extractor_invalid", "Extractor options must be a mapping")
     profile = identity["reproducibility_profile"]
-    cloud = "cloud" in {item.casefold() for item in identity["capabilities"]}
     if profile is None:
-        if identity["deterministic"] and not cloud:
-            _fail("profile_missing", "Deterministic non-cloud extractor lacks a profile")
+        # Replayed without a profile, the run is compared as evidence, not claimed exact.
         return
     _validate_reproducibility_profile(profile, identity)
 
@@ -1193,12 +1275,16 @@ def _bundle_sources(
         if not isinstance(entry, dict) or not isinstance(entry.get("path"), str):
             _fail("source_invalid", "Manifest source entry is invalid")
         source = Path(entry["path"]).expanduser()
+        expected = entry.get("sha256")
+        if not source.exists() and _is_sha256(expected):
+            from .source_index import find_indexed
+
+            source = find_indexed(expected) or source
         _require_regular(source, f"source {entry['path']}")
         resolved = source.resolve()
         if resolved in seen:
             _fail("source_duplicate", "Manifest contains duplicate source paths")
         seen.add(resolved)
-        expected = entry.get("sha256")
         if not _is_sha256(expected) or _sha256_file(source) != expected:
             _fail("source_changed", f"Source does not match manifest: {source}")
         portable = f"sources/source-{index:04d}"
@@ -1227,7 +1313,15 @@ def _reject_image_evidence(run_root: Path, manifest: dict[str, Any]) -> None:
     """Image transport is not yet part of generation-zero text replay."""
     path = _declared_file(run_root, manifest, "provenance")
     for line in path.read_text(encoding="utf-8").splitlines():
-        if line.strip() and json.loads(line).get("input_evidence") is not None:
+        if not line.strip():
+            continue
+        try:
+            entry = json.loads(line)
+        except ValueError:
+            entry = None
+        if not isinstance(entry, dict):
+            _fail("bundle_malformed", "A provenance line is not a JSON object")
+        if entry.get("input_evidence") is not None:
             _fail(
                 "image_evidence_unsupported", "Image evidence cannot yet be transported or replayed"
             )

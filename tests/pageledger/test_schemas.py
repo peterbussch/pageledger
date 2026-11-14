@@ -14,6 +14,7 @@ Schema does not natively apply to YAML.
 from __future__ import annotations
 
 import json
+import shutil
 import sys
 from copy import deepcopy
 from pathlib import Path
@@ -45,12 +46,27 @@ _replay_schema = json.loads((SCHEMAS / "replay.schema.json").read_text(encoding=
 # --- Helpers --------------------------------------------------------------
 
 
+def _registry():
+    """Every schema, under the URI a ``$ref`` beside a schema's ``$id`` resolves to."""
+    from referencing import Registry, Resource
+
+    base = "https://github.com/peterbussch/pageledger/schemas/"
+    resources = [
+        (path.name, Resource.from_contents(json.loads(path.read_text(encoding="utf-8"))))
+        for path in SCHEMAS.glob("*.schema.json")
+    ]
+    return Registry().with_resources(
+        [(name, resource) for name, resource in resources]
+        + [(base + name, resource) for name, resource in resources]
+    )
+
+
 def _validate(schema: dict, instance: dict, label: str) -> None:
-    """Raise jsonschema.ValidationError if *instance* does not conform."""
-    from jsonschema import ValidationError, validate
+    """Raise AssertionError if *instance* does not conform; cross-schema links resolve."""
+    from jsonschema import Draft202012Validator, ValidationError
 
     try:
-        validate(instance=instance, schema=schema)
+        Draft202012Validator(schema, registry=_registry()).validate(instance)
     except ValidationError as exc:
         raise AssertionError(f"{label}: {exc.message}") from exc
 
@@ -347,50 +363,58 @@ def test_manifest_budget_failure(tmp_path: Path) -> None:
 
 
 def test_manifest_adapter_failure(tmp_path: Path) -> None:
-    """Adapter failure still produces valid manifest with failed status."""
+    """An adapter that raises on every page still leaves a valid, failed manifest."""
+    (tmp_path / "failing_adapter.py").write_text(
+        "class FailingAdapter:\n"
+        "    name = 'failing'\n"
+        "    version = '0.1'\n"
+        "    deterministic = True\n"
+        "    input_types = ('text',)\n"
+        "    output_types = ('text',)\n"
+        "    capabilities = ('local',)\n"
+        "\n"
+        "    def supports(self, action):\n"
+        "        return action == 'transcribe_text'\n"
+        "\n"
+        "    def extract(self, source, *, page_id, page_number, action, prompt=None):\n"
+        "        raise RuntimeError('simulated adapter crash')\n",
+        encoding="utf-8",
+    )
     source = tmp_path / "sample.txt"
-    source.write_text("bad data here\n", encoding="utf-8")
-    config = MINIMAL_CONFIG + "\n  allow_format_fallback: false\n"
+    source.write_text("page one\fpage two\n", encoding="utf-8")
     config_path = tmp_path / "test-config.yml"
-    config_path.write_text(config, encoding="utf-8")
+    config_path.write_text(
+        MINIMAL_CONFIG.replace("  adapter: text", "  adapter: failing_adapter:FailingAdapter"),
+        encoding="utf-8",
+    )
     out_dir = tmp_path / "out"
     import subprocess
 
-    subprocess.run(
-        [
-            sys.executable,
-            "-m",
-            "pageledger",
-            "run",
-            str(source),
-            "--config",
-            str(config_path),
-            "--out",
-            str(out_dir),
-        ],
+    result = subprocess.run(
+        [sys.executable, "-m", "pageledger", "run", str(source), "--config", str(config_path)]
+        + ["--out", str(out_dir), "--adapter-path", str(tmp_path)],
         capture_output=True,
         text=True,
         cwd=str(tmp_path),
     )
-    # The text adapter should succeed on any text, so this won't fail.
-    # Skip: the text adapter is too robust. We rely on the test_adapter_failure
-    # test in test_dry_run.py for adapter failures.
-    # Instead, test empty review queue with dry-run.
+    assert result.returncode == 1, result.stderr
     manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
-    _validate(_manifest_schema, manifest, "manifest.json (text adapter)")
-    assert manifest["status"] == "completed"
+    _validate(_manifest_schema, manifest, "manifest.json (adapter failure)")
+    assert manifest["status"] == "failed"
+    assert manifest["summary"]["pages_extracted"] == 0
 
 
-def test_manifest_empty_review(tmp_path: Path) -> None:
-    """Empty review queue: manifest is valid with zero pages_extracted."""
+def test_manifest_dry_run_extracts_nothing(tmp_path: Path) -> None:
+    """A dry run's manifest is valid, extracts no page and queues every page for review."""
     source = tmp_path / "sample.txt"
     source.write_text("hello world\n", encoding="utf-8")
     out_dir = _run_pageledger(
         tmp_path, config_yaml=MINIMAL_CONFIG, inputs=[str(source)], extra_args=["--dry-run"]
     )
     manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
-    _validate(_manifest_schema, manifest, "manifest.json (empty review)")
+    _validate(_manifest_schema, manifest, "manifest.json (dry run)")
     assert manifest["summary"]["pages_extracted"] == 0
+    assert manifest["summary"]["pages_routed_review"] == manifest["summary"]["pages_total"] == 1
 
 
 # --- audit.json validation ------------------------------------------------
@@ -433,6 +457,25 @@ def test_provenance_execute_success(tmp_path: Path) -> None:
     assert all(len(entry["result"]["raw_sha256"]) == 64 for entry in entries)
     manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
     assert len(entries) == manifest["summary"]["pages_extracted"]
+
+
+def test_provenance_image_evidence_is_validated_through_its_own_schema(tmp_path: Path) -> None:
+    source = tmp_path / "sample.txt"
+    source.write_text("page one\n", encoding="utf-8")
+    out_dir = _run_pageledger(tmp_path, config_yaml=MINIMAL_CONFIG, inputs=[str(source)])
+    (line,) = _validate_jsonl(out_dir / "provenance.jsonl", _provenance_schema, "provenance")
+    document = json.loads((REPO / "tests/fixtures/report-0.9/paused/document.json").read_text())
+    evidence = next(
+        attempt["input_evidence"]
+        for page in document["pages"]
+        for attempt in page["attempts"]
+        if attempt.get("input_evidence")
+    )
+
+    _validate(_provenance_schema, {**line, "input_evidence": evidence}, "with image evidence")
+    with pytest.raises(AssertionError, match="with damaged evidence"):
+        broken = {**evidence, "sha256": "not a hash"}
+        _validate(_provenance_schema, {**line, "input_evidence": broken}, "with damaged evidence")
 
 
 def test_provenance_dry_run_empty(tmp_path: Path) -> None:
@@ -479,12 +522,12 @@ def test_quality_execute_success(tmp_path: Path) -> None:
     """Quality lines validate and warn on short/empty text."""
     source = tmp_path / "sample.txt"
     source.write_text(
-        "page one text here\f", encoding="utf-8"
-    )  # page 2 is empty (trailing form feed)
+        "page one text here\f\fpage three", encoding="utf-8"
+    )  # page 2 is empty; a trailing form feed would only end page 1
     out_dir = _run_pageledger(tmp_path, config_yaml=MINIMAL_CONFIG, inputs=[str(source)])
     entries = _validate_jsonl(out_dir / "quality.jsonl", _quality_schema, "quality")
-    # Both pages extracted (page 1 has text, page 2 is empty string)
-    assert len(entries) == 2
+    # Every page extracted (page 2 is an empty string)
+    assert len(entries) == 3
     # Page 2 should have empty_text warning
     warnings_by_page = {e["page_id"]: e["warnings"] for e in entries}
     page1_warnings = [w for w in warnings_by_page.get("doc_0001_page_0001", [])]
@@ -691,10 +734,14 @@ def test_audit_md_derived_from_audit_json(tmp_path: Path) -> None:
     out_dir = _run_pageledger(
         tmp_path, config_yaml=MINIMAL_CONFIG, inputs=[str(source)], extra_args=["--dry-run"]
     )
+    from pageledger.artifacts import render_audit_markdown
+
     audit_json = json.loads((out_dir / "audit.json").read_text(encoding="utf-8"))
     audit_md = (out_dir / "audit.md").read_text(encoding="utf-8")
-    assert str(len(audit_json["review_queue"])) in audit_md
-    assert str(len(audit_json["quarantine_queue"])) in audit_md
+    assert len(audit_json["review_queue"]) == 3
+    assert audit_md == render_audit_markdown(audit_json)
+    audit_json["review_queue"].pop()
+    assert audit_md != render_audit_markdown(audit_json)
 
 
 # --- Compatibility policy: schema_version -------------------------------------------------
@@ -925,6 +972,36 @@ def test_normalized_pages_validate_and_grades_flow_through(tmp_path: Path) -> No
     raw = out_dir / "raw" / f"{good['page_id']}.markdown_table"
     assert raw.read_text(encoding="utf-8") == _GOOD_TABLE
 
+    # An absent normalized/ reads as empty, so losing one that held records still fails.
+    shutil.rmtree(out_dir / "normalized")
+    from pageledger.verify import verify_run
+
+    report = verify_run(out_dir)
+    assert report["status"] == "fail"
+    assert "normalized_record_count_mismatch" in {issue["code"] for issue in report["errors"]}
+
+
+def test_a_schema_run_without_its_normalized_directory_fails(tmp_path: Path) -> None:
+    """Pages that aligned to no records still leave files, so the directory is required."""
+    from pageledger.verify import verify_run
+
+    (tmp_path / "table_adapter.py").write_text(_TABLE_ADAPTER, encoding="utf-8")
+    source = tmp_path / "volume.txt"
+    source.write_text(_PROSE_PAGE + "\f" + _PROSE_PAGE, encoding="utf-8")
+    out_dir = _run_pageledger(
+        tmp_path,
+        config_yaml=CONFIG_WITH_SCHEMA,
+        inputs=[str(source)],
+        extra_args=["--adapter-path", str(tmp_path)],
+    )
+    manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
+    assert manifest["summary"]["records_normalized"] == 0
+    assert verify_run(out_dir)["status"] == "pass"
+    shutil.rmtree(out_dir / "normalized")
+    report = verify_run(out_dir)
+    assert report["status"] == "fail"
+    assert "artifact_missing" in {issue["code"] for issue in report["errors"]}
+
 
 def test_dict_content_raw_artifact_is_valid_json(tmp_path: Path) -> None:
     """Raw artifacts for dict/list content are JSON, not Python repr."""
@@ -966,3 +1043,42 @@ class JsonAdapter:
     raw_files = list((out_dir / "raw").glob("*.json"))
     assert len(raw_files) == 1
     assert json.loads(raw_files[0].read_text(encoding="utf-8")) == [{"place": "Baku", "total": 500}]
+
+
+def _png_page(width: int = 8, height: int = 4) -> bytes:
+    import struct
+    import zlib
+
+    def chunk(kind: bytes, body: bytes) -> bytes:
+        return (
+            struct.pack(">I", len(body)) + kind + body + struct.pack(">I", zlib.crc32(kind + body))
+        )
+
+    rows = b"".join(b"\x00" + b"\x80" * width for _ in range(height))
+    header = struct.pack(">IIBBBBB", width, height, 8, 0, 0, 0, 0)
+    return (
+        b"\x89PNG\r\n\x1a\n"
+        + chunk(b"IHDR", header)
+        + chunk(b"IDAT", zlib.compress(rows))
+        + chunk(b"IEND", b"")
+    )
+
+
+def test_page_image_run_artifacts_validate(tmp_path: Path) -> None:
+    """A run of a folder of page images writes artifacts its schemas accept."""
+    folder = tmp_path / "scans"
+    folder.mkdir()
+    (folder / "page-1.png").write_bytes(_png_page())
+    (folder / "page-2.png").write_bytes(_png_page(4, 8))
+    config = MINIMAL_CONFIG.replace("adapter: text", "adapter: pdf_text")
+    out_dir = _run_pageledger(tmp_path, config_yaml=config, inputs=[str(folder)])
+    manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
+    _validate(_manifest_schema, manifest, "manifest.json (page images)")
+    (entry,) = manifest["inputs"]
+    assert entry["kind"] == "page_images" and len(entry["images"]) == 2
+    assert entry["carrier"]["pages"] == []
+    lines = _validate_jsonl(out_dir / "provenance.jsonl", _provenance_schema, "provenance")
+    assert [line["source"]["image"]["name"] for line in lines] == ["page-1.png", "page-2.png"]
+    assert lines[1]["source"]["native_pixels"] == {"width": 4, "height": 8}
+    quality = _validate_jsonl(out_dir / "quality.jsonl", _quality_schema, "quality")
+    assert all("no_text_layer" in line["warnings"] for line in quality)

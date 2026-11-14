@@ -108,7 +108,14 @@ def test_all_retained_evidence_is_validated_before_pending_calls(job, damage):
         targets[damage].unlink()
     else:
         targets[damage].write_text("damaged")
-    with pytest.raises(ValueError):
+    reason = {
+        "source": "Recovery source identity changed",
+        "config": "Recovery config identity changed",
+        "raw": "Recovery output changed",
+        "receipt": "Recovery page inventory mismatch",
+        "response": "Recovery record invalid",
+    }[damage]
+    with pytest.raises(ValueError, match=reason):
         runner.resume(out)
     assert adapter.calls == [1]
 
@@ -189,7 +196,7 @@ def test_budget_reconstruction_stops_pending_work(job):
         runner.resume(job[2])
     assert job[3].calls == [1, 2]
     assert verify_run(job[2])["status"] == "pass"
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="does not permit resume"):
         runner.resume(job[2])
     assert job[3].calls == [1, 2]
 
@@ -255,7 +262,7 @@ def test_single_writer_rejects_second_resume(job):
     from pageledger.checkpoint import writer_lock
 
     with writer_lock(job[2]):
-        with pytest.raises(ValueError, match="active writer"):
+        with pytest.raises(ValueError, match="already working in this folder"):
             runner.resume(job[2])
     runner.resume(job[2])
     assert job[3].calls == [1, 2, 3]
@@ -376,7 +383,13 @@ def test_semantically_invalid_rehashed_records_fail_closed(job, damage):
         plan = read_record(out / "checkpoint.json")
         plan["parent_run_id"] = "untrusted-parent"
         write_record(out / "checkpoint.json", plan)
-    with pytest.raises(ValueError):
+    reason = {
+        "failed_type": "Invalid typed recovery failure",
+        "missing_planned_page": "Recovery plan has missing or unexpected source pages",
+        "state_gap": "Recovery attempt order contains a gap",
+        "job_unknown_field": "Invalid recovery job identity or plan",
+    }[damage]
+    with pytest.raises(ValueError, match=reason):
         runner.resume(out)
     assert job[3].calls == [1]
 
@@ -604,3 +617,74 @@ def test_saved_page_at_exact_budget_cap_replays_without_next_request(job, monkey
         runner.resume(out)
     assert adapter.calls == [1]
     assert verify_run(out)["status"] == "pass"
+
+
+def _interrupted(job):
+    def interrupt(completed_phase, _duration):
+        if completed_phase == "page_log_control":
+            raise KeyboardInterrupt
+
+    with pytest.raises(KeyboardInterrupt):
+        launch(job, _phase_observer=interrupt)
+
+
+def test_a_cut_short_temporary_is_cleared_on_resume(job):
+    _interrupted(job)
+    leftover = job[2] / "raw" / ".pending-x1y2z3"
+    leftover.write_text("partial", encoding="utf-8")
+    assert runner.resume(job[2])["status"] == "completed"
+    assert not leftover.exists()
+    assert verify_run(job[2])["status"] == "pass"
+
+
+def test_a_checkpoint_its_schema_rejects_is_refused(job):
+    from pageledger.checkpoint import digest
+
+    _interrupted(job)
+    path = job[2] / "checkpoint.json"
+    envelope = json.loads(path.read_text(encoding="utf-8"))
+    envelope["payload"]["log_level"] = "LOUD"
+    envelope["sha256"] = digest(envelope["payload"])
+    path.write_text(json.dumps(envelope), encoding="utf-8")
+    with pytest.raises(ValueError, match="Invalid recovery job identity"):
+        runner.resume(job[2])
+
+
+def test_a_lone_surrogate_is_a_failed_reading_not_a_stranded_request(job):
+    original = CountingAdapter.extract
+
+    def surrogate(self, source, **kwargs):
+        result = original(self, source, **kwargs)
+        return ExtractionResult(
+            content="caf\udce9",
+            format="text",
+            confidence=None,
+            model=None,
+            warnings=[],
+            usage=result.usage,
+        )
+
+    job[3].extract = surrogate.__get__(job[3])
+    with pytest.raises(RuntimeError):
+        launch(job)
+    record = json.loads((job[2] / ".checkpoint/pages/doc_0001_page_0001.json").read_text())
+    assert record["payload"]["state"] == "failed"
+
+
+def test_an_invalid_partial_keeps_the_adapter_failure_code(job):
+    from pageledger.adapters import AdapterFailure
+
+    partial = ExtractionResult(
+        content="cut",
+        format="text",
+        confidence=None,
+        model=None,
+        warnings=[],
+        usage={"tokens": 4096, "cost_usd": 0.02},
+    )
+    job[3].failure = AdapterFailure("MODEL_OUTPUT_TRUNCATED", partial_result=partial)
+    with pytest.raises(RuntimeError):
+        launch(job)
+    record = json.loads((job[2] / ".checkpoint/pages/doc_0001_page_0001.json").read_text())
+    assert record["payload"]["error"]["code"] == "MODEL_OUTPUT_TRUNCATED"
+    assert "partial_result" not in record["payload"]

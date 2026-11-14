@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/peterbussch/pageledger/schemas/review-decisions.json",
+  "title": "PageLedger Review Decisions File",
+  "description": "The JSON form of a review sheet, which the review view downloads as review.json and review --apply reads. bindings is the sheet's binding (see review-sheet-binding.schema.json); rows hold only the pages with a decision. A row's text is a corrected page, recorded exactly after CRLF and lone CR are made LF.",
+  "type": "object",
+  "properties": {
+    "schema_version": {"const": "0.1"},
+    "bindings": {"type": "object"},
+    "rows": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "row_id": {"type": "string", "pattern": "^p[0-9]{4,}$"},
+          "page_number": {"description": "The page number as text, as the review view writes it; since 0.9 also as an integer. The pattern applies to text only.", "type": ["string", "integer"], "pattern": "^[1-9][0-9]*$"},
+          "decision": {
+            "description": "A review sheet decision (accept, blank, illustration, handwriting, unreadable, source_defect, use:ATTEMPT, correct:FILE), or correct with the corrected text in text.",
+            "type": "string"
+          },
+          "note": {"type": "string", "description": "Becomes the receipt's reason."},
+          "text": {"type": "string", "description": "The corrected text, with decision correct."},
+          "from": {
+            "type": "string",
+            "description": "With a correct decision: the attempt whose own reading the correction starts from. Absent or empty: the page's selected text."
+          }
+        },
+        "required": ["row_id", "page_number", "decision"],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": ["schema_version", "bindings", "rows"],
+  "additionalProperties": false
+}

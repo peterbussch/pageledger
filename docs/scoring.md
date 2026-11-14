@@ -4,7 +4,8 @@
 reference transcription, line by line. The references PageLedger uses were read
 by frontier vision models and stay provisional until a person checks them, so
 every number is labelled **against reference**: it is agreement with another
-reading, not accuracy.
+reading, not accuracy. The script is in PageLedger's source repository, not in
+the installed package, so run it from a clone of the repository.
 
 ```bash
 python scripts/corpus/score.py references/ engine-output/
@@ -39,7 +40,7 @@ are read as rows of cells.
 | `normalized_cer`, `normalized_grapheme_cer` | The same after case-folding, writing ѣ, і, ѳ and ѵ as е, и, ф and и, and dropping word-final ъ. |
 | `exact_lines` | Share of reference lines found without a single edit. |
 | `missing_lines` | Share of reference lines needing edits for more than half their characters. |
-| `numbers_found` | Share of the numbers in each table cell of the reference that appear in the matched text; `1 850` and `1850` count as the same number. |
+| `numbers_found` | Share of the numbers in each table cell of the reference that appear in the matched text; `1 850` and `1850` count as the same number. A separator groups digits only before exactly three more, so `12, 15` is two numbers and `18971898` does not count as `1897, 1898`; engine text, which has no cell borders, may also match one part of a grouped number, so `1 234 567` finds `1234` and `567`. |
 | `historical_kept` | Share of the reference's ѣ, і, ѳ, ѵ and word-final ъ also in the matched text. |
 | `historical_added` | Such letters in the matched text beyond the reference's. |
 

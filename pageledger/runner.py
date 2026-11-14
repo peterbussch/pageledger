@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
+import functools
 import hashlib
 import json
 import math
 import re
 import sys
 import time
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Iterable, Sequence
+from contextlib import ExitStack
 from datetime import datetime, timezone
 from pathlib import Path
 from shutil import copyfile
@@ -21,11 +23,16 @@ from .adapters import (
     PDF_ONLY_ADAPTER_NAMES,
     AdapterFailure,
     PageLedgerDiagnostic,
+    PdfTextAdapter,
     adapter_page_count,
+    check_recorded_names,
     load_adapter,
+    named_by_record,
+    native_page_pixels,
     ocr_pdf_page_count,
     paginate,
     pdf_page_count,
+    trusted_endpoints,
 )
 from .aligner import ALIGNABLE_FORMATS, align_page, load_schema_spec
 from .artifacts import (
@@ -53,6 +60,16 @@ from .budget import (
 )
 from .config import load_config
 from .grading import grade_page
+from .image_source import (
+    KIND,
+    ImageSource,
+    carrier,
+    is_image_source,
+    read_image_source,
+    read_sha256,
+    source_identity,
+)
+from .layout import layout_sha256
 from .policy import generative_page_ids, rebuild_policy_queues
 from .quality import _build_quality_entry, mark_repeated_page_text, repeated_text_key
 from .replay import build_reproducibility_profile
@@ -155,6 +172,28 @@ def _make_log_entry(
     }
 
 
+def _check_evidence_in_context(
+    result: Any,
+    *,
+    root: Path,
+    source_sha256: str | None,
+    readable: Path,
+    page_number: int,
+    prompt_sha256: str,
+) -> None:
+    """Image evidence must belong to this run, source page and prompt."""
+    if getattr(result, "input_evidence", None) is not None:
+        from .image_evidence import validate_input_evidence
+
+        validate_input_evidence(
+            result.input_evidence,
+            root=root,
+            source_sha256=source_sha256 or _sha256_path(readable),
+            page_number=page_number,
+            prompt_sha256=prompt_sha256,
+        )
+
+
 def _extract_adapter_page(
     *,
     adapter: Any,
@@ -165,8 +204,10 @@ def _extract_adapter_page(
     run_id: str,
     log_entries: list[dict[str, Any]],
     phase_clock: _PhaseClock,
+    check_result: Callable[[Any], None] | None = None,
 ) -> tuple[Any | None, float | None, str, int, AdapterExecutionError | None]:
-    """Extract and validate one page, preserving retry evidence."""
+    """Extract and validate one page, preserving retry evidence. ``check_result`` adds
+    checks that need the run's context, so their failure is this page's failure."""
     page_id = page["page_id"]
     extraction_started_at = _utc_now()
     attempt = 1
@@ -228,6 +269,8 @@ def _extract_adapter_page(
     phase_clock.switch("result_validation")
     try:
         _validate_extraction_result(adapter.name, result)
+        if check_result is not None:
+            check_result(result)
     except Exception as exc:
         adapter_error = AdapterExecutionError(
             adapter=adapter.name,
@@ -253,6 +296,9 @@ def _extract_adapter_page(
         return None, None, extraction_started_at, attempt, adapter_error
 
     return result, extraction_seconds, extraction_started_at, attempt, None
+
+
+_PAGE_ID = re.compile(r"doc_\d{4,}_page_\d{4,}")
 
 
 def run(
@@ -308,7 +354,12 @@ def run(
         return _run(**arguments, _checkpoint=Checkpoint(root))
 
 
-def resume(run_dir: Path, *, adapter_path: Path | None = None) -> dict[str, Any]:
+def resume(
+    run_dir: Path,
+    *,
+    adapter_path: Path | None = None,
+    trust_endpoints: Iterable[str] | None = None,
+) -> dict[str, Any]:
     """Continue verified pending work in place; never repeat an ambiguous request."""
     from .checkpoint import Checkpoint, read_record, writer_lock
 
@@ -326,7 +377,7 @@ def resume(run_dir: Path, *, adapter_path: Path | None = None) -> dict[str, Any]
             verification = verify_run(root)
             if verification["status"] != "pass":
                 raise ValueError("Finalized run verification failed; refusing resume")
-            manifest = json.loads((root / "manifest.json").read_text())
+            manifest = json.loads((root / "manifest.json").read_text(encoding="utf-8"))
             if (
                 manifest["run_id"] != job.get("run_id")
                 or job.get("root") != str(root)
@@ -345,21 +396,44 @@ def resume(run_dir: Path, *, adapter_path: Path | None = None) -> dict[str, Any]
                 "resumed": True,
             }
         checkpoint = Checkpoint(root, existing=True)
+        snapshot = root / "config-snapshot.yml"
+        # The snapshot came with the run folder: code it names runs only from --adapter-path,
+        # and pages go off this machine only to a server the user named. Both are refused
+        # before recovery touches anything.
+        recorded = load_config(snapshot, validate_adapter=False)
+        endpoints = trusted_endpoints(trust_endpoints)
+        check_recorded_names(
+            recorded.named_adapters,
+            [recorded.classify_hook] if recorded.classify_hook else [],
+            "run",
+            root,
+            adapter_path,
+            endpoints,
+        )
         checkpoint.require_resumable()
         assert checkpoint.job is not None
         job = checkpoint.job
-        return _run(
-            inputs=[Path(item["path"]) for item in job["inputs"]],
-            config_path=root / "config-snapshot.yml",
-            out_dir=root,
-            dry_run=False,
-            log_level=job["log_level"],
-            adapter_path=adapter_path,
-            _checkpoint=checkpoint,
-        )
+        # The checkpoint keeps the recorded paths as source identity; reads go
+        # wherever the verified bytes are now (the source index may relocate them).
+        with named_by_record("run", root, adapter_path, endpoints):
+            return _run(
+                inputs=[checkpoint.sources[item["path"]] for item in job["inputs"]],
+                config_path=snapshot,
+                out_dir=root,
+                dry_run=False,
+                log_level=job["log_level"],
+                adapter_path=adapter_path,
+                _checkpoint=checkpoint,
+            )
 
 
-def _run(
+def _run(**arguments: Any) -> dict[str, Any]:
+    # Carriers for page-image sources exist only while the run reads its pages.
+    with ExitStack() as carriers:
+        return _run_pages(**arguments, _carriers=carriers)
+
+
+def _run_pages(
     *,
     inputs: list[Path],
     config_path: Path,
@@ -378,6 +452,7 @@ def _run(
     _reproducibility_profile: dict[str, Any] | None = None,
     _phase_observer: PhaseObserver | None = None,
     _checkpoint: Any | None = None,
+    _carriers: ExitStack,
 ) -> dict[str, Any]:
     """Run the alpha PageLedger loop.
 
@@ -401,6 +476,10 @@ def _run(
     # Construct adapters once in the execution path. Direct callers of
     # load_config retain its validation behavior.
     config = load_config(config_path, validate_adapter=False)
+    if _checkpoint is None or _checkpoint.job is None:
+        if _loaded_adapter is None:
+            # A new run starts from the user's own config (replay reruns a recorded one).
+            config.refuse_new_run_slips()
     effective_adapter_name, effective_adapter_options = _effective_adapter(config, run_depth)
     adapter_order = config.adapter_order
     adapter_order_names = (
@@ -425,7 +504,7 @@ def _run(
         raise ValueError(
             "No extraction route: this config has no taxonomy.page_types, so every page "
             "would go to review and nothing would be extracted. Add taxonomy.page_types "
-            "(pageledger init-config writes a working example), pass --routes with a "
+            "(pageledger init --run writes a working example), pass --routes with a "
             "reviewed route map, or use --adapter for a quick run. For an intentional "
             "review-only run, map a page type to default_action: review."
         )
@@ -471,7 +550,18 @@ def _run(
         if len(input_paths) != 1:
             raise ValueError("--pages requires a single input file")
         selected_page_numbers = _parse_pages_expression(pages)
-    _validate_adapter_inputs(input_paths, adapter_name=effective_adapter_name)
+    images: dict[Path, ImageSource] = {}
+    for path in input_paths:
+        if is_image_source(path):
+            images[path] = read_image_source(path)
+            skipped_inputs.extend(path / name for name in images[path].skipped)
+    _validate_adapter_inputs(input_paths, adapter_name=effective_adapter_name, images=images)
+
+    def count_pages(source: Path) -> int:
+        if source in images:
+            return len(images[source].pages)
+        return _planned_page_count(source, adapter=adapter, adapter_name=effective_adapter_name)
+
     if adapter is not None and not dry_run and callable(getattr(adapter, "preflight", None)):
         adapter.preflight(input_paths)
     if _checkpoint is None:
@@ -482,9 +572,7 @@ def _run(
     page_counts: dict[Path, int] = {}
     if routes_path is not None:
         for source in input_paths:
-            page_counts[source.resolve()] = _planned_page_count(
-                source, adapter=adapter, adapter_name=effective_adapter_name
-            )
+            page_counts[source.resolve()] = count_pages(source)
         taxonomy = config.data.get("taxonomy") or {}
         page_types = set((taxonomy.get("page_types") or {}).keys())
         imported_routes, route_warnings = load_route_map(
@@ -529,12 +617,14 @@ def _run(
     extraction_seconds_values: list[float] = []
     budget_alerts: list[dict[str, Any]] = []
     alerted_budget_units: set[str] = set()
+    unknown_capped: set[str] = set()
     failure_error: RuntimeError | None = None
     halt_reason: str | None = None
     attempted_page_ids: set[str] = set()
     consecutive_failures = 0
 
     prompt = config.default_prompt
+    parent_routes: dict[str, dict[str, Any]] = {}
     imported_by_source = {
         Path(document["source"]): document
         for document in (imported_routes or {}).get("documents", [])
@@ -552,9 +642,7 @@ def _run(
                 page_count = page_counts[resolved_source]
                 routed_pages = [dict(page) for page in imported_document["pages"]]
             elif selection_by_source is None:
-                page_count = _planned_page_count(
-                    source, adapter=adapter, adapter_name=effective_adapter_name
-                )
+                page_count = count_pages(source)
                 page_numbers: Sequence[int] = range(1, page_count + 1)
                 if selected_page_numbers is not None:
                     highest = selected_page_numbers[-1]
@@ -575,13 +663,12 @@ def _run(
                     else None
                 )
                 page_count = (
-                    declared_page_count
-                    if declared_page_count is not None
-                    else _planned_page_count(
-                        source, adapter=adapter, adapter_name=effective_adapter_name
-                    )
+                    declared_page_count if declared_page_count is not None else count_pages(source)
                 )
                 planned = [(item["page_id"], int(item["page_number"])) for item in selected]
+                parent_routes.update(
+                    (item["page_id"], item["route"]) for item in selected if item.get("route")
+                )
                 if any(page_number > page_count for _, page_number in planned):
                     raise ValueError(
                         f"Rerun selection exceeds the recorded source page count for {source}"
@@ -589,6 +676,10 @@ def _run(
             if imported_routes is None:
                 routed_pages = []
                 for page_id, page_number in planned:
+                    parent_route = parent_routes.get(page_id)
+                    if parent_route is not None and not dry_run:
+                        routed_pages.append(_rerun_route(config, parent_route))
+                        continue
                     action = "review" if dry_run else config.default_action
                     reason = _route_reason(action=action, dry_run=dry_run)
                     page = {
@@ -607,14 +698,18 @@ def _run(
                         page["review"] = True
                     routed_pages.append(page)
             try:
-                source_sha256 = _sha256_path(source)
+                source_sha256 = images[source].sha256 if source in images else _sha256_path(source)
             except OSError as exc:
                 raise RuntimeError(f"Cannot read input file '{source}': {exc}") from exc
-            input_entry = {
+            input_entry: dict[str, Any] = {
                 "path": str(source),
                 "sha256": source_sha256,
                 "page_count": page_count,
             }
+            if source in images:
+                input_entry.update(kind=KIND, images=images[source].manifest())
+                if images[source].fetch is not None:
+                    input_entry["iiif"] = images[source].fetch
             if selected_page_numbers is not None:
                 input_entry["pages"] = pages
             elif selection_by_source is not None:
@@ -646,6 +741,11 @@ def _run(
         for page in document["pages"]
     ]
     source_sha256_map = {Path(item["path"]): item["sha256"] for item in input_entries}
+    input_entries_by_path = {Path(item["path"]): item for item in input_entries}
+    readable_sources: dict[Path, Path] = {}
+    if _checkpoint is not None and recovery_job is not None:
+        located = _checkpoint.sources or _checkpoint.check_sources()
+        readable_sources = {Path(recorded): path for recorded, path in located.items()}
     review_queue = [
         _review_queue_entry(page) for _, page in planned_pages if page["action"] == "review"
     ]
@@ -659,7 +759,19 @@ def _run(
                 adapter is None or not adapter.supports(page["action"])
             ):
                 raise ValueError("Recovery adapter does not support a saved planned action")
-    preflight_error = _preflight_budget_error(config=config, pages_total=pages_total)
+    if parent_routes and not dry_run:
+        for action in sorted({page["action"] for _, page in planned_pages}):
+            if _requires_adapter(action) and (adapter is None or not adapter.supports(action)):
+                raise ValueError(
+                    f"The parent run routed pages to '{action}', which the rerun's adapter "
+                    f"'{getattr(adapter, 'name', None)}' does not support"
+                )
+    # Only pages routed to the adapter count against max_pages; skip and review routes
+    # (and a dry run, which extracts nothing) cost nothing.
+    pages_to_extract = sum(
+        not dry_run and _requires_adapter(page["action"]) for _, page in planned_pages
+    )
+    preflight_error = _preflight_budget_error(config=config, pages_total=pages_to_extract)
     if preflight_error is not None:
         raise BudgetExceededError(preflight_error)
 
@@ -680,6 +792,33 @@ def _run(
         if recovery_job is not None
         else [path.name for path in skipped_inputs]
     )
+    # What each page-image document's engine reads: a carrier PDF, or with an adapter
+    # that reads images and not PDFs, the page images themselves.
+    image_documents: dict[Path, ImageSource] = {}
+    carrier_paths: dict[Path, Path] = {}
+    input_types = getattr(adapter, "input_types", ())
+    reads_images = "image" in input_types and "pdf" not in input_types
+    # Built-in pdf_text renders nothing, so its carrier holds no image bytes.
+    reads_text = isinstance(adapter, PdfTextAdapter)
+    for input_path, input_entry, document in zip(
+        input_paths, input_entries, documents, strict=True
+    ):
+        if input_entry.get("kind") != KIND:
+            continue
+        image_documents[Path(input_entry["path"])] = images[input_path]
+        read_pages = sorted(
+            page["page_number"] for page in document["pages"] if _requires_adapter(page["action"])
+        )
+        if dry_run or adapter is None or reads_images or not read_pages:
+            continue
+        carried = [] if reads_text else read_pages
+        path, sha256 = _carriers.enter_context(carrier(images[input_path], carried))
+        if recovery_job is None:
+            input_entry["carrier"] = {"sha256": sha256, "derived": True, "pages": carried}
+        elif input_entry.get("carrier", {}).get("sha256") != sha256:
+            raise ValueError("Recovery page-image carrier differs from the recorded one")
+        carrier_paths[Path(input_entry["path"])] = path
+
     if _checkpoint is not None and recovery_job is None:
         from .checkpoint import adapter_identity
 
@@ -743,24 +882,61 @@ def _run(
         new_adapter_call = _checkpoint is None or _checkpoint.records[page_id]["state"] == "pending"
         if new_adapter_call:
             # Saved results still need replay at the cap; only new calls stop.
-            for unit, cap, current in _budget_caps(
-                config,
-                pages_total=pages_extracted,
-                tokens_total=tokens_total,
-                estimated_cost_usd=estimated_cost_usd,
-            ):
-                if current >= cap:
-                    failure_error = BudgetExceededError(
-                        f"Budget reached before {page_id}: {unit}={current} max_{unit}={cap}"
+            stop = next(
+                (
+                    f"Budget reached before {page_id}: {unit}={current} max_{unit}={cap}"
+                    for unit, cap, current in _budget_caps(
+                        config,
+                        pages_total=pages_extracted,
+                        tokens_total=tokens_total,
+                        estimated_cost_usd=estimated_cost_usd,
                     )
-                    halt_reason = "budget"
-                    break
-            if halt_reason == "budget":
+                    if current >= cap
+                ),
+                None,
+            )
+            if stop is None and unknown_capped:
+                unit = sorted(unknown_capped)[0]
+                stop = (
+                    f"Budget cannot be checked before {page_id}: the adapter did not report "
+                    f"the {unit} an earlier page used, so max_{unit} cannot be enforced. Set "
+                    "run.pricing for the adapter, or run.budget.unknown_usage: continue to go "
+                    "on without the check"
+                )
+            if stop is not None:
+                failure_error = BudgetExceededError(stop)
+                halt_reason = "budget"
+                log_entries.append(
+                    {
+                        "schema_version": config.schema_version,
+                        "timestamp": _utc_now(),
+                        "level": "ERROR",
+                        "run_id": run_id,
+                        "page_id": page_id,
+                        "adapter": adapter.name,
+                        "status": "budget_exceeded",
+                        "error": stop,
+                    }
+                )
                 break
         attempted_page_ids.add(page_id)
         page_prompt = cast(str | None, page.get("prompt"))
         prompt_hash = _sha256_text(page_prompt or "")
+        readable = readable_sources.get(source, source)
+        reading, reading_sha256, page_image = readable, None, None
+        if source in image_documents:
+            page_image = image_documents[source].page(page["page_number"])
+            reading = carrier_paths.get(source, page_image.path)
+            reading_sha256 = read_sha256(input_entries_by_path[source], page["page_number"])
 
+        check_evidence = functools.partial(
+            _check_evidence_in_context,
+            root=out_dir,
+            source_sha256=reading_sha256,
+            readable=readable,
+            page_number=cast(int, page["page_number"]),
+            prompt_sha256=prompt_hash,
+        )
         phase_clock.switch("adapter_call")
         try:
             extract = _extract_adapter_page
@@ -769,13 +945,14 @@ def _run(
                 "run_id": run_id,
                 "log_entries": log_entries,
                 "phase_clock": phase_clock,
+                "check_result": check_evidence,
             }
             if _checkpoint is not None:
                 extract = _checkpoint.extract
                 extract_kwargs = {}
             result, extraction_seconds, extraction_started_at, attempt, adapter_error = extract(
                 adapter=adapter,
-                source=source,
+                source=reading,
                 page=page,
                 prompt=page_prompt,
                 **extract_kwargs,
@@ -801,16 +978,9 @@ def _run(
                 break
             continue
         assert result is not None
-        if getattr(result, "input_evidence", None) is not None:
-            from .image_evidence import validate_input_evidence
-
-            validate_input_evidence(
-                result.input_evidence,
-                root=out_dir,
-                source_sha256=_sha256_path(source),
-                page_number=page["page_number"],
-                prompt_sha256=prompt_hash,
-            )
+        if _checkpoint is not None:
+            # A fresh call was checked in extraction; a saved one is checked again here.
+            check_evidence(result)
         consecutive_failures = 0
         phase_clock.switch("raw_artifact")
         raw_artifact = Path("raw") / f"{page_id}.{_artifact_extension(result.format)}"
@@ -846,6 +1016,13 @@ def _run(
             assert page_cost_basis is not None
             cost_bases.add(page_cost_basis)
             estimated_cost_usd = _round_cost(estimated_cost_usd + page_cost)
+        # A cap on a unit the adapter does not report cannot hold; an adapter that
+        # declares itself local costs nothing to call again.
+        if "local" not in adapter_capabilities and config.budget_unknown_usage == "stop":
+            if config.budget_max_tokens is not None and not isinstance(page_tokens, int):
+                unknown_capped.add("tokens")
+            if config.budget_max_usd is not None and page_cost is None:
+                unknown_capped.add("usd")
         usage_entries.append(usage)
         budget_error = _budget_error(
             config=config,
@@ -897,6 +1074,7 @@ def _run(
                 adapter_capabilities=adapter_capabilities,
                 page_cost=page_cost,
                 page_cost_basis=page_cost_basis,
+                source_detail=_source_detail(readable, page, adapter, page_image),
             )
         )
         phase_clock.switch("quality")
@@ -904,7 +1082,7 @@ def _run(
             _build_quality_entry(
                 schema_version=config.schema_version,
                 page=page,
-                source=source,
+                source=readable,
                 result=result,
                 adapter=adapter,
                 parent_quality=(parent_quality_by_page or {}).get(page_id),
@@ -1312,6 +1490,26 @@ def rerun(
 
     parent_route_path = parent / parent_manifest["artifacts"]["route_map"]
     parent_route = yaml.safe_load(parent_route_path.read_text(encoding="utf-8"))
+    # Page ids name output files, so each must be one the parent routed, in PageLedger's
+    # own form; the rerun keeps that routing (type, action, prompt, review hold).
+    parent_pages = {
+        page["page_id"]: page
+        for document in parent_route.get("documents", [])
+        for page in document.get("pages", [])
+        if isinstance(page, dict)
+    }
+    routed_items = []
+    for item in items:
+        page_id = item.get("page_id") if isinstance(item, dict) else None
+        if (
+            not isinstance(page_id, str)
+            or not _PAGE_ID.fullmatch(page_id)
+            or page_id not in parent_pages
+            or parent_pages[page_id].get("page_number") != item.get("page_number")
+        ):
+            raise ValueError(f"Rerun manifest names a page the parent run did not route: {item}")
+        routed_items.append({**item, "route": parent_pages[page_id]})
+    items = routed_items
     parent_inputs = parent_manifest.get("inputs", [])
     recorded_inputs: dict[str, dict[str, Any]] = {}
     for index, document in enumerate(parent_route.get("documents", [])):
@@ -1323,13 +1521,21 @@ def rerun(
         ):
             recorded_inputs[str(Path(document["source"]).resolve())] = parent_inputs[index]
     source_page_counts: dict[Path, int] = {}
+    relocated: dict[str, Path] = {}
     for source_str in sorted({str(item["source"]) for item in items}):
         source = Path(source_str)
-        if not source.exists():
-            raise ValueError(f"Rerun source no longer exists: {source}")
         recorded_input = recorded_inputs.get(str(source.resolve()))
         recorded = recorded_input.get("sha256") if recorded_input else None
-        if not isinstance(recorded, str) or _sha256_path(source) != recorded:
+        kind = recorded_input.get("kind") if recorded_input else None
+        if not source.exists():
+            from .source_index import find_indexed
+
+            located = find_indexed(recorded, kind) if isinstance(recorded, str) else None
+            if located is None:
+                raise ValueError(f"Rerun source no longer exists: {source}")
+            # The parent keeps its recorded path; the child records where it read.
+            relocated[source_str] = source = located
+        elif not isinstance(recorded, str) or source_identity(source, kind) != recorded:
             raise ValueError(
                 f"Source changed since parent run: {source} (sha256 does not match parent manifest)"
             )
@@ -1337,6 +1543,11 @@ def rerun(
         if not isinstance(page_count, int) or isinstance(page_count, bool) or page_count < 1:
             raise ValueError(f"Parent manifest lacks a valid source page_count for {source}")
         source_page_counts[source.resolve()] = page_count
+    if relocated:
+        items = [
+            {**item, "source": str(relocated.get(str(item["source"]), item["source"]))}
+            for item in items
+        ]
 
     result = run(
         inputs=[],
@@ -1378,9 +1589,15 @@ def _adapter_names_match(recorded: Any, configured: str | None) -> bool:
     return aliases.get(recorded, recorded) == aliases.get(configured, configured)
 
 
-def _parse_pages_expression(expression: str) -> list[int]:
-    """Parse a page selection like ``1-8,81,100-110`` into sorted numbers."""
-    numbers: set[int] = set()
+# No source PageLedger reads has this many pages; a larger --pages number is a typo,
+# refused before a range of that size is built.
+MAX_PAGE_NUMBER = 1_000_000
+
+
+def _parse_pages_expression(expression: str, page_count: int | None = None) -> list[int]:
+    """Parse a page selection like ``1-8,81,100-110`` into sorted numbers, refusing a
+    page past ``page_count`` (when known) before any range is expanded."""
+    ranges: list[tuple[int, int]] = []
     for part in expression.split(","):
         part = part.strip()
         match = re.fullmatch(r"(\d+)(?:-(\d+))?", part)
@@ -1390,6 +1607,14 @@ def _parse_pages_expression(expression: str) -> list[int]:
         end = int(match.group(2)) if match.group(2) else start
         if start < 1 or end < start:
             raise ValueError(f"--pages: invalid range '{part}'")
+        ranges.append((start, end))
+    highest = max(end for _, end in ranges)
+    if page_count is not None and highest > page_count:
+        raise ValueError(f"--pages selects page {highest} but the source has {page_count} pages")
+    if highest > MAX_PAGE_NUMBER:
+        raise ValueError(f"--pages: page {highest} is past the end of any source")
+    numbers: set[int] = set()
+    for start, end in ranges:
         numbers.update(range(start, end + 1))
     return sorted(numbers)
 
@@ -1408,6 +1633,42 @@ def _group_selection(page_selection: list[dict[str, Any]]) -> dict[Path, list[di
     if not grouped:
         raise ValueError("Page selection is empty")
     return grouped
+
+
+def _rerun_route(config: Any, parent: dict[str, Any]) -> dict[str, Any]:
+    """A rerun page keeps the parent's routing; a page the parent never typed (a dry run's
+    review) takes the supplied config's default, as a fresh run would."""
+    if parent.get("reason") == "no_classifier_available":
+        action = config.default_action
+        page = {
+            "page_id": parent["page_id"],
+            "page_number": parent["page_number"],
+            "type": config.default_review_type,
+            "confidence": None,
+            "action": action,
+            "reason": _route_reason(action=action, dry_run=False),
+        }
+        if config.default_prompt is not None:
+            page["prompt"] = config.default_prompt
+    else:
+        page = {
+            key: parent[key]
+            for key in (
+                "page_id",
+                "page_number",
+                "type",
+                "confidence",
+                "action",
+                "reason",
+                "prompt",
+            )
+            if key in parent
+        }
+    if _requires_adapter(page["action"]) and (
+        parent.get("review") is True or config.review_after_extraction(page["type"])
+    ):
+        page["review"] = True
+    return page
 
 
 def _route_reason(*, action: str, dry_run: bool) -> str:
@@ -1480,14 +1741,17 @@ def _expand_inputs(inputs: list[Path]) -> tuple[list[Path], list[Path]]:
 
     Hidden entries (names starting with ".") include macOS .DS_Store files and
     AppleDouble "._*" sidecars. They are skipped and returned separately so the
-    run can report them. Files named explicitly are always kept.
+    run can report them. Files named explicitly are always kept. A folder of
+    page images is one document and stays a single input.
     """
     expanded: list[Path] = []
     skipped: list[Path] = []
     for path in inputs:
         if not path.exists():
-            raise ValueError(f"Input path does not exist: {path}")
-        if path.is_dir():
+            raise ValueError(f"Source file was not found: {path}")
+        if path.is_dir() and is_image_source(path):
+            expanded.append(path)
+        elif path.is_dir():
             for child in sorted(path.iterdir()):
                 if child.is_file():
                     (skipped if child.name.startswith(".") else expanded).append(child)
@@ -1498,7 +1762,14 @@ def _expand_inputs(inputs: list[Path]) -> tuple[list[Path], list[Path]]:
     return expanded, skipped
 
 
-def _validate_adapter_inputs(inputs: list[Path], *, adapter_name: str | None) -> None:
+def _validate_adapter_inputs(
+    inputs: list[Path], *, adapter_name: str | None, images: dict[Path, ImageSource]
+) -> None:
+    if adapter_name == "text" and images:
+        raise ValueError(
+            f"Adapter 'text' cannot read page images: {next(iter(images))}. "
+            "Use an OCR adapter such as pdf_ocr or rapidocr."
+        )
     if adapter_name == "text":
         pdf_inputs = [path for path in inputs if path.suffix.lower() == ".pdf"]
         if pdf_inputs:
@@ -1509,7 +1780,9 @@ def _validate_adapter_inputs(inputs: list[Path], *, adapter_name: str | None) ->
                 "run.adapter: pdf_ocr for scanned PDFs."
             )
     if adapter_name in PDF_ONLY_ADAPTER_NAMES:
-        non_pdf_inputs = [path for path in inputs if path.suffix.lower() != ".pdf"]
+        non_pdf_inputs = [
+            path for path in inputs if path.suffix.lower() != ".pdf" and path not in images
+        ]
         if non_pdf_inputs:
             first = non_pdf_inputs[0]
             raise ValueError(
@@ -1542,12 +1815,28 @@ def _validate_extraction_result(adapter_name: str, result: Any) -> None:
         validate_input_evidence(input_evidence)
         if input_evidence["model"] != result.model:
             raise ValueError("Image evidence actual model disagrees with extraction result")
+        if input_evidence["kind"] == "page_tiles":
+            from .image_evidence import validate_tile_text
+
+            if not isinstance(result.content, str):
+                raise ValueError("A reading in tiles must be text")
+            validate_tile_text(input_evidence, result.content)
+    layout = getattr(result, "layout", None)
+    if layout is not None:
+        from .layout import validate_layout
+
+        try:
+            validate_layout(layout)
+        except ValueError as exc:
+            raise ValueError(f"Adapter '{adapter_name}' {exc}") from None
     if not isinstance(result.content, (str, dict, list)):
         raise ValueError(f"Adapter '{adapter_name}' content must be string, object, or list")
     _require_json_serializable(
         f"Adapter '{adapter_name}' content must be JSON-serializable",
         result.content,
     )
+    if not _string_keys(result.content):
+        raise ValueError(f"Adapter '{adapter_name}' content keys must be strings")
     if not isinstance(result.format, str) or not result.format:
         raise ValueError(f"Adapter '{adapter_name}' format must be a non-empty string")
     if re.fullmatch(r"[A-Za-z0-9_]+", result.format) is None:
@@ -1563,6 +1852,10 @@ def _validate_extraction_result(adapter_name: str, result: Any) -> None:
         raise ValueError(f"Adapter '{adapter_name}' warnings must be a list")
     if not all(isinstance(warning, str) for warning in result.warnings):
         raise ValueError(f"Adapter '{adapter_name}' warnings must contain only strings")
+    _require_json_serializable(
+        f"Adapter '{adapter_name}' model and warnings must be valid Unicode text",
+        [result.model, result.warnings],
+    )
     confidence_detail = getattr(result, "confidence_detail", None)
     if confidence_detail is not None and not isinstance(confidence_detail, dict):
         raise ValueError(f"Adapter '{adapter_name}' confidence_detail must be a mapping or null")
@@ -1616,9 +1909,24 @@ def _canonical_usage(usage: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _string_keys(value: Any) -> bool:
+    """JSON writes a number key as a string, so a reading must use strings itself."""
+    stack = [value]
+    while stack:
+        item = stack.pop()
+        if isinstance(item, dict):
+            if not all(isinstance(key, str) for key in item):
+                return False
+            stack.extend(item.values())
+        elif isinstance(item, list):
+            stack.extend(item)
+    return True
+
+
 def _require_json_serializable(message: str, value: Any) -> None:
     try:
-        json.dumps(value, allow_nan=False)
+        # Records are written as UTF-8, so a lone surrogate must fail here, not at save.
+        json.dumps(value, allow_nan=False, ensure_ascii=False).encode("utf-8")
     except (TypeError, ValueError) as exc:
         raise ValueError(message) from exc
 
@@ -1643,6 +1951,7 @@ def _build_provenance_entry(
     adapter_capabilities: list[str],
     page_cost: float | None,
     page_cost_basis: str | None,
+    source_detail: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     return {
         "schema_version": schema_version,
@@ -1652,6 +1961,7 @@ def _build_provenance_entry(
             "path": str(source),
             "page_number": page["page_number"],
             "sha256": source_sha256,
+            **(source_detail or {}),
         },
         "route": {
             "type": page["type"],
@@ -1685,7 +1995,27 @@ def _build_provenance_entry(
             if getattr(result, "input_evidence", None) is not None
             else {}
         ),
+        **(
+            {"layout_sha256": layout_sha256(result.layout)}
+            if getattr(result, "layout", None) is not None
+            else {}
+        ),
     }
+
+
+def _source_detail(
+    source: Path, page: dict[str, Any], adapter: Any, image: Any | None
+) -> dict[str, Any]:
+    """A page's own image, and the native pixels of what an engine rendered, when known."""
+    if image is not None:
+        return {
+            "image": image.record(),
+            "native_pixels": {"width": image.width, "height": image.height},
+        }
+    if source.suffix.lower() != ".pdf" or "embedded_text" in getattr(adapter, "capabilities", ()):
+        return {}
+    native = native_page_pixels(source, page["page_number"])
+    return {} if native is None else {"native_pixels": {"width": native[0], "height": native[1]}}
 
 
 def _artifact_extension(result_format: str) -> str:

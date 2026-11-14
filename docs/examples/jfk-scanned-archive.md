@@ -45,7 +45,7 @@ tesseract-ocr` on Debian/Ubuntu).
 ## Dry run
 
 ```bash
-pageledger init-config --adapter pdf_ocr --out jfk-ocr.yml
+pageledger init --run --adapter pdf_ocr --out jfk-ocr.yml
 pageledger run 180-10147-10163.pdf --config jfk-ocr.yml --out runs/jfk-dry --dry-run
 ```
 
@@ -65,7 +65,7 @@ Suppose you didn't know this was a scan. The obvious first try is the free
 `pdf_text` adapter:
 
 ```bash
-pageledger init-config --adapter pdf_text --out jfk-text.yml
+pageledger init --run --adapter pdf_text --out jfk-text.yml
 pageledger run 180-10147-10163.pdf --config jfk-text.yml --out runs/jfk-text
 ```
 
@@ -105,7 +105,7 @@ unranked. Do not read the retained `Warnings resolved in B` line as a current
 cross-adapter claim.
 
 ```bash
-pageledger compare-runs runs/jfk-text runs/jfk-ocr
+pageledger compare runs/jfk-text runs/jfk-ocr
 ```
 
 ```
@@ -193,7 +193,7 @@ custom adapter (the cloud-VLM skeleton in
 [`examples/`](../../examples/cloud_vlm_adapter_skeleton.py) is the
 starting point). On a 4-page slice: 4/4 pages, 14,579 real tokens,
 `cost_usd: 0.044` with `cost_basis: configured_rate`, and a $0.25 budget
-cap standing guard. One `compare-runs` detail matters here: the
+cap standing guard. One `compare` detail matters here: the
 model marked unreadable words `[illegible]`, the brackets tripped
 `suspicious_symbol_density`, and those pages went straight back to the
 review queue. The pages the VLM itself could not fully read are exactly

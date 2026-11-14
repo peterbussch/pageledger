@@ -1,0 +1,17 @@
+schema_version: '0.1'
+run_id: run-20261110T225532637305Z-rerun
+parent_run_id: run-20261110T225532637305Z
+parent_manifest: manifest.json
+rerun_depth: 0
+max_rerun_depth: 2
+created_at: '2026-11-10T22:55:32Z'
+reason: audit_policy
+rerun_executable: true
+rerun_status: executable
+items:
+- page_id: doc_0001_page_0002
+  page_number: 2
+  source: /private/tmp/pageledger-golden/sample.txt
+  action: review
+  reason: quality_warning
+  previous_grade: B

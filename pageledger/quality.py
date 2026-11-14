@@ -22,7 +22,15 @@ _INSTRUCTION_MARKERS = (
     "[/INST]",
 )
 _PROSE_ONLY_WARNINGS = frozenset(
-    {"suspicious_symbol_density", "fragmented_text", "joined_text", "digits_only_text"}
+    {
+        "suspicious_symbol_density",
+        "fragmented_text",
+        "joined_text",
+        "digits_only_text",
+        "split_words",
+        "labels_without_values",
+        "capital_sign_in_word",
+    }
 )
 # Model loops. On 287 outputs of 24 transcribed pages by 11 engines, these
 # limits flag 16 pages from the local vision models, every one a loop on
@@ -42,6 +50,22 @@ _LANGUAGE_MIN_LETTERS = 200
 _SCRIPT_MIN_SHARE = 0.5
 _PREREFORM_MIN_LETTERS = 300
 _FINAL_HARD_SIGN_MIN_SHARE = 0.01
+# A model's remarks about its own reading, which a page never prints: a note on the
+# image's legibility, or a bracket saying what it left out. Seen in the 2026-10
+# telephone-directory dogfood after a model transcribed part of a page and stopped.
+_NOTE_LINE = re.compile(r"^[\s>*_(\[]*(?:note|n\.\s?b\.|disclaimer)\b", re.I)
+_ABOUT_THE_IMAGE = re.compile(
+    r"\b(?:legib\w*|illegib\w*|resolution|too small|blurr\w*|microfilm|"
+    r"(?:the|this) (?:image|scan|photo\w*)|transcri\w+|"
+    r"(?:I|we) (?:cannot|can't|could not|couldn't|am unable|was unable)|unable to (?:read|make out))",
+    re.I,
+)
+_OMISSION = re.compile(
+    r"\[[^\]\n]{0,300}?\b(?:omitted|not transcribed|remaining (?:lines|text|columns?|entries)|"
+    r"rest of (?:the )?(?:page|column|text)|(?:transcription|text) (?:truncated|incomplete))"
+    r"[^\]\n]{0,300}\]",
+    re.I,
+)
 
 
 def _build_quality_entry(
@@ -75,7 +99,7 @@ def _build_quality_entry(
     text_quality.update(_content_coverage_metrics(text, tokens))
     repetition_metrics, repetition_warnings = _repetition_evidence(text)
     text_quality.update(repetition_metrics)
-    shape_warnings = _text_quality_warnings(text_quality)
+    shape_warnings = _text_quality_warnings(text_quality) + _misread_warnings(text)
     if result.format in ALIGNABLE_FORMATS:
         # The symbol/shape heuristics are calibrated on prose. Structured
         # payloads are full of pipes, braces, and short numeric tokens by
@@ -87,6 +111,8 @@ def _build_quality_entry(
     warnings.extend(repetition_warnings)
     if language:
         warnings.extend(_declared_language_warnings(text, language))
+    if "generative" in getattr(adapter, "capabilities", ()):
+        warnings.extend(_model_remarks(text))
     output_integrity, integrity_warnings = _output_integrity(text, parent_quality)
     warnings.extend(integrity_warnings)
     confidence_detail = getattr(result, "confidence_detail", None)
@@ -120,6 +146,21 @@ def _build_quality_entry(
         "embedded_text_comparison": delta,
         "output_integrity": output_integrity,
     }
+
+
+def _model_remarks(text: str) -> list[str]:
+    """``partial_transcription`` when a model says it left text out, ``model_commentary``
+    when it adds a note about the image or its own reading."""
+    found = []
+    if _OMISSION.search(text):
+        found.append("partial_transcription")
+    paragraphs = re.split(r"\n\s*\n", text)
+    if any(
+        _NOTE_LINE.match(paragraph) and _ABOUT_THE_IMAGE.search(paragraph)
+        for paragraph in paragraphs
+    ):
+        found.append("model_commentary")
+    return found
 
 
 def _has_low_confidence_tail(detail: Any) -> bool:
@@ -266,8 +307,10 @@ def _content_coverage_metrics(text: str, tokens: list[str]) -> dict[str, Any]:
 # any other script, in small numbers, are a symbol font read through the wrong map:
 # a 2019 paper's formulas came out as Ethiopic, Oriya, Tamil and Syriac letters.
 _HOME_SCRIPTS = ("LATIN", "CYRILLIC", "GREEK", "COMBINING", "MODIFIER")
-# Letters in Latin-1 whose names do not say Latin: µ (micro), ª and º (ordinals).
-_HOME_SIGNS = frozenset("µªº")
+# Letters in Latin-1 whose names do not say Latin: µ (micro), ª and º (ordinals); and ˇ
+# (caron), the one spacing modifier letter not named MODIFIER, which a LaTeX layer writes
+# beside the letter for "č" ("ˇc").
+_HOME_SIGNS = frozenset("µªºˇ")
 
 
 def _foreign_script(char: str) -> bool:
@@ -464,6 +507,81 @@ def _text_quality_warnings(metrics: dict[str, Any]) -> list[str]:
         # mostly in that script is simply written in it.
         warnings.append("foreign_script_characters")
     return warnings
+
+
+# Words of one letter in Russian, and in Ukrainian and Belarusian (і, й, з, ў); any
+# other lone Cyrillic letter not closed by a full stop (an abbreviation) is a piece of a
+# broken word. The 2026-11 dogfood's split-word layer ("Сырны й комбина т") had 11-16%
+# such tokens; its 12 correct pages had at most 0.7%.
+_ONE_LETTER_WORDS = frozenset("абвжикосуяійзўАБВЖИКОСУЯІЙЗЎ")
+# Combining marks: the general ones (a stress, "е́хать") and Cyrillic's own (the titlo of a
+# Church Slavonic numeral or abbreviation, "а҃", "Бг҃ъ").
+_MARKS = "\u0300-\u036f\u0483-\u0489"
+# Letters with their combining marks, so a marked letter stays part of its word.
+_LETTERS = re.compile(rf"[^\W\d_](?:[^\W\d_]|[{_MARKS}])*")
+_CYRILLIC_TOKEN = re.compile(rf"[\u0400-\u04ff{_MARKS}]+")
+# A lone small letter a space after a number or млн/млрд/тыс/трлн on the same line, or
+# joined to a unit by · or /, is a unit ("5 м", "млн т", "кВт·ч"), not a piece of a word:
+# a Soviet production table writes one in every row. A letter inside a number ("6,6т") is not.
+_UNIT_BEFORE = re.compile(r"(?:(?:\d|(?<![^\W\d_])(?:млн|млрд|тыс|трлн)\.?)[^\S\n]+|[·/])\Z", re.I)
+_SPLIT_MIN_TOKENS = 50
+_SPLIT_MIN_SHARE = 0.10
+# A lower-case letter then a capital Ъ or Ь: no word of either Russian orthography is
+# written so (capitals start words or fill a whole one). ABBYY's 1788 layer read every
+# final ѣ and ъ this way ("благочестивЪйшихЪ").
+_CAPITAL_SIGN = re.compile(r"[а-яёѣіѳѵ][ЪЬ]")
+_CAPITAL_SIGN_MIN = 5
+_CAPITAL_SIGN_MIN_SHARE = 0.01
+# A dot leader leads to a value. Ten or more leaders ending a line with no number after
+# them, and fewer lines of numbers than half of those, is a table whose values the
+# reading lost: the 1880 gazetteer layer kept 34 row labels and almost none of 20 columns.
+# A leader is four dots or more, or three spaced ones; "..." is an ellipsis, which
+# dialogue ends lines with. A page number in roman numerals after one is a value.
+# A blank form (labels, leaders, nothing after them) cannot be told from this by its
+# text, and is held too: a person accepting it costs less than releasing a lost table.
+_LEADER = re.compile(r"\.{4,}|\.(?: \.){2,}")
+_LEADERS_MIN = 10
+_ROMAN = re.compile(
+    r"(?=[ivxlcdm])m{0,3}(?:cm|cd|d?c{0,3})(?:xc|xl|l?x{0,3})(?:ix|iv|v?i{0,3})", re.I
+)
+
+
+def _misread_warnings(text: str) -> list[str]:
+    """Defects of a reading a page's metrics do not show: broken words, impossible
+    capitals, and table labels whose values are missing."""
+    found = []
+    tokens = [m for m in _LETTERS.finditer(text) if _CYRILLIC_TOKEN.fullmatch(m.group())]
+    if len(tokens) >= _SPLIT_MIN_TOKENS:
+        stray = sum(
+            1
+            for m in tokens
+            if len(m.group()) == 1
+            and m.group() not in _ONE_LETTER_WORDS
+            and text[m.end() : m.end() + 1] != "."
+            and not (
+                m.group().islower()
+                and _UNIT_BEFORE.search(text, max(0, m.start() - 32), m.start())
+                and not text[m.end() : m.end() + 1].isdecimal()
+            )
+        )
+        if stray >= _SPLIT_MIN_SHARE * len(tokens):
+            found.append("split_words")
+        signs = len(_CAPITAL_SIGN.findall(text))
+        if signs >= max(_CAPITAL_SIGN_MIN, _CAPITAL_SIGN_MIN_SHARE * len(tokens)):
+            found.append("capital_sign_in_word")
+    lines = [line for line in text.splitlines() if line.strip()]
+    unfinished = 0
+    for line in lines:
+        leaders = list(_LEADER.finditer(line))
+        value = line[leaders[-1].end() :].strip() if leaders else ""
+        if leaders and not any(char.isdigit() for char in value) and not _ROMAN.fullmatch(value):
+            unfinished += 1
+    numeric = sum(
+        1 for line in lines if any(c.isdigit() for c in line) and not any(c.isalpha() for c in line)
+    )
+    if unfinished >= _LEADERS_MIN and numeric < unfinished / 2:
+        found.append("labels_without_values")
+    return found
 
 
 _REPEATED_TEXT_MAX_CHARACTERS = 200

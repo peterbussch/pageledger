@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import dataclasses
 import json
+import re
 from pathlib import Path
 
 import jsonschema
@@ -11,7 +12,7 @@ import pytest
 import yaml
 from test_image_evidence import image_descriptor
 
-from pageledger import runner
+from pageledger import processing, runner
 from pageledger.adapters import ExtractionResult, TextAdapter
 from pageledger.checkpoint import Checkpoint, file_digest, read_record
 from pageledger.processing import process, resume_job, review_job, verify_job
@@ -111,6 +112,15 @@ def setup(tmp_path, monkeypatch):
 def launch(setup, **kwargs):
     source, config, out, _ = setup
     return process(source=source, config_path=config, out_dir=out, **kwargs)
+
+
+def test_process_names_the_first_page_past_the_source_end(setup):
+    source, config, out, _ = setup
+    with pytest.raises(ValueError, match="Page 4 is past the end: the source has 3 pages"):
+        process(source=source, config_path=config, out_dir=out, pages="2-6")
+    with pytest.raises(ValueError, match="Page 120 is past the end: the source has 3 pages"):
+        process(source=source, config_path=config, out_dir=out, pages="120-130")
+    assert not out.exists()
 
 
 def test_serial_escalation_preserves_exact_denominator_and_review_holds(setup):
@@ -372,7 +382,7 @@ def test_tampered_selected_output_fails_verification(setup):
     selected = job["pages"][0]["attempts"][0]["raw_artifact"]
     (setup[2] / selected).write_text("changed")
     assert verify_job(setup[2])["status"] == "fail"
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="Recovery output changed or completed output is missing"):
         resume_job(setup[2])
 
 
@@ -434,8 +444,9 @@ def test_uncertain_ocr_page_is_reported_as_uncertain_not_incomplete(setup, monke
     assert job["hold_policy"] == HOLD_POLICY
     assert job["pages"][0]["disposition"] == "low_confidence"
     report = (setup[2] / "report.md").read_text(encoding="utf-8")
-    assert "The engine was unsure of some words" in report
-    assert "Possible missing or incomplete content" not in report
+    assert "| The engine local_text was unsure of many words; the same is true of " in report
+    assert "held for `low_confidence`" in report
+    assert "Text may be missing or damaged" not in report
     assert verify_job(setup[2])["status"] == "pass", result
 
 
@@ -471,8 +482,12 @@ def test_attempt_limit_processes_a_prefix_then_pauses(setup):
 def test_paused_job_stays_paused_without_a_higher_limit(setup):
     _limit_attempts(setup, 2)
     assert resume_job(setup[2])["status"] == "paused_budget"
-    for bad in ({"max_attempt_pages": 2}, {"max_attempt_pages": 1}, {"max_retries": 5}):
-        with pytest.raises(ValueError):
+    for bad, reason in (
+        ({"max_attempt_pages": 2}, "max_attempt_pages must be raised above 2"),
+        ({"max_attempt_pages": 1}, "max_attempt_pages must be raised above 2"),
+        ({"max_retries": 5}, "max_retries is not a processing limit"),
+    ):
+        with pytest.raises(ValueError, match=reason):
             resume_job(setup[2], raise_limits=bad)
     assert read_record(setup[2] / "job.json")["usage"]["attempt_pages"] == 2
 
@@ -603,7 +618,9 @@ def test_scanned_page_read_cleanly_by_ocr_does_not_need_a_person(setup):
     assert page["selected_attempt"].startswith("local_ocr")
     assert page["disposition"] == "unreviewed_text"
     assert page["review_reasons"] == []
-    assert "Pages needing a person: 0" in (setup[2] / "report.md").read_text(encoding="utf-8")
+    report = (setup[2] / "report.md").read_text(encoding="utf-8")
+    assert "Need a person" not in report
+    assert "no person has checked it: 1 page (1)." in report
     assert verify_job(setup[2])["status"] == "pass"
 
 
@@ -640,7 +657,7 @@ def _escalating(setup, monkeypatch, *, rough=True, **processing):
             "rough_below": 0.95,
         }
     setup[1].write_text(yaml.safe_dump(data))
-    monkeypatch.setattr(processing_module, "load_lexicon", lambda config: _FakeLexicon())
+    monkeypatch.setattr(processing_module, "load_lexicon", lambda config, **_: _FakeLexicon())
     # Every reading of the fixture text is judged rough by this stand-in.
     monkeypatch.setattr(
         processing_module,
@@ -660,7 +677,7 @@ def test_a_rough_page_climbs_and_the_job_verifies(setup, monkeypatch):
     assert page["triggers"][0]["trigger"] == "rough"
     report = (setup[2] / "report.md").read_text(encoding="utf-8")
     assert "| Stage | Pages read | Tokens | Seconds |" in report
-    assert "Climbs other than holds: rough 2." in report
+    assert "by trigger (a page can be sent on more than once): `rough` 2." in report
     assert verify_job(setup[2])["status"] == "pass"
 
 
@@ -714,7 +731,7 @@ def test_contest_with_a_lexicon_and_no_escalation_triggers(setup, monkeypatch):
     data["processing"]["contest"] = {"rules": "ru-print-0.1"}
     data["processing"]["lexicon"] = {"provider": "pymorphy3", "language": "ru"}
     setup[1].write_text(yaml.safe_dump(data))
-    monkeypatch.setattr(processing_module, "load_lexicon", lambda config: _FakeLexicon())
+    monkeypatch.setattr(processing_module, "load_lexicon", lambda config, **_: _FakeLexicon())
     assert launch(setup, pages="2")["status"] == "completed"
     assert verify_job(setup[2])["status"] == "pass"
 
@@ -729,7 +746,7 @@ def test_a_job_refuses_to_verify_under_another_lexicon(setup, monkeypatch):
 
     import pageledger.processing as processing_module
 
-    monkeypatch.setattr(processing_module, "load_lexicon", lambda config: Other())
+    monkeypatch.setattr(processing_module, "load_lexicon", lambda config, **_: Other())
     result = verify_job(setup[2])
     assert result["status"] == "fail"
     assert "Install the recorded version" in result["error"]
@@ -781,7 +798,7 @@ def test_a_readers_changes_are_contested_and_the_artifact_verifies(setup, monkey
         "Contested spans on 1 pages: glyph 8, word 8. Settled by rule: 8; by adjudication: 0; "
         "open: 8, holding 1 pages. Adjudicated pages: 0." in report
     )
-    assert "8 open of 16 in [spans](<contested/doc_0001_page_0001.json>)" in report
+    assert "Contested spans: [8 of 16 open](<contested/doc_0001_page_0001.json>)." in report
     _validate_schemas(setup[2], contested=contested["artifact"])
     assert verify_job(setup[2])["status"] == "pass"
 
@@ -837,6 +854,29 @@ def _answer(root, out, text, confidence="high"):
     return answer
 
 
+def test_an_answer_without_a_note_is_recorded_and_a_bad_one_is_named(setup, monkeypatch, tmp_path):
+    from pageledger.processing import adjudicate_job
+
+    _contesting(setup, monkeypatch)
+    assert launch(setup, pages="1")["status"] == "completed"
+    answer = _answer(setup[2], tmp_path / "packets", "полные")
+    path = tmp_path / "packets" / "doc_0001_page_0001.decisions.json"
+    # Gemini 3.1 Pro left the note out of all 39 answers on a page in the 0.8 dogfood.
+    answer["decisions"][1]["confidence"] = "certain"
+    for decision in answer["decisions"]:
+        del decision["note"]
+    path.write_text(json.dumps(answer, ensure_ascii=False))
+    with pytest.raises(ValueError, match="decision 2 needs confidence high, medium or low"):
+        adjudicate_job(setup[2], tmp_path / "packets", reviewer="agent:test")
+    answer["decisions"][1]["confidence"] = "high"
+    path.write_text(json.dumps(answer, ensure_ascii=False))
+    adjudicate_job(setup[2], tmp_path / "packets", reviewer="agent:test")
+    page = read_record(setup[2] / "job.json")["pages"][0]
+    assert {d["note"] for d in page["adjudications"][0]["decisions"]} == {""}
+    assert page["disposition"] == "adjudicated_text"
+    assert verify_job(setup[2])["status"] == "pass"
+
+
 def test_adjudicated_decisions_make_an_edition_that_verifies_and_exports(
     setup, monkeypatch, tmp_path
 ):
@@ -862,7 +902,9 @@ def test_adjudicated_decisions_make_an_edition_that_verifies_and_exports(
     edition = (setup[2] / page["edition"]["artifact"]).read_text(encoding="utf-8")
     assert edition == READER.replace("поныне", "полные")
     transcript = (setup[2] / "transcript.md").read_text(encoding="utf-8")
-    assert "Edition of attempt image-0001:doc_0001_page_0001" in transcript
+    assert "[Selected reading: the engine image, with its settled differences applied](<" in (
+        transcript
+    )
     assert READER.replace("поныне", "полные") in transcript
     _validate_schemas(setup[2])
     assert verify_job(setup[2])["status"] == "pass"
@@ -910,6 +952,9 @@ def _review(setup, tmp_path, decision):
     from pageledger.processing import create_review_sheet
 
     sheet = tmp_path / "review.csv"
+    # A fresh sheet each time: review --sheet does not write over one.
+    sheet.unlink(missing_ok=True)
+    (tmp_path / "review.csv.binding.json").unlink(missing_ok=True)
     create_review_sheet(setup[2], sheet)
     rows = list(csv.DictReader(sheet.read_text(encoding="utf-8-sig").splitlines()))
     rows[0]["decision"] = decision
@@ -1038,6 +1083,11 @@ def test_verify_job_rebuilds_legacy_hold_policy_artifacts(setup):
         page.pop("comparisons", None)
         for attempt in page["attempts"]:
             attempt.pop("adapter_capabilities", None)
+    # A legacy job records what the legacy rules decided, such as each held page's next rung.
+    processing._refresh(job, setup[2], materialize=False)
+    for page in job["pages"]:
+        for attempt in page["attempts"]:
+            attempt.pop("text", None)
     write_record(job_path, job)
     report = build_document_report(job, setup[2], report_format="0.5.1")
     (setup[2] / "document.json").write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n")
@@ -1049,9 +1099,9 @@ def test_verify_job_rebuilds_legacy_hold_policy_artifacts(setup):
 @pytest.mark.parametrize(
     "reason,label",
     [
-        ("engine_disagreement", "Engines disagree"),
-        ("numeric_disagreement", "Engines read numbers differently"),
-        ("unconfirmed_model_output", "Model output not confirmed by another engine"),
+        ("engine_disagreement", "Two readings share fewer than 60% of their words"),
+        ("numeric_disagreement", "Two readings give different numbers"),
+        ("unconfirmed_model_output", "A generative model wrote the text, and no other engine"),
     ],
 )
 def test_new_review_dispositions_render_in_report(setup, reason, label):
@@ -1128,7 +1178,70 @@ def test_process_cli_and_resume_job_dispatch(setup, capsys):
     assert json.loads(capsys.readouterr().out)["job_id"]
     assert main(["verify-job", str(setup[2]), "--json"]) == 0
     assert json.loads(capsys.readouterr().out)["status"] == "pass"
-    assert setup[3]["calls"] == [("local_text", 1), ("local_text", 2), ("local_text", 3)]
+    from pageledger.document_report import render_document_report
+
+    report_path = setup[2] / "document.json"
+    report = json.loads(report_path.read_text())
+    report.pop("stage_accounting")
+    report_path.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n")
+    (setup[2] / "report.md").write_text(render_document_report(report))
+    assert verify_job(setup[2])["status"] == "pass"
+
+
+@pytest.mark.parametrize(
+    ("review", "message"),
+    [
+        ([], "This review file is not a JSON object"),
+        (
+            {"schema_version": "0.1", "decisions": [], "rows": []},
+            "not a review receipt (it has rows; it lacks source_sha256)",
+        ),
+        (
+            {"schema_version": "0.2", "source_sha256": "a" * 64, "decisions": []},
+            "schema_version is '0.2'",
+        ),
+        (
+            {"schema_version": "0.1", "source_sha256": "b" * 64, "decisions": []},
+            "made for another document: its source_sha256 is bbbbbbbbbbbb…",
+        ),
+        (
+            {"schema_version": "0.1", "source_sha256": "a" * 64, "decisions": {}},
+            "decisions must be a list",
+        ),
+    ],
+)
+def test_a_review_file_is_refused_saying_what_is_wrong(review, message):
+    from pageledger.processing import _review_decisions
+
+    with pytest.raises(ValueError, match=re.escape(message)):
+        _review_decisions({"source": {"sha256": "a" * 64}, "pages": []}, review)
+
+
+def test_process_projects_attempts_before_extraction(setup, capsys):
+    source, config, out, _shared = setup
+    data = yaml.safe_load(config.read_text())
+    data["processing"]["limits"]["max_attempt_pages"] = 2
+    config.write_text(yaml.safe_dump(data))
+
+    events: list[dict] = []
+    result = process(source=source, config_path=config, out_dir=out, progress=events.append)
+
+    assert result["status"] == "paused_budget"
+    assert capsys.readouterr().err == ""
+    assert (
+        "up to 9 attempts are possible for 3 selected pages across 3 configured stages"
+        in events[0]["notice"]
+    )
+    stages = [event for event in events if "stage" in event]
+    assert stages[0] == {
+        "stage": "local_text",
+        "pages": [1, 2],  # max_attempt_pages: 2
+        "selected": 3,
+        "done": 0,
+        "held": 0,
+        "page_images": False,
+    }
+    assert all(event["selected"] == 3 for event in stages)
 
 
 @pytest.mark.parametrize("failure", [False, True])
@@ -1175,6 +1288,47 @@ def test_initialization_interruption_produces_explicit_halt_without_calls(setup,
     assert resume_job(setup[2])["status"] == "halted"
     assert setup[3]["calls"] == []
     assert read_record(setup[2] / "job.json")["halt_reason"] == "initialization_incomplete"
+    assert verify_job(setup[2])["status"] == "pass"
+
+
+def test_a_bad_stage_option_fails_before_the_job_exists(setup, monkeypatch):
+    from pageledger.adapters import load_adapter
+
+    # The real loader, so the vision adapter checks its own options.
+    monkeypatch.setattr(runner, "load_adapter", load_adapter)
+    data = yaml.safe_load(setup[1].read_text())
+    data["processing"]["local_text"] = {"adapter": "text"}
+    data["processing"]["local_ocr"] = {"adapter": "text"}
+    data["processing"]["image"] = {
+        "adapter": "vision",
+        "adapter_options": {
+            "base_url": "http://127.0.0.1:1/v1",
+            "model": "m",
+            "timeout_seconds": 900,
+        },
+    }
+    setup[1].write_text(yaml.safe_dump(data))
+    with pytest.raises(ValueError, match="processing.image: vision timeout_seconds"):
+        launch(setup)
+    assert not setup[2].exists()
+
+
+def test_a_child_that_raises_during_setup_leaves_a_job_that_verifies(setup, monkeypatch):
+    # 0.7 recorded attempt_stopped, then verify rebuilt it as initialization_incomplete
+    # and refused the job's own report.
+    original = runner.run
+
+    def broken(*args, **kwargs):
+        if "image" in str(kwargs.get("out_dir")):
+            Path(kwargs["out_dir"]).mkdir()
+            raise ValueError("adapter refused its options")
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(runner, "run", broken)
+    result = launch(setup)
+    job = read_record(setup[2] / "job.json")
+    assert result["status"] == "halted"
+    assert job["halt_reason"].startswith("attempt_stopped:image-")
     assert verify_job(setup[2])["status"] == "pass"
 
 
@@ -1345,8 +1499,12 @@ def test_refresh_checks_shared_source_once_for_all_child_runs(setup, monkeypatch
         return original(path, *args, **kwargs)
 
     monkeypatch.setattr(Path, "open", counted)
-    _refresh(job, setup[2], materialize=False)
+    _refresh(job, setup[2])
     assert len(reads) == 1
+    # Verification checks the source once, outside the rebuild, and only reports on it.
+    reads.clear()
+    _refresh(job, setup[2], materialize=False)
+    assert reads == []
 
 
 @pytest.mark.parametrize("completed", [False, True])
@@ -1402,7 +1560,7 @@ def test_process_rejects_run_controls_it_would_ignore(setup, key, value):
     data = yaml.safe_load(setup[1].read_text())
     data["run"][key] = value
     setup[1].write_text(yaml.safe_dump(data))
-    with pytest.raises(ValueError, match=rf"run\.{key} is ignored by process"):
+    with pytest.raises(ValueError, match=rf"process does not use run\.{key}"):
         launch(setup)
     assert not setup[2].exists()
 
@@ -1423,3 +1581,356 @@ def test_process_without_run_section_has_no_config_warnings(setup):
     result = launch(setup)
     assert result["status"] == "completed"
     assert "config_warnings" not in result
+
+
+def test_interrupted_builtin_local_stage_retries_only_unfinished_pages(setup, monkeypatch):
+    original = StageAdapter.extract
+    data = yaml.safe_load(setup[1].read_text())
+    data["processing"]["local_text"]["adapter"] = "text"
+    setup[1].write_text(yaml.safe_dump(data))
+    stopped = []
+
+    def interrupt(self, source, **kwargs):
+        if self.stage == "text" and kwargs["page_number"] == 2 and not stopped:
+            stopped.append(True)
+            raise KeyboardInterrupt
+        return original(self, source, **kwargs)
+
+    monkeypatch.setattr(StageAdapter, "extract", interrupt)
+    with pytest.raises(KeyboardInterrupt):
+        launch(setup)
+    assert resume_job(setup[2])["status"] == "completed"
+    assert setup[3]["calls"].count(("text", 1)) == 1
+    assert setup[3]["calls"].count(("text", 2)) == 1
+    job = read_record(setup[2] / "job.json")
+    assert any(a["outcome"] == "outcome_unknown" for a in job["pages"][1]["attempts"])
+    assert any("-retry-" in stage["stage_id"] for stage in job["stages"])
+    assert verify_job(setup[2])["status"] == "pass"
+
+
+@pytest.mark.parametrize(
+    "status",
+    [429, None],  # None: a subscription reader reports a usage limit without an HTTP status
+)
+def test_optional_quota_failure_holds_page_and_continues_other_pages(setup, monkeypatch, status):
+    from pageledger.adapters import AdapterFailure
+
+    data = yaml.safe_load(setup[1].read_text())
+    data["processing"]["second_opinion"] = {"adapter": "second_opinion"}
+    data["processing"]["limits"]["max_image_pages"] = 10
+    setup[1].write_text(yaml.safe_dump(data))
+    original = StageAdapter.extract
+
+    def quota(self, source, **kwargs):
+        if self.stage == "second_opinion":
+            raise AdapterFailure("MODEL_QUOTA", http_status=status)
+        return original(self, source, **kwargs)
+
+    monkeypatch.setattr(StageAdapter, "extract", quota)
+    assert launch(setup)["status"] == "completed"
+    job = read_record(setup[2] / "job.json")
+    assert (
+        len([a for p in job["pages"] for a in p["attempts"] if a["stage"] == "second_opinion"]) == 2
+    )
+    assert job["pages"][1]["disposition"] == "provider_failure"
+    assert job["pages"][2]["disposition"] == "provider_failure"
+    assert verify_job(setup[2])["status"] == "pass"
+
+
+def test_local_recovery_is_bounded_and_does_not_retry_custom_adapters(setup, monkeypatch):
+    original = StageAdapter.extract
+    data = yaml.safe_load(setup[1].read_text())
+    data["processing"]["local_text"]["adapter"] = "text"
+    setup[1].write_text(yaml.safe_dump(data))
+    calls = []
+
+    def interrupt(self, source, **kwargs):
+        calls.append((self.stage, kwargs["page_number"]))
+        if kwargs["page_number"] == 2:
+            raise KeyboardInterrupt
+        return original(self, source, **kwargs)
+
+    monkeypatch.setattr(StageAdapter, "extract", interrupt)
+    with pytest.raises(KeyboardInterrupt):
+        launch(setup)
+    with pytest.raises(KeyboardInterrupt):
+        resume_job(setup[2])
+    before = list(calls)
+    assert resume_job(setup[2])["status"] == "halted"
+    assert calls == before and calls.count(("text", 2)) == 2
+
+
+def test_uncertain_custom_local_stage_still_requires_reconciliation(setup, monkeypatch):
+    original = StageAdapter.extract
+
+    def interrupt(self, source, **kwargs):
+        if self.stage == "local_text" and kwargs["page_number"] == 2:
+            raise KeyboardInterrupt
+        return original(self, source, **kwargs)
+
+    monkeypatch.setattr(StageAdapter, "extract", interrupt)
+    with pytest.raises(KeyboardInterrupt):
+        launch(setup)
+    before = list(setup[3]["calls"])
+    assert resume_job(setup[2])["status"] == "halted"
+    assert setup[3]["calls"] == before
+
+
+def _batched(setup, *, pages=4, concurrent=2, count=6, **limits):
+    source, config, _, shared = setup
+    source.write_text("\f".join([TEXT] * count))
+    shared["defective"] = set(range(1, count + 1))
+    data = yaml.safe_load(config.read_text())
+    data["processing"]["limits"].update(
+        {"max_image_pages": count, "max_attempt_pages": 4 * count, **limits}
+    )
+    if pages:
+        data["processing"]["batch"] = {"pages": pages, "concurrent": concurrent}
+    config.write_text(yaml.safe_dump(data))
+
+
+def _readings(root):
+    job = read_record(root / "job.json")
+    return [
+        (page["disposition"], page["selected_attempt"], [a["attempt_id"] for a in page["attempts"]])
+        for page in job["pages"]
+    ]
+
+
+def test_a_batch_reads_image_pages_at_once_and_records_what_a_serial_job_does(
+    setup, monkeypatch, tmp_path
+):
+    import threading
+    import time
+
+    from pageledger import processing
+
+    _batched(setup, pages=4, concurrent=3)
+    original = StageAdapter.extract
+    lock, active, peak = threading.Lock(), [0], [0]
+
+    def slow(self, *args, **kwargs):
+        if self.stage == "image":
+            with lock:
+                active[0] += 1
+                peak[0] = max(peak[0], active[0])
+            time.sleep(0.05)
+            with lock:
+                active[0] -= 1
+        return original(self, *args, **kwargs)
+
+    refreshes = []
+    refresh = processing._refresh
+    monkeypatch.setattr(StageAdapter, "extract", slow)
+    monkeypatch.setattr(
+        processing, "_refresh", lambda *a, **k: (refreshes.append(1), refresh(*a, **k))[1]
+    )
+    assert launch(setup)["status"] == "completed"
+    assert peak[0] == 3
+    assert verify_job(setup[2])["status"] == "pass"
+    batched, batched_refreshes = _readings(setup[2]), len(refreshes)
+
+    data = yaml.safe_load(setup[1].read_text())
+    del data["processing"]["batch"]
+    setup[1].write_text(yaml.safe_dump(data))
+    refreshes.clear()
+    serial = tmp_path / "serial"
+    process(source=setup[0], config_path=setup[1], out_dir=serial)
+    assert _readings(serial) == batched
+    # local_text in one child, then six local_ocr and six image pages in batches of four
+    assert batched_refreshes < len(refreshes)
+
+
+def _failing_image(monkeypatch, fails):
+    from pageledger.adapters import AdapterFailure
+
+    original = StageAdapter.extract
+
+    def flaky(self, source, **kwargs):
+        if self.stage == "image" and fails.get(kwargs["page_number"]):
+            fails[kwargs["page_number"]] -= 1
+            raise AdapterFailure(fails.get("code", "MODEL_TIMEOUT"))
+        return original(self, source, **kwargs)
+
+    monkeypatch.setattr(StageAdapter, "extract", flaky)
+
+
+def test_a_timed_out_image_page_is_read_again_once(setup, monkeypatch):
+    # The retry is one more image request; the pages after it in its batch are still read.
+    _batched(setup, max_image_pages=7)
+    _failing_image(monkeypatch, {2: 1})
+    assert launch(setup)["status"] == "completed"
+    page = read_record(setup[2] / "job.json")["pages"][1]
+    assert [a["outcome"] for a in page["attempts"] if a["stage"] == "image"] == [
+        "failed",
+        "completed",
+    ]
+    assert page["attempts"][-1]["attempt_id"] == "image-0002-retry-1:doc_0001_page_0002"
+    assert all(
+        any(a["stage"] == "image" and a["outcome"] == "completed" for a in page["attempts"])
+        for page in read_record(setup[2] / "job.json")["pages"]
+    )
+    assert verify_job(setup[2])["status"] == "pass"
+
+
+def test_an_image_page_that_fails_twice_is_held_and_the_job_goes_on(setup, monkeypatch):
+    # the retry is a request like any other and counts against the image budget
+    _batched(setup, pages=None, max_image_pages=7)
+    _failing_image(monkeypatch, {2: 2})
+    assert launch(setup)["status"] == "completed"
+    job = read_record(setup[2] / "job.json")
+    assert job["pages"][1]["disposition"] == "provider_failure"
+    assert job["pages"][1]["next_action"] == "review"
+    assert all(
+        any(a["stage"] == "image" and a["outcome"] == "completed" for a in page["attempts"])
+        for page in job["pages"]
+        if page["page_number"] != 2
+    )
+    assert verify_job(setup[2])["status"] == "pass"
+
+
+def test_a_retry_stopped_by_the_image_budget_is_owed_after_a_raise(setup, monkeypatch):
+    data = yaml.safe_load(setup[1].read_text())
+    data["processing"]["limits"]["max_image_pages"] = 1
+    setup[1].write_text(yaml.safe_dump(data))
+    _failing_image(monkeypatch, {2: 1})
+
+    assert launch(setup)["status"] == "paused_budget"
+    assert read_record(setup[2] / "job.json")["halt_reason"] == "budget:max_image_pages"
+
+    # The raise pays for the retry first; the next page waits for another raise.
+    assert resume_job(setup[2], raise_limits={"max_image_pages": 2})["status"] == "paused_budget"
+    assert resume_job(setup[2], raise_limits={"max_image_pages": 4})["status"] == "completed"
+    job = read_record(setup[2] / "job.json")
+    images = {
+        page["page_number"]: [a["outcome"] for a in page["attempts"] if a["stage"] == "image"]
+        for page in job["pages"]
+    }
+    assert images == {1: [], 2: ["failed", "completed"], 3: ["completed"]}
+    assert job["usage"]["image_calls"] == 3
+    assert job["pages"][1]["disposition"] != "provider_failure"
+    # Resuming a finished job buys nothing more.
+    calls = list(setup[3]["calls"])
+    resume_job(setup[2])
+    assert setup[3]["calls"] == calls
+    assert verify_job(setup[2])["status"] == "pass"
+
+
+def test_a_page_reviewed_during_the_pause_is_not_retried(setup, monkeypatch, tmp_path):
+    data = yaml.safe_load(setup[1].read_text())
+    data["processing"]["limits"]["max_image_pages"] = 1
+    setup[1].write_text(yaml.safe_dump(data))
+    _failing_image(monkeypatch, {2: 1})
+    assert launch(setup)["status"] == "paused_budget"
+    page = read_record(setup[2] / "job.json")["pages"][1]
+    ocr = next(a for a in page["attempts"] if a["stage"] == "local_ocr")
+    receipt = tmp_path / "review.json"
+    decision = {
+        "page_id": page["page_id"],
+        "page_number": 2,
+        "disposition": "reviewed_text",
+        "selected_attempt": ocr["attempt_id"],
+        "output_sha256": ocr["raw_sha256"],
+        "reviewer": "person:reader",
+        "reason": "Read against the page",
+        "reviewed_at": "2026-11-10T12:00:00Z",
+    }
+    receipt.write_text(
+        json.dumps(
+            {
+                "schema_version": "0.1",
+                "source_sha256": page["source_sha256"],
+                "decisions": [decision],
+            }
+        )
+    )
+    review_job(setup[2], receipt)
+
+    assert resume_job(setup[2], raise_limits={"max_image_pages": 4})["status"] == "completed"
+    # The failed request raised before it was counted here; only page 3 is read.
+    images = [c for c in setup[3]["calls"] if c[0] == "image"]
+    assert [number for _, number in images] == [3]
+    assert read_record(setup[2] / "job.json")["usage"]["image_calls"] == 2
+    assert verify_job(setup[2])["status"] == "pass"
+
+
+def test_an_image_quota_failure_still_halts_the_job(setup, monkeypatch):
+    _batched(setup)
+    _failing_image(monkeypatch, {2: 1, "code": "MODEL_QUOTA"})
+    result = launch(setup)
+    assert result["status"] == "halted"
+    assert read_record(setup[2] / "job.json")["halt_reason"].startswith(
+        "attempt_stopped:image-0002:"
+    )
+    assert verify_job(setup[2])["status"] == "pass"
+
+
+def test_a_token_limit_keeps_pages_one_at_a_time(setup):
+    from pageledger.processing import _batching
+
+    _batched(setup, max_tokens=10_000)
+    launch(setup)
+    job = read_record(setup[2] / "job.json")
+    assert job["policy"]["batch"] == {"pages": 4, "concurrent": 2}
+    assert _batching(job, "image") == (1, 1)
+
+
+@pytest.mark.parametrize(
+    "batch",
+    [{"pages": 0, "concurrent": 1}, {"pages": 2, "concurrent": 3}, {"pages": 2}, [2, 1]],
+)
+def test_a_bad_batch_is_refused(batch):
+    from pageledger.processing_config import processing_config
+
+    with pytest.raises(ValueError, match="processing.batch"):
+        processing_config(
+            {"processing": {"local_text": {"adapter": "text"}, "batch": batch}}, pdf=False
+        )
+
+
+def _with_second_opinion(setup, monkeypatch, code, fails):
+    from pageledger.adapters import AdapterFailure
+
+    # Every page is read, and the retry is one more attempt on top.
+    _batched(setup, max_image_pages=20, max_attempt_pages=30)
+    data = yaml.safe_load(setup[1].read_text())
+    data["processing"]["second_opinion"] = {"adapter": "second_opinion"}
+    setup[1].write_text(yaml.safe_dump(data))
+    original = StageAdapter.extract
+
+    def failing(self, source, **kwargs):
+        if self.stage == "second_opinion" and fails.get(kwargs["page_number"]):
+            fails[kwargs["page_number"]] -= 1
+            raise AdapterFailure(code)
+        return original(self, source, **kwargs)
+
+    monkeypatch.setattr(StageAdapter, "extract", failing)
+
+
+def test_a_truncated_second_opinion_holds_its_page_and_the_job_goes_on(setup, monkeypatch):
+    _with_second_opinion(setup, monkeypatch, "MODEL_OUTPUT_TRUNCATED", {2: 1})
+    assert launch(setup)["status"] == "completed"
+    job = read_record(setup[2] / "job.json")
+    page = job["pages"][1]
+    assert page["disposition"] == "provider_failure"
+    assert page["attempts"][-1]["attempt_id"] == "second_opinion-0002:doc_0001_page_0002"
+    later = [
+        a
+        for p in job["pages"]
+        if p["page_number"] > 2
+        for a in p["attempts"]
+        if a["stage"] == "second_opinion"
+    ]
+    assert later and all(a["outcome"] == "completed" for a in later)
+    assert verify_job(setup[2])["status"] == "pass"
+
+
+def test_a_timed_out_second_opinion_is_asked_again_once(setup, monkeypatch):
+    _with_second_opinion(setup, monkeypatch, "MODEL_TIMEOUT", {2: 1})
+    assert launch(setup)["status"] == "completed"
+    page = read_record(setup[2] / "job.json")["pages"][1]
+    assert [a["outcome"] for a in page["attempts"] if a["stage"] == "second_opinion"] == [
+        "failed",
+        "completed",
+    ]
+    assert verify_job(setup[2])["status"] == "pass"

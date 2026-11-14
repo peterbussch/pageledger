@@ -10,6 +10,8 @@ import sys
 import venv
 from pathlib import Path
 
+from pageledger import __version__
+
 ROOT = Path(__file__).resolve().parents[2]
 
 
@@ -127,7 +129,7 @@ def test_first_run_tutorial_executes_the_documented_sequence(tmp_path: Path) -> 
             "--source-root",
             str(ROOT),
             "--expected-version",
-            "0.7.0",
+            __version__,
         ],
         text=True,
         capture_output=True,

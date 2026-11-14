@@ -59,6 +59,41 @@ def test_init_config_missing_parent_returns_cli_error(tmp_path, capsys):
     assert not target.exists()
 
 
+@pytest.mark.parametrize("failure", ["missing-source", "existing-output"])
+def test_process_checks_source_and_output_before_default_config_banner(tmp_path, failure):
+    source = tmp_path / "source.txt"
+    out = tmp_path / "job"
+    if failure == "existing-output":
+        source.write_text("one page", encoding="utf-8")
+        out.mkdir()
+    exit_code, _, stderr = _run_cli(["process", str(source), "--out", str(out), "--engine", "none"])
+    assert exit_code == 1
+    assert "Reading " not in stderr
+    if failure == "missing-source":
+        assert "Source file was not found" in stderr
+    else:
+        assert "already at" in stderr
+        assert "pageledger inspect" in stderr and "pageledger resume" in stderr
+
+
+def test_run_missing_source_has_plain_message(tmp_path):
+    exit_code, _, stderr = _run_cli(
+        ["run", str(tmp_path / "missing.pdf"), "--adapter", "text", "--out", str(tmp_path / "run")]
+    )
+    assert exit_code == 1
+    assert "Source file was not found" in stderr
+    assert "Errno 2" not in stderr
+
+
+def test_process_pages_help_shows_range_example(capsys):
+    from pageledger.cli import build_parser
+
+    with pytest.raises(SystemExit) as excinfo:
+        build_parser().parse_args(["process", "--help"])
+    assert excinfo.value.code == 0
+    assert "e.g. '1-10,15'" in capsys.readouterr().out
+
+
 def _run_cli(args: list[str], *, cwd: Path | None = None) -> tuple[int, str, str]:
     """Run pageledger CLI and return (exit_code, stdout, stderr)."""
     import subprocess
@@ -965,16 +1000,18 @@ def test_config_impossible_budget_zero_usd_warns(tmp_path: Path) -> None:
         """),
         encoding="utf-8",
     )
-    out_dir = tmp_path / "out"
     exit_code, stdout, stderr = _run_cli(
-        ["run", str(source), "--config", str(config), "--out", str(out_dir), "--json"]
+        ["run", str(source), "--config", str(config), "--out", str(tmp_path / "plan")]
+        + ["--dry-run", "--json"]
     )
-    # max_usd=0 will likely cause budget failure
-    if exit_code == 0:
-        result = json.loads(stdout)
-        config_warnings = result.get("config_warnings", [])
-        assert any("max_usd" in w for w in config_warnings)
-    # If it fails due to budget, that's also valid behavior
+    assert exit_code == 0, stderr
+    assert any("max_usd is 0" in w for w in json.loads(stdout)["config_warnings"])
+
+    exit_code, stdout, stderr = _run_cli(
+        ["run", str(source), "--config", str(config), "--out", str(tmp_path / "out"), "--json"]
+    )
+    assert exit_code == 1
+    assert json.loads(stdout)["error"].startswith("Budget reached before doc_0001_page_0001")
 
 
 # =========================================================================
@@ -983,14 +1020,12 @@ def test_config_impossible_budget_zero_usd_warns(tmp_path: Path) -> None:
 
 
 def test_directory_input_with_mixed_file_types(tmp_path: Path) -> None:
-    """Directory input containing text files and non-text files."""
+    """A folder of text files and a page image is refused, not read in part."""
     indir = tmp_path / "inputs"
     indir.mkdir()
     (indir / "a.txt").write_text("page one\n", encoding="utf-8")
     (indir / "b.txt").write_text("page two\n", encoding="utf-8")
     (indir / "not-a-document.png").write_bytes(b"\x89PNG\r\n\x1a\n" + b"\x00" * 20)
-    (indir / "subdir").mkdir()
-    (indir / "subdir" / "nested.txt").write_text("nested\n", encoding="utf-8")
 
     config = tmp_path / "config.yml"
     config.write_text(MINIMAL_CONFIG, encoding="utf-8")
@@ -998,11 +1033,10 @@ def test_directory_input_with_mixed_file_types(tmp_path: Path) -> None:
     exit_code, stdout, stderr = _run_cli(
         ["run", str(indir), "--config", str(config), "--out", str(out_dir), "--json"]
     )
-    # Should process text files, skip or fail on PNG depending on adapter validation
-    if exit_code == 0:
-        result = json.loads(stdout)
-        # Should have processed at least the .txt files
-        assert result["summary"]["pages_total"] >= 2
+    assert exit_code == 1
+    error = json.loads(stdout)["error"]
+    assert "'a.txt' is not a page image, but its folder holds page images" in error
+    assert not out_dir.exists()
 
 
 def test_input_file_unreadable(tmp_path: Path) -> None:

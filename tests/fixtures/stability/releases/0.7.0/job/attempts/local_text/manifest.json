@@ -1,0 +1,94 @@
+{
+  "artifacts": {
+    "audit": "audit.json",
+    "audit_md": "audit.md",
+    "config_snapshot": "config-snapshot.yml",
+    "cost": "cost.json",
+    "normalized_dir": "normalized/",
+    "provenance": "provenance.jsonl",
+    "quality": "quality.jsonl",
+    "raw_dir": "raw/",
+    "rerun_manifest": "rerun-manifest.yml",
+    "route_map": "route-map.yml",
+    "run_log": "run.log"
+  },
+  "completed_at": "2026-11-10T22:55:30Z",
+  "config": {
+    "path": "config-snapshot.yml",
+    "sha256": "347d7f1a84e3633857998f23c3e57e49ab511264272d3759c803455173daec30",
+    "source_paths": [
+      "/private/tmp/pageledger-golden/job-0.7.0/.job/local_text.yml"
+    ]
+  },
+  "dataset_citation": null,
+  "execution_mode": "execute",
+  "extractors": [
+    {
+      "adapter": "text",
+      "capabilities": [
+        "embedded_text",
+        "local"
+      ],
+      "deterministic": true,
+      "input_types": [
+        "text"
+      ],
+      "model": null,
+      "name": "text",
+      "output_types": [
+        "text"
+      ],
+      "prompt_hash": "168e2e8be0b9c0ffe1d0052893a125d587312fcda2ed794037283989dc9456bf",
+      "reproducibility_profile": {
+        "adapter": {
+          "code_sha256": "3cc12833bf03d36f7c15fdef6a7739bb1634fe2269f5c110a93d4306a4f4c4f0",
+          "module": "pageledger.adapters",
+          "name": "text",
+          "version": "0.1"
+        },
+        "materials": [],
+        "pageledger": {
+          "code_sha256": "658aee00460467e9c8d13ecd191d5b4837f397a292a5753683b5a78101b820d6",
+          "version": "0.7.0"
+        },
+        "profile_sha256": "5f3dbe2b4a2c9870905601fd743c901e7830ba197b0fb2be33d12219d738264d",
+        "profile_version": "0.1",
+        "runtime": {
+          "filesystem_encoding": "utf-8",
+          "machine": "arm64",
+          "preferred_encoding": "utf-8",
+          "python_implementation": "CPython",
+          "python_version": "3.13.13",
+          "release": "27.0.0",
+          "system": "Darwin"
+        }
+      },
+      "version": "0.1"
+    }
+  ],
+  "inputs": [
+    {
+      "page_count": 2,
+      "pages": "1,2",
+      "path": "/private/tmp/pageledger-golden/sample.txt",
+      "sha256": "c842bcf925261b10dc47e807d963703301d70918d5b8d3d2936c5f11facdc00d"
+    }
+  ],
+  "pageledger_version": "0.7.0",
+  "parent_run_id": null,
+  "run_depth": 0,
+  "run_id": "run-20261110T225530092353Z",
+  "schema_version": "0.1",
+  "started_at": "2026-11-10T22:55:30Z",
+  "status": "completed",
+  "summary": {
+    "estimated_cost_usd": 0.0,
+    "pages_extracted": 2,
+    "pages_quarantined": 0,
+    "pages_routed_review": 0,
+    "pages_skipped": 0,
+    "pages_total": 2,
+    "quality_warning_pages": 1,
+    "records_normalized": 0
+  }
+}

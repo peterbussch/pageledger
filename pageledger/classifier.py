@@ -11,9 +11,10 @@ from typing import Any
 
 import yaml
 
-from .adapters import _import_object, adapter_page_count, load_adapter
+from .adapters import HOOK_METHODS, _import_object, adapter_page_count, load_adapter
 from .artifacts import build_route_map, read_jsonl, write_jsonl, write_yaml
 from .config import PageLedgerConfig, load_config
+from .image_source import KIND, is_image_source, source_identity
 from .quality import _alphabetic_token_lengths, _quality_text, _text_quality_metrics
 from .runner import (
     _apply_adapter_path,
@@ -99,6 +100,14 @@ def merge_classify_thresholds(value: Any) -> dict[str, int | float]:
             raise ValueError(f"classify.thresholds.{key} must be between 0 and 1")
         merged[key] = raw
     return merged
+
+
+def _ratio_in_range(value: Any) -> bool:
+    return (
+        not isinstance(value, (int, float))
+        or isinstance(value, bool)
+        or (math.isfinite(value) and 0 <= value <= 1)
+    )
 
 
 def structural_signals(
@@ -248,7 +257,7 @@ def classifier_conformance_check(hook: Any) -> list[str]:
 def load_classifier_hook(spec: str, options: dict[str, Any] | None = None) -> Any:
     """Load and validate a classifier hook class, factory, or instance."""
     opts = dict(options or {})
-    candidate = _import_object(spec, description="Classifier hook")
+    candidate = _import_object(spec, description="Classifier hook", methods=HOOK_METHODS)
     hook = candidate
     if isinstance(hook, type) or (
         callable(hook) and not callable(getattr(hook, "classify_page", None))
@@ -286,6 +295,15 @@ def classify(
         raise ValueError("classify requires input paths or --from-run")
     if from_run is not None and probe_adapter is not None:
         raise ValueError("--adapter cannot be combined with --from-run")
+    out = out_path.expanduser()
+    if out.is_dir():
+        raise ValueError(f"Classification output is a directory: {out_path}")
+    if not out.parent.exists():
+        raise ValueError(f"Classification output directory does not exist: {out.parent}")
+    # A route map is often edited by hand before a run; never replace one.
+    for existing in (out, out.with_name(f"{out.stem}.evidence.jsonl")):
+        if existing.exists() or existing.is_symlink():
+            raise ValueError(f"{existing} already exists; choose another --out or move it away")
     _apply_adapter_path(adapter_path)
     config = (
         load_config(config_path, validate_adapter=False)
@@ -306,6 +324,12 @@ def classify(
     warnings: list[str] = list(config.warnings)
     if from_run is None:
         expanded_inputs, _skipped_inputs = _expand_inputs(inputs)
+        images = next((path for path in expanded_inputs if is_image_source(path)), None)
+        if images is not None:
+            raise ValueError(
+                f"{images} is page images, which have no text layer to classify. Read it "
+                "with an OCR engine (pageledger run), then classify that run with --from-run."
+            )
         _validate_unique_inputs(expanded_inputs)
         documents, evidence, probe_identities = _classify_inputs(
             inputs=expanded_inputs,
@@ -334,10 +358,6 @@ def classify(
         classifier=classifier_identity,
     )
     out = out_path.expanduser()
-    if out.exists() and out.is_dir():
-        raise ValueError(f"Classification output is a directory: {out_path}")
-    if not out.parent.exists():
-        raise ValueError(f"Classification output directory does not exist: {out.parent}")
     evidence_path = out.with_name(f"{out.stem}.evidence.jsonl")
     write_yaml(out, route_map)
     write_jsonl(evidence_path, evidence)
@@ -391,6 +411,11 @@ def _classify_inputs(
                     prompt=None,
                 )
                 _validate_extraction_result(adapter.name, result)
+                signals = structural_signals(
+                    _quality_text(result.content),
+                    result_format=result.format,
+                    confidence_detail=result.confidence_detail,
+                )
             except Exception as exc:
                 signals = structural_signals("", result_format=None, confidence_detail=None)
                 decision = ClassificationResult(
@@ -401,11 +426,6 @@ def _classify_inputs(
             else:
                 result_format = result.format
                 model = result.model
-                signals = structural_signals(
-                    _quality_text(result.content),
-                    result_format=result.format,
-                    confidence_detail=result.confidence_detail,
-                )
                 builtin = classify_signals(
                     signals,
                     config.classify_thresholds,
@@ -524,10 +544,11 @@ def _classify_from_run(
         source = source.resolve()
         manifest_input = inputs[document_index]
         recorded_hash = manifest_input.get("sha256")
+        kind = manifest_input.get("kind")
         if isinstance(recorded_hash, str):
-            if not source.is_file():
+            if not (source.is_file() or (kind == KIND and source.is_dir())):
                 warnings.append(f"Source is unavailable since parent run: {source}")
-            elif _sha256_path(source) != recorded_hash:
+            elif source_identity(source, kind) != recorded_hash:
                 warnings.append(f"Source changed since parent run: {source}")
         pages: list[dict[str, Any]] = []
         for page in document["pages"]:
@@ -571,12 +592,15 @@ def _classify_from_run(
                 confidence_detail = (
                     quality.get("confidence_detail") if quality is not None else None
                 )
+                if not isinstance(confidence_detail, dict) or not _ratio_in_range(
+                    confidence_detail.get("below_60_ratio")
+                ):
+                    # An out-of-range ratio is not evidence; the page is still classified.
+                    confidence_detail = None
                 signals = structural_signals(
                     text,
                     result_format=result_format if isinstance(result_format, str) else None,
-                    confidence_detail=(
-                        confidence_detail if isinstance(confidence_detail, dict) else None
-                    ),
+                    confidence_detail=confidence_detail,
                 )
                 builtin = classify_signals(
                     signals,

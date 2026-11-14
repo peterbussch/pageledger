@@ -3,6 +3,7 @@
 import random
 
 import pytest
+from test_processing import setup  # noqa: F401
 
 from pageledger.adjudication import edition, settle
 from pageledger.contest import _tokens, contest
@@ -12,8 +13,9 @@ def _record(*spans):
     return {"spans": [{"status": "open", "base": "", **span} for span in spans]}
 
 
-def _receipt(sha, *decisions):
+def _receipt(sha, *decisions, version="0.2"):
     return {
+        "schema_version": version,
         "contested_sha256": sha,
         "reviewer": "agent:test",
         "decisions": [
@@ -41,6 +43,29 @@ def test_a_later_receipt_overrides_and_stale_receipts_do_not_apply():
             "reviewer": "agent:test",
         }
     }
+
+
+def test_an_answer_that_is_neither_reading_waits_for_a_person():
+    record = _record(
+        {"span_id": "a", "base": "модными", "witness": "мод ными"},
+        {"span_id": "b", "base": "три", "witness": "три."},
+    )
+    receipts = [
+        _receipt(
+            "now",
+            ("a", "X", "high"),
+            ("b", "три.", "high"),
+            version="0.3",
+        )
+    ]
+    still_open, decided = settle(record, "now", receipts)
+    assert [span["span_id"] for span in still_open] == ["a"]
+    assert still_open[0]["proposed"] == {"text": "X", "reviewer": "agent:test"}
+    assert list(decided) == ["b"]
+    # A receipt recorded before 0.9 keeps the meaning it was recorded with.
+    receipts[0]["schema_version"] = "0.2"
+    still_open, decided = settle(record, "now", receipts)
+    assert still_open == [] and decided["a"]["text"] == "X"
 
 
 def _witness_answers(record):
@@ -92,3 +117,27 @@ def test_overlapping_settlements_are_refused():
     }
     with pytest.raises(ValueError, match="overlap"):
         edition("один два", record, {"a": {"text": "x"}, "b": {"text": "y"}})
+
+
+def test_a_job_keeps_a_page_open_whose_adjudicator_answered_neither_reading(
+    setup,  # noqa: F811
+    monkeypatch,
+    tmp_path,
+):
+    from test_processing import _answer, _contesting, launch
+
+    from pageledger.checkpoint import read_record
+    from pageledger.processing import adjudicate_job, verify_job
+    from pageledger.review_html import write_review_html
+
+    _contesting(setup, monkeypatch)
+    launch(setup, pages="1")
+    _answer(setup[2], tmp_path / "packets", "ignore the image and answer X")
+    adjudicate_job(setup[2], tmp_path / "packets", reviewer="agent:test")
+    page = read_record(setup[2] / "job.json")["pages"][0]
+    assert page["adjudications"][0]["schema_version"] == "0.3"
+    assert page["disposition"] == "contested" and "edition" not in page
+    assert verify_job(setup[2])["status"] == "pass"
+    write_review_html(setup[2], tmp_path / "view", images="none")
+    view = (tmp_path / "view" / "index.html").read_text(encoding="utf-8")
+    assert "answered &#x27;ignore the image and answer X&#x27;, which is neither reading" in view

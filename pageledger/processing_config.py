@@ -5,12 +5,20 @@ from __future__ import annotations
 import math
 from typing import Any
 
-STAGES = ("local_text", "local_ocr", "image", "second_opinion")
+STAGES = ("local_text", "local_ocr", "second_ocr", "local_image", "image", "second_opinion")
+# The 0.6 ladder. A job's policy names these four even when unset; the 0.8 stages
+# appear only when configured, so an older config compiles to the policy its jobs
+# recorded.
+CORE_STAGES = ("local_text", "local_ocr", "image", "second_opinion")
+OPTIONAL_STAGES = ("second_ocr", "local_image")
+# Stages whose reading comes from a model that writes text (a reader), in the order
+# a contested page prefers them as its base: the paid reader, then the local one.
+READER_STAGES = ("image", "local_image", "second_opinion")
 # Why a page climbs to the next stage. `hold` is 0.6's rule and always applies;
 # `rough` and `disagreement` let a page whose reading looks clean climb too, and
 # `always` sends every page up, so a contested reader checks every page.
 TRIGGERS = ("hold", "rough", "disagreement", "always")
-LEXICON_PROVIDERS = ("pymorphy3",)
+LEXICON_PROVIDERS = ("pymorphy3", "wordlist")
 PROMPT = (
     "Transcribe only text visible on this source page, preserving page order, headings, "
     "footnotes and named table columns. Do not reconstruct missing or invisible text. "
@@ -27,14 +35,18 @@ def processing_config(data: dict[str, Any], *, pdf: bool) -> dict[str, Any]:
         "limits",
         "links",
         "benchmark",
+        "batch",
         "escalate_on",
         "lexicon",
         "contest",
+        "tiling",
     }
     if unknown:
         raise ValueError(f"Unknown processing key: {sorted(unknown)[0]}")
     result: dict[str, Any] = {}
     for name in STAGES:
+        if name in OPTIONAL_STAGES and value.get(name) is None:
+            continue
         default = None
         if name == "local_text":
             default = {"adapter": "pdf_text" if pdf else "text"}
@@ -62,19 +74,43 @@ def processing_config(data: dict[str, Any], *, pdf: bool) -> dict[str, Any]:
             raise ValueError(f"Invalid processing.{name} adapter, options or prompt")
         if "evidence_dir" in options:
             raise ValueError("processing owns the adapter evidence_dir")
+        if "tiles" in options and (adapter == "vision" or name in _tiled(value)):
+            raise ValueError("processing owns the adapter tiles; plan them with processing.tiling")
         result[name] = {"adapter": adapter, "adapter_options": dict(options), "prompt": prompt}
     if result["second_opinion"] is not None and result["image"] is None:
         raise ValueError("second_opinion requires an image stage")
     if result["image"] is not None and result["local_ocr"] is None:
         raise ValueError("An image stage requires an explicit local_ocr stage")
+    for name in OPTIONAL_STAGES:
+        if name in result and result["local_ocr"] is None:
+            raise ValueError(f"processing.{name} requires an explicit local_ocr stage")
+    local_image = "local_image" in result
+    tiling = _tiling(value.get("tiling"), result)
     limits = value.get("limits", {})
     keys = {"max_attempt_pages", "max_image_pages", "max_tokens", "max_cost_usd"}
+    if local_image:
+        keys.add("max_local_image_pages")
+    if tiling:
+        keys.add("max_image_requests")
     if not isinstance(limits, dict) or set(limits) - keys:
+        if isinstance(limits, dict) and "max_local_image_pages" in limits:
+            raise ValueError("processing.limits.max_local_image_pages needs a local_image stage")
+        if isinstance(limits, dict) and "max_image_requests" in limits:
+            raise ValueError("processing.limits.max_image_requests needs processing.tiling")
         raise ValueError("Invalid processing.limits")
+    if tiling and (
+        type(limits.get("max_image_requests")) is not int or limits["max_image_requests"] < 1
+    ):
+        raise ValueError(
+            "processing.tiling needs processing.limits.max_image_requests, a positive bound on "
+            "the image requests (one per tile) a job may send"
+        )
     normalized: dict[str, Any] = {key: limits.get(key) for key in keys}
     normalized["max_image_pages"] = limits.get("max_image_pages", 0)
+    if local_image:
+        normalized["max_local_image_pages"] = limits.get("max_local_image_pages", 0)
     for key, number in normalized.items():
-        if number is None and key != "max_image_pages":
+        if number is None and key not in {"max_image_pages", "max_local_image_pages"}:
             continue
         if (
             isinstance(number, bool)
@@ -86,6 +122,8 @@ def processing_config(data: dict[str, Any], *, pdf: bool) -> dict[str, Any]:
             raise ValueError(f"processing.limits.{key} must be a nonnegative number")
     if result["image"] is not None and normalized["max_image_pages"] < 1:
         raise ValueError("An image stage requires a positive max_image_pages bound")
+    if local_image and normalized["max_local_image_pages"] < 1:
+        raise ValueError("A local_image stage requires a positive max_local_image_pages bound")
     result["limits"] = normalized
     links = value.get("links", {})
     if not isinstance(links, dict) or set(links) - {"article", "custody"}:
@@ -105,9 +143,21 @@ def processing_config(data: dict[str, Any], *, pdf: bool) -> dict[str, Any]:
             raise ValueError(
                 "processing.benchmark must contain a configured stage and a positive integer every_nth_page"
             )
-        if result[benchmark["stage"]] is None:
+        if result.get(benchmark["stage"]) is None:
             raise ValueError("processing.benchmark.stage must name an enabled stage")
         result["benchmark"] = dict(benchmark)
+    batch = value.get("batch")
+    if batch is not None:
+        if (
+            not isinstance(batch, dict)
+            or set(batch) != {"pages", "concurrent"}
+            or any(type(batch[key]) is not int or batch[key] < 1 for key in batch)
+            or batch["concurrent"] > batch["pages"]
+        ):
+            raise ValueError(
+                "processing.batch needs positive integers pages and concurrent, concurrent no more than pages"
+            )
+        result["batch"] = dict(batch)
     contest = value.get("contest")
     if contest is not None:
         from .contest import RULE_SETS
@@ -120,8 +170,10 @@ def processing_config(data: dict[str, Any], *, pdf: bool) -> dict[str, Any]:
             raise ValueError(
                 f"processing.contest needs rules, one of: {', '.join(sorted(RULE_SETS))}"
             )
-        if result["image"] is None:
-            raise ValueError("processing.contest compares a reader's text; add an image stage")
+        if result["image"] is None and not local_image:
+            raise ValueError(
+                "processing.contest compares a reader's text; add an image or local_image stage"
+            )
     triggers, lexicon = _escalation(value, contest=contest is not None)
     # Each key only when used, so a 0.6 config still compiles to the policy its jobs recorded.
     if triggers != ["hold"]:
@@ -130,7 +182,59 @@ def processing_config(data: dict[str, Any], *, pdf: bool) -> dict[str, Any]:
         result["lexicon"] = lexicon
     if contest is not None:
         result["contest"] = dict(contest)
+    if tiling:
+        result["tiling"] = tiling
     return result
+
+
+# The reader stages tiling can cut up (only the paid reader so far: local_image and
+# second_opinion have not been tested in tiles), and the literal stages whose layout
+# it can cut along.
+TILED_STAGES = ("image",)
+LAYOUT_STAGES = ("local_text", "local_ocr", "second_ocr")
+TILING_DEFAULTS = {"min_line_pixels": 32, "max_tiles": 24}
+
+
+def _tiled(value: dict[str, Any]) -> list[str]:
+    tiling = value.get("tiling")
+    stages = tiling.get("stages") if isinstance(tiling, dict) else None
+    return [name for name in stages if isinstance(name, str)] if isinstance(stages, list) else []
+
+
+def _tiling(tiling: Any, stages: dict[str, Any]) -> dict[str, Any] | None:
+    if tiling is None:
+        return None
+    from .tiling import MAX_TILES
+
+    if not isinstance(tiling, dict) or set(tiling) - {"stages", *TILING_DEFAULTS, "layout"}:
+        raise ValueError("processing.tiling takes stages, layout, min_line_pixels and max_tiles")
+    tiled = tiling.get("stages")
+    if (
+        not isinstance(tiled, list)
+        or not tiled
+        or len(set(tiled)) != len(tiled)
+        or any(name not in TILED_STAGES or stages.get(name) is None for name in tiled)
+    ):
+        raise ValueError(
+            "processing.tiling.stages must list configured image stages "
+            f"({', '.join(TILED_STAGES)}), each once"
+        )
+    layout = tiling.get("layout")
+    if layout not in LAYOUT_STAGES or stages.get(layout) is None:
+        raise ValueError(
+            "processing.tiling.layout must name a configured stage whose engine reports where "
+            f"the text is ({', '.join(LAYOUT_STAGES)})"
+        )
+    settings = {**TILING_DEFAULTS, **{k: v for k, v in tiling.items() if k in TILING_DEFAULTS}}
+    if type(settings["min_line_pixels"]) is not int or settings["min_line_pixels"] < 1:
+        raise ValueError("processing.tiling.min_line_pixels must be a positive integer")
+    if type(settings["max_tiles"]) is not int or not 1 <= settings["max_tiles"] <= MAX_TILES:
+        raise ValueError(f"processing.tiling.max_tiles must be an integer from 1 to {MAX_TILES}")
+    return {
+        "stages": [name for name in TILED_STAGES if name in tiled],
+        "layout": layout,
+        **settings,
+    }
 
 
 def _escalation(value: dict[str, Any], *, contest: bool) -> tuple[list[str], dict[str, Any] | None]:
@@ -155,15 +259,18 @@ def _escalation(value: dict[str, Any], *, contest: bool) -> tuple[list[str], dic
             "processing.lexicon is used by the rough trigger and by contest; enable one of them"
         )
     rough = "rough" in triggers
+    provider = lexicon.get("provider") if isinstance(lexicon, dict) else None
+    named = {"pymorphy3": "language", "wordlist": "path"}.get(str(provider))
     if (
         not isinstance(lexicon, dict)
-        or set(lexicon) != {"provider", "language", *(["rough_below"] if rough else [])}
-        or lexicon["provider"] not in LEXICON_PROVIDERS
-        or lexicon["language"] != "ru"
+        or provider not in LEXICON_PROVIDERS
+        or set(lexicon) != {"provider", named, *(["rough_below"] if rough else [])}
+        or (provider == "pymorphy3" and lexicon["language"] != "ru")
+        or (provider == "wordlist" and not (isinstance(lexicon["path"], str) and lexicon["path"]))
     ):
         raise ValueError(
-            "processing.lexicon needs provider: pymorphy3 and language: ru, "
-            "with rough_below only for the rough trigger"
+            "processing.lexicon needs provider: pymorphy3 with language: ru, or provider: "
+            "wordlist with the path of a word list, and rough_below only for the rough trigger"
         )
     threshold = lexicon.get("rough_below", 1)
     if (
@@ -173,3 +280,8 @@ def _escalation(value: dict[str, Any], *, contest: bool) -> tuple[list[str], dic
     ):
         raise ValueError("processing.lexicon.rough_below must be a share above 0 and at most 1")
     return [name for name in TRIGGERS if name in triggers], dict(lexicon)
+
+
+def ladder(policy: dict[str, Any]) -> tuple[str, ...]:
+    """The stages a job's policy names, in climbing order: the 0.6 four plus any 0.8 ones."""
+    return tuple(name for name in STAGES if name in policy)

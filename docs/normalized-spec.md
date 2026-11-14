@@ -68,9 +68,15 @@ and rewritten by `pageledger align`.
 - Every declared column appears in every record. `null` means the column
   was unmatched, the cell was empty, or coercion failed. The distinction
   is recoverable from `columns` and `coercion_errors`.
-- Coercion (`integer`/`number`) tolerates thousand separators (`,`, space,
-  NBSP). A non-empty cell that fails to parse becomes `null` and the raw
-  string is preserved in `coercion_errors`. Nothing is silently fixed.
+- Coercion (`integer`/`number`) removes a separator only where it groups
+  thousands the same way throughout: `,`, a space, a no-break space, a thin
+  space or a narrow no-break space, as in `1,084,598`, `1 084 598` or
+  `-1,234.5`. Anywhere else a cell with such a separator is not a number:
+  `1,5` may be a decimal comma and `12 34` two numbers run together, so both
+  are coercion errors rather than guesses. A non-empty cell that fails to
+  parse becomes `null` and the raw string is preserved in `coercion_errors`.
+  Nothing is silently fixed. (Before 0.9, any comma or space between digits
+  was removed, so `1,5` read as 15.)
 - Integer columns and integer-only arithmetic preserve large whole-number
   values exactly. `number` columns use finite floating-point values; values
   outside that range produce coercion errors. Arithmetic that overflows the
@@ -110,7 +116,7 @@ and rewritten by `pageledger align`.
 | `records` | array | ✅ | no | One object per source row, keyed by declared columns. |
 | `coercion_errors` | array | ✅ | no | Cells that failed type coercion, with raw strings. |
 | `checks` | array | ✅ | no | Per-check row accounting and failures with deltas. |
-| `structure_issues` | array | ❌ | no | Duplicate-header, row-width, and ignored-table evidence. Absent when no structural loss was observed. |
+| `structure_issues` | array | ❌ | no | Duplicate-header, row-width, and ignored-table evidence. Absent when no structural loss was observed. A `duplicate_header` entry names the `header` set aside, the declared `column` it also matched, and `kept_header`, the earlier header that column was taken from. |
 | `metrics.row_count` | integer | ✅ | no | Records extracted. |
 | `metrics.tables_found` | integer | ✅ | no | Tables detected in the raw payload. |
 | `metrics.tables_ignored` | integer | ❌ | no | Markdown tables after the retained first table. |

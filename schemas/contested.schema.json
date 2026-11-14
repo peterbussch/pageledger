@@ -8,7 +8,7 @@
   "properties": {
     "schema_version": { "const": "0.1" },
     "page_id": { "type": "string", "minLength": 1 },
-    "rules": { "type": "string", "description": "The versioned rule set that settled spans, such as ru-print-0.1." },
+    "rules": { "type": "string", "description": "The versioned rule set that settled spans: ru-print-0.1, ru-print-0.2, ru-print-0.3 or latin-print-0.1." },
     "base": {
       "type": "object",
       "required": ["attempt", "text_sha256"],
@@ -24,7 +24,8 @@
       "properties": {
         "attempt": { "type": "string", "minLength": 1 },
         "text_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
-        "adapter": { "type": "string", "minLength": 1, "description": "The literal engine; glyph pairs are listed per engine." }
+        "adapter": { "type": "string", "minLength": 1, "description": "The literal engine; glyph pairs are listed per engine." },
+        "projection": {"type": "object", "description": "The witness regrouped in the tile order of a reading in tiles (tiling.project_witness), kept as an artifact.", "properties": {"plan_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}, "artifact": {"type": "string", "pattern": "^witnesses/doc_[0-9]{4}_page_[0-9]{4,}\\.txt$"}, "outside_items": {"type": "integer", "minimum": 0}}, "required": ["plan_sha256", "artifact", "outside_items"], "additionalProperties": false}
       },
       "additionalProperties": false
     },

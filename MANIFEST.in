@@ -6,7 +6,10 @@ include THIRD_PARTY_NOTICES.md
 recursive-include docs *.md *.yml
 recursive-include docs/validation/0.5.1 *.json *.csv
 recursive-include examples *.py *.sh *.swift
-recursive-include scripts *.py
+# The release checks only. The benchmark, corpus and stress scripts, like tests/,
+# need the repository around them and are not shipped.
+include scripts/check_release.py
+include scripts/check_distributions.py
 recursive-include schemas *.json
 recursive-include skills *.md
 

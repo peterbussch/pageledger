@@ -1,0 +1,12 @@
+#!/bin/sh
+# Lint and format-check the staged content of each staged Python file, not the
+# working-tree copy. Full gate: scripts/check.sh.
+set -eu
+git diff --cached --name-only --diff-filter=ACMR -z -- '*.py' | xargs -0 -n 1 sh -c '
+  [ -n "${1:-}" ] || exit 0
+  status=0
+  git show ":$1" | uv run --no-sync ruff check --quiet --stdin-filename "$1" - || status=1
+  git show ":$1" | uv run --no-sync ruff format --check --quiet --stdin-filename "$1" - \
+    || { echo "$1: the staged content is not formatted" >&2; status=1; }
+  exit "$status"
+' pre-commit

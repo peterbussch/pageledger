@@ -25,6 +25,9 @@ from pageledger.adapters import (
     ocr_pdf_page_count,
 )
 
+# Child processes import this checkout's package, never another one's.
+CHECKOUT = str(Path(__file__).resolve().parents[2])
+
 # =========================================================================
 # Adapter conformance helper — built-in adapters
 # =========================================================================
@@ -94,10 +97,10 @@ def test_pdf_ocr_profile_material_provider_success_and_unavailable(
     assert replay_module.build_reproducibility_profile(PdfOcrAdapter()) is None
 
 
-def test_pdf_ocr_run_without_profile_is_ordinary_but_not_bundleable(
+def test_pdf_ocr_run_without_profile_is_ordinary_and_bundles_as_not_exact(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from pageledger.replay import ReplayError, bundle_run
+    from pageledger.replay import bundle_run
     from pageledger.runner import run
 
     monkeypatch.setattr(
@@ -139,14 +142,19 @@ def test_pdf_ocr_run_without_profile_is_ordinary_but_not_bundleable(
     assert result["summary"]["pages_extracted"] == 1
     manifest = json.loads((run_dir / "manifest.json").read_text(encoding="utf-8"))
     assert "reproducibility_profile" not in manifest["extractors"][0]
-    with pytest.raises(ReplayError) as error:
-        bundle_run(run_dir, tmp_path / "bundle")
-    assert error.value.code == "profile_missing"
+    bundle_run(run_dir, tmp_path / "bundle")
+    assert (tmp_path / "bundle" / "bundle.json").is_file()
+
+
+def _one_text_page(tmp_path: Path, monkeypatch) -> None:
+    (tmp_path / "input.pdf").write_bytes(b"%PDF-1.4 stand-in")
+    monkeypatch.setattr(adapters_module, "_pdf_page_count", lambda source: 1)
+    monkeypatch.setattr(adapters_module, "_pdf_page_reading", lambda source, n: ("text", False))
 
 
 def test_pdf_text_records_pypdf_backend_version(tmp_path: Path, monkeypatch) -> None:
     pytest.importorskip("pypdf")
-    monkeypatch.setattr(PdfTextAdapter, "_document_text", lambda self, source: ("text",))
+    _one_text_page(tmp_path, monkeypatch)
     result = PdfTextAdapter().extract(
         tmp_path / "input.pdf",
         page_id="doc_0001_page_0001",
@@ -160,7 +168,7 @@ def test_pdf_text_records_pypdf_backend_version(tmp_path: Path, monkeypatch) -> 
 def test_pdf_text_records_unversioned_backend_when_metadata_is_missing(
     tmp_path: Path, monkeypatch
 ) -> None:
-    monkeypatch.setattr(PdfTextAdapter, "_document_text", lambda self, source: ("text",))
+    _one_text_page(tmp_path, monkeypatch)
 
     def missing_distribution(name: str) -> str:
         raise importlib.metadata.PackageNotFoundError(name)
@@ -174,6 +182,30 @@ def test_pdf_text_records_unversioned_backend_when_metadata_is_missing(
     )
 
     assert result.model == "pypdf"
+
+
+def test_pdf_text_reads_only_the_pages_it_is_asked_for(tmp_path: Path, monkeypatch) -> None:
+    # A four-page sample of a 553-page reel once read every page's text first (teledir finding 1).
+    (tmp_path / "reel.pdf").write_bytes(b"%PDF-1.4 stand-in")
+    read = []
+    monkeypatch.setattr(adapters_module, "_pdf_page_count", lambda source: 553)
+    monkeypatch.setattr(
+        adapters_module,
+        "_pdf_page_reading",
+        lambda source, n: read.append(n) or (f"page {n}", False),
+    )
+    adapter = PdfTextAdapter()
+    assert adapter.page_count(tmp_path / "reel.pdf") == 553
+    assert read == []
+    for _ in range(2):
+        result = adapter.extract(
+            tmp_path / "reel.pdf", page_id="p360", page_number=360, action="transcribe_text"
+        )
+    assert result.content == "page 360" and read == [360]
+    with pytest.raises(ValueError, match="out of range"):
+        adapter.extract(
+            tmp_path / "reel.pdf", page_id="p", page_number=554, action="transcribe_text"
+        )
 
 
 @pytest.mark.parametrize("adapter", [TextAdapter(), PdfTextAdapter(), PdfOcrAdapter()])
@@ -801,7 +833,7 @@ def test_pdf_ocr_extract_with_mocked_binaries(tmp_path: Path, monkeypatch) -> No
     assert pdftoppm_call[pdftoppm_call.index("-r") + 1] == "400"
     assert ["-f", "3", "-l", "3"] == pdftoppm_call[1:5]
     tesseract_call = next(c for c in calls if Path(c[0]).name == "tesseract" and "tsv" in c)
-    assert tesseract_call[-4:] == ["-l", "eng+deu", "txt", "tsv"]
+    assert tesseract_call[-6:] == ["-l", "eng+deu", "-c", "page_separator=", "txt", "tsv"]
 
 
 def test_pdf_ocr_extract_missing_binary_points_at_doctor(tmp_path: Path, monkeypatch) -> None:
@@ -960,7 +992,7 @@ def _run_and_assert_success(
         encoding="utf-8",
     )
     out_dir = tmp_path / "out"
-    env = {**os.environ, "PYTHONPATH": str(tmp_path)}
+    env = {**os.environ, "PYTHONPATH": os.pathsep.join([CHECKOUT, str(tmp_path)])}
     result = subprocess.run(
         [
             sys.executable,
@@ -1006,7 +1038,7 @@ def _run_and_assert_error(
         encoding="utf-8",
     )
     out_dir = tmp_path / "out"
-    env = {**os.environ, "PYTHONPATH": str(tmp_path)}
+    env = {**os.environ, "PYTHONPATH": os.pathsep.join([CHECKOUT, str(tmp_path)])}
     result = subprocess.run(
         [
             sys.executable,
@@ -1170,12 +1202,75 @@ def test_pdf_ocr_rejects_missing_language_pack(tmp_path: Path, monkeypatch) -> N
     assert "rus" in message
     assert "eng" in message  # names what IS installed
     assert "doctor" in message
+    assert "three-letter" in message
+    assert "--lang" in message
+
+
+@pytest.mark.parametrize("requested", ["ru", "russian"])
+def test_pdf_ocr_suggests_installed_tesseract_language_codes(tmp_path, monkeypatch, requested):
+    _fake_binaries_with_langs(monkeypatch, ["eng", "rus", "osd"])
+    with pytest.raises(RuntimeError, match="Did you mean rus") as excinfo:
+        _extract_one(PdfOcrAdapter(lang=requested), tmp_path)
+    assert "Tesseract uses three-letter language codes" in str(excinfo.value)
+
+
+def test_pdf_ocr_names_the_recipe_of_a_known_model_not_installed(tmp_path, monkeypatch):
+    _fake_binaries_with_langs(monkeypatch, ["eng", "rus", "yor", "osd"])
+    with pytest.raises(RuntimeError) as excinfo:
+        _extract_one(PdfOcrAdapter(lang="orus"), tmp_path)
+    message = str(excinfo.value)
+    assert "Tesseract's orus model is not installed." in message
+    assert "Russian printed before 1918" in message
+    assert "engine-recipes.md#tesseract-with-the-community-orus-model" in message
+    assert "Did you mean" not in message
+
+
+def test_pdf_ocr_shows_only_a_few_installed_languages(tmp_path, monkeypatch):
+    langs = [f"q{i:02d}" for i in range(20)]
+    _fake_binaries_with_langs(monkeypatch, langs)
+    with pytest.raises(RuntimeError) as excinfo:
+        _extract_one(PdfOcrAdapter(lang="missing"), tmp_path)
+    message = str(excinfo.value)
+    assert "20 codes" in message
+    assert "q00, q01, q02, q03, q04, q05, q06, q07, …" in message
+    assert "q08" not in message
+    assert "pageledger doctor" in message
 
 
 def test_pdf_ocr_accepts_installed_language_pack(tmp_path: Path, monkeypatch) -> None:
     _fake_binaries_with_langs(monkeypatch, ["eng", "rus", "osd"])
     result = _extract_one(PdfOcrAdapter(lang="eng+rus"), tmp_path)
     assert result.content == "OCR TEXT\n"
+
+
+def test_pdf_reader_summarizes_structural_repair_logs_and_keeps_other_warnings(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    import logging
+
+    pytest.importorskip("pypdf")
+
+    class Reader:
+        def __init__(self, stream, *, strict=False):
+            logger = logging.getLogger("pypdf._reader")
+            logger.warning("Ignoring wrong pointing object 6 0 (offset 0)")
+            logger.warning("Ignoring wrong pointing object 7 0 (offset 0)")
+            logger.warning("A different pypdf warning")
+            logger.warning("fontTools is required to fully parse {'/Type': '/Font', ...}")
+
+    monkeypatch.setattr(adapters_module, "_load_pypdf", lambda: Reader)
+    source = tmp_path / "source.pdf"
+    source.write_bytes(b"%PDF")
+    with adapters_module.capture_pypdf_repairs():
+        for _ in range(2):
+            with source.open("rb") as stream, adapters_module._reading_pdf(source) as open_pdf:
+                open_pdf(stream)
+    stderr = capsys.readouterr().err
+    assert stderr.count("pypdf repaired 4 objects while reading PDF files") == 1
+    assert "Ignoring wrong pointing object" not in stderr
+    assert "A different pypdf warning" in stderr
+    assert "could not fully decode 2 fonts without the fontTools package" in stderr
+    assert "/Font" not in stderr
 
 
 def test_pdf_ocr_skips_lang_check_when_listing_fails(tmp_path: Path, monkeypatch) -> None:
@@ -1646,6 +1741,17 @@ def test_pdf_ocr_raises_render_dpi_to_embedded_image_resolution(
     assert "dpi=621 (requested 300, native image)" in result.model
 
 
+def test_a_sharp_logo_does_not_raise_the_render_dpi(tmp_path: Path, monkeypatch) -> None:
+    pytest.importorskip("pypdf")
+    _fake_binaries_with_langs(monkeypatch, ["eng"])
+    monkeypatch.setattr(adapters_module, "_probe_size_at_10dpi", lambda *args: (7, 12))
+    pdf = _image_pdf(tmp_path / "logo.pdf", width=900, height=300)
+    result = PdfOcrAdapter(dpi=300).extract(
+        pdf, page_id="doc_0001_page_0001", page_number=1, action="transcribe_text"
+    )
+    assert result.model and "; dpi=300;" in result.model
+
+
 def test_pdf_ocr_born_digital_keeps_requested_dpi(tmp_path: Path, monkeypatch) -> None:
     _fake_binaries_with_langs(monkeypatch, ["eng"])
     monkeypatch.setattr(adapters_module, "_probe_size_at_10dpi", lambda *args: (7, 12))
@@ -1738,7 +1844,9 @@ def test_max_render_pixels_is_validated() -> None:
 # ---------------------------------------------------------------------------
 
 
-def _text_pdf(path: Path, *, algorithm: str | None = None, user_password: str = "") -> Path:
+def _text_pdf(
+    path: Path, *, algorithm: str | None = None, user_password: str = "", font: str = "Helvetica"
+) -> Path:
     """One page reading 'Hello PageLedger', optionally encrypted by pypdf."""
     from pypdf import PdfWriter
     from pypdf.generic import DecodedStreamObject, DictionaryObject, NameObject
@@ -1749,7 +1857,7 @@ def _text_pdf(path: Path, *, algorithm: str | None = None, user_password: str = 
         {
             NameObject("/Type"): NameObject("/Font"),
             NameObject("/Subtype"): NameObject("/Type1"),
-            NameObject("/BaseFont"): NameObject("/Helvetica"),
+            NameObject("/BaseFont"): NameObject(f"/{font}"),
         }
     )
     page[NameObject("/Resources")] = DictionaryObject(
@@ -1762,6 +1870,21 @@ def _text_pdf(path: Path, *, algorithm: str | None = None, user_password: str = 
         writer.encrypt(user_password=user_password, owner_password="owner", algorithm=algorithm)
     writer.write(path)
     return path
+
+
+def test_pdf_text_marks_a_layer_drawn_in_an_ocr_font(tmp_path: Path) -> None:
+    pytest.importorskip("pypdf")
+    scanned = _text_pdf(tmp_path / "scan.pdf", font="GlyphLessFont")
+    typeset = _text_pdf(tmp_path / "typeset.pdf")
+    read = PdfTextAdapter().extract(
+        scanned, page_id="doc_0001_page_0001", page_number=1, action="transcribe_text"
+    )
+    assert read.warnings == ["ocr_text_layer"]
+    assert read.content.strip() == "Hello PageLedger"
+    plain = PdfTextAdapter().extract(
+        typeset, page_id="doc_0001_page_0001", page_number=1, action="transcribe_text"
+    )
+    assert plain.warnings == []
 
 
 def _lending_copy_pdf(path: Path) -> Path:
@@ -1798,7 +1921,7 @@ def _pdf_readers():
 def test_pdf_extra_installs_aes_support() -> None:
     root = Path(__file__).resolve().parents[2]
     pyproject = (root / "pyproject.toml").read_text(encoding="utf-8")
-    assert '"pypdf[crypto]>=6"' in pyproject
+    assert '"pypdf[crypto]>=6.21.4,<7"' in pyproject
 
 
 @pytest.mark.parametrize("algorithm", ["RC4-128", "AES-128", "AES-256"])
@@ -1921,3 +2044,14 @@ def test_hung_ocr_engine_is_a_typed_timeout(tmp_path: Path, monkeypatch) -> None
         _extract_one(PdfOcrAdapter(), tmp_path)
     assert excinfo.value.code == "engine_timeout"
     assert "timed out after 120s" in str(excinfo.value)
+
+
+def test_text_pages_keep_line_endings_drop_the_bom_and_a_closing_form_feed(tmp_path: Path) -> None:
+    source = tmp_path / "pages.txt"
+    source.write_bytes(b"\xef\xbb\xbfone\r\nline\fsecond\rpage\f\n")
+    assert adapters_module.text_pages(source) == ["one\r\nline", "second\rpage"]
+    assert adapters_module.paginate(source) == 2
+    latin = tmp_path / "latin.txt"
+    latin.write_bytes("caf\xe9".encode("latin-1"))
+    with pytest.raises(adapters_module.PageLedgerDiagnostic, match="is not UTF-8 text"):
+        adapters_module.text_pages(latin)

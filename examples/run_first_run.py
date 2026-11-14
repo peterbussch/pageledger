@@ -92,9 +92,10 @@ def main(argv: list[str] | None = None) -> int:
     python = args.python.expanduser().absolute()
     if not python.is_file():
         raise FileNotFoundError(python)
+    fixtures = [fixture.resolve(strict=True) for fixture in args.fixture]
     work_dir = args.work_dir.resolve()
     work_dir.mkdir(parents=True, exist_ok=False)
-    for fixture in args.fixture:
+    for fixture in fixtures:
         shutil.copy2(fixture, work_dir / fixture.name)
 
     env = os.environ.copy()

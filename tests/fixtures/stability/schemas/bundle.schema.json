@@ -1,0 +1,338 @@
+{
+  "$defs": {
+    "extractor": {
+      "additionalProperties": false,
+      "properties": {
+        "adapter": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "capabilities": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "uniqueItems": true
+        },
+        "deterministic": {
+          "type": "boolean"
+        },
+        "input_types": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "uniqueItems": true
+        },
+        "options": {
+          "type": "object"
+        },
+        "output_types": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "uniqueItems": true
+        },
+        "reproducibility_profile": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/profile"
+            }
+          ]
+        },
+        "version": {
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "adapter",
+        "version",
+        "deterministic",
+        "input_types",
+        "output_types",
+        "capabilities",
+        "options",
+        "reproducibility_profile"
+      ],
+      "type": "object"
+    },
+    "file": {
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "size": {
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "path",
+        "size",
+        "sha256"
+      ],
+      "type": "object"
+    },
+    "profile": {
+      "additionalProperties": false,
+      "properties": {
+        "adapter": {
+          "additionalProperties": false,
+          "properties": {
+            "code_sha256": {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            "module": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "version": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "module",
+            "name",
+            "version",
+            "code_sha256"
+          ],
+          "type": "object"
+        },
+        "materials": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "kind": {
+                "enum": [
+                  "binary",
+                  "package",
+                  "model",
+                  "asset"
+                ],
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "sha256": {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              "version": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "name",
+              "version",
+              "sha256"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "pageledger": {
+          "additionalProperties": false,
+          "properties": {
+            "code_sha256": {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            "version": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "version",
+            "code_sha256"
+          ],
+          "type": "object"
+        },
+        "profile_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "profile_version": {
+          "const": "0.1"
+        },
+        "runtime": {
+          "additionalProperties": false,
+          "properties": {
+            "filesystem_encoding": {
+              "type": "string"
+            },
+            "machine": {
+              "type": "string"
+            },
+            "preferred_encoding": {
+              "type": "string"
+            },
+            "python_implementation": {
+              "type": "string"
+            },
+            "python_version": {
+              "type": "string"
+            },
+            "release": {
+              "type": "string"
+            },
+            "system": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "python_implementation",
+            "python_version",
+            "system",
+            "release",
+            "machine",
+            "preferred_encoding",
+            "filesystem_encoding"
+          ],
+          "type": "object"
+        }
+      },
+      "required": [
+        "profile_version",
+        "pageledger",
+        "adapter",
+        "runtime",
+        "materials",
+        "profile_sha256"
+      ],
+      "type": "object"
+    },
+    "source": {
+      "additionalProperties": false,
+      "properties": {
+        "index": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "page_count": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "pages": {
+          "type": "string"
+        },
+        "path": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "size": {
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "index",
+        "path",
+        "sha256",
+        "size",
+        "page_count"
+      ],
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "baseline": {
+      "additionalProperties": false,
+      "properties": {
+        "execution_mode": {
+          "const": "execute"
+        },
+        "extractor": {
+          "$ref": "#/$defs/extractor"
+        },
+        "manifest": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "manifest_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "run_depth": {
+          "const": 0
+        },
+        "run_id": {
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "run_id",
+        "manifest",
+        "manifest_sha256",
+        "execution_mode",
+        "run_depth",
+        "extractor"
+      ],
+      "type": "object"
+    },
+    "bundle_schema_version": {
+      "const": "0.1"
+    },
+    "files": {
+      "items": {
+        "$ref": "#/$defs/file"
+      },
+      "type": "array"
+    },
+    "replay": {
+      "additionalProperties": false,
+      "properties": {
+        "config": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "route_map": {
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "config",
+        "route_map"
+      ],
+      "type": "object"
+    },
+    "sources": {
+      "items": {
+        "$ref": "#/$defs/source"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "bundle_schema_version",
+    "baseline",
+    "replay",
+    "sources",
+    "files"
+  ],
+  "title": "PageLedger verified replay bundle",
+  "type": "object"
+}

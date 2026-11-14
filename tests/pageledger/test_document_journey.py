@@ -10,6 +10,7 @@ from pathlib import Path
 
 import pytest
 
+from pageledger import __version__
 from pageledger.adapters import TextAdapter
 from pageledger.processing import process, review_job
 
@@ -35,7 +36,7 @@ def test_document_first_run_journey_records_recovery_and_bounded_review(
             "--source-root",
             str(ROOT),
             "--expected-version",
-            "0.7.0",
+            __version__,
         ],
         cwd=ROOT,
         env=environment,
@@ -61,6 +62,12 @@ def test_document_first_run_journey_records_recovery_and_bounded_review(
     assert "DOCUMENT_JOURNEY_RECOVERY_OK" in result.stdout
     assert "DOCUMENT_JOURNEY_STALE_RECEIPT_REJECTED" in result.stdout
     assert "DOCUMENT_JOURNEY_REVIEW_OK" in result.stdout
+    assert "Correction of page 2, from " in result.stdout
+    assert ": 1 word changed, 0 added, 0 removed" in result.stdout
+    assert "DOCUMENT_JOURNEY_CORRECTION_OK" in result.stdout
+    corrected = complete["pages"][1]["selected_output"]
+    assert corrected["text"].endswith("for the correction example.")
+    assert corrected["correction"]["words"] == {"changed": 1, "added": 0, "removed": 0}
 
 
 def test_stale_review_record_is_rejected_without_extraction_or_artifact_changes(
@@ -114,10 +121,10 @@ def test_stale_review_record_is_rejected_without_extraction_or_artifact_changes(
 
     def fail_if_called(self, source, *, page_id, page_number, action, prompt=None):
         calls.append(page_number)
-        raise AssertionError("review-job must not call an extraction adapter")
+        raise AssertionError("applying a review must not call an extraction adapter")
 
     monkeypatch.setattr(TextAdapter, "extract", fail_if_called)
-    with pytest.raises(ValueError, match="Invalid document review identity"):
+    with pytest.raises(ValueError, match="made for another document"):
         review_job(job_dir, review_path)
 
     assert calls == []

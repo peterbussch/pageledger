@@ -515,3 +515,48 @@ def test_only_declared_identity_timestamp_and_extraction_timing_drift_compare_eq
     assert old_run_id != new_run_id
     receipt = compare_runs(control, candidate, workload)
     assert receipt.equivalent, (receipt.errors, receipt.candidate.errors)
+
+
+def _redump_yaml(run: Path) -> None:
+    path = run / "route-map.yml"
+    path.write_text(yaml.safe_dump(yaml.safe_load(path.read_text()), default_flow_style=True))
+
+
+def _redump_json(run: Path) -> None:
+    path = run / "cost.json"
+    path.write_text(json.dumps(json.loads(path.read_text()), indent=1, sort_keys=True))
+
+
+def _redump_jsonl(run: Path) -> None:
+    path = run / "provenance.jsonl"
+    lines = [json.loads(line) for line in path.read_text().splitlines()]
+    path.write_text("".join(json.dumps(line, separators=(",", ":")) + "\n" for line in lines))
+
+
+def _redump_audit_md(run: Path) -> None:
+    path = run / "audit.md"
+    path.write_text(path.read_text() + "\n")
+
+
+@pytest.mark.parametrize(
+    ("redump", "artifact"),
+    [
+        (_redump_yaml, "route-map.yml"),
+        (_redump_json, "cost.json"),
+        (_redump_jsonl, "provenance.jsonl"),
+        (_redump_audit_md, "audit.md"),
+    ],
+)
+def test_the_same_data_in_another_byte_form_is_not_equivalent(
+    frozen_runs, tmp_path: Path, redump: Callable[[Path], None], artifact: str
+) -> None:
+    workload, control, _ = frozen_runs
+    mutated = _copy_run(control, tmp_path)
+    redump(mutated)
+
+    receipt = validate_run(mutated, workload)
+    assert not receipt.valid
+    assert ("artifact_bytes_noncanonical", artifact) in [
+        (e.code, e.artifact) for e in receipt.errors
+    ]
+    assert not compare_runs(control, mutated, workload).equivalent

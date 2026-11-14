@@ -1,0 +1,598 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "payload": {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "page_id": {
+              "pattern": "^[A-Za-z0-9_-]+$",
+              "type": "string"
+            },
+            "run_id": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "state": {
+              "const": "pending"
+            }
+          },
+          "required": [
+            "run_id",
+            "page_id",
+            "state"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "page_id": {
+              "pattern": "^[A-Za-z0-9_-]+$",
+              "type": "string"
+            },
+            "run_id": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "started_at": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "state": {
+              "const": "started"
+            }
+          },
+          "required": [
+            "run_id",
+            "page_id",
+            "state",
+            "started_at"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "page_id": {
+              "pattern": "^[A-Za-z0-9_-]+$",
+              "type": "string"
+            },
+            "run_id": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "started_at": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "state": {
+              "const": "outcome_unknown"
+            }
+          },
+          "required": [
+            "run_id",
+            "page_id",
+            "state",
+            "started_at"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "extraction_seconds": {
+              "minimum": 0,
+              "type": "number"
+            },
+            "page_id": {
+              "pattern": "^[A-Za-z0-9_-]+$",
+              "type": "string"
+            },
+            "result": {
+              "additionalProperties": false,
+              "properties": {
+                "confidence": {
+                  "maximum": 1,
+                  "minimum": 0,
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                },
+                "confidence_detail": {
+                  "type": [
+                    "object",
+                    "null"
+                  ]
+                },
+                "content": {
+                  "type": [
+                    "string",
+                    "object",
+                    "array"
+                  ]
+                },
+                "format": {
+                  "pattern": "^[A-Za-z0-9_]+$",
+                  "type": "string"
+                },
+                "input_evidence": {
+                  "anyOf": [
+                    {
+                      "type": "null"
+                    },
+                    {
+                      "$ref": "image-evidence.schema.json"
+                    }
+                  ]
+                },
+                "layout": {
+                  "anyOf": [
+                    {
+                      "type": "null"
+                    },
+                    {
+                      "$ref": "layout.schema.json"
+                    }
+                  ]
+                },
+                "model": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "usage": {
+                  "properties": {
+                    "compute_seconds": {
+                      "minimum": 0,
+                      "type": [
+                        "number",
+                        "null"
+                      ]
+                    },
+                    "cost_usd": {
+                      "minimum": 0,
+                      "type": [
+                        "number",
+                        "null"
+                      ]
+                    },
+                    "pages": {
+                      "const": 1,
+                      "type": "integer"
+                    },
+                    "tokens": {
+                      "minimum": 0,
+                      "type": [
+                        "integer",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "pages"
+                  ],
+                  "type": "object"
+                },
+                "warnings": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                }
+              },
+              "required": [
+                "content",
+                "format",
+                "confidence",
+                "model",
+                "warnings",
+                "usage",
+                "confidence_detail"
+              ],
+              "type": "object"
+            },
+            "run_id": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "started_at": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "state": {
+              "const": "response"
+            }
+          },
+          "required": [
+            "run_id",
+            "page_id",
+            "state",
+            "started_at",
+            "result",
+            "extraction_seconds"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "completion": {
+              "additionalProperties": false,
+              "properties": {
+                "alignment": {
+                  "anyOf": [
+                    {
+                      "type": "null"
+                    },
+                    {
+                      "$ref": "normalized-page.schema.json"
+                    }
+                  ]
+                },
+                "provenance": {
+                  "$ref": "provenance-line.schema.json"
+                },
+                "quality": {
+                  "$ref": "quality-line.schema.json"
+                }
+              },
+              "required": [
+                "provenance",
+                "quality",
+                "alignment"
+              ],
+              "type": "object"
+            },
+            "extraction_seconds": {
+              "minimum": 0,
+              "type": "number"
+            },
+            "page_id": {
+              "pattern": "^[A-Za-z0-9_-]+$",
+              "type": "string"
+            },
+            "result": {
+              "additionalProperties": false,
+              "properties": {
+                "confidence": {
+                  "maximum": 1,
+                  "minimum": 0,
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                },
+                "confidence_detail": {
+                  "type": [
+                    "object",
+                    "null"
+                  ]
+                },
+                "content": {
+                  "type": [
+                    "string",
+                    "object",
+                    "array"
+                  ]
+                },
+                "format": {
+                  "pattern": "^[A-Za-z0-9_]+$",
+                  "type": "string"
+                },
+                "input_evidence": {
+                  "anyOf": [
+                    {
+                      "type": "null"
+                    },
+                    {
+                      "$ref": "image-evidence.schema.json"
+                    }
+                  ]
+                },
+                "layout": {
+                  "anyOf": [
+                    {
+                      "type": "null"
+                    },
+                    {
+                      "$ref": "layout.schema.json"
+                    }
+                  ]
+                },
+                "model": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "usage": {
+                  "properties": {
+                    "compute_seconds": {
+                      "minimum": 0,
+                      "type": [
+                        "number",
+                        "null"
+                      ]
+                    },
+                    "cost_usd": {
+                      "minimum": 0,
+                      "type": [
+                        "number",
+                        "null"
+                      ]
+                    },
+                    "pages": {
+                      "const": 1,
+                      "type": "integer"
+                    },
+                    "tokens": {
+                      "minimum": 0,
+                      "type": [
+                        "integer",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "pages"
+                  ],
+                  "type": "object"
+                },
+                "warnings": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                }
+              },
+              "required": [
+                "content",
+                "format",
+                "confidence",
+                "model",
+                "warnings",
+                "usage",
+                "confidence_detail"
+              ],
+              "type": "object"
+            },
+            "run_id": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "started_at": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "state": {
+              "const": "completed"
+            }
+          },
+          "required": [
+            "run_id",
+            "page_id",
+            "state",
+            "started_at",
+            "result",
+            "extraction_seconds",
+            "completion"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "dependentRequired": {
+            "extraction_seconds": [
+              "partial_result"
+            ],
+            "partial_result": [
+              "extraction_seconds"
+            ]
+          },
+          "properties": {
+            "error": {
+              "additionalProperties": false,
+              "properties": {
+                "code": {
+                  "enum": [
+                    "IMAGE_EVIDENCE_INVALID",
+                    "IMAGE_RENDER_ERROR",
+                    "MODEL_CONTENT_FILTERED",
+                    "MODEL_EMPTY_RESPONSE",
+                    "MODEL_HTTP_ERROR",
+                    "MODEL_INVALID_RESPONSE",
+                    "MODEL_NETWORK_ERROR",
+                    "MODEL_OUTPUT_TRUNCATED",
+                    "MODEL_QUOTA",
+                    "MODEL_RECITATION",
+                    "MODEL_TIMEOUT",
+                    "MODEL_UNAVAILABLE",
+                    "adapter_failure",
+                    "timeout"
+                  ]
+                },
+                "cost_usd": {
+                  "minimum": 0,
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                },
+                "http_status": {
+                  "maximum": 599,
+                  "minimum": 100,
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "type": {
+                  "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type",
+                "code",
+                "http_status",
+                "cost_usd"
+              ],
+              "type": "object"
+            },
+            "extraction_seconds": {
+              "minimum": 0,
+              "type": "number"
+            },
+            "page_id": {
+              "pattern": "^[A-Za-z0-9_-]+$",
+              "type": "string"
+            },
+            "partial_result": {
+              "additionalProperties": false,
+              "properties": {
+                "confidence": {
+                  "maximum": 1,
+                  "minimum": 0,
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                },
+                "confidence_detail": {
+                  "type": [
+                    "object",
+                    "null"
+                  ]
+                },
+                "content": {
+                  "type": [
+                    "string",
+                    "object",
+                    "array"
+                  ]
+                },
+                "format": {
+                  "pattern": "^[A-Za-z0-9_]+$",
+                  "type": "string"
+                },
+                "input_evidence": {
+                  "anyOf": [
+                    {
+                      "type": "null"
+                    },
+                    {
+                      "$ref": "image-evidence.schema.json"
+                    }
+                  ]
+                },
+                "layout": {
+                  "anyOf": [
+                    {
+                      "type": "null"
+                    },
+                    {
+                      "$ref": "layout.schema.json"
+                    }
+                  ]
+                },
+                "model": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "usage": {
+                  "properties": {
+                    "compute_seconds": {
+                      "minimum": 0,
+                      "type": [
+                        "number",
+                        "null"
+                      ]
+                    },
+                    "cost_usd": {
+                      "minimum": 0,
+                      "type": [
+                        "number",
+                        "null"
+                      ]
+                    },
+                    "pages": {
+                      "const": 1,
+                      "type": "integer"
+                    },
+                    "tokens": {
+                      "minimum": 0,
+                      "type": [
+                        "integer",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "pages"
+                  ],
+                  "type": "object"
+                },
+                "warnings": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                }
+              },
+              "required": [
+                "content",
+                "format",
+                "confidence",
+                "model",
+                "warnings",
+                "usage",
+                "confidence_detail"
+              ],
+              "type": "object"
+            },
+            "run_id": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "started_at": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "state": {
+              "const": "failed"
+            }
+          },
+          "required": [
+            "run_id",
+            "page_id",
+            "state",
+            "started_at",
+            "error"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "schema_version": {
+      "const": "0.1"
+    },
+    "sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema_version",
+    "sha256",
+    "payload"
+  ],
+  "title": "PageLedger durable page attempt and completion",
+  "type": "object"
+}

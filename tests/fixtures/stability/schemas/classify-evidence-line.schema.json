@@ -1,0 +1,235 @@
+{
+  "$id": "https://github.com/peterbussch/pageledger/schemas/classify-evidence-line.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "One retained, text-free evidence record per classified page. Schema version 0.1.",
+  "properties": {
+    "decision": {
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "confidence": {
+          "maximum": 1,
+          "minimum": 0,
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "prompt": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "reason": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "type": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "confidence",
+        "reason",
+        "action",
+        "prompt"
+      ],
+      "type": "object"
+    },
+    "page_id": {
+      "type": "string"
+    },
+    "page_number": {
+      "minimum": 1,
+      "type": "integer"
+    },
+    "probe": {
+      "additionalProperties": false,
+      "properties": {
+        "adapter": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "adapter_version": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "model": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "result_format": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "adapter",
+        "adapter_version",
+        "model",
+        "result_format"
+      ],
+      "type": "object"
+    },
+    "schema_version": {
+      "const": "0.1",
+      "type": "string"
+    },
+    "signals": {
+      "additionalProperties": false,
+      "properties": {
+        "alpha_token_count": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "below_60_ratio": {
+          "maximum": 1,
+          "minimum": 0,
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "character_count": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "column_line_ratio": {
+          "maximum": 1,
+          "minimum": 0,
+          "type": "number"
+        },
+        "control_character_count": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "digit_ratio": {
+          "maximum": 1,
+          "minimum": 0,
+          "type": "number"
+        },
+        "latin_letter_ratio": {
+          "maximum": 1,
+          "minimum": 0,
+          "type": "number"
+        },
+        "max_token_length": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "mean_token_length": {
+          "minimum": 0,
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "nonempty_line_count": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "pipe_line_ratio": {
+          "maximum": 1,
+          "minimum": 0,
+          "type": "number"
+        },
+        "prereform_letter_count": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "replacement_character_count": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "result_format": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "short_token_ratio": {
+          "maximum": 1,
+          "minimum": 0,
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "suspicious_symbol_count": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "suspicious_symbol_ratio": {
+          "minimum": 0,
+          "type": "number"
+        },
+        "terminal_hard_sign_count": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "visible_character_count": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "whitespace_character_ratio": {
+          "maximum": 1,
+          "minimum": 0,
+          "type": "number"
+        },
+        "word_count": {
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "result_format",
+        "character_count",
+        "visible_character_count",
+        "word_count",
+        "replacement_character_count",
+        "control_character_count",
+        "suspicious_symbol_count",
+        "suspicious_symbol_ratio",
+        "alpha_token_count",
+        "mean_token_length",
+        "short_token_ratio",
+        "prereform_letter_count",
+        "terminal_hard_sign_count",
+        "pipe_line_ratio",
+        "column_line_ratio",
+        "digit_ratio",
+        "nonempty_line_count",
+        "below_60_ratio"
+      ],
+      "type": "object"
+    },
+    "source": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema_version",
+    "page_id",
+    "page_number",
+    "source",
+    "signals",
+    "probe",
+    "decision"
+  ],
+  "title": "PageLedger Classification Evidence Line",
+  "type": "object"
+}

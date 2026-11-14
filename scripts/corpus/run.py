@@ -60,7 +60,8 @@ def main(argv: list[str] | None = None) -> int:
     }
     (out / "run.json").write_text(json.dumps(run_info, indent=2) + "\n", encoding="utf-8")
     print(out)
-    return 1 if any(s["status"] == "verification_failed" for s in summaries) else 0
+    # summary.md counts every item that is not ok; so does the exit status.
+    return 1 if any(s["status"] != "ok" for s in summaries) else 0
 
 
 def _parser() -> argparse.ArgumentParser:

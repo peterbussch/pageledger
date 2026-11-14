@@ -4,9 +4,9 @@ PageLedger calls existing OCR/VLM tools through a small adapter interface.
 This keeps the package focused on routing, provenance, audit queues, and
 rerun control.
 
-The protocol is frozen for the 0.1 schema version. Patch releases may add
-optional attributes; minor releases may add required attributes after a
-`schema_version` bump.
+The protocol is frozen for the 0.1 schema version. Releases may add optional
+attributes; a new required attribute or a change to the `extract()` call waits
+for a major release. See [stability](stability.md).
 
 This document describes extraction adapters. Classifier hooks are a separate,
 smaller protocol used only by `pageledger classify`; see
@@ -36,7 +36,7 @@ sequenceDiagram
     end
 ```
 
-Ordinary runs retry only when configured. Resumable runs and document jobs
+Ordinary runs retry only when configured. Resumable runs and jobs
 require zero automatic retries and stop after a failed or uncertain request.
 See [checkpoint recovery](checkpoint-spec.md) and
 [image input evidence](image-evidence-spec.md) for durable response handling.
@@ -55,6 +55,15 @@ from typing import ClassVar
 from pageledger.adapters import ExtractionResult, adapter_conformance_check
 
 
+def toy_pages(source: Path) -> list[str]:
+    # Decode the bytes as they are, so line endings stay as written; drop a
+    # byte-order mark; a final form feed does not start an empty page.
+    pages = source.read_bytes().decode("utf-8-sig").split("\f")
+    if len(pages) > 1 and not pages[-1].strip():
+        pages.pop()
+    return pages
+
+
 class ToyAdapter:
     name: ClassVar[str] = "toy"
     version: ClassVar[str] = "1"
@@ -67,7 +76,7 @@ class ToyAdapter:
         return action == "transcribe_text"
 
     def page_count(self, source: Path) -> int:
-        return source.read_text(encoding="utf-8").count("\f") + 1
+        return len(toy_pages(source))
 
     def extract(
         self,
@@ -81,9 +90,8 @@ class ToyAdapter:
         if not self.supports(action):
             raise ValueError(f"Toy adapter does not support action: {action}")
         _ = page_id, prompt
-        pages = source.read_text(encoding="utf-8").split("\f")
         return ExtractionResult(
-            content=pages[page_number - 1], format="text", confidence=None,
+            content=toy_pages(source)[page_number - 1], format="text", confidence=None,
             model="toy-1", warnings=[], usage={"pages": 1},
         )
 
@@ -96,6 +104,7 @@ if __name__ == "__main__":
 ```
 
 Run `python toy_adapter.py`; an empty issue list prints `ToyAdapter conforms`.
+`toy_pages` splits pages the way the built-in `text` adapter (version 0.2) does.
 Then configure the adapter in a complete config (the taxonomy is required):
 
 ```yaml
@@ -108,14 +117,24 @@ run:
   adapter: toy_adapter:ToyAdapter
 ```
 
-For `sample.txt`, containing one or more form-feed-separated pages, run
-`pageledger run sample.txt --config pageledger.yml --out runs/toy
+For `pages.txt`, containing one or more form-feed-separated pages, run
+`pageledger run pages.txt --config pageledger.yml --out runs/toy
 --adapter-path .`. A conformance check validates declared shape; it does not
 prove extraction correctness. Add tests for supported actions, page numbering,
 input handling, and failures. An image adapter follows the same one-call,
 one-page contract: declare `input_types = ("image",)` and return
-`usage={"pages": 1}` for each image file. A directory of image files is a set
-of inputs, not one multi-page source.
+`usage={"pages": 1}` for each page.
+
+A folder of page images is one multi-page source. An adapter whose
+`input_types` include `"image"` but not `"pdf"` receives each page's own image
+file as `source`, with `page_number` the page's place in the document (1 for a
+single image file). Every other adapter receives a PDF carrier PageLedger wrote
+for the run, in which page `page_number` holds that page's image; it is deleted
+when the run ends, so do not keep its path. An adapter that renders pages can
+call `pageledger.adapters.render_warnings(source, page_number, pixels=(width,
+height))` with the size of its render; it returns `["render_upsampled"]` when
+the render has more than 1.5 times the source image's pixels along the long
+side, and works on carriers and scanned PDFs alike.
 
 ## Python protocol reference
 
@@ -136,6 +155,7 @@ class ExtractionResult:
     usage: dict[str, Any]  # {"pages": 1, "tokens": int|None, ...}
     confidence_detail: dict[str, Any] | None = None  # engine-native evidence
     input_evidence: dict[str, Any] | None = None  # exact page image descriptor
+    layout: dict[str, Any] | None = None  # where the engine found the text
 
 
 class ExtractorAdapter:
@@ -182,7 +202,7 @@ not invent their own prompt hashes.
 
 ### Resumable execution
 
-Resumable runs and document jobs use the same adapter protocol. Resume reuses
+Resumable runs and jobs use the same adapter protocol. Resume reuses
 saved responses without calling `extract()` again, but it still constructs
 the adapter and checks its metadata, so constructors and page-count hooks must
 not make extraction requests. Resumable execution needs zero automatic retries
@@ -198,7 +218,7 @@ partial_result=None)` for a typed terminal failure. Codes are
 `MODEL_CONTENT_FILTERED`, `MODEL_RECITATION`,
 `MODEL_UNAVAILABLE`, `IMAGE_RENDER_ERROR`, and `IMAGE_EVIDENCE_INVALID`.
 `http_status` is an integer 100–599 or null. `partial_result` is an
-`ExtractionResult` or null. Resumable runs and document jobs validate a
+`ExtractionResult` or null. Resumable runs and jobs validate a
 partial result and keep it, with its usage, in the failure record; they never
 complete or retry that page. A malformed partial result is discarded and the
 failure is reported as `IMAGE_EVIDENCE_INVALID`. An ordinary run keeps no
@@ -211,6 +231,39 @@ An optional `ExtractionResult.input_evidence` dictionary records an exact page
 JPEG and its rendering/request identity; see
 [`image-evidence-spec.md`](image-evidence-spec.md). It defaults to null, so old
 adapters remain compatible.
+
+An optional `ExtractionResult.layout` says where on the page the engine found
+its text. It is a JSON object with exactly four keys:
+
+```json
+{"units": "page_millionths", "level": "line",
+ "items": [{"box": [x0, y0, x1, y1], "text": "..."}],
+ "source": {}}
+```
+
+Each `box` is four integers on a grid of 1,000,000 steps per page side, with
+the origin at the top-left corner of the page as rendered (after its
+`/Rotate`), `x` to the right and `y` downward, and `0 <= x0 < x1 <= 1000000`,
+likewise for `y`. An engine that read a `pdftoppm` render divides its pixel
+boxes by the render's width and height (`pageledger.layout.grid_box`). `level`
+is `line` (a detector's text line) or `word` (an ALTO `String`); `text` is what
+the engine read there and may be empty; `source` describes where the layout
+came from and may be empty. `pageledger.layout.validate_layout` checks the
+shape and a malformed layout fails the page. The run keeps the layout in the
+page's recovery record and writes its digest to provenance as
+`layout_sha256`; an adapter that declares `layout` in `capabilities` is one a
+job may plan tiles from ([Read dense pages in tiles](processing-spec.md#read-dense-pages-in-tiles)).
+`rapidocr` returns its line boxes and `alto` its word boxes. The field defaults
+to null, so adapters that know nothing of layouts are unchanged.
+
+An adapter that declares `page_tiles` can read a page as a set of tiles. A job
+that tiles its stage passes the page's tile plan as the `tiles` constructor
+option (`pageledger.tiling`; a configuration may not set it), with
+`evidence_dir`; the adapter must also have an integer `max_image_side`
+attribute, the size the plan was made for. It reads each planned box as its own
+image and returns one reading with `page_tiles` image evidence
+([image evidence](image-evidence-spec.md#page-tiles)). `vision` is the
+built-in one.
 
 ## The `usage.pages` contract
 
@@ -244,7 +297,8 @@ when no rate is known.
 
 ## Loading custom adapters
 
-The built-in adapters are named `text`, `pdf_text`, and `pdf_ocr`.
+The built-in adapters are named `text`, `pdf_text`, `pdf_ocr`, `vision`,
+`rapidocr`, `indra` and `alto`.
 Project-specific OCR or VLM wrappers can be loaded with a Python import
 string:
 
@@ -312,9 +366,10 @@ credentials, tokens, arbitrary metadata, or mutable version aliases. PageLedger
 adds the package/adapter/runtime envelope and a `profile_sha256` to the
 manifest and bundle; it does not copy or install the named material.
 
-The hook is optional. Its absence never blocks an ordinary `run`, but a
-deterministic local adapter without a profile cannot establish the strict
-material identity required for an `exact` verified replay. A profile covers
+The hook is optional. Its absence never blocks an ordinary `run` or `bundle`,
+but a deterministic local adapter without a profile cannot establish the strict
+material identity required for an `exact` verified replay: its bundle replays
+as `evidence_compared`. A profile covers
 only the materials the adapter declares, not every imported dependency or
 their authenticity. Cloud adapters are evidence-compared because cloud
 identity and service state are outside this contract. See the [replay
@@ -332,7 +387,23 @@ pageledger run scan.pdf --config custom.yml --out runs/custom \
 ```
 
 The directory is prepended to `sys.path` before the config is validated.
-`rerun` accepts the same flag.
+`rerun`, `process`, `resume` and `replay` accept the same flag.
+
+A job, run or bundle records the import string of its adapter. When you
+`resume` one or `replay` a bundle, PageLedger imports a custom adapter only
+from the folder you pass with `--adapter-path`, and only an object defined in
+that folder; it never runs code because a folder you received names it. So
+pass `--adapter-path` only for code you have read or trust, and see
+[jobs, runs and bundles you receive](share-and-cite.md#jobs-runs-and-bundles-you-receive).
+
+### Usage and spending caps
+
+An adapter that declares `local` in `capabilities` costs nothing to call again.
+Any other adapter that leaves `usage.tokens` or `usage.cost_usd` null under a
+`run.budget.max_tokens` or `max_usd` cap stops the run before the next request,
+because the cap can no longer be checked (`run.budget.unknown_usage: continue`
+reads on). Report usage whenever the backend gives it, and declare `local` only
+for an adapter that sends nothing off the machine.
 
 ### Local Docling example
 
@@ -504,11 +575,12 @@ Adapters should return `ExtractionResult` instances with:
 | `model` | string or null | Model or OCR engine identifier. |
 | `warnings` | array | Non-fatal quality issues (empty list if none). Preserved in provenance and copied into `quality.jsonl`, so they affect grades and audit routing. |
 | `usage` | object | **`pages` must be 1**; `tokens`, `compute_seconds`, `cost_usd` optional/nullable. |
-| `confidence_detail` | object or null | Optional engine-native confidence data, adapter-defined shape; recorded into `quality.jsonl` verbatim. `pdf_ocr` fills Tesseract per-word statistics (`scale`, `word_count`, `mean`, `min`, `below_60_count`, `below_60_ratio`). |
+| `confidence_detail` | object or null | Optional engine-native confidence data, adapter-defined shape; recorded into `quality.jsonl` verbatim. `pdf_ocr` fills Tesseract per-word statistics (`scale`, `word_count`, `mean`, `min`, `below_60_count`, `below_60_ratio`); `pdf_text` records why it judged a layer an earlier OCR (`ocr_text_layer`: the signals that fired, and the producer when it is one). |
 | `input_evidence` | object or null | Optional exact page image descriptor; shape, file containment, hashes and dimensions follow [the image evidence contract](image-evidence-spec.md). |
+| `layout` | object or null | Optional boxes of the page's lines or words on a 1,000,000-step grid (see above); hashed into provenance as `layout_sha256`. |
 
 An adapter whose output a model generates, and so can contain text that is
-not on the page, should declare `generative` in `capabilities`. Document jobs
+not on the page, should declare `generative` in `capabilities`. Jobs
 keep such a reading in review until another engine agrees with it; see
 [Compare engines on a page](processing-spec.md#compare-engines-on-a-page).
 PageLedger never infers the capability from an adapter's name.
@@ -525,7 +597,8 @@ PageLedger never infers the capability from an adapter's name.
 Built-in adapters: `text`, `pdf_text` (through `pageledger[pdf]`), `pdf_ocr`
 (through locally installed Poppler and Tesseract), and
 [`vision`](vision-adapter.md), which sends page images to a local or hosted
-vision model. Anything else is a custom adapter; the adapter contract matters
+vision model; `rapidocr` and `indra` for local OCR; and `alto`, which reads OCR
+a library published as ALTO XML ([recipe](engine-recipes.md#alto-from-a-library-any-platform-no-engine)). Anything else is a custom adapter; the adapter contract matters
 more than adapter breadth.
 
 Runnable examples live in `examples/`:

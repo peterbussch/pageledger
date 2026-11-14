@@ -172,7 +172,7 @@ def test_worker_envelope_redacts_unexpected_error(
         "ok": False,
         "error": {
             "code": "replay_worker_failed",
-            "message": "Replay worker failed without a valid result.",
+            "message": "Replay worker failed without a valid result. (RuntimeError)",
         },
     }
     assert "secret details" not in result_path.read_text(encoding="utf-8")
@@ -618,17 +618,18 @@ def test_review_only_custom_adapter_without_hook_gets_planned_entry(tmp_path: Pa
     assert "reproducibility_profile" not in manifest["extractors"][0]
 
 
-def test_bundle_rejects_successful_custom_adapter_without_profile(tmp_path: Path) -> None:
-    from pageledger.replay import ReplayError, bundle_run
+def test_a_deterministic_adapter_without_a_profile_replays_as_compared_not_exact(
+    tmp_path: Path,
+) -> None:
+    from pageledger.replay import bundle_run, replay_bundle
 
     run_dir, _, _ = _run_custom_adapter_without_profile(tmp_path, action="transcribe_text")
-    manifest = json.loads((run_dir / "manifest.json").read_text(encoding="utf-8"))
-    assert manifest["execution_mode"] == "execute"
-    assert manifest["status"] == "completed"
-    with pytest.raises(ReplayError) as exc_info:
-        bundle_run(run_dir, tmp_path / "bundle")
-    assert exc_info.value.code == "profile_missing"
-    assert str(exc_info.value) == "Deterministic non-cloud extractor lacks a profile"
+    bundle_run(run_dir, tmp_path / "bundle")
+    result = replay_bundle(
+        tmp_path / "bundle", tmp_path / "replayed", adapter_path=tmp_path / "adapters"
+    )
+    assert result["outcome"] == "evidence_compared"
+    assert result["profile_match"] is None
 
 
 def test_bundle_text_run_has_portable_layout(tmp_path: Path) -> None:
@@ -1054,7 +1055,7 @@ def test_replay_blocks_implicit_bundle_adapter_import_before_execution(
     try:
         with pytest.raises(ReplayError) as error:
             replay_bundle(bundle_dir, tmp_path / "never-created")
-        assert error.value.code in {"extractor_identity_mismatch", "incompatible_environment"}
+        assert error.value.code == "adapter_not_trusted"
         assert not marker.exists()
         assert sys.path == active_path
     finally:
@@ -1363,6 +1364,7 @@ def test_replay_worker_startup_is_fixed_and_private(
     assert kwargs["stdout"] is subprocess.DEVNULL
     assert kwargs["stderr"] is subprocess.DEVNULL
     assert kwargs["check"] is False
+    assert kwargs["timeout"] == replay_module.REPLAY_TIMEOUT_SECONDS
     assert kwargs["cwd"] != Path.cwd()
     assert kwargs["cwd"] != output
     assert Path(command[-2]) == output.resolve()
@@ -1560,7 +1562,7 @@ def test_bundle_rejects_dry_run(tmp_path: Path) -> None:
 @pytest.mark.parametrize(
     ("manifest_update", "message"),
     [
-        ({"run_depth": 1}, "generation zero"),
+        ({"run_depth": 1}, "not itself a rerun"),
         ({"status": "failed"}, "status"),
         ({"summary": {"pages_failed": 1}}, "failed"),
         ({"summary": {"pages_not_attempted": 1}}, "unattempted"),
@@ -1675,7 +1677,19 @@ def test_bundle_rejects_generation_one_from_real_rerun_api(tmp_path: Path) -> No
     with pytest.raises(ReplayError) as exc_info:
         bundle_run(child_dir, tmp_path / "bundle")
     assert exc_info.value.code == "run_ineligible"
-    assert str(exc_info.value) == "Replay bundles require generation zero"
+    assert "Bundle the original run" in str(exc_info.value)
+
+
+def test_bundle_explains_that_a_document_job_is_shared_as_a_folder(tmp_path: Path) -> None:
+    from pageledger.replay import ReplayError, bundle_run
+
+    job = tmp_path / "job"
+    job.mkdir()
+    (job / "job.json").write_text("{}", encoding="utf-8")
+    with pytest.raises(ReplayError) as excinfo:
+        bundle_run(job, tmp_path / "bundle")
+    assert "bundle` accepts a run, not a document job" in str(excinfo.value)
+    assert "share-and-cite.md#deposit-a-job" in str(excinfo.value)
 
 
 @pytest.mark.parametrize("unsafe_path", ["/tmp/escape", "../escape"])
@@ -1845,3 +1859,12 @@ def test_recorded_profile_with_other_encoding_spelling_still_matches() -> None:
     recorded["runtime"]["python_version"] = "0.0.0"
     recorded["profile_sha256"] = profile_sha256(recorded)
     assert not profiles_match(local, recorded)
+
+
+def test_a_changed_adapter_version_is_named_when_replay_refuses() -> None:
+    from pageledger.replay import _identity_difference
+
+    baseline = {"adapter": "text", "version": "0.1", "capabilities": ["local"]}
+    local = {"adapter": "text", "version": "0.2", "capabilities": ["local"]}
+    message = _identity_difference(local, baseline)
+    assert "made with text version 0.1" in message and "has version 0.2" in message

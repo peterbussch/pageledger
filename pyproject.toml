@@ -1,11 +1,11 @@
 [build-system]
-requires = ["setuptools>=68", "wheel"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "pageledger"
-version = "0.7.0"
-description = "Auditable page-level run ledger for OCR and document extraction"
+version = "0.9.0"
+description = "Text from scanned documents, with a record of how each page was read"
 readme = "README.md"
 requires-python = ">=3.10"
 license = "MIT"
@@ -13,10 +13,12 @@ authors = [
   {name = "Peter Busscher"}
 ]
 classifiers = [
-  "Development Status :: 3 - Alpha",
+  "Development Status :: 4 - Beta",
   "Environment :: Console",
   "Intended Audience :: Developers",
   "Intended Audience :: Science/Research",
+  "Operating System :: MacOS",
+  "Operating System :: POSIX :: Linux",
   "Programming Language :: Python :: 3",
   "Programming Language :: Python :: 3.10",
   "Programming Language :: Python :: 3.11",
@@ -55,7 +57,12 @@ dev = [
   "types-PyYAML>=6.0",
 ]
 pdf = [
-  "pypdf[crypto]>=6",
+  "pypdf[crypto]>=6.21.4,<7",
+]
+# Indra's code is Apache-2.0; its model weights, downloaded on first use, are not
+# (modified OpenRAIL-M). See THIRD_PARTY_NOTICES.md.
+indra = [
+  "indra-ocr>=1.1.1,<2",
 ]
 rapidocr = [
   "onnxruntime>=1.20",

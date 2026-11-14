@@ -12,7 +12,9 @@ import pytest
 import yaml
 
 import pageledger
+from pageledger.adapters import load_adapter
 from pageledger.config import load_config
+from pageledger.processing_config import STAGES, processing_config
 
 ROOT = Path(__file__).resolve().parents[2]
 DOCUMENTS = sorted([ROOT / "README.md", *(ROOT / "docs").rglob("*.md")])
@@ -78,14 +80,16 @@ def _links(document: Path) -> list[str]:
 
 # The README is also the PyPI description, so it links to the repository absolutely.
 _REPOSITORY = "https://github.com/peterbussch/pageledger/blob/main/"
+_REPOSITORY_TREE = "https://github.com/peterbussch/pageledger/tree/main/"
 
 
 @pytest.mark.parametrize("document", DOCUMENTS, ids=lambda path: str(path.relative_to(ROOT)))
 def test_links_and_anchors_resolve(document: Path) -> None:
     broken = []
     for target in _links(document):
-        if target.startswith(_REPOSITORY):
-            base, target = ROOT, target.removeprefix(_REPOSITORY)
+        if target.startswith((_REPOSITORY, _REPOSITORY_TREE)):
+            base = ROOT
+            target = target.removeprefix(_REPOSITORY).removeprefix(_REPOSITORY_TREE)
         elif re.match(r"^[a-z][a-z0-9+.-]*:", target):
             continue
         else:
@@ -116,14 +120,50 @@ def _config_blocks() -> list[tuple[str, str]]:
     return blocks
 
 
+# What a documented config may need from the reader's own machine: an engine to
+# install, model files or a folder of their own, or their own adapter module.
+_NEEDS_THE_READERS_MACHINE = re.compile(
+    r"is missing; install it|must contain inference\.onnx|is not a folder"
+    r"|Could not import custom adapter module 'toy_adapter'"
+)
+
+
+def _builds(name: str, options: dict) -> None:
+    try:
+        load_adapter(name, options)
+    except ValueError as exc:
+        if not _NEEDS_THE_READERS_MACHINE.search(str(exc)):
+            raise
+
+
 @pytest.mark.parametrize("name,block", _config_blocks(), ids=[name for name, _ in _config_blocks()])
-def test_documented_configs_load(tmp_path: Path, name: str, block: str) -> None:
+def test_documented_configs_load(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, name: str, block: str
+) -> None:
+    """Every documented config loads, and every adapter it names accepts its options."""
+    monkeypatch.syspath_prepend(str(ROOT / "examples"))
     path = tmp_path / "config.yml"
     path.write_text(block, encoding="utf-8")
     config = load_config(path, validate_adapter=False)
     if config.adapter_name is not None and "processing" not in config.data:
         # A run config without page types extracts nothing (see "No extraction route").
         assert config.has_page_types, f"{name} runs an adapter but has no taxonomy.page_types"
+    if config.adapter_name is not None:
+        _builds(config.adapter_name, config.adapter_options)
+    if "processing" in config.data:
+        stages = processing_config(config.data, pdf=True)
+        for stage in STAGES:
+            entry = stages.get(stage)
+            if isinstance(entry, dict) and entry.get("adapter"):
+                _builds(entry["adapter"], entry["adapter_options"])
+
+
+def test_documented_config_check_catches_an_option_an_adapter_refuses() -> None:
+    with pytest.raises(ValueError, match="timeout_seconds"):
+        _builds(
+            "vision",
+            {"base_url": "http://127.0.0.1:9/v1", "model": "m", "timeout_seconds": 900},
+        )
 
 
 _CURRENT_VERSION_FILES = [
@@ -185,9 +225,8 @@ def test_example_config_files_load(example: Path) -> None:
         assert config.has_page_types, f"{example.name} runs an adapter but has no page types"
 
 
-@pytest.mark.parametrize("document", ["README.md", "docs/processing-spec.md"])
-def test_inline_processing_config_matches_the_example_file(document: str) -> None:
-    text = (ROOT / document).read_text(encoding="utf-8")
+def test_inline_processing_config_matches_the_example_file() -> None:
+    text = (ROOT / "docs" / "processing-spec.md").read_text(encoding="utf-8")
     inline = next(block for block in _code_blocks(text, "yaml") if "processing:" in block)
     example = ROOT / "docs" / "examples" / "processing.yml"
     assert yaml.safe_load(inline) == yaml.safe_load(example.read_text(encoding="utf-8"))

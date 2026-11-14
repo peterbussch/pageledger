@@ -28,6 +28,30 @@ REQUIRED_SDIST_FILES = (
     "docs/validation/0.5.1/vlm.yml",
 )
 
+# Everything MANIFEST.in prunes or excludes, listed again on purpose: dropping a line
+# there must not let the material through here. Also repository-only tooling.
+LOCAL_ONLY = (
+    "_session_research.md",
+    "docs/autoresearch.md",
+    "prompts",
+    "assets",
+    "brand",
+    "docs/superpowers",
+    "docs/proposals",
+    "docs/reports",
+    ".planning",
+    ".superpowers",
+    ".stress",
+    ".hermes",
+    "runs",
+    ".venv",
+    "tests",
+    "scripts/pageledger_bench",
+    "scripts/corpus",
+    "scripts/stress_pdf_ocr.py",
+    "scripts/git-hooks",
+)
+
 
 def check_distributions(root: Path, dist: Path) -> None:
     (wheel,) = dist.glob("pageledger-*.whl")
@@ -50,18 +74,8 @@ def check_distributions(root: Path, dist: Path) -> None:
         if prefix + path not in sdist_names:
             raise ValueError(f"Source distribution is missing: {path}")
     for name in sdist_names:
-        if any(
-            part in name
-            for part in (
-                "/docs/superpowers/",
-                "/docs/proposals/",
-                "/docs/reports/",
-                "/.planning/",
-                "/.superpowers/",
-                "/runs/",
-                "/.venv/",
-            )
-        ):
+        path = name.removeprefix(prefix)
+        if any(path == denied or path.startswith(denied + "/") for denied in LOCAL_ONLY):
             raise ValueError(f"Source distribution contains local-only material: {name}")
     print("wheel schema and sdist documentation inventories verified")
 

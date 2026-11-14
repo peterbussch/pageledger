@@ -69,9 +69,27 @@
         "required": ["path", "sha256", "page_count"],
         "properties": {
           "path": { "type": "string" },
-          "sha256": { "type": "string", "description": "SHA-256 hex digest of the source file." },
+          "sha256": { "type": "string", "description": "SHA-256 hex digest of the source file; for page images, of the canonical page manifest." },
           "page_count": { "type": "integer", "minimum": 1 },
-          "pages": { "type": "string", "description": "Page selection this run extracted from the source (e.g. '1-8,81'), when --pages was used. page_count stays the source's full size." }
+          "pages": { "type": "string", "description": "Page selection this run extracted from the source (e.g. '1-8,81'), when --pages was used. page_count stays the source's full size." },
+          "kind": { "const": "page_images", "description": "Present when the source is an image file or a folder of page images." },
+          "iiif": { "$ref": "#/$defs/iiif_snapshot" },
+          "images": {
+            "type": "array",
+            "description": "The canonical page manifest: one entry per page, in page order. Its hash is sha256.",
+            "items": { "$ref": "#/$defs/page_image" }
+          },
+          "carrier": {
+            "type": "object",
+            "description": "The PDF PageLedger derived from the page images for the engines to render. Never the custody record.",
+            "required": ["sha256", "derived", "pages"],
+            "properties": {
+              "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+              "derived": { "const": true },
+              "pages": { "type": "array", "description": "The pages whose images the carrier holds; every other page is an empty page of the same size.", "items": { "type": "integer", "minimum": 1 } }
+            },
+            "additionalProperties": false
+          }
         },
         "additionalProperties": false
       }
@@ -273,5 +291,44 @@
       "additionalProperties": false
     }
   },
-  "additionalProperties": false
+  "additionalProperties": false,
+  "$defs": {
+    "iiif_snapshot": {
+      "type": "object",
+      "description": "Present when the folder is a snapshot fetch-iiif wrote: its fetch record when the source was read. Context, not identity: the source sha256 does not cover it.",
+      "required": ["sha256", "requested_url", "status", "canvases"],
+      "properties": {
+        "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$", "description": "SHA-256 of iiif-fetch.json when the source was read." },
+        "requested_url": { "type": "string", "minLength": 1 },
+        "status": { "enum": ["complete", "incomplete"] },
+        "canvases": {
+          "type": "array",
+          "description": "One entry per page, in page order: the canvas each image came from.",
+          "items": {
+            "type": "object",
+            "required": ["name", "canvas_index", "canvas_id"],
+            "properties": {
+              "name": { "type": "string", "minLength": 1 },
+              "canvas_index": { "type": "integer", "minimum": 1 },
+              "canvas_id": { "type": ["string", "null"] }
+            },
+            "additionalProperties": false
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "page_image": {
+      "type": "object",
+      "required": ["name", "sha256", "bytes", "width", "height"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "bytes": { "type": "integer", "minimum": 1 },
+        "width": { "type": "integer", "minimum": 1 },
+        "height": { "type": "integer", "minimum": 1 }
+      },
+      "additionalProperties": false
+    }
+  }
 }

@@ -68,6 +68,14 @@ actual returned model/provider. `result.raw_sha256` continues to hash output;
 `input_evidence.sha256` hashes the transmitted input. Existing records may omit
 the field or use null. Final verification checks non-null image evidence.
 
+An adapter that returns a layout (where on the page it found the text; see the
+[adapter protocol](adapter-protocol.md#result-fields)) adds top-level
+`layout_sha256`, the SHA-256 of the layout's canonical JSON (keys sorted,
+separators `,` and `:`, UTF-8). The layout itself is kept in the run's recovery
+record (`.checkpoint/pages/{page_id}.json`), which must still hash to this
+value; a job plans tiles from it. Records of adapters without a
+layout omit the field.
+
 Normalized output is linked at file level, not per record. Each
 `normalized/{page_id}.json` carries `run_id`, `page_id`, and `raw_artifact`;
 individual records do not carry provenance identifiers. See the
@@ -80,7 +88,7 @@ individual records do not carry provenance identifiers. See the
 | `schema_version` | string | Provenance schema version. |
 | `run_id` | string | Run identifier from `manifest.json`. |
 | `page_id` | string | Stable page or region id. |
-| `source` | object | Source path, page number, and source checksum. |
+| `source` | object | Source path, page number, and source checksum. For page images, also `image` and `native_pixels` (below). |
 | `route` | object | Page type, action, and route confidence. |
 | `extractor` | object | Adapter, adapter version, model, prompt hash, determinism flag, and adapter capability metadata. |
 | `result` | object | Output format, confidence, warnings, raw artifact path, and (for current writers) the exact raw artifact SHA-256. |
@@ -89,6 +97,25 @@ individual records do not carry provenance identifiers. See the
 | `cost` | object | Optional PageLedger-resolved per-page cost: `usd` plus `basis` (`adapter_reported`, `configured_rate`, or null). |
 | `extraction_seconds` | number or null | Wall-clock seconds for the successful extraction attempt, measured by the runner (independent of adapter-reported `compute_seconds`). |
 | `timestamp` | ISO timestamp | Extraction time in UTC. |
+
+### Page images and native pixels
+
+For a source of page images, `source.sha256` is the source's identity, the hash
+of its page manifest (see [page-image sources](run-manifest-spec.md#page-image-sources)),
+and `source.image` names the page's own image: `name`, `sha256`, `bytes`,
+`width` and `height`, which equal the manifest's entry for this page, then
+`media_type` (`image/jpeg` or `image/png`), `ppi` (pixels per inch across and
+down, as the page was sized), `ppi_basis` (`jfif`, `exif`, `png_phys`, or
+`default` when the image declared no usable density) and `rotation` (0, 90,
+180 or 270 degrees, from EXIF). `verify` fails a line whose image differs
+from the manifest's.
+
+`source.native_pixels` holds the `width` and `height` in pixels of the image
+that is the page, when PageLedger knows it: always for page images, and for a
+scanned PDF page read by an engine that renders it, when the page's largest
+embedded image has the page's proportions (within 3%) and the `pdf` extra is
+installed. A page whose largest image has other proportions, such as a
+born-digital page with a figure, gets no `native_pixels`; nothing is claimed.
 
 ## Design notes
 
@@ -108,7 +135,7 @@ individual records do not carry provenance identifiers. See the
   configured unit rates. Missing token usage never becomes a known zero cost.
 - `result.raw_sha256` is optional for compatibility with older schema-0.1
   ledgers whose manifest also predates `pageledger_version`. Current writers
-  always emit it. `verify-run` fails if raw bytes differ or if any digest is
+  always emit it. `verify` fails if raw bytes differ or if any digest is
   absent. Older evidence remains parseable and receives an incomplete-evidence
   warning, but it cannot receive an integrity PASS without a raw digest. This
   detects accidental or local modification; it does not establish
@@ -130,14 +157,14 @@ not a calibrated accuracy score. Fields:
 | `character_count` | integer | ✅ | no | Total characters in extractor output. |
 | `word_count` | integer | ✅ | no | Count of Unicode letter tokens; combining marks remain attached to their base-letter token. |
 | `confidence` | number or null | ❌ | yes | Adapter-reported page confidence, 0–1. Emitted by current runs; optional so original 0.1 lines remain valid. |
-| `confidence_detail` | object or null | ❌ | yes | Engine-native confidence evidence. Emitted by current runs; optional for original 0.1 compatibility. |
+| `confidence_detail` | object or null | ❌ | yes | Engine-native confidence evidence. Emitted by current runs; optional for original 0.1 compatibility. `pdf_ocr` records Tesseract's word statistics; from 0.9, `pdf_text` records why it judged a layer an earlier OCR (`ocr_text_layer`, below). |
 | `warnings` | array of strings | ✅ | no | Adapter-native warnings plus PageLedger-derived quality warnings (see taxonomy below). Adapter warnings are also retained in the provenance result. |
 | `text_quality` | object | ✅ | no | Sub-metrics (see below). |
-| `embedded_text_comparison` | object | ❌ | yes | Comparison with PDF embedded text layer. Null for non-PDF sources. |
+| `embedded_text_comparison` | object | ❌ | yes | Comparison with the PDF's embedded text layer: `embedded_character_count` (characters in the layer), `character_delta` (this reading's count minus the layer's) and `character_ratio` (this reading's count divided by the layer's, four decimals; null when the layer is empty). Null for non-PDF sources and for adapters that read the layer themselves. |
 | `output_integrity` | object | ❌ | no | Conservative chat-template-marker and parent-rerun size evidence. Optional for older lines. |
 | `grade` | string | ❌ | no | `A`–`F`. Optional for older lines. |
 | `grade_basis` | string | ❌ | no | `signals_only` or `schema_aware`. Optional for older lines. |
-| `grade_detail` | object | ❌ | no | Grade evidence detail. Optional for older lines. |
+| `grade_detail` | object | ❌ | no | How the grade was reached: `signals_grade` and `schema_grade` (the two axes below; `schema_grade` null without a normalized record), `confidence_band` (null when the adapter reports no confidence), `warning_count`, `required_column_coverage` and `arithmetic_pass_rate` (null without schema evidence), and `reasons`, plain phrases such as `empty_text forces F`. Optional for older lines. |
 
 ### Grade bands
 
@@ -158,9 +185,10 @@ Confidence/coverage/pass-rate thresholds are overridable under
 `run.grading.thresholds`. The schema `quality` section adds floors:
 coverage below `minimum_required_column_coverage` forces the schema axis
 to F, and page confidence under `low_confidence_threshold` caps the final
-grade at C. The structured-format prose heuristics
+grade at C. The seven warnings meant for prose
 (`suspicious_symbol_density`, `fragmented_text`, `joined_text`,
-`digits_only_text`) do not fire on
+`digits_only_text`, `split_words`, `labels_without_values`,
+`capital_sign_in_word`) do not fire on
 `markdown_table`/`json`/`csv` pages: pipes and braces are construction,
 not garble.
 
@@ -184,11 +212,13 @@ not garble.
 | `digit_count` | integer | Decimal digits. |
 | `mixed_script_token_ratio` | number (0–1) | Share of letter tokens that mix Latin, Cyrillic or Greek letters, as look-alike substitutions do (`пpoдoлжoние` with Latin `p` and `o`). |
 | `private_use_count` | integer | Private Use Area code points, except one that opens a line before a space: that is a bullet or icon glyph from a symbol font. |
+| `foreign_script_count` | integer | Letters and marks from scripts other than Latin, Cyrillic or Greek, letterlike symbols and mathematical alphanumerics excepted; the evidence for `foreign_script_characters`. |
 | `largest_identical_line_count` | integer | How often the most repeated non-empty line occurs, ignoring dot leaders and rules. |
 | `longest_repeated_tail_length` | integer | Length in characters of the longest ending made of one unit of up to 200 characters repeated at least 20 times; 0 when there is none. |
 | `longest_letter_run` | integer | Longest run of one repeated letter; 0 when no letter repeats. |
 
-The last seven fields are new in 0.6; older quality lines omit them.
+`letter_count` and the fields after it are new in 0.6 (`foreign_script_count`
+in 0.7); older quality lines omit them.
 
 ### Warning taxonomy
 
@@ -205,6 +235,7 @@ Meanings and suggested next steps for warnings are in the
 | `fragmented_text` | `mean_token_length < 3.0` AND `alpha_token_count >= 20`. Catches OCR fragment noise; does not catch word-level misrecognition. |
 | `joined_text` | `mean_token_length >= 10`, `max_token_length >= 80`, `alpha_token_count >= 20`, `whitespace_character_ratio <= 0.03`, and `latin_letter_ratio >= 0.8`. Catches collapsed Latin word boundaries; it is review evidence, not proof of corruption. |
 | `suspicious_embedded_text_delta` | PDF embedded text character ratio < 0.5 or > 1.8, when embedded text is available and adapter does not report `embedded_text` capability. |
+| `multi_column_rows` | RapidOCR in `reading_order: rows` has at least four detected lines in more than half of the visual rows (three or more ` \| ` joins). This reflects the adapter's row assembly; column order and rows with two or three lines do not trigger it. It is a quality warning, not a job hold. |
 | `historical_orthography` | `prereform_letter_count >= 2`, OR `terminal_hard_sign_count >= 2` at a density of ≥1 per 100 alphabetic tokens over ≥20 tokens. The page is pre-1918 Russian orthography and an OCR model trained on modern text is probably mismatched. Measured on an 1850 gubernia review: 21 terminal ъ per 100 tokens vs 0.00 in modern text. |
 | `low_confidence` | `confidence_detail.below_60_ratio >= 0.25` over ≥10 words. A quarter of the words under engine confidence 60 marks the page for review; a mean can hide one illegible paragraph on an otherwise clean page. |
 | `instruction_echo` | Output contains one of the high-specificity chat-template markers `<think>`, `</think>`, `<|channel`, `<|im_start|>`, `<|im_end|>`, `[INST]`, or `[/INST]`. Generic words such as “instructions” or “channel” do not trigger it. |
@@ -216,7 +247,13 @@ Meanings and suggested next steps for warnings are in the
 | `repeated_page_text` | The page's whole text, under 200 characters after whitespace is collapsed, is identical on at least three pages of the run. A stamp-only text layer repeats a scanner's or website's mark on every page and none of the content. |
 | `repetition_loop` | A line other than dot leaders or rules occurs at least 20 times and makes up at least 30% of the page's non-empty lines; or the text ends in one unit of up to 200 characters repeated at least 20 times; or one letter repeats at least 40 times in a row. These are the shapes of a model stuck in a loop; a table that repeats a label on some of its rows stays below them. |
 | `script_mismatch` | Only when the config declares `language.script`: the page has at least 200 letters and fewer than half are in that script. |
+| `render_upsampled` | Added by an engine that renders pages (`pdf_ocr`, `rapidocr`, `vision`, `indra`) when the rendered page's long side has more than 1.5 times the pixels of the long side of the page's source image (`native_pixels`). Not raised when the native pixels are unknown. |
+| `no_text_layer` | Added by `pdf_text` to every page of a page-image source, which has no text layer. |
 | `historical_letters_lost` | Only when the config declares `language.orthography: prereform`: at least 300 Cyrillic letters, none of ѣ, ѳ or ѵ, and a word-final ъ on at most 1% of words (or on one word). і is not counted, because modern Ukrainian and Belarusian use it. |
+| `split_words` | At least 50 tokens made only of Cyrillic letters (with any combining accents), and at least 10% of them a single letter that is not a one-letter word of Russian, Ukrainian or Belarusian (а б в ж и к о с у я і й з ў, either case) and is not followed by a full stop. Not raised for `markdown_table`, `json` or `csv` output. The 2026-11 dogfood's split-word layer had 11–16%; its 12 correct pages at most 0.7%. |
+| `capital_sign_in_word` | At least 50 Cyrillic tokens, and a lower-case Cyrillic letter followed by a capital Ъ or Ь at least 5 times and at least once per 100 tokens. Not raised for structured output. |
+| `labels_without_values` | At least 10 lines whose last dot leader (four or more dots, or three dots separated by single spaces) has no digit after it, and fewer lines made of digits without letters than half that number. An ellipsis (`...`) is not a leader. Not raised for structured output. |
+| `ocr_text_layer` | Added by `pdf_text` (and `alto`) as the [warnings reference](warnings.md) describes. `pdf_text` records the evidence in `confidence_detail` as `{"ocr_text_layer": {"signals": [...], "producer": "..."}}`; `producer` is present only when that signal fired. An image covers the page when, as placed by the content stream, it spans at least 90% of the page's width and height; it hides text when it has no `/SMask`, `/Mask` or `/ImageMask`. Content in forms is followed three levels deep. No image data is decoded. |
 
 `digits_only_text`, `mixed_script_tokens`, `private_use_characters` and
 `repeated_page_text` were measured before their thresholds were set: on
@@ -244,6 +281,12 @@ PageLedger does not guess a collection's script or spelling; they have not yet
 been measured on a corpus.
 
 Adapter-native warnings appear in the same `warnings` list. The built-in
+`alto` adapter adds `alto_missing`, `alto_invalid` or `alto_geometry_mismatch`
+(see [warnings](warnings.md)) and names the ALTO file, its SHA-256 and its
+declared software in the `model` string. The built-in
+rendering engines add `render_upsampled` as defined above; a custom adapter can
+call `pageledger.adapters.render_warnings(source, page_number, pixels=(width,
+height))` for the same check. The built-in
 `pdf_ocr` adapter adds `render_dpi_capped` when it rendered a page below the
 requested DPI to stay within `run.adapter_options.max_render_pixels`; the
 page's `model` string then records both values, for example

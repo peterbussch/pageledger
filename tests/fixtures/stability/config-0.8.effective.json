@@ -1,0 +1,153 @@
+{
+  "processing": {
+    "batch": {
+      "concurrent": 4,
+      "pages": 8
+    },
+    "benchmark": {
+      "every_nth_page": 10,
+      "stage": "local_ocr"
+    },
+    "contest": {
+      "rules": "ru-print-0.2"
+    },
+    "escalate_on": [
+      "hold",
+      "rough",
+      "disagreement"
+    ],
+    "image": {
+      "adapter": "vision",
+      "adapter_options": {
+        "base_url": "http://127.0.0.1:8081/v1",
+        "model": "paid-reader"
+      },
+      "prompt": "Transcribe only the text on this page."
+    },
+    "lexicon": {
+      "language": "ru",
+      "provider": "pymorphy3",
+      "rough_below": 0.8
+    },
+    "limits": {
+      "max_attempt_pages": 100,
+      "max_cost_usd": 1.5,
+      "max_image_pages": 10,
+      "max_local_image_pages": 20,
+      "max_tokens": 50000
+    },
+    "links": {
+      "article": "https://example.org/article",
+      "custody": "https://example.org/custody"
+    },
+    "local_image": {
+      "adapter": "vision",
+      "adapter_options": {
+        "base_url": "http://127.0.0.1:8080/v1",
+        "model": "local-reader"
+      },
+      "prompt": "Transcribe only text visible on this source page, preserving page order, headings, footnotes and named table columns. Do not reconstruct missing or invisible text. Mark unreadable spans explicitly. Return the transcript without interpretation."
+    },
+    "local_ocr": {
+      "adapter": "pdf_ocr",
+      "adapter_options": {
+        "dpi": 300,
+        "lang": "rus"
+      },
+      "prompt": "Transcribe only text visible on this source page, preserving page order, headings, footnotes and named table columns. Do not reconstruct missing or invisible text. Mark unreadable spans explicitly. Return the transcript without interpretation."
+    },
+    "local_text": {
+      "adapter": "pdf_text",
+      "adapter_options": {},
+      "prompt": "Transcribe only text visible on this source page, preserving page order, headings, footnotes and named table columns. Do not reconstruct missing or invisible text. Mark unreadable spans explicitly. Return the transcript without interpretation."
+    },
+    "second_ocr": {
+      "adapter": "rapidocr",
+      "adapter_options": {},
+      "prompt": "Transcribe only text visible on this source page, preserving page order, headings, footnotes and named table columns. Do not reconstruct missing or invisible text. Mark unreadable spans explicitly. Return the transcript without interpretation."
+    },
+    "second_opinion": {
+      "adapter": "vision",
+      "adapter_options": {
+        "base_url": "http://127.0.0.1:8082/v1",
+        "model": "second-reader"
+      },
+      "prompt": "Transcribe only text visible on this source page, preserving page order, headings, footnotes and named table columns. Do not reconstruct missing or invisible text. Mark unreadable spans explicitly. Return the transcript without interpretation."
+    }
+  },
+  "properties": {
+    "adapter_name": "pdf_text",
+    "adapter_options": {},
+    "adapter_order": [
+      {
+        "adapter": "pdf_text",
+        "adapter_options": {}
+      },
+      {
+        "adapter": "pdf_ocr",
+        "adapter_options": {
+          "dpi": 400,
+          "lang": "rus"
+        }
+      }
+    ],
+    "budget_max_pages": 500,
+    "budget_max_tokens": 100000,
+    "budget_max_usd": 2.5,
+    "budget_warn_at_percent": 75.0,
+    "budget_warn_pages": 400,
+    "budget_warn_tokens": 80000,
+    "budget_warn_usd": 2.0,
+    "classify_adapter": "text",
+    "classify_adapter_options": {},
+    "classify_hook": "my_project.routes:Classifier",
+    "classify_hook_options": {
+      "strict": true
+    },
+    "classify_min_confidence": 0.7,
+    "classify_thresholds.table_column_line_ratio": 0.02,
+    "cost_per_1k_tokens": 0.01,
+    "cost_per_page": 0.002,
+    "dataset_citation": {
+      "label": "Sample ledger",
+      "text": "A sample ledger, 1914."
+    },
+    "default_action": "transcribe_text",
+    "default_prompt": "Transcribe the page.",
+    "grading_thresholds.confidence.A": 0.95,
+    "has_page_types": true,
+    "language": {
+      "orthography": "prereform",
+      "script": "Cyrillic"
+    },
+    "max_consecutive_failures": 5,
+    "max_rerun_depth": 3,
+    "max_retries": 2,
+    "on_page_error": "continue",
+    "quarantine_rules": [
+      {
+        "grade_below": "D"
+      }
+    ],
+    "rerun_rules": [
+      {
+        "grade_below": "C"
+      },
+      {
+        "missing_required_columns": true
+      },
+      {
+        "arithmetic_failure_rate_above": 0.05
+      }
+    ],
+    "retry_backoff": "exponential",
+    "review_below_grade": "C"
+  },
+  "review_after_extraction": {
+    "blank": false,
+    "prose": false,
+    "table_likely": true,
+    "unknown": false
+  },
+  "warnings": []
+}

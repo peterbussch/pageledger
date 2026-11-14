@@ -1,0 +1,690 @@
+{
+  "$defs": {
+    "iiif_snapshot": {
+      "additionalProperties": false,
+      "description": "Present when the folder is a snapshot fetch-iiif wrote: its fetch record when the source was read. Context, not identity: the source sha256 does not cover it.",
+      "properties": {
+        "canvases": {
+          "description": "One entry per page, in page order: the canvas each image came from.",
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "canvas_id": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "canvas_index": {
+                "minimum": 1,
+                "type": "integer"
+              },
+              "name": {
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "required": [
+              "name",
+              "canvas_index",
+              "canvas_id"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "requested_url": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "sha256": {
+          "description": "SHA-256 of iiif-fetch.json when the source was read.",
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "complete",
+            "incomplete"
+          ]
+        }
+      },
+      "required": [
+        "sha256",
+        "requested_url",
+        "status",
+        "canvases"
+      ],
+      "type": "object"
+    },
+    "page_image": {
+      "additionalProperties": false,
+      "properties": {
+        "bytes": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "height": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "name": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "width": {
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "name",
+        "sha256",
+        "bytes",
+        "width",
+        "height"
+      ],
+      "type": "object"
+    }
+  },
+  "$id": "https://github.com/peterbussch/pageledger/schemas/manifest.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "Canonical run manifest — durable pointer to every other artifact in the run directory. Schema version 0.1.",
+  "properties": {
+    "alignment": {
+      "additionalProperties": false,
+      "description": "Present only after `pageledger align` re-aligned this run. Records that the run's normalized/grade artifacts were re-derived after the original run, and from which schema.",
+      "properties": {
+        "aligned_at": {
+          "description": "Re-alignment time in UTC ISO 8601 format.",
+          "type": "string"
+        },
+        "pageledger_version": {
+          "type": "string"
+        },
+        "schema_sha256": {
+          "type": "string"
+        },
+        "schema_source": {
+          "description": "'config_snapshot' or the path of the external schema file passed via --schema (snapshotted as align-schema-snapshot.yml).",
+          "type": "string"
+        }
+      },
+      "required": [
+        "aligned_at",
+        "schema_source",
+        "schema_sha256",
+        "pageledger_version"
+      ],
+      "type": "object"
+    },
+    "artifacts": {
+      "additionalProperties": false,
+      "description": "Relative paths to all run artifacts.",
+      "properties": {
+        "audit": {
+          "type": "string"
+        },
+        "audit_md": {
+          "type": "string"
+        },
+        "config_snapshot": {
+          "type": "string"
+        },
+        "cost": {
+          "type": "string"
+        },
+        "normalized_dir": {
+          "type": "string"
+        },
+        "provenance": {
+          "type": "string"
+        },
+        "quality": {
+          "type": "string"
+        },
+        "raw_dir": {
+          "type": "string"
+        },
+        "replay": {
+          "type": "string"
+        },
+        "rerun_manifest": {
+          "type": "string"
+        },
+        "route_map": {
+          "type": "string"
+        },
+        "run_log": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "config_snapshot",
+        "route_map",
+        "raw_dir",
+        "normalized_dir",
+        "audit",
+        "audit_md",
+        "provenance",
+        "quality",
+        "cost",
+        "run_log",
+        "rerun_manifest"
+      ],
+      "type": "object"
+    },
+    "baseline_run_id": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "bundle_manifest_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "completed_at": {
+      "description": "Run completion time in UTC ISO 8601 format. Null if run did not complete.",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "config": {
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "description": "Relative path to config-snapshot.yml in the run directory.",
+          "type": "string"
+        },
+        "sha256": {
+          "type": "string"
+        },
+        "source_paths": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "path",
+        "sha256",
+        "source_paths"
+      ],
+      "type": "object"
+    },
+    "dataset_citation": {
+      "additionalProperties": false,
+      "description": "Optional user-provided source citation.",
+      "properties": {
+        "label": {
+          "type": "string"
+        },
+        "text": {
+          "type": "string"
+        }
+      },
+      "type": [
+        "object",
+        "null"
+      ]
+    },
+    "escalation": {
+      "additionalProperties": false,
+      "description": "Present when run.adapter_order selects adapters by rerun generation.",
+      "properties": {
+        "adapter_order": {
+          "items": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "minItems": 1,
+          "type": "array"
+        },
+        "step": {
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "adapter_order",
+        "step"
+      ],
+      "type": "object"
+    },
+    "execution_mode": {
+      "description": "Execution mode.",
+      "enum": [
+        "dry_run",
+        "execute"
+      ],
+      "type": "string"
+    },
+    "extractors": {
+      "description": "Extractor adapters used in this run.",
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "adapter": {
+            "type": "string"
+          },
+          "capabilities": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "deterministic": {
+            "type": "boolean"
+          },
+          "input_types": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "model": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "options": {
+            "description": "run.adapter_options the adapter was constructed with. Stored verbatim as durable evidence; must not contain credentials.",
+            "type": "object"
+          },
+          "output_types": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "prompt_hash": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "reproducibility_profile": {
+            "additionalProperties": false,
+            "properties": {
+              "adapter": {
+                "additionalProperties": false,
+                "properties": {
+                  "code_sha256": {
+                    "pattern": "^[0-9a-f]{64}$",
+                    "type": "string"
+                  },
+                  "module": {
+                    "type": "string"
+                  },
+                  "name": {
+                    "type": "string"
+                  },
+                  "version": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "module",
+                  "name",
+                  "version",
+                  "code_sha256"
+                ],
+                "type": "object"
+              },
+              "materials": {
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "kind": {
+                      "enum": [
+                        "binary",
+                        "package",
+                        "model",
+                        "asset"
+                      ],
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "sha256": {
+                      "pattern": "^[0-9a-f]{64}$",
+                      "type": "string"
+                    },
+                    "version": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "name",
+                    "version",
+                    "sha256"
+                  ],
+                  "type": "object"
+                },
+                "type": "array",
+                "uniqueItems": true
+              },
+              "pageledger": {
+                "additionalProperties": false,
+                "properties": {
+                  "code_sha256": {
+                    "pattern": "^[0-9a-f]{64}$",
+                    "type": "string"
+                  },
+                  "version": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "version",
+                  "code_sha256"
+                ],
+                "type": "object"
+              },
+              "profile_sha256": {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              "profile_version": {
+                "const": "0.1",
+                "type": "string"
+              },
+              "runtime": {
+                "additionalProperties": false,
+                "properties": {
+                  "filesystem_encoding": {
+                    "type": "string"
+                  },
+                  "machine": {
+                    "type": "string"
+                  },
+                  "preferred_encoding": {
+                    "type": "string"
+                  },
+                  "python_implementation": {
+                    "type": "string"
+                  },
+                  "python_version": {
+                    "type": "string"
+                  },
+                  "release": {
+                    "type": "string"
+                  },
+                  "system": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "python_implementation",
+                  "python_version",
+                  "system",
+                  "release",
+                  "machine",
+                  "preferred_encoding",
+                  "filesystem_encoding"
+                ],
+                "type": "object"
+              }
+            },
+            "required": [
+              "profile_version",
+              "pageledger",
+              "adapter",
+              "runtime",
+              "materials",
+              "profile_sha256"
+            ],
+            "type": "object"
+          },
+          "version": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "adapter",
+          "version",
+          "deterministic",
+          "input_types",
+          "output_types",
+          "capabilities"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "inputs": {
+      "description": "Source files processed in this run.",
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "carrier": {
+            "additionalProperties": false,
+            "description": "The PDF PageLedger derived from the page images for the engines to render. Never the custody record.",
+            "properties": {
+              "derived": {
+                "const": true
+              },
+              "pages": {
+                "description": "The pages whose images the carrier holds; every other page is an empty page of the same size.",
+                "items": {
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                "type": "array"
+              },
+              "sha256": {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              }
+            },
+            "required": [
+              "sha256",
+              "derived",
+              "pages"
+            ],
+            "type": "object"
+          },
+          "iiif": {
+            "$ref": "#/$defs/iiif_snapshot"
+          },
+          "images": {
+            "description": "The canonical page manifest: one entry per page, in page order. Its hash is sha256.",
+            "items": {
+              "$ref": "#/$defs/page_image"
+            },
+            "type": "array"
+          },
+          "kind": {
+            "const": "page_images",
+            "description": "Present when the source is an image file or a folder of page images."
+          },
+          "page_count": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "pages": {
+            "description": "Page selection this run extracted from the source (e.g. '1-8,81'), when --pages was used. page_count stays the source's full size.",
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "sha256": {
+            "description": "SHA-256 hex digest of the source file; for page images, of the canonical page manifest.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "sha256",
+          "page_count"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "outcome": {
+      "enum": [
+        "exact",
+        "evidence_compared",
+        "deterministic_mismatch"
+      ],
+      "type": "string"
+    },
+    "pageledger_version": {
+      "description": "PageLedger package version that generated this manifest. Optional for compatibility with older schema-0.1 artifacts; current writers always emit it.",
+      "type": "string"
+    },
+    "parent_run_id": {
+      "description": "Previous run identifier if this is a rerun. Null for first runs.",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "replay_schema_version": {
+      "const": "0.1",
+      "type": "string"
+    },
+    "routing": {
+      "additionalProperties": false,
+      "description": "Present when the run executed a supplied route map.",
+      "properties": {
+        "sha256": {
+          "type": "string"
+        },
+        "source_path": {
+          "type": "string"
+        },
+        "source_run_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "source_path",
+        "sha256",
+        "source_run_id"
+      ],
+      "type": "object"
+    },
+    "run_depth": {
+      "description": "Zero-based rerun generation. Optional for compatibility with older schema-0.1 artifacts; current writers always emit it.",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "run_id": {
+      "description": "Stable identifier for this run (e.g. 'run-20260619T193000000000Z').",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "0.1",
+      "description": "Manifest schema version. This release is '0.1'.",
+      "type": "string"
+    },
+    "skipped_inputs": {
+      "description": "Hidden files (names starting with '.', such as .DS_Store and AppleDouble '._*' sidecars) found while expanding input directories and skipped. Present only when something was skipped.",
+      "items": {
+        "minLength": 1,
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "started_at": {
+      "description": "Run start time in UTC ISO 8601 format.",
+      "type": "string"
+    },
+    "status": {
+      "description": "Run status.",
+      "enum": [
+        "completed",
+        "failed",
+        "partial"
+      ],
+      "type": "string"
+    },
+    "summary": {
+      "additionalProperties": false,
+      "description": "Counts and cost summary for quick inspection.",
+      "properties": {
+        "estimated_cost_usd": {
+          "type": "number"
+        },
+        "pages_extracted": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "pages_failed": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "pages_not_attempted": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "pages_quarantined": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "pages_routed_review": {
+          "description": "Pages whose route action was review, so extraction was deliberately deferred. Optional for compatibility with older schema-0.1 manifests; current writers always emit it.",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "pages_skipped": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "pages_total": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "quality_warning_pages": {
+          "description": "Number of pages with one or more quality warnings.",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "records_normalized": {
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "pages_total",
+        "pages_extracted",
+        "pages_skipped",
+        "pages_quarantined",
+        "records_normalized",
+        "estimated_cost_usd",
+        "quality_warning_pages"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "schema_version",
+    "run_id",
+    "execution_mode",
+    "started_at",
+    "status",
+    "inputs",
+    "config",
+    "extractors",
+    "artifacts",
+    "summary"
+  ],
+  "title": "PageLedger Run Manifest",
+  "type": "object"
+}

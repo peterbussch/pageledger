@@ -49,7 +49,7 @@ def test_classify_round_trip_executes_and_verifies(tmp_path: Path) -> None:
     assert Path(result["evidence_path"]) == tmp_path / "rm.evidence.jsonl"
     assert route_map["classifier"] == {
         "adapter": "builtin:structural",
-        "model": "text/0.1",
+        "model": "text/0.2",
         "prompt_hash": None,
     }
     assert [page["type"] for page in route_map["documents"][0]["pages"]] == [
@@ -589,3 +589,49 @@ def test_review_flag_must_be_boolean(tmp_path: Path) -> None:
     )
     with pytest.raises(ValueError, match=r"taxonomy.page_types.prose.review"):
         load_config(config)
+
+
+@pytest.mark.parametrize("existing", ["routes.yml", "routes.evidence.jsonl"])
+def test_classify_never_replaces_an_existing_route_map(tmp_path: Path, existing: str) -> None:
+    source = tmp_path / "doc.txt"
+    source.write_text("a page of ordinary prose text for the classifier\n", encoding="utf-8")
+    (tmp_path / existing).write_text("# reviewed by hand\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="already exists"):
+        classify(
+            inputs=[source], config_path=_write_config(tmp_path), out_path=tmp_path / "routes.yml"
+        )
+    assert (tmp_path / existing).read_text(encoding="utf-8") == "# reviewed by hand\n"
+
+
+def test_an_out_of_range_ratio_fails_that_page_not_the_corpus(tmp_path: Path) -> None:
+    (tmp_path / "percent_probe.py").write_text(
+        "from pageledger.adapters import ExtractionResult\n"
+        "class Probe:\n"
+        "    name = 'percent'\n"
+        "    version = '1.0'\n"
+        "    deterministic = True\n"
+        "    input_types = ('text',)\n"
+        "    output_types = ('text',)\n"
+        "    capabilities = ('local',)\n"
+        "    def supports(self, action): return action == 'transcribe_text'\n"
+        "    def page_count(self, source): return 2\n"
+        "    def extract(self, source, *, page_id, page_number, action, prompt=None):\n"
+        "        ratio = 25 if page_number == 1 else 0.25\n"
+        "        return ExtractionResult(content='some words here', format='text', confidence=None,\n"
+        "            model=None, warnings=[], usage={'pages': 1},\n"
+        "            confidence_detail={'below_60_ratio': ratio})\n",
+        encoding="utf-8",
+    )
+    source = tmp_path / "fixture.txt"
+    source.write_text("content", encoding="utf-8")
+    route_path = tmp_path / "rm.yml"
+    classify(
+        inputs=[source],
+        config_path=None,
+        out_path=route_path,
+        probe_adapter="percent_probe:Probe",
+        adapter_path=tmp_path,
+    )
+    pages = yaml.safe_load(route_path.read_text(encoding="utf-8"))["documents"][0]["pages"]
+    assert pages[0]["reason"] == "probe_failed:ValueError"
+    assert not pages[1]["reason"].startswith("probe_failed")

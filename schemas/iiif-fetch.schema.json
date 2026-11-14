@@ -1,0 +1,145 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/peterbussch/pageledger/schemas/iiif-fetch.json",
+  "title": "PageLedger IIIF fetch record",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "kind",
+    "tool",
+    "requested_url",
+    "source_kind",
+    "manifest",
+    "canvas_count",
+    "selection",
+    "status",
+    "started_at",
+    "finished_at",
+    "images",
+    "missing"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": "0.1"
+    },
+    "kind": {
+      "const": "iiif_fetch"
+    },
+    "tool": {
+      "type": "object",
+      "required": ["name", "version", "user_agent"],
+      "additionalProperties": false,
+      "properties": {
+        "name": {"const": "pageledger"},
+        "version": {"type": "string", "minLength": 1},
+        "user_agent": {"type": "string", "minLength": 1}
+      }
+    },
+    "requested_url": {"$ref": "#/$defs/url"},
+    "source_kind": {"enum": ["manifest", "image_service"]},
+    "manifest": {
+      "oneOf": [
+        {"type": "null"},
+        {
+          "type": "object",
+          "required": ["url", "final_url", "sha256", "artifact", "api_version"],
+          "additionalProperties": false,
+          "properties": {
+            "url": {"$ref": "#/$defs/url"},
+            "final_url": {"$ref": "#/$defs/url"},
+            "sha256": {"$ref": "#/$defs/sha256"},
+            "artifact": {"const": "iiif/manifest.json"},
+            "api_version": {"enum": [2, 3]}
+          }
+        }
+      ]
+    },
+    "canvas_count": {"type": "integer", "minimum": 1},
+    "selection": {"type": ["string", "null"]},
+    "status": {"enum": ["complete", "incomplete"]},
+    "started_at": {"$ref": "#/$defs/timestamp"},
+    "finished_at": {
+      "oneOf": [{"type": "null"}, {"$ref": "#/$defs/timestamp"}]
+    },
+    "stopped_by": {"type": "string"},
+    "images": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "file",
+          "sha256",
+          "bytes",
+          "canvas_index",
+          "canvas_id",
+          "label",
+          "service_id",
+          "image_api",
+          "info",
+          "native_width",
+          "native_height",
+          "request_url",
+          "final_url",
+          "width",
+          "height",
+          "below_native",
+          "fetched_at",
+          "attempts"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "file": {"$ref": "#/$defs/image_file"},
+          "sha256": {"$ref": "#/$defs/sha256"},
+          "bytes": {"type": "integer", "minimum": 1},
+          "canvas_index": {"type": "integer", "minimum": 1},
+          "canvas_id": {"type": ["string", "null"]},
+          "label": true,
+          "service_id": {"$ref": "#/$defs/url"},
+          "image_api": {"enum": [2, 3]},
+          "info": {
+            "type": "object",
+            "required": ["url", "final_url", "artifact", "sha256"],
+            "additionalProperties": false,
+            "properties": {
+              "url": {"$ref": "#/$defs/url"},
+              "final_url": {"$ref": "#/$defs/url"},
+              "artifact": {"type": "string", "pattern": "^iiif/[0-9]{4,}\\.info\\.json$"},
+              "sha256": {"$ref": "#/$defs/sha256"}
+            }
+          },
+          "native_width": {"type": "integer", "minimum": 1},
+          "native_height": {"type": "integer", "minimum": 1},
+          "request_url": {"$ref": "#/$defs/url"},
+          "final_url": {"$ref": "#/$defs/url"},
+          "width": {"type": "integer", "minimum": 1},
+          "height": {"type": "integer", "minimum": 1},
+          "below_native": {"type": "boolean"},
+          "fetched_at": {"$ref": "#/$defs/timestamp"},
+          "attempts": {"type": "integer", "minimum": 1}
+        }
+      }
+    },
+    "missing": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["canvas_index", "canvas_id", "label", "file", "error"],
+        "additionalProperties": false,
+        "properties": {
+          "canvas_index": {"type": "integer", "minimum": 1},
+          "canvas_id": {"type": ["string", "null"]},
+          "label": true,
+          "file": {"$ref": "#/$defs/image_file"},
+          "error": {"type": ["string", "null"]}
+        }
+      }
+    }
+  },
+  "$defs": {
+    "url": {"type": "string", "pattern": "^https?://"},
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "timestamp": {"type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"},
+    "image_file": {"type": "string", "pattern": "^[0-9]{4,}\\.jpg$"}
+  }
+}

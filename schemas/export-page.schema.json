@@ -25,6 +25,20 @@
       "type": "string",
       "minLength": 1
     },
+    "state": {
+      "enum": ["needs_person", "pending", "unreviewed", "reviewed"],
+      "description": "Since 0.9. needs_person: the job holds the page (the report's definition); pending: the job has not finished reading it; unreviewed: nothing held it and no person checked it; reviewed: a person recorded a decision."
+    },
+    "review_reasons": {
+      "type": "array",
+      "items": {"type": "string"},
+      "description": "Since 0.9. The page's hold reasons, as in document.json."
+    },
+    "warnings": {
+      "type": "array",
+      "items": {"type": "string"},
+      "description": "Since 0.9. The warning codes on the reading the page's text comes from; empty when no text is exported."
+    },
     "attempt": {
       "description": "The attempt whose output is the page's text; null when the page has none.",
       "type": [
@@ -78,6 +92,31 @@
         "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
       },
       "required": ["path", "sha256"],
+      "additionalProperties": false
+    },
+    "correction": {
+      "description": "Present when the text is a person's correction: its file and hash, the text it was made from (the attempt's output, an edition, or an earlier correction), the words it changed, added and removed, and who made it, when and why, from the receipt that first recorded it.",
+      "type": "object",
+      "properties": {
+        "reviewer": {"type": "string", "minLength": 1},
+        "reviewed_at": {"type": "string", "minLength": 1},
+        "reason": {"type": "string", "minLength": 1},
+        "path": {"type": "string", "pattern": "^corrections/"},
+        "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "from_path": {"type": "string", "minLength": 1},
+        "from_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "words": {
+          "type": "object",
+          "properties": {
+            "changed": {"type": "integer", "minimum": 0},
+            "added": {"type": "integer", "minimum": 0},
+            "removed": {"type": "integer", "minimum": 0}
+          },
+          "required": ["changed", "added", "removed"],
+          "additionalProperties": false
+        }
+      },
+      "required": ["path", "sha256", "from_path", "from_sha256", "words", "reviewer", "reviewed_at", "reason"],
       "additionalProperties": false
     },
     "review": {

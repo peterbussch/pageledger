@@ -1,0 +1,340 @@
+{
+  "$id": "https://github.com/peterbussch/pageledger/schemas/normalized-page.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "One normalized/{page_id}.json file — the schema aligner's output for a structured page. Records are declared-column mappings; coercion errors and failed checks are recorded evidence, never silent fixes. Schema version 0.1.",
+  "properties": {
+    "checks": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "failures": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "delta": {
+                  "type": "number"
+                },
+                "row": {
+                  "minimum": 1,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "row",
+                "delta"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "name": {
+            "type": "string"
+          },
+          "pass_rate": {
+            "maximum": 1,
+            "minimum": 0,
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "rows_checked": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "rows_failed": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "rows_passed": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "rows_unchecked": {
+            "description": "Rows where a check operand was null — missing evidence, counted as neither pass nor fail.",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "name",
+          "rows_checked",
+          "rows_passed",
+          "rows_failed",
+          "rows_unchecked",
+          "pass_rate",
+          "failures"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "coercion_errors": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "column": {
+            "type": "string"
+          },
+          "error": {
+            "enum": [
+              "not_integer",
+              "not_number"
+            ],
+            "type": "string"
+          },
+          "raw": {
+            "type": "string"
+          },
+          "row": {
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "row",
+          "column",
+          "raw",
+          "error"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "columns": {
+      "additionalProperties": false,
+      "properties": {
+        "extra": {
+          "description": "Source headers not retained as a unique declared-column mapping, including unmatched and duplicate-mapped headers.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "matched": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Source header → declared column name, exact normalized match only.",
+          "type": "object"
+        },
+        "missing_optional": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "missing_required": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "matched",
+        "missing_required",
+        "missing_optional",
+        "extra"
+      ],
+      "type": "object"
+    },
+    "metrics": {
+      "additionalProperties": false,
+      "properties": {
+        "arithmetic_pass_rate": {
+          "maximum": 1,
+          "minimum": 0,
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "coercion_error_count": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "column_coverage": {
+          "maximum": 1,
+          "minimum": 0,
+          "type": "number"
+        },
+        "parse_error": {
+          "description": "Set when the structured payload could not be parsed (e.g. no_markdown_table_found, invalid_json). The page still gets a record: the failure is evidence.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "required_column_coverage": {
+          "maximum": 1,
+          "minimum": 0,
+          "type": "number"
+        },
+        "row_count": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "structure_issue_count": {
+          "description": "Number of entries in structure_issues; zero when the optional array is absent.",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "tables_found": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "tables_ignored": {
+          "description": "Markdown tables after the retained first table.",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "row_count",
+        "tables_found",
+        "required_column_coverage",
+        "column_coverage",
+        "arithmetic_pass_rate",
+        "coercion_error_count",
+        "parse_error"
+      ],
+      "type": "object"
+    },
+    "page_id": {
+      "type": "string"
+    },
+    "page_number": {
+      "minimum": 1,
+      "type": "integer"
+    },
+    "raw_artifact": {
+      "type": "string"
+    },
+    "records": {
+      "items": {
+        "additionalProperties": {
+          "type": [
+            "string",
+            "number",
+            "null"
+          ]
+        },
+        "description": "One record per source row. Every declared column is present; null means unmatched column, empty cell, or coercion failure (see coercion_errors).",
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "run_id": {
+      "type": "string"
+    },
+    "schema_name": {
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "0.1",
+      "type": "string"
+    },
+    "source_format": {
+      "enum": [
+        "markdown_table",
+        "csv",
+        "json"
+      ],
+      "type": "string"
+    },
+    "structure_issues": {
+      "description": "Structural evidence that the aligner retained one interpretation while recording discarded or malformed source structure.",
+      "items": {
+        "oneOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "column": {
+                "type": "string"
+              },
+              "header": {
+                "type": "string"
+              },
+              "kept_header": {
+                "type": "string"
+              },
+              "type": {
+                "const": "duplicate_header"
+              }
+            },
+            "required": [
+              "type",
+              "header",
+              "column",
+              "kept_header"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "actual_columns": {
+                "minimum": 0,
+                "type": "integer"
+              },
+              "expected_columns": {
+                "minimum": 0,
+                "type": "integer"
+              },
+              "row": {
+                "minimum": 1,
+                "type": "integer"
+              },
+              "type": {
+                "const": "row_width_mismatch"
+              }
+            },
+            "required": [
+              "type",
+              "row",
+              "expected_columns",
+              "actual_columns"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "tables_ignored": {
+                "minimum": 1,
+                "type": "integer"
+              },
+              "type": {
+                "const": "ignored_table"
+              }
+            },
+            "required": [
+              "type",
+              "tables_ignored"
+            ],
+            "type": "object"
+          }
+        ]
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "schema_version",
+    "run_id",
+    "page_id",
+    "page_number",
+    "schema_name",
+    "source_format",
+    "raw_artifact",
+    "columns",
+    "records",
+    "coercion_errors",
+    "checks",
+    "metrics"
+  ],
+  "title": "PageLedger Normalized Page",
+  "type": "object"
+}

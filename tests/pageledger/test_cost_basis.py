@@ -242,3 +242,20 @@ class _AlwaysFailsAdapter:
 
 
 ALWAYS_FAILS = _AlwaysFailsAdapter()
+
+
+def test_csv_cells_never_start_a_formula_and_audit_cells_never_split() -> None:
+    from pageledger.artifacts import render_audit_markdown
+    from pageledger.reports import _no_formulas
+
+    row = _no_formulas({"warnings": '=HYPERLINK("x")', "adapter": "text", "grade": None})
+    assert row == {"warnings": '\'=HYPERLINK("x")', "adapter": "text", "grade": None}
+    audit = {
+        "run_id": "run-x",
+        "review_queue": [
+            {"page_id": "p", "page_number": 1, "type": "a|b\nc", "action": "review", "reason": "r"}
+        ],
+        "quarantine_queue": [],
+    }
+    rendered = render_audit_markdown(audit)
+    assert "| a\\|b c |" in rendered

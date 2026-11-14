@@ -71,7 +71,8 @@ def test_pdf_document_text_is_cached_and_changed_source_rejected(tmp_path, monke
             ).content
             == "page"
         )
-    assert reads == ["reader", "text", "text"]
+    # The count opens the PDF once; each page is read once, when first asked for.
+    assert reads == ["reader", "reader", "text", "reader", "text"]
     with pytest.raises(ValueError, match="out of range"):
         adapter.extract(source, page_id="p", page_number=3, action="transcribe_text")
     source.write_bytes(b"PDF changed")
@@ -257,7 +258,9 @@ def test_image_receipts_validate_against_published_schemas(image_job):
     registry = Registry(retrieve=retrieve)
     schema = json.loads((schemas / "checkpoint-page.schema.json").read_text())
     launch_image(image_job)
-    for path in (image_job[2] / ".checkpoint/pages").glob("*.json"):
+    pages = sorted((image_job[2] / ".checkpoint/pages").glob("*.json"))
+    assert len(pages) == 2
+    for path in pages:
         jsonschema.Draft202012Validator(schema, registry=registry).validate(
             json.loads(path.read_text())
         )
@@ -317,3 +320,32 @@ def test_circular_evidence_is_rejected_as_invalid_input(tmp_path):
     evidence["renderer"]["parameters"]["cycle"] = evidence
     with pytest.raises(ValueError, match="Image evidence"):
         validate_input_evidence(evidence)
+
+
+def test_evidence_for_the_wrong_page_fails_that_page_not_the_run(tmp_path, monkeypatch):
+    from pageledger import runner
+    from pageledger.adapters import ExtractionResult, TextAdapter
+
+    out = tmp_path / "run"
+
+    class WrongPage(TextAdapter):
+        def extract(self, source, *, page_id, page_number, action, prompt=None):
+            out.mkdir(exist_ok=True)
+            evidence = image_descriptor(out, source, page_number + 1, prompt or "")
+            return ExtractionResult(
+                "text", "text", None, evidence["model"], [], {"pages": 1}, input_evidence=evidence
+            )
+
+    monkeypatch.setattr(runner, "load_adapter", lambda *args: WrongPage())
+    source = tmp_path / "doc.txt"
+    source.write_text("one\ftwo", encoding="utf-8")
+    config = tmp_path / "config.yml"
+    config.write_text(
+        "schema_version: '0.1'\ntaxonomy:\n  page_types:\n    prose:\n"
+        "      default_action: transcribe_text\nrun:\n  adapter: text\n"
+        "  on_page_error: continue\n",
+        encoding="utf-8",
+    )
+    result = runner.run(inputs=[source], config_path=config, out_dir=out, dry_run=False)
+    assert result["summary"]["pages_failed"] == 2
+    assert (out / "manifest.json").is_file()

@@ -170,7 +170,7 @@ A mismatch is returned and printed as an `escalation_warnings` entry; the
 config wins. The artifact is an auditable plan; a stale plan never overrides
 the config you supply.
 
-`verify-run` independently normalizes `run.adapter_order` from the retained
+`verify` independently normalizes `run.adapter_order` from the retained
 `config-snapshot.yml`, checks the manifest chain and generation against it,
 and derives the expected rerun escalation only from that snapshot. Editing the
 manifest and rerun plan together cannot substitute an unconfigured adapter.

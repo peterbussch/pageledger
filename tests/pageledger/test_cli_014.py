@@ -42,9 +42,10 @@ def test_align_dry_run_reaches_preview_path(
     monkeypatch.setattr(cli, "align_run", fake_align)
     exit_code = cli.main(["align", str(tmp_path), "--dry-run", "--json"])
 
+    # The real preview is tested in test_aligner; this checks only what the CLI passes on.
     assert exit_code == 0
-    assert called["dry_run"] is True
-    assert json.loads(capsys.readouterr().out)["applied"] is False
+    assert called == {"run_dir": tmp_path, "schema_path": None, "dry_run": True}
+    assert json.loads(capsys.readouterr().out)["run_id"] == "run-test"
 
 
 def test_verify_run_cli_text_json_and_failure(

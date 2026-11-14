@@ -34,14 +34,15 @@ def main(argv: list[str] | None = None) -> int:
         }
         _atomic_write_json(Path(result_path), envelope)
         return 1
-    except Exception:
+    except Exception as exc:
         envelope = {
             "protocol_version": _WORKER_PROTOCOL_VERSION,
             "request_id": request_id,
             "ok": False,
             "error": {
                 "code": _WORKER_GENERIC_CODE,
-                "message": _WORKER_GENERIC_MESSAGE,
+                # Only the kind of error: its text may carry what an adapter was sent.
+                "message": f"{_WORKER_GENERIC_MESSAGE} ({type(exc).__name__})",
             },
         }
         _atomic_write_json(Path(result_path), envelope)

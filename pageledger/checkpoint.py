@@ -14,6 +14,8 @@ from typing import Any
 
 from .adapters import ADAPTER_FAILURE_CODES, AdapterFailure, ExtractionResult
 from .image_evidence import validate_input_evidence
+from .image_source import KIND, manifest_sha256, read_sha256
+from .layout import layout_sha256
 from .replay import _adapter_code_sha256, _package_code_sha256
 
 PAGE_ID = re.compile(r"[A-Za-z0-9_-]+\Z")
@@ -28,7 +30,18 @@ RESULT_FIELDS = {
     "usage",
     "confidence_detail",
     "input_evidence",
+    "layout",
 }
+# Fields a saved result may lack: older runs saved no input_evidence, and a result
+# without a layout is saved without the key, so a run with no layouts writes what 0.8 wrote.
+_OPTIONAL_RESULT_FIELDS = {"input_evidence", "layout"}
+
+
+def _saved_result(result: Any) -> dict[str, Any]:
+    data = {key: getattr(result, key, None) for key in RESULT_FIELDS}
+    if data["layout"] is None:
+        del data["layout"]
+    return data
 
 
 def digest(value: Any) -> str:
@@ -45,6 +58,40 @@ def file_digest(path: Path) -> str:
         for chunk in iter(lambda: handle.read(1024 * 1024), b""):
             hasher.update(chunk)
     return hasher.hexdigest()
+
+
+def _confidence(value: Any) -> bool:
+    """A routed page's confidence: null, or a finite number from 0 to 1."""
+    return value is None or (
+        type(value) in {int, float} and math.isfinite(value) and 0 <= value <= 1
+    )
+
+
+def _valid_images(source: dict[str, Any]) -> bool:
+    """A page-image input lists one image per page whose manifest hash is its identity."""
+    images, carrier = source.get("images"), source.get("carrier")
+    try:
+        return (
+            source["kind"] == KIND
+            and isinstance(images, list)
+            and len(images) == source["page_count"]
+            and manifest_sha256(images) == source["sha256"]
+            and all(
+                isinstance(item, dict)
+                and set(item) == {"name", "sha256", "bytes", "width", "height"}
+                for item in images
+            )
+            and (
+                carrier is None
+                or (
+                    isinstance(carrier, dict)
+                    and isinstance(carrier.get("sha256"), str)
+                    and all(type(n) is int for n in carrier.get("pages", []))
+                )
+            )
+        )
+    except (TypeError, ValueError):
+        return False
 
 
 def _sync_directory(path: Path) -> None:
@@ -115,7 +162,10 @@ def writer_lock(root: Path):
         try:
             fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError as exc:
-            raise ValueError("Run already has an active writer") from exc
+            raise ValueError(
+                "Another PageLedger command is already working in this folder; "
+                "wait for it to finish, then try again"
+            ) from exc
         try:
             yield
         finally:
@@ -138,10 +188,24 @@ def adapter_identity(adapter: Any, profile: Any) -> dict[str, Any]:
 
 
 class Checkpoint:
-    def __init__(self, root: Path, *, existing: bool = False, verify_sources: bool = True):
+    def __init__(
+        self,
+        root: Path,
+        *,
+        existing: bool = False,
+        verify_sources: bool = True,
+        recorded_root: Path | None = None,
+    ):
+        """``recorded_root`` is where the run must say it was written, when that is not ``root``.
+
+        A document job passes it for its stage runs, so a moved job still binds each
+        stage to the directory the job recorded.
+        """
         self.root = root
+        self.recorded_root = root if recorded_root is None else recorded_root
         self.job: dict[str, Any] | None = None
         self.records: dict[str, dict[str, Any]] = {}
+        self.sources: dict[str, Path] = {}
         if existing:
             self.job = read_record(root / "checkpoint.json")
             try:
@@ -171,11 +235,15 @@ class Checkpoint:
         write_record(self.page_path(page_id), value)
         self.records[page_id] = value
 
-    def check_sources(self) -> None:
+    def check_sources(self) -> dict[str, Path]:
+        """Verify every recorded source; map each recorded path to where its bytes are."""
+        from .source_index import SourceUnavailable, resolve_source
+
         assert self.job is not None
         inputs = self.job.get("inputs")
         if not isinstance(inputs, list) or not inputs:
             raise ValueError("Invalid recovery source identity inventory")
+        located: dict[str, Path] = {}
         for source in inputs:
             if (
                 not isinstance(source, dict)
@@ -184,13 +252,18 @@ class Checkpoint:
             ):
                 raise ValueError("Invalid recovery source identity")
             try:
-                if file_digest(Path(source["path"])) != source["sha256"]:
-                    raise ValueError("source changed")
-            except (OSError, ValueError) as exc:
+                located[source["path"]] = resolve_source(
+                    source["path"], source["sha256"], source.get("kind")
+                )
+            except SourceUnavailable as exc:
                 raise ValueError("Recovery source identity changed or source is missing") from exc
+        self.sources = located
+        return located
 
     def validate(self, *, sources: bool = True) -> None:
         """Validate all pages before any adapter request or artifact reconstruction."""
+        from .runner import _artifact_extension
+
         job = self.job
         required = {
             "run_id",
@@ -208,7 +281,8 @@ class Checkpoint:
         }
         if (
             not isinstance(job, dict)
-            or set(job) != required
+            or set(job) - {"skipped_inputs"} != required
+            or not all(isinstance(name, str) for name in job.get("skipped_inputs", []))
             or not all(
                 isinstance(job[key], str) and job[key]
                 for key in (
@@ -220,7 +294,9 @@ class Checkpoint:
                     "log_level",
                 )
             )
-            or job["root"] != str(self.root)
+            or job["root"] != str(self.recorded_root)
+            or job["log_level"] not in {"DEBUG", "INFO", "WARNING", "ERROR"}
+            or not re.fullmatch(r"[0-9a-f]{64}", job["config_sha256"])
             or not isinstance(job["identity"], dict)
             or set(job["identity"])
             != {"name", "version", "code_sha256", "package_sha256", "profile", "metadata"}
@@ -262,6 +338,8 @@ class Checkpoint:
                 or not isinstance(document.get("pages"), list)
             ):
                 raise ValueError("Invalid recovery source inventory")
+            if "kind" in source and not _valid_images(source):
+                raise ValueError("Invalid recovery page image inventory")
             if source["path"] in source_paths:
                 raise ValueError("Duplicate recovery source identity")
             source_paths.add(source["path"])
@@ -275,16 +353,19 @@ class Checkpoint:
                     or page["page_number"] in numbers
                     or page["page_id"] in expected
                     or not isinstance(page.get("action"), str)
+                    or not isinstance(page.get("type"), str)
+                    or not isinstance(page.get("reason"), str)
+                    or not _confidence(page.get("confidence"))
                 ):
                     raise ValueError("Invalid recovery page inventory")
                 self.page_path(page["page_id"])
                 numbers.add(page["page_number"])
                 expected[page["page_id"]] = page
-                page_sources[page["page_id"]] = source["sha256"]
+                page_sources[page["page_id"]] = read_sha256(source, page["page_number"])
             from .runner import _parse_pages_expression
 
             planned_numbers = (
-                set(_parse_pages_expression(source["pages"]))
+                set(_parse_pages_expression(source["pages"], source["page_count"]))
                 if "pages" in source
                 else set(range(1, source["page_count"] + 1))
             )
@@ -293,7 +374,7 @@ class Checkpoint:
         pages_dir = self.root / ".checkpoint" / "pages"
         if pages_dir.is_symlink() or pages_dir.parent.is_symlink() or not pages_dir.is_dir():
             raise ValueError("Missing or unsafe recovery inventory")
-        actual = {p.name for p in pages_dir.iterdir() if not p.name.startswith(".pending-")}
+        actual = {p.name for p in pages_dir.iterdir() if not p.name.startswith(".")}
         if actual != {f"{page_id}.json" for page_id in expected}:
             raise ValueError("Recovery page inventory mismatch: missing or unexpected receipt")
         raw_expected: set[str] = set()
@@ -372,8 +453,7 @@ class Checkpoint:
                 seconds = record["extraction_seconds"]
                 if type(seconds) not in {int, float} or seconds < 0:
                     raise ValueError("Invalid saved extraction duration")
-                extension = "txt" if result.format == "text" else result.format
-                relative = f"raw/{page_id}.{extension}"
+                relative = f"raw/{page_id}.{_artifact_extension(result.format)}"
                 raw = self.root / relative
                 raw_expected.add(raw.name)
                 text = (
@@ -406,7 +486,7 @@ class Checkpoint:
                             normalized.is_symlink()
                             or not normalized.is_file()
                             or alignment is None
-                            or json.loads(normalized.read_text()) != alignment
+                            or json.loads(normalized.read_text(encoding="utf-8")) != alignment
                         ):
                             raise ValueError("Normalized response evidence changed")
                         normalized_expected.add(normalized.name)
@@ -427,12 +507,18 @@ class Checkpoint:
                         or completion["provenance"].get("input_evidence") != result.input_evidence
                     ):
                         raise ValueError("Invalid completion evidence")
+                    if completion["provenance"].get("layout_sha256") != (
+                        None if result.layout is None else layout_sha256(result.layout)
+                    ):
+                        raise ValueError(
+                            f"The saved layout of {page_id} no longer matches its provenance hash"
+                        )
                     alignment = completion["alignment"]
                     if alignment is not None:
                         normalized = self.root / "normalized" / f"{page_id}.json"
                         if normalized.is_symlink() or not normalized.is_file():
                             raise ValueError("Missing or unsafe normalized completion")
-                        if json.loads(normalized.read_text()) != alignment:
+                        if json.loads(normalized.read_text(encoding="utf-8")) != alignment:
                             raise ValueError("Normalized completion changed")
                         normalized_expected.add(normalized.name)
             self.records[page_id] = record
@@ -449,10 +535,12 @@ class Checkpoint:
                 unfinished = True
         for directory, allowed in (("raw", raw_expected), ("normalized", normalized_expected)):
             path = self.root / directory
-            if path.is_symlink() or not path.is_dir():
-                raise ValueError("Missing or unsafe recovery output directory")
-            if any(
-                p.name not in allowed and not p.name.startswith(".pending-") for p in path.iterdir()
+            # An absent directory reads as an empty one: Git and some archive tools drop
+            # empty directories, and every expected file was already checked above.
+            if path.is_symlink() or (path.exists() and not path.is_dir()):
+                raise ValueError("Unsafe recovery output directory")
+            if path.is_dir() and any(
+                p.name not in allowed and not p.name.startswith(".") for p in path.iterdir()
             ):
                 raise ValueError("Unexpected recovery output artifact")
         if sources:
@@ -463,9 +551,9 @@ class Checkpoint:
     ) -> ExtractionResult:
         from .runner import _validate_extraction_result
 
-        if not isinstance(data, dict) or set(data) not in (
-            RESULT_FIELDS,
-            RESULT_FIELDS - {"input_evidence"},
+        if (
+            not isinstance(data, dict)
+            or not RESULT_FIELDS - _OPTIONAL_RESULT_FIELDS <= set(data) <= RESULT_FIELDS
         ):
             raise ValueError("Invalid saved response")
         result = ExtractionResult(**data)
@@ -480,15 +568,26 @@ class Checkpoint:
             )
         return result
 
-    @staticmethod
-    def _check_file(path: Path, expected: str) -> None:
+    def _check_file(self, path: Path, expected: str) -> None:
         try:
             if path.is_symlink() or file_digest(path) != expected:
                 raise ValueError("output changed")
         except (OSError, ValueError) as exc:
-            raise ValueError("Recovery output changed or completed output is missing") from exc
+            where = f"{self.root.name}/{path.relative_to(self.root)}"
+            raise ValueError(
+                "Recovery output changed or completed output is missing: "
+                f"{where} does not match its recorded SHA-256, or is gone"
+            ) from exc
 
     def require_resumable(self) -> None:
+        # A write cut short leaves its own .pending- temporary, never referenced by any
+        # record; recovery ignores it but verify would not, so it goes before work resumes.
+        pages = self.root / ".checkpoint" / "pages"
+        for directory in (self.root, self.root / "raw", self.root / "normalized", pages):
+            if directory.is_dir() and not directory.is_symlink():
+                for leftover in directory.glob(".pending-*"):
+                    if leftover.is_file() and not leftover.is_symlink():
+                        leftover.unlink()
         for page_id, record in self.records.items():
             if record["state"] == "started":
                 self.save(page_id, {**record, "state": "outcome_unknown"})
@@ -546,7 +645,7 @@ class Checkpoint:
                     page_number=page["page_number"],
                     prompt_sha256=hashlib.sha256((prompt or "").encode()).hexdigest(),
                 )
-            result_data = {key: getattr(result, key, None) for key in RESULT_FIELDS}
+            saved = _saved_result(result)
         except Exception as exc:
             error_type = type(exc).__name__
             error: dict[str, Any] = {
@@ -574,9 +673,7 @@ class Checkpoint:
                     break
             failed: dict[str, Any] = {"state": "failed", "started_at": started_at, "error": error}
             if isinstance(exc, AdapterFailure) and exc.partial_result is not None:
-                partial: dict[str, Any] = {
-                    key: getattr(exc.partial_result, key, None) for key in RESULT_FIELDS
-                }
+                partial = _saved_result(exc.partial_result)
                 try:
                     self._validate_saved_result(
                         partial, file_digest(source), {**page, "prompt": prompt}
@@ -584,8 +681,11 @@ class Checkpoint:
                     cost = partial["usage"].get("cost_usd")
                     if cost is not None and cost < 0:
                         raise ValueError("Negative partial cost")
-                except (OSError, ValueError, TypeError, AttributeError):
-                    error["code"] = "IMAGE_EVIDENCE_INVALID"
+                except (OSError, ValueError, TypeError, AttributeError) as invalid:
+                    # The partial is dropped either way; only bad image evidence renames the
+                    # failure, so another invalid partial keeps the adapter's own diagnosis.
+                    if str(invalid).startswith("Image evidence invalid"):
+                        error["code"] = "IMAGE_EVIDENCE_INVALID"
                 else:
                     failed["partial_result"] = partial
                     failed["extraction_seconds"] = round(time.perf_counter() - started, 3)
@@ -602,7 +702,7 @@ class Checkpoint:
                 "state": "response",
                 "started_at": started_at,
                 "extraction_seconds": elapsed,
-                "result": result_data,
+                "result": saved,
             },
         )
         return result, elapsed, started_at, 1, None

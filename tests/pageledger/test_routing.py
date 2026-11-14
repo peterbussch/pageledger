@@ -193,3 +193,43 @@ def test_cli_accepts_routes_with_config(tmp_path: Path, capsys: pytest.CaptureFi
 
     assert exit_code == 0
     assert json.loads(capsys.readouterr().out)["summary"]["pages_extracted"] == 1
+
+
+def test_a_route_map_counting_the_page_after_a_closing_form_feed_still_runs(
+    tmp_path: Path,
+) -> None:
+    from pageledger.runner import run
+    from pageledger.verify import verify_run
+
+    source = tmp_path / "source.txt"
+    source.write_text("first page\fsecond page\f\n", encoding="utf-8")
+    config = tmp_path / "pageledger.yml"
+    config.write_text(CONFIG, encoding="utf-8")
+    routes = tmp_path / "routes.yml"
+    routes.write_text(yaml.safe_dump(_route_map(source), sort_keys=False), encoding="utf-8")
+    out_dir = tmp_path / "run"
+    result = run(
+        inputs=[source], config_path=config, routes_path=routes, out_dir=out_dir, dry_run=False
+    )
+    assert result["summary"]["pages_total"] == 2
+    assert any("closing form feed" in warning for warning in result["config_warnings"])
+    assert verify_run(out_dir)["status"] == "pass"
+    source.write_text("first page\fsecond page\fthird", encoding="utf-8")
+    with pytest.raises(ValueError, match="page_count"):
+        routes.write_text(
+            yaml.safe_dump(
+                {
+                    **_route_map(source),
+                    "documents": [{**_route_map(source)["documents"][0], "page_count": 4}],
+                },
+                sort_keys=False,
+            ),
+            encoding="utf-8",
+        )
+        run(
+            inputs=[source],
+            config_path=config,
+            routes_path=routes,
+            out_dir=tmp_path / "run2",
+            dry_run=False,
+        )

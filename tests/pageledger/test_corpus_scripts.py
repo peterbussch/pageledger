@@ -19,6 +19,7 @@ sys.path.insert(0, str(ROOT / "scripts" / "corpus"))
 import compare  # noqa: E402
 import run  # noqa: E402
 import sweep  # noqa: E402
+from test_adapters import _text_pdf  # noqa: E402
 
 
 def test_profiles_load():
@@ -61,19 +62,21 @@ def _corpus(tmp_path: Path) -> tuple[Path, Path, Path]:
     return root, manifest, profile
 
 
-def _run(tmp_path: Path, out: Path) -> int:
+def _run(tmp_path: Path, out: Path, *only: str) -> int:
     root, manifest, profile = _corpus(tmp_path)
     return run.main(
         [
             "--manifest", str(manifest), "--tier", "S", "--profile", str(profile),
             "--corpus-root", str(root), "--out", str(out),
         ]
+        + (["--only", *only] if only else [])
     )  # fmt: skip
 
 
 def test_runner_checks_sources_before_running_them(tmp_path):
     out = tmp_path / "runs" / "one"
-    assert _run(tmp_path, out) == 0
+    # Three items were not run, so the run as a whole is not a success.
+    assert _run(tmp_path, out) == 1
 
     items = {i["item_id"]: i for i in json.loads((out / "run.json").read_text())["items"]}
     assert items["ok"]["status"] == "ok" and items["ok"]["pages"] == 2
@@ -90,6 +93,11 @@ def test_runner_checks_sources_before_running_them(tmp_path):
     assert attempt["adapter"] == "text" and attempt["failure"] is None
     assert (out / attempt["output"]).read_text() == "First page of prose."
     assert "| changed | failed | 0 | checksum_mismatch |" in (out / "summary.md").read_text()
+
+
+@pytest.mark.parametrize(("only", "status"), [(["ok"], 0), (["ok", "changed"], 1)])
+def test_runner_succeeds_only_when_every_item_is_ok(tmp_path, only, status):
+    assert _run(tmp_path, tmp_path / "runs" / "one", *only) == status
 
 
 def test_runner_refuses_output_inside_the_corpus(tmp_path):
@@ -132,7 +140,8 @@ def test_sweep_records_outcomes_by_diagnostic_code(tmp_path):
     root.mkdir()
     writer = pypdf.PdfWriter()
     writer.add_blank_page(width=72, height=72)
-    writer.write(root / "good.pdf")
+    writer.write(root / "blank.pdf")
+    _text_pdf(root / "good.pdf")
     (root / "damaged.pdf").write_bytes(b"not a pdf at all")
     (root / "notes.txt").write_text("ignored")
     out = tmp_path / "sweep.json"
@@ -140,6 +149,13 @@ def test_sweep_records_outcomes_by_diagnostic_code(tmp_path):
     assert sweep.main(["--root", str(root), "--out", str(out)]) == 0
 
     files = {Path(f["path"]).name: f for f in json.loads(out.read_text())["files"]}
-    assert files["good.pdf"]["outcome"] == "ok"
+    assert files["good.pdf"] | {"seconds": 0} == {
+        "path": str(root / "good.pdf"),
+        "outcome": "ok",
+        "pages": 1,
+        "pages_with_text": 1,
+        "seconds": 0,
+    }
+    assert files["blank.pdf"]["outcome"] == "no_text"
     assert files["damaged.pdf"]["outcome"] == "malformed_pdf"
     assert "notes.txt" not in files

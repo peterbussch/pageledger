@@ -1,0 +1,260 @@
+{
+  "$defs": {
+    "rollup": {
+      "additionalProperties": false,
+      "properties": {
+        "compute_seconds": {
+          "minimum": 0,
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "cost_known": {
+          "type": "boolean"
+        },
+        "cost_usd": {
+          "minimum": 0,
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "pages": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "tokens": {
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "pages",
+        "tokens",
+        "compute_seconds",
+        "cost_usd",
+        "cost_known"
+      ],
+      "type": "object"
+    }
+  },
+  "$id": "https://github.com/peterbussch/pageledger/schemas/cost.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "Page-denominated cost rollup for a run. Schema version 0.1.",
+  "properties": {
+    "alerts": {
+      "description": "First warning-threshold crossing for each configured unit.",
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "current": {
+            "minimum": 0,
+            "type": "number"
+          },
+          "kind": {
+            "enum": [
+              "absolute",
+              "percent"
+            ],
+            "type": "string"
+          },
+          "page_id": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "threshold": {
+            "minimum": 0,
+            "type": "number"
+          },
+          "timestamp": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "unit": {
+            "enum": [
+              "pages",
+              "tokens",
+              "usd"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "unit",
+          "threshold",
+          "kind",
+          "current",
+          "page_id",
+          "timestamp"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "budget": {
+      "additionalProperties": {
+        "additionalProperties": false,
+        "properties": {
+          "current": {
+            "type": "number"
+          },
+          "exceeded": {
+            "type": "boolean"
+          },
+          "max": {
+            "type": "number"
+          },
+          "warn_at": {
+            "type": "number"
+          },
+          "warning": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "max",
+          "current",
+          "exceeded"
+        ],
+        "type": "object"
+      },
+      "description": "Per-unit budget status. Present when any budget cap is configured.",
+      "type": "object"
+    },
+    "by_adapter": {
+      "additionalProperties": {
+        "$ref": "#/$defs/rollup"
+      },
+      "description": "Usage and resolved cost grouped by provenance extractor.adapter.",
+      "type": "object"
+    },
+    "by_page_type": {
+      "additionalProperties": {
+        "$ref": "#/$defs/rollup"
+      },
+      "description": "Usage and resolved cost grouped by provenance route.type.",
+      "type": "object"
+    },
+    "canonical_unit": {
+      "const": "pages",
+      "type": "string"
+    },
+    "cost_basis": {
+      "description": "Where the dollar figure came from: real adapter-reported spend, the user's configured accounting rate, both, or nowhere (free/local engine with no pricing).",
+      "enum": [
+        "adapter_reported",
+        "configured_rate",
+        "mixed",
+        "none"
+      ],
+      "type": "string"
+    },
+    "cost_known": {
+      "description": "True when every extracted page had a known cost (also when no page was extracted). False when any page's cost is unknown; cost_usd then covers only the known pages.",
+      "type": "boolean"
+    },
+    "cost_usd": {
+      "description": "Estimated total cost in USD: the sum of the pages whose cost is known. Null when no page had a known cost and at least one did not; 0 when no page was extracted.",
+      "minimum": 0,
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "currency": {
+      "enum": [
+        "USD"
+      ],
+      "type": "string"
+    },
+    "execution_mode": {
+      "enum": [
+        "dry_run",
+        "execute"
+      ],
+      "type": "string"
+    },
+    "pages_extracted": {
+      "minimum": 0,
+      "type": "integer"
+    },
+    "pricing": {
+      "additionalProperties": true,
+      "description": "User-configured pricing dict. Null or empty when no rates are set.",
+      "type": [
+        "object",
+        "null"
+      ]
+    },
+    "run_id": {
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "0.1",
+      "type": "string"
+    },
+    "tokens_total": {
+      "minimum": 0,
+      "type": "integer"
+    },
+    "usage": {
+      "additionalProperties": false,
+      "description": "Rolled-up usage across all pages. May be null for fields where no adapter reported values.",
+      "properties": {
+        "compute_seconds": {
+          "minimum": 0,
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "extraction_seconds": {
+          "description": "Wall-clock extraction time measured by the runner across all pages. Distinct from adapter-reported compute_seconds.",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "pages": {
+          "minimum": 1,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "tokens": {
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "pages"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "schema_version",
+    "run_id",
+    "execution_mode",
+    "currency",
+    "canonical_unit",
+    "pages_extracted",
+    "tokens_total",
+    "pricing",
+    "usage",
+    "cost_usd",
+    "cost_known",
+    "cost_basis"
+  ],
+  "title": "PageLedger Cost Report",
+  "type": "object"
+}

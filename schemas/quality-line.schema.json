@@ -22,11 +22,11 @@
     },
     "confidence_detail": {
       "type": ["object", "null"],
-      "description": "Engine-native confidence evidence, adapter-defined shape. pdf_ocr reports Tesseract per-word statistics: scale, word_count, mean, min, below_60_count, below_60_ratio."
+      "description": "Engine-native confidence evidence, adapter-defined shape. pdf_ocr reports Tesseract per-word statistics: scale, word_count, mean, min, below_60_count, below_60_ratio. pdf_text reports ocr_text_layer: the signals that marked the layer an earlier OCR, and the producer when that signal fired."
     },
     "warnings": {
       "type": "array",
-      "description": "Adapter-native warnings plus PageLedger-derived quality warnings such as empty_text, short_text, replacement_characters, control_characters, suspicious_symbol_density, fragmented_text, joined_text, suspicious_embedded_text_delta, historical_orthography, low_confidence, instruction_echo, output_inflation, digits_only_text, mixed_script_tokens, private_use_characters, foreign_script_characters, repeated_page_text, repetition_loop, script_mismatch, and historical_letters_lost.",
+      "description": "Adapter-native warnings plus PageLedger-derived quality warnings such as empty_text, short_text, replacement_characters, control_characters, suspicious_symbol_density, fragmented_text, joined_text, suspicious_embedded_text_delta, multi_column_rows, historical_orthography, low_confidence, instruction_echo, output_inflation, digits_only_text, mixed_script_tokens, private_use_characters, foreign_script_characters, repeated_page_text, repetition_loop, script_mismatch, historical_letters_lost, split_words, capital_sign_in_word, and labels_without_values.",
       "items": { "type": "string" }
     },
     "text_quality": {

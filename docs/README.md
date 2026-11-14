@@ -1,71 +1,65 @@
 # PageLedger documentation
 
-PageLedger records extraction attempts, source identity, cost, and review
-work as plain files. Start with a tutorial, then use the how-to guides with
-your own documents. The [glossary](glossary.md) defines the terms.
+PageLedger reads a document into text one page at a time and keeps a record of
+how each page was read, so that the text can be checked and cited. The
+[glossary](glossary.md) defines the terms these pages use.
 
-## Tutorials
+## Start here
 
-| Task | Tutorial |
+| If you want to | Read |
 |---|---|
-| Try PageLedger without an OCR engine | [First run: text, review, rerun, and replay](first-run.md) |
-| Run a complete offline document job | [First document job: process, recover, inspect, verify, and review](document-first-run.md) |
-| Extract a PDF text layer or a scanned PDF | [First PDF/OCR run](pdf-ocr-first-run.md) |
+| See a whole job on a small example that needs no OCR engine | [First job](document-first-run.md) |
+| See the run commands, which build and test pipelines, on the same terms | [First run](first-run.md) |
 
-## How-to guides
+## By task
 
-Your documents:
-
-- [Process a collection](process-a-collection.md)
-- [Choose OCR settings](choose-ocr-settings.md)
-- [Run OCR on non-English and historical documents](multilingual-ocr.md)
-- [Plan time and cost](plan-time-and-cost.md)
-- [Recover interrupted work](checkpoint-spec.md#get-started)
-- [Troubleshoot an error or an odd result](troubleshooting.md)
-
-Engines:
-
-- [Choose an OCR or VLM adapter](ocr-options.md)
-- [Engine recipes](engine-recipes.md)
-- [Read pages with a vision model](vision-adapter.md)
-- [Write a custom extraction adapter](adapter-protocol.md)
-
-Review and results:
-
-- [Review pages in a spreadsheet](processing-spec.md#review-in-a-spreadsheet)
-- [Export document text](export.md)
-- [Share and cite results](share-and-cite.md)
-- [Classify pages and review route evidence](classifier.md)
-- [Score transcriptions against references](scoring.md)
-- [Work through a scanned government archive](examples/jfk-scanned-archive.md)
+| I have, or I want to | Read |
+|---|---|
+| a scanned or born-digital PDF | [Process a collection](process-a-collection.md) |
+| a folder of page images | [Page images](process-a-collection.md#page-images) |
+| the scans are on a library's IIIF server | [Fetch page images from a IIIF server](iiif.md) |
+| text in Russian, pre-reform spelling or another language | [Non-English and historical OCR](multilingual-ocr.md) |
+| to choose an OCR engine, or a vision model | [OCR options](ocr-options.md), then [engine recipes](engine-recipes.md) and [read pages with a vision model](vision-adapter.md) |
+| to review and correct pages | [Review and correct](review-and-correct.md), then [reports and review](processing-spec.md#reports-and-review) |
+| to write the text out | [Export document text](export.md) |
+| to cite or deposit a job | [Share and cite results](share-and-cite.md) |
+| to open a job, run or bundle someone sent me | [Jobs, runs and bundles you receive](share-and-cite.md#jobs-runs-and-bundles-you-receive) |
+| to estimate time and cost before a large job | [Plan time and cost](plan-time-and-cost.md) |
+| to recover interrupted work | [Resume an interrupted job](processing-spec.md#resume-an-interrupted-job) |
+| to understand an error or an odd result | [Troubleshooting](troubleshooting.md) |
+| to connect my own engine | [Adapter protocol](adapter-protocol.md) |
+| to build a pipeline over many files | [First PDF and OCR run](pdf-ocr-first-run.md), then the [CLI reference](cli.md#run) |
+| to sort pages by kind before extraction | [Classify pages](classifier.md) |
+| to score transcriptions against a reference | [Scoring](scoring.md) |
+| a worked example on a real archive | [A scanned government archive](examples/jfk-scanned-archive.md) |
 
 ## Reference
 
 - [CLI commands and configuration](cli.md)
+- [Document processing jobs](processing-spec.md): stages, hold policy, contest,
+  tiles, limits, review
+- [Warnings, holds and review decisions](warnings.md)
+- [Document report and review receipts](document-report-spec.md)
+- [Capabilities and limits](capabilities-and-limits.md): what is and is not
+  supported
+- [Stability and compatibility](stability.md): what stays stable from 1.0, and
+  which older runs and jobs still verify
 - [Glossary](glossary.md)
-- [Warnings, holds and dispositions](warnings.md)
-- [Document processing jobs](processing-spec.md)
-- [Document report and human review receipts](document-report-spec.md)
-- [Run directory and artifact overview](artifacts.md)
-- [Run manifest](run-manifest-spec.md)
-- [Route map](route-map-spec.md)
-- [Provenance and quality JSONL](provenance-spec.md)
-- [Normalized records](normalized-spec.md)
-- [Audit queue](audit-spec.md)
-- [Rerun manifest](rerun-manifest-spec.md)
-- [Checkpoint and page-attempt records](checkpoint-spec.md)
-- [Page image input evidence](image-evidence-spec.md)
-- [JSON Schemas](../schemas/): the machine-readable artifact contract. Artifacts
-  keep `schema_version: "0.1"` across package releases.
+- Files a run or job writes: [overview](artifacts.md),
+  [run manifest](run-manifest-spec.md), [route map](route-map-spec.md),
+  [provenance and quality](provenance-spec.md),
+  [normalized records](normalized-spec.md), [audit queue](audit-spec.md),
+  [rerun manifest](rerun-manifest-spec.md),
+  [checkpoint and recovery records](checkpoint-spec.md),
+  [page image evidence](image-evidence-spec.md),
+  [IIIF fetch record](iiif-fetch-spec.md)
+- [JSON Schemas](../schemas/): the machine-readable contract for those files.
+  They keep `schema_version: "0.1"` across package releases.
 
-## Explanation
+## Background
 
-- [Architecture and future work](design.md)
-- [Capabilities and limits](capabilities-and-limits.md)
-- [Comparison with extraction tools](comparison.md)
-
-## Project records
-
+- [Design and future work](design.md)
+- [Comparison with other extraction tools](comparison.md)
 - [60-page source validation for 0.5.1](validation/0.5.1/README.md)
 - [Maintainer notes](maintainers/README.md): performance record, reader trial
   protocol, release procedure and tutorial verification

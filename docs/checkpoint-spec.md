@@ -2,7 +2,7 @@
 
 `pageledger run --resumable` retains per-page recovery records for an original
 run, not a rerun. `pageledger resume RUN_DIR` continues that run in
-place. Document jobs created with `process` retain checkpoints automatically.
+place. Jobs created with `process` retain checkpoints automatically.
 Both were added in 0.5.0 and use artifact schema version 0.1.
 
 ## Get started
@@ -15,7 +15,7 @@ Try recovery with the built-in text adapter:
 printf 'A first source page.\fA second source page.\n' > sample.txt
 pageledger run sample.txt --adapter text --resumable --out runs/recoverable
 pageledger resume runs/recoverable
-pageledger verify-run runs/recoverable
+pageledger verify runs/recoverable
 ```
 
 This small run will usually finish before you can interrupt it. Resuming a
@@ -29,8 +29,8 @@ no response was saved, it records `outcome_unknown` and stops. Investigate that
 request with the adapter or provider before starting any new work; resume does
 not automatically retry an uncertain call.
 
-For document jobs, use `pageledger resume jobs/book` followed by
-`pageledger inspect-job jobs/book` and `pageledger verify-job jobs/book`. See
+For jobs, use `pageledger resume jobs/book` followed by
+`pageledger inspect jobs/book` and `pageledger verify jobs/book`. See
 [document processing](processing-spec.md) for job-level status and review.
 
 ## Files and records
@@ -65,6 +65,13 @@ recovery writer. Process termination releases the lock; the retained lock file
 does not mean a writer is still active. Resumable execution currently requires
 POSIX support.
 
+Before resuming, PageLedger removes its own `.pending-*` temporary files
+that no record names, left by a write that was cut off, under the writer lock.
+A run's `config-snapshot.yml` names its adapter; on resume a custom adapter is
+imported only from a folder you pass with `--adapter-path`, and a vision model
+server off this machine is used only when you name it with `--trust-endpoint`
+(see [jobs, runs and bundles you receive](share-and-cite.md#jobs-runs-and-bundles-you-receive)).
+
 Until the run is finalized, resume trusts only the recovery journal. Final
 `provenance.jsonl`, `quality.jsonl`, cost, audit and rerun artifacts are derived
 from the saved responses and frozen context. The final manifest is published
@@ -75,7 +82,7 @@ Once the final manifest exists, the ordinary run artifacts are the record of
 the run.
 Resume rechecks original source bytes and verifies a finalized successful run
 without replaying its historical checkpoint or loading an adapter. Valid later
-`align` changes are preserved. Failed finalized runs are refused. `verify-run` does not
+`align` changes are preserved. Failed finalized runs are refused. `verify` does not
 certify the retained historical recovery records of a finalized run; an
 interrupted run with valid recovery records is still reported as incomplete.
 
@@ -89,7 +96,7 @@ All of these `checkpoint.json.payload` fields are required:
 | `root` | Absolute original output directory. |
 | `config_sha256`, `config_source_path` | Exact retained config digest and original config reference. |
 | `identity` | Adapter `name`, `version`, `code_sha256`, PageLedger `package_sha256`, optional `profile`, and declared `metadata`. Adapter/profile values may be null for route-only work. |
-| `inputs` | Ordered source objects with `path`, `sha256`, full `page_count`, and optional `pages` selection expression. |
+| `inputs` | Ordered source objects with `path`, `sha256`, full `page_count`, and optional `pages` selection expression. A source of page images adds `kind`, `images`, `iiif` for a IIIF snapshot and, when an engine reads a carrier, `carrier`, as in the [run manifest](run-manifest-spec.md#page-image-sources); resume rebuilds the carrier and refuses to continue if its hash differs. |
 | `documents` | Ordered source objects with `source`, `source_sha256`, `page_count` and planned `pages`; each page retains its route fields. |
 | `imported_routes` | Retained imported route-map object, or null. |
 | `route_warnings` | List of routing warnings. |
@@ -107,8 +114,51 @@ output before further adapter calls. Changed source bytes, a changed config,
 adapter/package changes, altered output, missing records or incompatible
 lineage stop recovery. Sources are hashed again after processing, before final
 publication. Full source page counts remain distinct from selected-page
-counts. Recovery is in place: moving a run directory or replacing its source
-paths is outside this contract.
+counts. Recovery is in place: moving a run directory is outside this
+contract. A job's stage runs are the exception for reading: the job
+checks that each stage's `root` is the job's recorded `root` plus the stage's
+`attempts/` path, wherever the job is now (see
+[moved and copied jobs](processing-spec.md#moved-and-copied-jobs)). A source file that has moved can be found by its hash through a
+[source index](#moved-source-files).
+
+## Moved source files
+
+Recovery records, run manifests and jobs name each source by absolute
+path and SHA-256, and moving the original does not rewrite them. A source index
+tells PageLedger where the same bytes are now. It is a UTF-8 text file with one
+tab-separated `sha256` and absolute `path` per line:
+
+```text
+sha256	path
+9f2c…41d0	/Volumes/Archive/library/SDC-076 Collected decrees.pdf
+```
+
+A header line, lines starting with `#`, columns after the path, relative paths
+and blank lines are ignored. Set `PAGELEDGER_SOURCE_INDEX` to one index file,
+or several separated by the platform path separator (`:` on macOS and Linux).
+When the variable is unset, PageLedger reads
+`~/.config/pageledger/source-index.tsv` if it exists; setting the variable to
+an empty value turns the index off. Missing or unreadable index files are
+skipped.
+
+The recorded path is always tried first. When it is missing or no longer holds
+the recorded bytes, PageLedger uses the first indexed file with the recorded
+SHA-256. A file whose digest differs is never read, so a wrong or stale index
+entry fails the same way a missing source does.
+
+A source of page images is identified by the hash of its page manifest, which
+is the `sha256` of its entry in the run manifest or the job. Its index line
+pairs that hash with the folder's (or the image file's) path, and the folder is
+used only when its images hash to it again.
+
+| Command | With a moved source and a matching index entry |
+| --- | --- |
+| `resume RUN_DIR` | Verifies and reads the indexed file. `checkpoint.json`, provenance and the final manifest keep the recorded path. |
+| `resume JOB_DIR`, `verify JOB_DIR` | Same for jobs: `job.json` keeps the recorded path. A stage first started after the move records the path it read; the job binds stages to its source by SHA-256. `verify` reports `source_relocated`, or `source_missing` when neither path holds the bytes. |
+| `verify RUN_DIR` | Reports warning `source_relocated`, with the recorded `source` and the `located` file, instead of `source_missing`. |
+| `rerun`, `bundle` | Use the indexed file when the recorded path is missing. A rerun records the path it read; a bundle copies the bytes as usual. |
+
+Reports, exports and review sheets still name the recorded path.
 
 ## Page states
 
@@ -135,8 +185,13 @@ and page-payload fields are rejected. The schemas define the complete shapes
 and allowed diagnostic codes.
 
 Successful response records preserve content, format, confidence, actual
-returned model, warnings, usage, optional confidence detail and optional image
-input evidence. Reported numeric usage values are finite and non-negative;
+returned model, warnings, usage, optional confidence detail, optional image
+input evidence and an optional `layout` (the boxes where the engine found the
+text; see the [adapter protocol](adapter-protocol.md#result-fields)). A result
+without a layout is saved without the `layout` key, and records written before
+either optional field existed still load. This record is where a run keeps a
+layout: a completed page's provenance holds its `layout_sha256`, and recovery
+refuses a layout that no longer hashes to it. Reported numeric usage values are finite and non-negative;
 unknown values remain null. Partial failure results are retained in the failure receipt,
 never counted as completed or eligible for automatic retry. Final
 provenance still contains one successful extraction record per page; recovery
@@ -144,7 +199,10 @@ does not add duplicate page rows or count reused responses as new calls.
 Aggregates reconstruct the original successful-page usage, timing and budget
 crossings. A process interruption cannot reset the budget. Resumable runs stop
 before a pending request when accumulated usage has reached a configured cap;
-saved responses and completed pages can still be recovered at that cap.
+saved responses and completed pages can still be recovered at that cap. Under
+`max_tokens` or `max_usd`, a page whose adapter (unless it declares `local`) did
+not report that unit also stops the run before the next request, with an ERROR
+`budget_exceeded` line in `run.log`.
 
 A raw file written before completion is checked against the saved response.
 A valid saved response can be published after interruption. Raw output without

@@ -20,8 +20,8 @@ points, not a forecast for your hardware:
 | Hosted cloud vision model | About 11 seconds/page | Network and provider conditions vary; charges depend on provider pricing and usage. |
 | RapidOCR, PP-OCRv5 Cyrillic | About 3 seconds/page | CPU, M4 Pro evaluation; 24-page transcription comparison. |
 | Surya OCR 2, GGUF | About 2 minutes/page | Shared GPU evaluation; 24-page transcription comparison. |
-| Qwen3.5-9B, 4-bit | About 90 seconds/page | M4 Pro, 8.3 GB model; local inference. |
-| dots.ocr, 4-bit | About 120 seconds/page | M4 Pro, 6.1 GB model; local inference. |
+| Qwen3.5-9B, 4-bit | About 90 seconds/page | M4 Pro, 8.3 GB model, in the 24-page evaluation. A later run through PageLedger took a median of 38 seconds on the pages it finished ([recipe](engine-recipes.md#local-qwen35-9b-with-mlx-vlm-macos)). |
+| dots.ocr, 4-bit | About 120 seconds/page | M4 Pro, 6.1 GB model, in the 24-page evaluation. On the 20 pages of the 0.8 trial it took a median of 31 seconds; pages where it looped took 70 to 86 ([recipe](engine-recipes.md#dotsocr-with-mlx-vlm-as-the-local-reader-macos)). |
 | PaddleOCR-VL-1.6, 4-bit | About 15 seconds/page | M4 Pro, tiled native prompt; local inference. |
 
 The benchmark engines and hardware are not interchangeable. The local model
@@ -44,17 +44,22 @@ as if it represents a volume with damaged, faint, tabular or historical pages.
 
 ## Set spending and work limits
 
-For document jobs, `processing.limits.max_attempt_pages` bounds attempted pages
-across stages. Set it from the number of pages and expected passes. A 300-page
-book with text extraction followed by OCR on every page can require 600 page
-attempts. Reaching the limit pauses the job; completed attempts remain available
+For jobs, `processing.limits.max_attempt_pages` counts readings, not
+unique pages. Every page read at each stage counts again. Set it
+from the number of selected pages and expected passes. A 300-page book with
+text extraction followed by OCR on every page can require 600 readings.
+At process start, PageLedger prints a notice when the configured stages could
+exceed the limit. Reaching the limit pauses the job; completed readings remain available
 and `resume --raise-limit max_attempt_pages=N` continues with a higher cap.
 
-`max_image_pages` bounds image and second-opinion attempts. `max_tokens` and
+`max_image_pages` bounds the readings of the image and second-opinion stages. `max_tokens` and
 `max_cost_usd` use reported usage and charges. Unknown paid usage stops further
 image work when the corresponding limit is set. A request already in progress
 can cross a token or cost threshold, and the first reported charge can be
 unknown. These settings are not hard provider billing ceilings. Use the
 provider's own spending controls where a hard cap is required. Local processing
-has no invented dollar cost. See [processing limits](processing-spec.md#one-budget-for-the-job)
+has no invented dollar cost. A `run` with `run.budget.max_usd` or `max_tokens`
+stops the same way: when an adapter that is not local leaves a page's usage
+unreported, the run stops before its next request (`unknown_usage: stop`, the
+default). See [processing limits](processing-spec.md#one-budget-for-the-job)
 for enforcement and recovery details.

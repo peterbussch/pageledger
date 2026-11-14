@@ -13,6 +13,8 @@ The examples below show local, hosted, and mixed extraction paths.
 | Born-digital PDF | `pdf_text` | yes | free | PDFs with a real embedded text layer | Built-in adapter via `pageledger[pdf]`. |
 | Scanned PDF, plain text | `pdf_ocr` (Tesseract) | yes | free, plus compute | Image-only or noisy-layer scans where plain text is enough | Built-in adapter; needs poppler + Tesseract installed. `dpi`, `lang` and `max_render_pixels` via `run.adapter_options`. |
 | Scanned PDF, CPU OCR | `rapidocr` (RapidOCR, PP-OCRv5) | yes | free, plus compute | Printed scans, including Cyrillic with pre-reform letters, where Tesseract is weak | Built-in adapter via `pageledger[rapidocr]`; needs Poppler and a PP-OCRv5 recognizer. See [engine recipes](engine-recipes.md). |
+| Scanned PDF, CPU OCR with layout | `indra` (Indra OCR) | yes | free, plus compute; weights licence limits commercial use | Fast first reading of printed scans in 80+ languages, tilted or sideways pages, broken font maps; reading order; its layout blocks are kept in the reading's details, not offered for tiling | Built-in adapter via `pageledger[indra]`. Weak on degraded typescript and handwriting. See [engine recipes](engine-recipes.md#indra-ocr-macos-and-linux-cpu). |
+| Library OCR published as ALTO | `alto` | yes | free | Scans a library has already read, such as Library of Congress items and newspapers; one more witness beside your own OCR | Built-in adapter; reads one ALTO file per page from a folder and needs Poppler's `pdfinfo`. See [engine recipes](engine-recipes.md#alto-from-a-library-any-platform-no-engine). |
 | Scanned PDF, read by a vision model | `vision` | yes, or hosted | free locally, plus compute; provider rates when hosted | Tables, mixed scripts and damaged print that Tesseract misreads; every page needs review | Built-in adapter; needs Poppler and an OpenAI-compatible endpoint. See [Read pages with a vision model](vision-adapter.md). |
 | Baseline OCR preprocessing | OCRmyPDF + Tesseract | yes | free, plus compute | Producing a searchable PDF for other tools too | External preprocessing, then `pdf_text`. |
 | Local-LLM cleanup | Tesseract + local model (mlx_lm, llama.cpp, Ollama) | yes | free, plus compute | Fixing character-level OCR errors without sending pages anywhere | Custom adapter; see [`local_llm_cleanup_adapter.py`](../examples/local_llm_cleanup_adapter.py) or [`ollama_cleanup_adapter.py`](../examples/ollama_cleanup_adapter.py). `rerun` handles flagged pages only. |
@@ -49,6 +51,12 @@ equivalent model/revision and material runtime settings in `ExtractionResult.mod
 
 ### Page size and rendering
 
+`dpi` is the number of pixels per inch at which a page is rendered for OCR.
+Begin around 300 DPI for ordinary print, then compare a sample at a lower or
+higher resolution when the type is small, faint or unusually detailed, using
+the same pages each time. A higher DPI can make small type more legible, but
+costs time and memory and does not restore detail the scan lacks.
+
 `pdf_ocr` checks each page's size before rendering it, because scanned PDFs
 often declare page sizes that have little to do with the paper.
 
@@ -70,6 +78,13 @@ often declare page sizes that have little to do with the paper.
 
 Born-digital pages, pages without images, and installations without pypdf keep
 the requested DPI.
+
+A page image (see [a folder of page scans](process-a-collection.md#page-images))
+is sized by the density it declares, so `pdf_ocr` renders it at the higher of
+`dpi` and that density, without needing pypdf. To fit `max_render_pixels` it
+may go below 72 DPI, down to half the image's own density, before it stops
+with `render_limit`. Rendering well above the image's own pixels adds the
+warning `render_upsampled`.
 
 ### Docling: standard first, VLM selectively
 

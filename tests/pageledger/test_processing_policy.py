@@ -309,6 +309,13 @@ def test_historical_orthography_is_preserved_without_forcing_extraction_rewrite(
     assert result["next_action"] == "review"
 
 
+def test_multi_column_rows_warning_is_recorded_without_a_hold():
+    result = assess_page(page(attempt(warnings=["multi_column_rows"])))
+    assert result["selected_attempt"] == "a1"
+    assert result["disposition"] == "unreviewed_text"
+    assert result["next_action"] == "review"
+
+
 @pytest.mark.parametrize(
     "warning",
     ["digits_only_text", "mixed_script_tokens", "private_use_characters", "repeated_page_text"],

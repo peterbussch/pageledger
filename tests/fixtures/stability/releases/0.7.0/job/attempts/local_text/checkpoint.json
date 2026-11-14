@@ -1,0 +1,93 @@
+{
+  "payload": {
+    "config_sha256": "347d7f1a84e3633857998f23c3e57e49ab511264272d3759c803455173daec30",
+    "config_source_path": "/private/tmp/pageledger-golden/job-0.7.0/.job/local_text.yml",
+    "documents": [
+      {
+        "page_count": 2,
+        "pages": [
+          {
+            "action": "transcribe_text",
+            "confidence": null,
+            "page_id": "doc_0001_page_0001",
+            "page_number": 1,
+            "prompt": "Transcribe only text visible on this source page, preserving page order, headings, footnotes and named table columns. Do not reconstruct missing or invisible text. Mark unreadable spans explicitly. Return the transcript without interpretation.",
+            "reason": "configured_adapter",
+            "type": "prose"
+          },
+          {
+            "action": "transcribe_text",
+            "confidence": null,
+            "page_id": "doc_0001_page_0002",
+            "page_number": 2,
+            "prompt": "Transcribe only text visible on this source page, preserving page order, headings, footnotes and named table columns. Do not reconstruct missing or invisible text. Mark unreadable spans explicitly. Return the transcript without interpretation.",
+            "reason": "configured_adapter",
+            "type": "prose"
+          }
+        ],
+        "source": "/private/tmp/pageledger-golden/sample.txt",
+        "source_sha256": "c842bcf925261b10dc47e807d963703301d70918d5b8d3d2936c5f11facdc00d"
+      }
+    ],
+    "identity": {
+      "code_sha256": "3cc12833bf03d36f7c15fdef6a7739bb1634fe2269f5c110a93d4306a4f4c4f0",
+      "metadata": {
+        "capabilities": [
+          "embedded_text",
+          "local"
+        ],
+        "deterministic": true,
+        "input_types": [
+          "text"
+        ],
+        "output_types": [
+          "text"
+        ]
+      },
+      "name": "text",
+      "package_sha256": "658aee00460467e9c8d13ecd191d5b4837f397a292a5753683b5a78101b820d6",
+      "profile": {
+        "adapter": {
+          "code_sha256": "3cc12833bf03d36f7c15fdef6a7739bb1634fe2269f5c110a93d4306a4f4c4f0",
+          "module": "pageledger.adapters",
+          "name": "text",
+          "version": "0.1"
+        },
+        "materials": [],
+        "pageledger": {
+          "code_sha256": "658aee00460467e9c8d13ecd191d5b4837f397a292a5753683b5a78101b820d6",
+          "version": "0.7.0"
+        },
+        "profile_sha256": "5f3dbe2b4a2c9870905601fd743c901e7830ba197b0fb2be33d12219d738264d",
+        "profile_version": "0.1",
+        "runtime": {
+          "filesystem_encoding": "utf-8",
+          "machine": "arm64",
+          "preferred_encoding": "utf-8",
+          "python_implementation": "CPython",
+          "python_version": "3.13.13",
+          "release": "27.0.0",
+          "system": "Darwin"
+        }
+      },
+      "version": "0.1"
+    },
+    "imported_routes": null,
+    "inputs": [
+      {
+        "page_count": 2,
+        "pages": "1,2",
+        "path": "/private/tmp/pageledger-golden/sample.txt",
+        "sha256": "c842bcf925261b10dc47e807d963703301d70918d5b8d3d2936c5f11facdc00d"
+      }
+    ],
+    "log_level": "INFO",
+    "root": "/private/tmp/pageledger-golden/job-0.7.0/attempts/local_text",
+    "route_warnings": [],
+    "routing": null,
+    "run_id": "run-20261110T225530092353Z",
+    "started_at": "2026-11-10T22:55:30Z"
+  },
+  "schema_version": "0.1",
+  "sha256": "123ea80a97876569fb89497abd28374afecd2d4707c86c83725449bb4071a1ab"
+}

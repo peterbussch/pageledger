@@ -17,13 +17,13 @@ flowchart TD
     Evidence --> Checkpoint[Saved responses for resume]
     Evidence --> Report[Document report and selected transcript]
     Review --> Rerun[New run: rerun]
-    Report --> Human[Human decisions: review-job]
+    Report --> Human[Human decisions: review --apply]
     Evidence --> Bundle[Verified run bundle and replay]
 ```
 
-The report and human-receipt paths belong to document jobs. Explicit reruns and
-portable bundles operate on individual runs. Image-evidence runs cannot be
-bundled in this version.
+The report and human-receipt paths belong to jobs. Explicit reruns and
+portable bundles operate on individual runs. Runs of page images and runs
+with image evidence cannot be bundled yet.
 
 ## The canonical unit: pages
 
@@ -47,9 +47,11 @@ usage = {
 Dollar cost is resolved by PageLedger in
 priority order: (1) adapter-reported `cost_usd`, (2) configured unit rates
 (`cost_per_page` / `cost_per_1k_tokens`), (3) otherwise `null`: the run
-still reports raw page counts. Budgets cap on pages, tokens, or dollars,
-whichever the config sets, because the page count is the only value always
-present.
+still reports raw page counts. A budget can cap pages, tokens or dollars
+(`run.budget.max_pages`, `max_tokens`, `max_usd`). Only the page count is
+always known; tokens and dollars are known only when the adapter reports them
+or a rate is set, so a token or dollar cap stops a paid run when it can no
+longer be checked.
 
 See the [glossary](glossary.md) for the terms used in these workflow descriptions.
 
@@ -74,7 +76,9 @@ action and optional prompt; uncertain or unmapped decisions go to review.
 Domain labels are supplied by an importable classifier hook, not hardcoded in
 core. Confidences are fixed heuristic evidence, not calibrated probabilities.
 
-Example route map:
+An excerpt of a route map (a complete one also carries `schema_version`,
+`run_id` and each document's `source_sha256` and `page_count`; see the
+[route map specification](route-map-spec.md)):
 
 ```yaml
 documents:
@@ -162,12 +166,13 @@ confidence under `low_confidence_threshold` caps its grade at C.
 ## Run controller
 
 The controller manages long extraction runs. It implements budgets
-(pages/tokens/dollars, preflight and mid-run), capless absolute warnings and
-first-crossing alerts, retry with optional
+(pages/tokens/dollars, checked before and during the run), warnings at a set
+amount even when no cap is set (`warn_pages`, `warn_tokens`, `warn_usd`), an
+alert the first time each is crossed, retry with optional
 exponential backoff, per-page provenance with measured extraction time,
 quality signals, audit/review queues, rerun execution (`pageledger rerun`
 consumes the rerun manifest, enforcing `max_rerun_depth`), and cross-run
-comparison (`pageledger compare-runs`). Cost reports group extracted-page
+comparison (`pageledger compare`). Cost reports group extracted-page
 usage and resolved dollars by adapter and routed page type.
 
 `run.grading.review_below_grade: C` queues pages graded strictly below the
@@ -197,8 +202,8 @@ page can remain in the review queue for other reasons, but it is excluded from
 
 `run.adapter_order` is a non-empty escalation chain indexed by generation:
 entry 0 runs the original extraction and entry N runs rerun generation N.
-Each entry can carry its own adapter options. Chain exhaustion and
-`max_rerun_depth` are independent terminal gates. Pending pages remain in the
+Each entry can carry its own adapter options. Reruns stop when the chain has
+no further entry or when `max_rerun_depth` is reached, whichever comes first. Pending pages remain in the
 review queue when the chain ends; PageLedger does not silently quarantine
 them or try another adapter inside the same run.
 
@@ -208,11 +213,11 @@ A completed original run (not a rerun) can be verified, bundled with its source
 bytes, and replayed using a locally available compatible adapter:
 
 ```bash
-pageledger verify-run runs/run-001
+pageledger verify runs/run-001
 pageledger bundle runs/run-001 --out bundles/run-001
 # the bundle contains a source copy and can be relocated independently
 pageledger replay bundles/run-001 --out runs/replayed
-pageledger verify-run runs/replayed
+pageledger verify runs/replayed
 ```
 
 `bundle` validates the baseline, copies source bytes, preserves the unchanged
@@ -226,13 +231,13 @@ boundary](capabilities-and-limits.md#verified-replay-boundary) covers the
 authenticity, declared-material, side-effect, mutation, zero-byte, and
 editable-install limits.
 
-## Document jobs
+## Jobs
 
 `process` owns the ordered stages and their shared budget. Each stage produces
 ordinary resumable child runs. The job records which
-attempt supplies each page's text and preserves previous defects as review
+reading supplies each page's text and preserves previous defects as review
 holds. A source-bound human receipt can mark text or a blank page as reviewed.
-Grades and model confidence do not select the winning attempt.
+Grades and model confidence do not select the winning reading.
 
 For job recovery, limits and retained attempts, see the
 [processing specification](processing-spec.md). Individual-run recovery is
@@ -252,5 +257,5 @@ integrations or future work. Whole-job portable bundles, region-level routing,
 and per-page schemas are also unimplemented.
 
 OCR model training, provider pricing catalogs, domain dictionaries, dashboards,
-and TEI/PAGE/ALTO/GIS exporters remain outside core. Custom adapters and consumers
+and PAGE, ALTO or GIS exporters remain outside core (`export` writes TEI). Custom adapters and consumers
 of the plain-file artifacts can provide them without changing the page ledger.

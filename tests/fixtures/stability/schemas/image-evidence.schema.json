@@ -1,0 +1,497 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "PageLedger exact transmitted page image evidence",
+  "description": "page_image: the one JPEG sent for a page. page_tiles: every tile JPEG sent for a page read in tiles.",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/page_image"
+    },
+    {
+      "$ref": "#/$defs/page_tiles"
+    }
+  ],
+  "$defs": {
+    "page_image": {
+      "type": "object",
+      "properties": {
+        "schema_version": {
+          "const": "0.1"
+        },
+        "kind": {
+          "const": "page_image"
+        },
+        "source_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "page_number": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "artifact": {
+          "type": "string",
+          "pattern": "^evidence/(?!\\.{1,2}/)(?!.*\\/\\.{1,2}/)(?!.*//)[^\\\\\\u0000]+\\.[jJ][pP][eE]?[gG]$"
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "media_type": {
+          "const": "image/jpeg"
+        },
+        "bytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 3145728
+        },
+        "width": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4096
+        },
+        "height": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4096
+        },
+        "color_space": {
+          "const": "RGB"
+        },
+        "requested_model": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S"
+        },
+        "model": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "pattern": "\\S"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "provider": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "pattern": "\\S"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "prompt_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "system_prompt_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "crop": {
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "const": "full_page"
+                }
+              },
+              "required": [
+                "kind"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "const": "box"
+                },
+                "units": {
+                  "const": "pdf_points"
+                },
+                "x": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "y": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "width": {
+                  "type": "number",
+                  "exclusiveMinimum": 0
+                },
+                "height": {
+                  "type": "number",
+                  "exclusiveMinimum": 0
+                }
+              },
+              "required": [
+                "kind",
+                "units",
+                "x",
+                "y",
+                "width",
+                "height"
+              ],
+              "additionalProperties": false
+            }
+          ]
+        },
+        "renderer": {
+          "type": "object",
+          "properties": {
+            "command": {
+              "type": "string",
+              "minLength": 1,
+              "pattern": "\\S"
+            },
+            "version": {
+              "type": "string",
+              "minLength": 1,
+              "pattern": "\\S"
+            },
+            "parameters": {
+              "type": "object"
+            }
+          },
+          "required": [
+            "command",
+            "version",
+            "parameters"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "schema_version",
+        "kind",
+        "source_sha256",
+        "page_number",
+        "artifact",
+        "sha256",
+        "media_type",
+        "bytes",
+        "width",
+        "height",
+        "color_space",
+        "requested_model",
+        "model",
+        "provider",
+        "prompt_sha256",
+        "crop",
+        "renderer"
+      ],
+      "additionalProperties": false
+    },
+    "page_tiles": {
+      "type": "object",
+      "description": "A page read in tiles: every tile image sent, and where each tile's text lies in the reading.",
+      "properties": {
+        "schema_version": {
+          "const": "0.1"
+        },
+        "kind": {
+          "const": "page_tiles"
+        },
+        "source_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "page_number": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "requested_model": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S"
+        },
+        "model": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "pattern": "\\S"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "provider": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "pattern": "\\S"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "prompt_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "system_prompt_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "plan_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "page_box": {
+          "type": "object",
+          "properties": {
+            "units": {
+              "const": "pdf_points"
+            },
+            "width": {
+              "type": "number",
+              "exclusiveMinimum": 0
+            },
+            "height": {
+              "type": "number",
+              "exclusiveMinimum": 0
+            }
+          },
+          "required": [
+            "units",
+            "width",
+            "height"
+          ],
+          "additionalProperties": false
+        },
+        "separator": {
+          "const": "\n"
+        },
+        "tiles": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 99,
+          "items": {
+            "type": "object",
+            "properties": {
+              "tile_id": {
+                "type": "string",
+                "pattern": "^t[0-9]{2}$"
+              },
+              "outcome": {
+                "enum": [
+                  "completed",
+                  "failed"
+                ]
+              },
+              "failure_code": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "artifact": {
+                "type": "string",
+                "pattern": "^evidence/(?!\\.{1,2}/)(?!.*\\/\\.{1,2}/)(?!.*//)[^\\\\\\u0000]+\\.[jJ][pP][eE]?[gG]$"
+              },
+              "sha256": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              },
+              "media_type": {
+                "const": "image/jpeg"
+              },
+              "bytes": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 3145728
+              },
+              "width": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 4096
+              },
+              "height": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 4096
+              },
+              "color_space": {
+                "const": "RGB"
+              },
+              "crop": {
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "const": "full_page"
+                      }
+                    },
+                    "required": [
+                      "kind"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "const": "box"
+                      },
+                      "units": {
+                        "const": "pdf_points"
+                      },
+                      "x": {
+                        "type": "number",
+                        "minimum": 0
+                      },
+                      "y": {
+                        "type": "number",
+                        "minimum": 0
+                      },
+                      "width": {
+                        "type": "number",
+                        "exclusiveMinimum": 0
+                      },
+                      "height": {
+                        "type": "number",
+                        "exclusiveMinimum": 0
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "units",
+                      "x",
+                      "y",
+                      "width",
+                      "height"
+                    ],
+                    "additionalProperties": false
+                  }
+                ]
+              },
+              "renderer": {
+                "type": "object",
+                "properties": {
+                  "command": {
+                    "type": "string",
+                    "minLength": 1,
+                    "pattern": "\\S"
+                  },
+                  "version": {
+                    "type": "string",
+                    "minLength": 1,
+                    "pattern": "\\S"
+                  },
+                  "parameters": {
+                    "type": "object"
+                  }
+                },
+                "required": [
+                  "command",
+                  "version",
+                  "parameters"
+                ],
+                "additionalProperties": false
+              },
+              "model": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "minLength": 1,
+                    "pattern": "\\S"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "provider": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "minLength": 1,
+                    "pattern": "\\S"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "text_offset": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "minimum": 0
+              },
+              "text_length": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "minimum": 0
+              },
+              "text_sha256": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{64}$"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "tile_id",
+              "outcome",
+              "failure_code",
+              "artifact",
+              "sha256",
+              "media_type",
+              "bytes",
+              "width",
+              "height",
+              "color_space",
+              "crop",
+              "renderer",
+              "model",
+              "provider",
+              "text_offset",
+              "text_length",
+              "text_sha256"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "schema_version",
+        "kind",
+        "source_sha256",
+        "page_number",
+        "requested_model",
+        "model",
+        "provider",
+        "prompt_sha256",
+        "plan_sha256",
+        "page_box",
+        "separator",
+        "tiles"
+      ],
+      "additionalProperties": false
+    }
+  }
+}
