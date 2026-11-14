@@ -532,6 +532,8 @@ def jpeg_header(data: bytes, name: str) -> dict[str, Any]:
 
 def _jpeg(data: bytes, name: str) -> tuple[int, int, tuple[float, float] | None, str, int]:
     frame = jpeg_header(data, name)
+    if not frame["scan"]:
+        raise _malformed(name, "the file ends before the image data")
     return frame["width"], frame["height"], frame["density"], frame["basis"], frame["rotation"]
 
 

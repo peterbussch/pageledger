@@ -225,6 +225,8 @@ def test_identity_changes_with_any_image_and_names_the_change(scans):
         ("page-3.png", b"\x89PNG\r\n\x1a\n" + b"\x00" * 20, "malformed_image", "damaged"),
         ("page-3.png", png(interlace=1), "unsupported_image", "-interlace none"),
         ("page-3.jpg", jpeg(exif=exif(orientation=2)), "unsupported_image", "-auto-orient"),
+        # Cut off after its header: no image data to render, only a size.
+        ("page-3.jpg", jpeg()[: jpeg().index(b"\xff\xda")], "malformed_image", "image data"),
     ],
 )
 def test_an_image_pageledger_cannot_carry_faithfully_is_refused(scans, name, content, code, hint):
