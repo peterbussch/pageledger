@@ -579,7 +579,7 @@ def test_text_adapter_writes_raw_output_and_provenance(tmp_path):
             "name": "text",
             "adapter": "text",
             "model": None,
-            "version": "0.1",
+            "version": "0.2",
             "prompt_hash": provenance["extractor"]["prompt_hash"],
             "deterministic": True,
             "input_types": ["text"],

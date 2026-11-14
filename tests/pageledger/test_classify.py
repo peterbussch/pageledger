@@ -49,7 +49,7 @@ def test_classify_round_trip_executes_and_verifies(tmp_path: Path) -> None:
     assert Path(result["evidence_path"]) == tmp_path / "rm.evidence.jsonl"
     assert route_map["classifier"] == {
         "adapter": "builtin:structural",
-        "model": "text/0.1",
+        "model": "text/0.2",
         "prompt_hash": None,
     }
     assert [page["type"] for page in route_map["documents"][0]["pages"]] == [
