@@ -641,7 +641,9 @@ def test_progress_rewrites_one_line_on_a_terminal() -> None:
 
 
 def test_progress_fits_the_terminal_and_names_page_images(monkeypatch) -> None:
-    monkeypatch.setattr(cli.shutil, "get_terminal_size", lambda: os.terminal_size((40, 24)))
+    monkeypatch.setattr(
+        cli.shutil, "get_terminal_size", lambda *args, **kwargs: os.terminal_size((40, 24))
+    )
     stream = _Terminal()
     progress = cli._Progress(stream=stream)
     event = {"stage": "local_text", "pages": [1], "selected": 1, "done": 0, "held": 0}

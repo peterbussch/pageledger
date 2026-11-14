@@ -251,7 +251,7 @@ def test_a_crlf_text_is_kept_as_read_and_a_typed_correction_counts_only_its_word
         "export", str(tmp_path / "job"), "--out", str(tmp_path / "book.txt"), cwd=tmp_path
     )
     assert exported.returncode == 0, exported.stderr
-    assert "on 3 lines" in (tmp_path / "book.txt").read_text(encoding="utf-8", newline="")
+    assert "on 3 lines" in (tmp_path / "book.txt").read_bytes().decode("utf-8")
     text, words = corrections.prepare("one two\r\nthree four\rfive", "one TWO\nthree four\nfive", 1)
     assert text == "one TWO\nthree four\nfive"
     assert words == {"changed": 1, "added": 0, "removed": 0}
