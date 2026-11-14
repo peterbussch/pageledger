@@ -63,7 +63,8 @@
           ]
         },
         "grouped_numbers": true,
-        "script": "latin"
+        "script": "latin",
+        "tokens": "marks"
       },
       "ru-print-0.1": {
         "glyph_pairs": {
@@ -213,6 +214,82 @@
           ]
         },
         "grouped_numbers": true
+      },
+      "ru-print-0.3": {
+        "glyph_pairs": {
+          "rapidocr": [
+            [
+              "н",
+              "п"
+            ],
+            [
+              "п",
+              "н"
+            ],
+            [
+              "н",
+              "и"
+            ],
+            [
+              "и",
+              "н"
+            ],
+            [
+              "ш",
+              "п"
+            ],
+            [
+              "п",
+              "и"
+            ],
+            [
+              "и",
+              "п"
+            ],
+            [
+              "с",
+              "е"
+            ],
+            [
+              "ц",
+              "щ"
+            ],
+            [
+              "щ",
+              "ш"
+            ],
+            [
+              "т",
+              "х"
+            ],
+            [
+              "й",
+              "и"
+            ],
+            [
+              "к",
+              "н"
+            ],
+            [
+              "д",
+              "ц"
+            ],
+            [
+              "н",
+              "м"
+            ],
+            [
+              "ш",
+              "н"
+            ],
+            [
+              "r",
+              "г"
+            ]
+          ]
+        },
+        "grouped_numbers": true,
+        "tokens": "marks"
       }
     },
     "run_artifacts": {
@@ -291,7 +368,8 @@
     "contest_rule_sets": [
       "latin-print-0.1",
       "ru-print-0.1",
-      "ru-print-0.2"
+      "ru-print-0.2",
+      "ru-print-0.3"
     ],
     "diagnostic_codes": [
       "engine_timeout",

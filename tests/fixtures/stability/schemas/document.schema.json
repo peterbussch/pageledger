@@ -236,7 +236,11 @@
                   "type": "string"
                 },
                 "schema_version": {
-                  "const": "0.2"
+                  "description": "0.3 since 0.9: a high answer that is neither reading settles nothing; 0.2 receipts keep their meaning.",
+                  "enum": [
+                    "0.2",
+                    "0.3"
+                  ]
                 },
                 "source_sha256": {
                   "pattern": "^[0-9a-f]{64}$",
