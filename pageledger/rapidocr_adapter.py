@@ -41,7 +41,7 @@ class RapidOCRAdapter:
     deterministic: ClassVar[bool] = True
     input_types: ClassVar[tuple[str, ...]] = ("pdf",)
     output_types: ClassVar[tuple[str, ...]] = ("text",)
-    capabilities: ClassVar[tuple[str, ...]] = ("ocr", "page_image", "layout")
+    capabilities: ClassVar[tuple[str, ...]] = ("ocr", "page_image", "layout", "local")
 
     def __post_init__(self) -> None:
         model_dir = Path(self.rec_model_dir).expanduser()

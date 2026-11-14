@@ -237,7 +237,8 @@ class VisionAdapter:
             "page_image",
             "generative",
             "page_tiles",
-            *(("remote",) if remote else ()),
+            # A model server on this machine costs nothing per page, as other local engines.
+            *(("remote",) if remote else ("local",)),
         )
         self._source_hashes: dict = {}
 
