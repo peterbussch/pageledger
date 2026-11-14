@@ -9,6 +9,8 @@ import re
 from pathlib import Path, PurePosixPath
 from typing import Any
 
+from .layout import _json_value
+
 MAX_IMAGE_BYTES = 3 * 1024 * 1024
 MAX_IMAGE_DIMENSION = 4096
 _SHA256 = re.compile(r"[0-9a-f]{64}\Z")
@@ -39,20 +41,6 @@ def _invalid(message: str) -> ValueError:
 
 def _nonempty(value: Any) -> bool:
     return isinstance(value, str) and bool(value.strip())
-
-
-def _json_value(value: Any, depth: int = 0) -> bool:
-    if depth > 64:
-        return False
-    if value is None or type(value) in {str, bool, int}:
-        return True
-    if type(value) is float:
-        return math.isfinite(value)
-    if type(value) is list:
-        return all(_json_value(item, depth + 1) for item in value)
-    if type(value) is dict:
-        return all(type(key) is str and _json_value(item, depth + 1) for key, item in value.items())
-    return False
 
 
 def _artifact_parts(value: Any) -> tuple[str, ...]:
