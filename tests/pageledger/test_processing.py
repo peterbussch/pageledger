@@ -1701,20 +1701,23 @@ def test_a_batch_reads_image_pages_at_once_and_records_what_a_serial_job_does(
     setup, monkeypatch, tmp_path
 ):
     import threading
-    import time
 
     from pageledger import processing
 
     _batched(setup, pages=4, concurrent=3)
     original = StageAdapter.extract
     lock, active, peak = threading.Lock(), [0], [0]
+    three_at_once = threading.Event()
 
     def slow(self, *args, **kwargs):
         if self.stage == "image":
             with lock:
                 active[0] += 1
                 peak[0] = max(peak[0], active[0])
-            time.sleep(0.05)
+                if active[0] == 3:
+                    three_at_once.set()
+            # Hold each read until three overlap, so a slow machine still shows the batch's width.
+            three_at_once.wait(timeout=2)
             with lock:
                 active[0] -= 1
         return original(self, *args, **kwargs)
