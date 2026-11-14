@@ -24,8 +24,8 @@ used across the reference.
 | `run` with `text`, `pdf_text`, `pdf_ocr`, `rapidocr`, `indra`, `vision` or `alto`; custom adapters follow the adapter protocol. | Page-level attempts and recorded source, extractor, quality and cost details. `--pages` preserves source page numbers. | `pdf_text` reads a text layer; `pdf_ocr` needs locally installed Poppler and Tesseract. Quality signals do not establish accuracy. See [PDF first run](pdf-ocr-first-run.md) and [quality warnings](provenance-spec.md#warning-taxonomy). |
 | Page images: a JPEG or PNG file is a one-page document, and a folder of them one document in natural order of file name. | Each image is hashed and the source's identity is a hash of the page list, so `verify` names an image that changed, went missing or was added. The engines read a PDF carrier that holds the images' own bytes. | JPEG and PNG only; TIFF and JPEG 2000 must be converted first. See [a folder of page scans](process-a-collection.md#page-images). |
 | Built-in adapter defaults, `adapter_options`, `--adapter-path`, and dry-run planning. | Defaults are recorded; dry runs do not call extractors. | Only explicitly supplied configuration is read. See [CLI](cli.md), [adapter protocol](adapter-protocol.md), and [OCR options](ocr-options.md). |
-| Page budgets, retries and optional continue-on-error. | Page, token and dollar limits; failed or unattempted pages can enter rerun work. | Cost may be unknown or estimated, not provider-billed spend. See [plan time and cost](plan-time-and-cost.md) and [warnings](warnings.md). |
-| `alto`: a library's ALTO OCR, one file per page, as a page's text layer. | Text from word boxes in column order, word confidences, its word boxes as the reading's layout (for tiling), and the file's name, SHA-256 and declared software in the provenance. In a job it is an inherited OCR layer: the page is read again by local OCR. A missing or unusable file gives an empty reading with `alto_missing` or `alto_invalid`; boxes that do not fit the page give `alto_geometry_mismatch`. Files are found by page number (`{page:04d}.xml`) or, for page images, by the image's own name (`{stem}.xml`); `{page}` is refused for page images whose names carry numbers that are not their page numbers. | Only boxes that misfit the page's shape or edges are caught here; a box placed wrongly inside the page is caught only when tiling compares the words with the job's OCR (`alto_layout_rejected`). Verification does not re-read the ALTO file. `{page}` cannot tell that page images were renumbered after a page was dropped. One page per file; no hOCR or PAGE XML; not used as the contest witness; not found from IIIF manifests. See [the recipe](engine-recipes.md#alto-from-a-library-any-platform-no-engine). |
+| Page budgets, retries and optional continue-on-error. | Page, token and dollar limits; under a token or dollar limit, a run stops before the next request when a paid adapter did not report what the last page used (`run.budget.unknown_usage`). Failed or unattempted pages can enter rerun work. | Cost may be unknown or estimated, not provider-billed spend. See [plan time and cost](plan-time-and-cost.md) and [warnings](warnings.md). |
+| `alto`: a library's ALTO OCR, one file per page, as a page's text layer. | Text from word boxes in column order (a Hebrew or Arabic-script row is written from its right-hand end), word confidences (the page's confidence only when every word is scored; `unscored_count` says how many were not), its word boxes as the reading's layout (for tiling), and the file's name, SHA-256 and declared software in the provenance. In a job it is an inherited OCR layer: the page is read again by local OCR. A missing or unusable file gives an empty reading with `alto_missing` or `alto_invalid`; boxes that do not fit the page give `alto_geometry_mismatch`. Files are found by page number (`{page:04d}.xml`) or, for page images, by the image's own name (`{stem}.xml`); `{page}` is refused for page images whose names carry numbers that are not their page numbers. | Only boxes that misfit the page's shape or edges are caught here; a box placed wrongly inside the page is caught only when tiling compares the words with the job's OCR (`alto_layout_rejected`). Verification does not re-read the ALTO file. `{page}` cannot tell that page images were renumbered after a page was dropped. One page per file; no hOCR or PAGE XML; not used as the contest witness; not found from IIIF manifests. See [the recipe](engine-recipes.md#alto-from-a-library-any-platform-no-engine). |
 | Text-quality warnings, OCR confidence, historical-orthography signals and grades. | Diagnostics identify some risks and can guide review. RapidOCR warns when rows mode joins several page columns; choose `reading_order: columns` for such pages. | They are not calibrated accuracy measures. See [warnings](warnings.md) and [multilingual OCR](multilingual-ocr.md). |
 
 ### Route pages
@@ -55,7 +55,10 @@ packets an agent or a person answers, optionally only the spans near named
 terms. Settled pages are `adjudicated_text`, kept apart from `reviewed_text`.
 Contest compares words, not punctuation or the order of words that moved
 together; its glyph pairs cover RapidOCR's Cyrillic model (`ru-print-0.1`,
-`ru-print-0.2`) and its English model (`latin-print-0.1`) only, and on the
+`ru-print-0.2`, `ru-print-0.3`) and its English model (`latin-print-0.1`) only.
+`ru-print-0.3` and `latin-print-0.1` keep accents and other combining marks
+inside words and rejoin a word hyphenated at a line end in any script; the
+older Cyrillic sets keep their spans exactly, so old jobs rebuild as before. On the
 English directory pages measured the Latin rules settled 7% of spans, leaving
 numbers and split exchange names open; an adjudicator can be wrong, which is why it should
 come from another model family than the reader. See
@@ -80,7 +83,7 @@ reading with the OCR in each reading's own order. See
 | Supported | What to rely on | Limit |
 |---|---|---|
 | Job reports, human review receipts, review sheets, corrections of a page's text, `verify`, and verified `txt`, `md`, `jsonl`, or `tei` exports. | A receipt binds a human decision to the page and selected output; a person's corrected text is kept as a new reading bound to the reading it was made from, which stays unchanged; exports preserve page boundaries and review state, mark corrected text, and leave out the machine text of a page a person recorded as blank, an illustration, handwriting, unreadable or a source defect. A job verifies, exports and can be reviewed after its directory is moved or copied, and records changes made away from where it was written. | A person makes the review decision. Verification and export do not certify transcription accuracy. See [review](processing-spec.md#review-in-a-spreadsheet), [report and receipt](document-report-spec.md), and [export](export.md). |
-| A static HTML review view (`review --out`): each page's image beside its selected text, other readings compared word by word, open contested spans marked, a text box to correct each page, and decisions downloaded as `review.json` or, without corrections, as a review sheet. | The view embeds the rows and binding `review --sheet` writes, so `review --apply` checks its decisions like any sheet's. | A rendering, not evidence: decisions and corrections count only once `review --apply` applies them. The word changes it marks are a guide; `review --apply` counts them again. A reading a browser text box cannot hold exactly, or one holding control or text-direction characters, is corrected through a file instead; soft hyphens and zero-width spaces stay editable and are counted on the page. Readings of more than about 5,000 words each are shown in full but not compared word by word. Page images are rendered with Poppler's `pdftoppm`, for PDFs and for page images alike; without it, a view of page images links to each image instead. Decisions in progress stay in one browser's storage. See [review beside the page image](processing-spec.md#review-beside-the-page-image). |
+| A static HTML review view (`review --out`): each page's image beside its selected text, other readings compared word by word, open contested spans marked, a text box to correct each page, and decisions downloaded as `review.json` or, without corrections, as a review sheet. | The view embeds the rows and binding `review --sheet` writes, so `review --apply` checks its decisions like any sheet's. | A rendering, not evidence: decisions and corrections count only once `review --apply` applies them. The word changes it marks are a guide; `review --apply` counts them again. A reading a browser text box cannot hold exactly, or one holding control or text-direction characters, is corrected through a file instead; soft hyphens and zero-width spaces stay editable and are counted on the page. Readings of more than about 5,000 words each are shown in full but not compared word by word. Page images are rendered with Poppler's `pdftoppm`, for PDFs and for page images alike; without it, a view of page images links to each image instead. Decisions in progress stay in one browser's storage, where other HTML files opened from disk in the same browser may be able to read them (Chrome treats such files as one site); apply or clear them on a shared machine. See [review beside the page image](processing-spec.md#review-beside-the-page-image). |
 
 ### Align structured output
 
@@ -105,7 +108,7 @@ as `outcome_unknown`. See [checkpoint specification](checkpoint-spec.md).
 
 | Supported | What to rely on | Limit |
 |---|---|---|
-| `fetch` for Presentation API 2 and 3 manifests and Image API 2 and 3 services. | A snapshot folder of page JPEGs at native size or the largest the server allows, with a record binding each file's hash to its URLs; `--resume` checks what is there and fetches only what is missing. `run` and `process` read the snapshot as a folder of page images, and the job records the fetch record's hash, URL, status and each page's canvas. | No authentication, JPEG only, whole images only (no regions), no ALTO or other OCR discovered from the manifest. Only the host you name may be on your own network; a service on another local host is refused. Under an https URL, `http://` services are fetched over https. The snapshot must be kept for its record to mean anything. See [the IIIF how-to](iiif.md#limits). |
+| `fetch` for Presentation API 2 and 3 manifests and Image API 2 and 3 services. | A snapshot folder of page JPEGs at native size or the largest the server allows, with a record binding each file's hash to its URLs; `--resume` checks what is there and fetches only what is missing. A URL carrying a key, token or password in its query is refused, and such values in a URL a server redirects to are recorded as `redacted`. `run` and `process` read the snapshot as a folder of page images, and the job records the fetch record's hash, URL, status and each page's canvas. | No authentication, JPEG only, whole images only (no regions), no ALTO or other OCR discovered from the manifest. Only the host you name may be on your own network; a service on another local host is refused. Under an https URL, `http://` services are fetched over https. The snapshot must be kept for its record to mean anything. See [the IIIF how-to](iiif.md#limits). |
 
 ## Adapter-supported, user-supplied
 
@@ -144,10 +147,23 @@ environment. Its limits are:
   skipped, for example), so `exact` shows nothing about the engine.
 - Replay startup does not process editable-install `.pth` hooks. Install adapter
   code normally or supply it through `--adapter-path`.
+- Replay runs code a bundle names only from a folder you give with
+  `--adapter-path`, and sends pages to a model server off this machine only if
+  you name it with `--trust-endpoint`; see
+  [jobs, runs and bundles you receive](share-and-cite.md#jobs-runs-and-bundles-you-receive).
+- A bundle replays exactly only on a machine whose reproducibility profile
+  matches the one recorded, down to the operating system's release and Python's
+  patch version, so an OS point update or a Python bug-fix release makes replay
+  refuse with `incompatible_environment`.
+- The profile hashes the `tesseract` found on PATH, which may be a wrapper
+  script, and not the Tesseract libraries behind it, so an engine library
+  update can leave the recorded identity unchanged.
 
 Replay checks the locally available adapter identity and rejects changed
 baseline, source, route, config, profile or inventory files. Cloud adapters,
-and adapters not declared deterministic, always get `evidence_compared`: the
+adapters not declared deterministic, and deterministic local adapters that
+record no reproducibility profile (`alto`, `rapidocr`, `indra`) always get
+`evidence_compared`: the
 outputs were compared, but identical bytes were not expected. No outcome is a
 claim about accuracy. PageLedger does not perform licensing, privacy or legal
 review. [Verified replay](design.md#verified-replay) in the design notes shows
@@ -261,7 +277,12 @@ the commands.
   or large rerun expansion queues review; it does not prove that an adapter
   hallucinated, and absence of a warning does not prove faithful output.
 - Grades are deterministic summaries of the quality signals and, for
-  structured output, the schema checks. They do not measure accuracy.
+  structured output, the schema checks. They do not measure accuracy. Every
+  warning counts the same: one warning of any kind, a benign note or a
+  repetition loop, grades a page B, two C, three or more D. On the schema
+  axis, a required column counts as present when its header matches, so a
+  table whose required cells are all empty or fail to convert can still grade
+  A, or B when coercion errors cap it.
   Confidence is uncalibrated across engines, versions, models and prompts, so
   an `A` from one extractor and a `B` from another cannot be ranked. Two
   grades are comparable only when the extractor, PageLedger version, grading
@@ -328,10 +349,17 @@ the commands.
 - Reruns re-extract listed pages; they do not merge results. Combining
   parent and rerun outputs into one corpus is the project's decision, and
   `pageledger compare` shows per-page differences for making it.
+- `alto`, RapidOCR's `rows` order and tiled readings write a Hebrew or
+  Arabic-script row from its right-hand end, and the reading's engine
+  description says how many rows were read that way. Columns are still taken
+  left to right, so a right-to-left page in several columns reads its columns
+  in the wrong order. RapidOCR gives no cell order, so a right-to-left row
+  whose first detected line opens with a Latin word is still written left to
+  right.
 - PageLedger does not make OCR or VLM output correct. It cannot calibrate
   confidence across unrelated extractors, guarantee accuracy, or make a
-  right-to-left, mixed-script, tabular, or handwritten collection work
-  without explicit adapter and schema configuration. Its job is narrower:
+  mixed-script, tabular, or handwritten collection work without explicit
+  adapter and schema configuration. Its job is narrower:
   preserve enough information that a researcher can see what ran, what
   failed, what is uncertain, and what should be reviewed or rerun.
 
@@ -342,6 +370,14 @@ the commands.
 - A run recorded before PageLedger hashed raw output stays readable, but it
   cannot pass `verify`, so it cannot be bundled or replayed. See
   [verification](artifacts.md#verification).
+- `verify` derives a run's normalized records, grades and audit queues again
+  and compares them, holding a run to the rules of the PageLedger version its
+  manifest records. That version is not itself hashed, so someone who rewrites
+  it to an earlier release and edits a normalized page gets only the warning
+  `derived_evidence_differs`.
+- `verify` does not derive a run's text-quality warnings (shape, repetition,
+  language, model remarks) again from the text; it checks them against what
+  the engine reported, and the grade and queues against them.
 - Source custody, licensing, privacy and legal review remain with the project.
 - A job resumes only in the directory it was written in; move it
   back there to resume it. Verifying, exporting and reviewing work anywhere.
@@ -356,6 +392,16 @@ the commands.
   for an earlier OCR layer (`text_under_image` or `producer`). When the job's
   OCR agrees with it, the OCR reading is selected and the page is not held,
   though the text layer was exact. A see-through watermark does not do this.
+
+### Network
+
+- `fetch` refuses a host on your own network unless it is the one you named,
+  but it checks the address when it looks the name up and the connection looks
+  it up again, so a host whose name changes its answer in between is not
+  caught.
+- `fetch` and the `vision` adapter stop a response whose body arrives too
+  slowly, but a server that sends its status line and headers slowly is bounded
+  only by the per-read socket timeout.
 
 ## Tested scale and documents
 
