@@ -1412,3 +1412,17 @@ def test_a_record_must_tie_each_image_to_one_canvas(tmp_path: Path, damage) -> N
     (out / iiif.RECORD_NAME).write_text(json.dumps(record), encoding="utf-8")
     with pytest.raises(ValueError, match="does not tie each image|lists an image twice"):
         iiif.read_fetch_record(out)
+
+
+def test_an_image_host_that_refuses_connections_stops_the_fetch(tmp_path: Path) -> None:
+    services = [f"{SERVICE}{n}" for n in (1, 2, 3)]
+    server = FakeServer({MANIFEST_URL: manifest_v3(services)})
+    for service in services:
+        server.routes[f"{service}/info.json"] = ConnectionRefusedError(61, "Connection refused")
+    out = tmp_path / "snap"
+    summary = iiif.fetch_iiif(MANIFEST_URL, out, opener=server, sleep=lambda _s: None)
+    assert len(server.requests) == 2  # the manifest, then one refused request
+    assert summary["status"] == "incomplete" and len(summary["missing"]) == 3
+    assert "refused the connection" in summary["stopped_by"]
+    assert "--resume" in summary["stopped_by"]
+    validate(load(out))

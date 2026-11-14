@@ -1054,8 +1054,13 @@ def fetch_iiif(
             say(f"canvas {canvas.index} of {count}")
             try:
                 entry = _fetch_canvas(client, out, canvas, count, max_image_bytes)
-            except ServerBusy as error:
-                stopped = f"{error} with --resume"
+            except (ServerBusy, Unreachable) as error:
+                # An image host that cannot be reached is not asked again for every canvas.
+                stopped = (
+                    f"{error} with --resume"
+                    if isinstance(error, ServerBusy)
+                    else f"{error}; try again later with --resume"
+                )
                 missing[canvas.index] = _missing_entry(canvas, count, stopped)
                 record["stopped_by"] = redacted(stopped)
                 break
