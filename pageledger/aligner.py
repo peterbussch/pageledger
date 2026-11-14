@@ -753,13 +753,23 @@ def _coerce(value: Any, column_type: str) -> tuple[Any, str | None]:
 
 
 def _parse_number(value: Any, *, integer: bool = False) -> int | float | None:
-    """Parse a numeric cell, tolerating thousand separators (`,`, space, NBSP)."""
+    """Parse a numeric cell, tolerating thousands grouped by one separator.
+
+    `,`, a space, NBSP, a thin space or a narrow NBSP may group thousands, as in
+    `1,084,598` or `1 084 598`. Anywhere else a separator is not removed: `1,5`
+    may be a decimal comma and `12 34` two numbers run together, so both fail.
+    """
     if isinstance(value, bool) or not isinstance(value, (int, float, str)):
         return None
     if integer and isinstance(value, int):
         return value
     if isinstance(value, str):
-        value = value.replace(",", "").replace(" ", "").replace("\xa0", "")
+        value = value.strip()
+        grouped = _GROUPED.fullmatch(value)
+        if grouped is not None:
+            value = value.replace(grouped.group(1), "")
+        elif _GROUP_SEPARATORS.search(value):
+            return None
         if integer:
             try:
                 return int(value)
@@ -782,6 +792,10 @@ def _parse_number(value: Any, *, integer: bool = False) -> int | float | None:
             return None
         return int(exact) if exact == exact.to_integral_value() else None
     return int(number) if number.is_integer() else None
+
+
+_GROUP_SEPARATORS = re.compile("[, \xa0  ]")
+_GROUPED = re.compile(r"[+-]?\d{1,3}([, \xa0  ])\d{3}(?:\1\d{3})*(?:\.\d+)?")
 
 
 # ---------------------------------------------------------------------------
