@@ -209,3 +209,23 @@ def test_code_inside_the_record_is_refused_even_under_adapter_path(tmp_path):
     assert resumed.returncode != 0
     assert "planted:Adapter" in resumed.stderr
     assert not marker.exists()
+
+
+@pytest.mark.parametrize("spec", ["innocent:os.makedirs", "innocent:makedirs"])
+def test_a_trusted_module_cannot_lead_to_code_it_only_imports(tmp_path, spec):
+    mine = tmp_path / "mine"
+    mine.mkdir()
+    (mine / "innocent.py").write_text("import os\nfrom os import makedirs\n", encoding="utf-8")
+    marker = tmp_path / "PWNED"
+    job_dir = _evil_job(tmp_path, marker, spec)
+    config_path = next((job_dir / ".job").glob("*.yml"))
+    config = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    config["run"]["adapter_options"] = {"name": str(marker)}
+    config_path.write_text(yaml.safe_dump(config), encoding="utf-8")
+    envelope = json.loads((job_dir / "job.json").read_text(encoding="utf-8"))
+    envelope["payload"]["stages"][0]["config_sha256"] = file_digest(config_path)
+    envelope["sha256"] = digest(envelope["payload"])
+    (job_dir / "job.json").write_text(json.dumps(envelope), encoding="utf-8")
+    resumed = _cli("resume", str(job_dir), "--adapter-path", str(mine), cwd=tmp_path)
+    assert resumed.returncode != 0
+    assert not marker.exists()

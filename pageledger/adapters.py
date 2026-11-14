@@ -19,6 +19,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass, field
 from functools import lru_cache
 from pathlib import Path
+from types import ModuleType
 from typing import Any, BinaryIO, ClassVar, Literal
 
 from ._version import __version__
@@ -1593,11 +1594,36 @@ def _import_object(spec: str, *, description: str) -> Any:
             if not attr:
                 raise AttributeError(object_path)
             candidate = getattr(candidate, attr)
+            # A module in the trusted folder may import anything; under a record the
+            # object named must be defined there, not merely reachable from there.
+            for what, record_root, trusted in _RECORDS:
+                if not _defined_inside(candidate, record_root, trusted):
+                    raise UntrustedCode(
+                        f"This {what} names {spec}, which reaches code defined outside the "
+                        "--adapter-path folder; PageLedger refuses to run it."
+                    )
     except AttributeError as exc:
         raise ValueError(
             f"{description} object '{object_path}' not found in {module_name}"
         ) from exc
     return candidate
+
+
+def _defined_inside(value: Any, record: Path, adapter_path: Path | None) -> bool:
+    if adapter_path is None:
+        return False
+    name: Any = value.__name__ if isinstance(value, ModuleType) else None
+    if name is None:
+        name = getattr(value, "__module__", None)
+        if not isinstance(name, str):
+            name = type(value).__module__
+    defining = sys.modules.get(name)
+    location = getattr(defining, "__file__", None)
+    if not isinstance(location, str):
+        return False
+    resolved = Path(location).resolve()
+    folder = adapter_path.expanduser().resolve()
+    return resolved.is_relative_to(folder) and not resolved.is_relative_to(record)
 
 
 def _opts_phrase(opts: dict[str, Any]) -> str:
