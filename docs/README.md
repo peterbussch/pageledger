@@ -23,6 +23,7 @@ how each page was read, so that the text can be checked and cited. The
 | to review and correct pages | [Review and correct](review-and-correct.md), then [reports and review](processing-spec.md#reports-and-review) |
 | to write the text out | [Export document text](export.md) |
 | to cite or deposit a job | [Share and cite results](share-and-cite.md) |
+| to open a job, run or bundle someone sent me | [Jobs, runs and bundles you receive](share-and-cite.md#jobs-runs-and-bundles-you-receive) |
 | to estimate time and cost before a large job | [Plan time and cost](plan-time-and-cost.md) |
 | to recover interrupted work | [Resume an interrupted job](processing-spec.md#resume-an-interrupted-job) |
 | to understand an error or an odd result | [Troubleshooting](troubleshooting.md) |

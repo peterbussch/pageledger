@@ -83,8 +83,9 @@ and [fetching from IIIF](https://github.com/peterbussch/pageledger/blob/main/doc
 
 Tesseract reads many languages: name them with `--lang` in Tesseract's codes,
 such as `rus` or `deu+eng` (`pageledger doctor` lists the ones installed).
-`--engine rapidocr` and `--engine indra` choose two other engines that run on
-your machine. A job can also use a second engine, a vision model, or the OCR
+For two other engines that run on your machine, RapidOCR and Indra, write a
+configuration with `pageledger init --engine rapidocr` (or `indra`) and pass it
+to `process` with `--config`. A job can also use a second engine, a vision model, or the OCR
 a library published with its scans (ALTO), to check the first reading. The
 [OCR options](https://github.com/peterbussch/pageledger/blob/main/docs/ocr-options.md)
 compare the engines,
@@ -149,7 +150,13 @@ Cite the software with
 [share and cite results](https://github.com/peterbussch/pageledger/blob/main/docs/share-and-cite.md)
 explains how to cite and deposit a job. Development setup is in
 [CONTRIBUTING.md](https://github.com/peterbussch/pageledger/blob/main/CONTRIBUTING.md);
-to report how PageLedger did on a collection, [open a corpus
+report a bug or ask a question in the
+[issues](https://github.com/peterbussch/pageledger/issues), and to report how
+PageLedger did on a collection, [open a corpus
 report](https://github.com/peterbussch/pageledger/issues/new?template=corpus-report.yml).
+A job, run or bundle someone sends you can name code to run: read
+[folders you receive](https://github.com/peterbussch/pageledger/blob/main/docs/share-and-cite.md#jobs-runs-and-bundles-you-receive)
+before resuming one, and report security problems privately as
+[SECURITY.md](https://github.com/peterbussch/pageledger/blob/main/SECURITY.md) explains.
 
 MIT license.

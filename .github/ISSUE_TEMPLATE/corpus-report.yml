@@ -33,14 +33,14 @@ body:
     id: expected
     attributes:
       label: What PageLedger reported vs. what you expected
-      description: Warnings, grades, or counts that look wrong — and why.
+      description: Holds, warnings, grades or counts that look wrong, and why.
     validations:
       required: true
   - type: textarea
     id: evidence
     attributes:
       label: Redacted evidence
-      description: A few lines of the raw extracted text and the quality.jsonl line(s) for that page.
+      description: A few lines of the page's text as read and, for a job, the page's "Held for" entry in report.md (for a run, its quality.jsonl line).
       render: text
     validations:
       required: false

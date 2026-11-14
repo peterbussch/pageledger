@@ -102,6 +102,37 @@ each change made away from its original directory under `relocations` in
 `resume` works only in the directory the job was written in, so that two
 copies cannot both pay for the same pages: move the job back there to resume it.
 
+## Jobs, runs and bundles you receive
+
+A job, run or bundle folder is plain files, and anyone who sends you one could
+have edited them. Looking at such a folder runs none of its code: `verify`,
+`inspect`, `export`, `review` and `compare` read its files and run no engine.
+Continuing one is different, because the folder's configuration says what to
+run: `resume` on a job or run, and `replay` on a bundle, start its engines
+again.
+
+- **Code it names.** A configuration may name its own adapter as Python code
+  (`module:object`). PageLedger's built-in engines load as always. Any other
+  code runs only from a folder you name with `--adapter-path`, never from the
+  received folder itself, and the object must be defined in that folder. Give
+  `--adapter-path` only if you trust where the job came from and the code in
+  that folder: an adapter is ordinary Python and can do anything you can.
+- **Servers it names.** A configuration may send page images, and the API key
+  of an environment variable it names, to a model server. On `resume` or
+  `replay`, a server that is not on this machine is used only if you name its
+  address with `--trust-endpoint URL`. The refusal gives the exact option to
+  pass. A server on this machine (`localhost`) needs no naming.
+
+So: do not resume a job, or replay a bundle, that someone sent you unless you
+trust where it came from. `verify` passing does not make it trustworthy; it
+says only that the files agree with each other. When an unfinished job names
+its own code, `verify` says so. Both refusals come before anything changes, so
+a refused job can be resumed later with the right options.
+
+Your own `process --config`, `run --config` and `rerun --config` are trusted
+as written, since you chose them. To report a way around these rules, see
+[SECURITY.md](https://github.com/peterbussch/pageledger/blob/main/SECURITY.md).
+
 ## Cite PageLedger as software
 
 Cite the PageLedger release used, with the project's recommended software
