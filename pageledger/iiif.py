@@ -15,10 +15,12 @@ import json
 import math
 import re
 import socket
+import ssl
 import time
 import urllib.error
 import urllib.parse
 import urllib.request
+import uuid
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -42,6 +44,9 @@ MAX_RETRIES = 5
 RETRY_AFTER_CAP = 60.0
 RETRY_STATUSES = frozenset({429, 502, 503, 504})
 REQUEST_TIMEOUT = 60.0
+# After REQUEST_TIMEOUT, a response must keep arriving at this average rate or the
+# fetch stops: a server that drips bytes would otherwise hold it for ever.
+MIN_BYTES_PER_SECOND = 10 * 1024
 IMAGE_SUFFIXES = frozenset({".jpg", ".jpeg", ".png", ".tif", ".tiff"})
 _REDIRECT_STATUSES = frozenset({301, 302, 303, 307, 308})
 _CHUNK = 1024 * 1024
@@ -49,6 +54,28 @@ _JSON_ACCEPT = "application/ld+json, application/json;q=0.9, */*;q=0.1"
 _IMAGE_FILE = re.compile(r"\d{4,}\.jpg\Z")
 _SHA256 = re.compile(r"[0-9a-f]{64}\Z")
 _ARTIFACT = re.compile(r"iiif/(?:manifest|\d{4,}\.info)\.json\Z")
+# Query parameters whose values are keys, passwords or signatures (wskey=, token=,
+# X-Amz-Signature=, ...): matched on the words of the parameter's name.
+_CREDENTIAL_WORDS = frozenset(
+    {
+        "token",
+        "accesstoken",
+        "key",
+        "apikey",
+        "wskey",
+        "sig",
+        "signature",
+        "auth",
+        "password",
+        "passwd",
+        "secret",
+        "credential",
+        "session",
+        "sessionid",
+    }
+)
+_QUERY_PART = re.compile(r"([?&;])([^=&;#\s]+)=([^&;#\s]*)")
+_clock = time.monotonic
 
 
 class Response(Protocol):
@@ -136,6 +163,40 @@ def _sha256(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
+def _credential(name: str) -> bool:
+    words = re.split(r"[^a-z0-9]+", urllib.parse.unquote(name).lower())
+    return any(word in _CREDENTIAL_WORDS for word in words)
+
+
+def credential_parameters(url: str) -> list[str]:
+    """The names of ``url``'s query parameters that look like a key, password or signature."""
+    query = urllib.parse.urlsplit(url).query
+    names = [part.split("=", 1)[0] for part in re.split(r"[&;]", query) if "=" in part]
+    return [name for name in names if _credential(name)]
+
+
+def redacted(text: str) -> str:
+    """``text`` with the value of every credential-like query parameter replaced by ``redacted``."""
+
+    def hide(match: re.Match[str]) -> str:
+        if not _credential(match.group(2)):
+            return match.group(0)
+        return f"{match.group(1)}{match.group(2)}=redacted"
+
+    return _QUERY_PART.sub(hide, text)
+
+
+def _lower_scheme(url: str) -> str:
+    """``HTTPS://host`` as ``https://host``: a scheme is case-insensitive, and records use lower case."""
+    scheme, separator, rest = url.partition("://")
+    return scheme.lower() + separator + rest if separator and scheme.isalpha() else url
+
+
+def _shown(text: str) -> str:
+    """A manifest's id as a terminal may show it: quoted when it holds a control character."""
+    return text if text.isprintable() else repr(text)
+
+
 def check_url(url: str) -> None:
     if not url.isprintable() or any(c.isspace() for c in url):
         raise FetchError(f"URL holds a space or a control character: {url!r}")
@@ -200,16 +261,41 @@ def _read_capped(response: Response, limit: int, url: str, what: str) -> bytes:
         raise FetchError(
             f"{what}: {url} declares {int(declared)} bytes, above the {limit}-byte limit"
         )
+    # read1 returns whatever one receive brings, so the clock is checked between receives.
+    read = getattr(response, "read1", response.read)
     chunks: list[bytes] = []
     total = 0
+    started = _clock()
     while True:
-        chunk = response.read(min(_CHUNK, limit + 1 - total))
+        chunk = read(min(_CHUNK, limit + 1 - total))
         if not chunk:
             return b"".join(chunks)
         chunks.append(chunk)
         total += len(chunk)
         if total > limit:
             raise FetchError(f"{what}: {url} is larger than the {limit}-byte limit")
+        elapsed = _clock() - started
+        if elapsed > REQUEST_TIMEOUT + total / MIN_BYTES_PER_SECOND:
+            raise ServerBusy(
+                f"{what}: {url} sent only {total} bytes in {elapsed:.0f} seconds, too slowly "
+                "to finish; the server may be busy, so try again later"
+            )
+
+
+def _unreachable(error: Exception) -> str | None:
+    """Why a request failed for a reason asking again will not change, or None."""
+    reason = error.reason if isinstance(error, urllib.error.URLError) else error
+    if isinstance(reason, ssl.SSLCertVerificationError):
+        return "its certificate could not be verified"
+    if isinstance(reason, socket.gaierror) and reason.errno != socket.EAI_AGAIN:
+        return "the host name could not be found"
+    if isinstance(reason, ConnectionRefusedError):
+        return "the server refused the connection"
+    return None
+
+
+class Unreachable(FetchError):
+    """The host cannot be reached at all; asking again or for another path will not help."""
 
 
 class Client:
@@ -300,13 +386,17 @@ class Client:
             except http.client.InvalidURL as error:
                 raise FetchError(f"{what}: not a usable URL ({error}): {url}") from error
             except (OSError, http.client.HTTPException) as error:
-                problem = f"network error ({error})"
+                why = _unreachable(error)
+                if why is not None:
+                    raise Unreachable(f"{what}: could not fetch {url}: {why}") from error
+                reason = error.reason if isinstance(error, urllib.error.URLError) else error
+                problem = f"network error ({reason})"
                 wait = _retry_wait(None, attempt)
             if attempt <= MAX_RETRIES:
                 self.sleep(wait)
         raise ServerBusy(
             f"{what}: {problem} from {url} after {attempt} attempts; "
-            "the server may be busy, so try again later with --resume"
+            "the server may be busy, so try again later"
         )
 
 
@@ -376,7 +466,7 @@ def _service_id(services: Any) -> tuple[str | None, str | None]:
         if version == 1:
             reason = "only an Image API 1 service, which is not supported"
         elif version in {2, 3} and _id(entry):
-            return str(_id(entry)).rstrip("/"), None
+            return _lower_scheme(str(_id(entry)).rstrip("/")), None
     return None, reason
 
 
@@ -550,8 +640,39 @@ def _parse_json(body: bytes) -> Any:
 
 
 def _dump(value: Mapping[str, Any]) -> bytes:
-    text = json.dumps(value, ensure_ascii=False, indent=2, sort_keys=True, allow_nan=False)
+    """The record, indented, with each label on one line however deeply it nests.
+
+    Indenting a nested label repeats its depth on every line, so a label of a few
+    kilobytes in the manifest could take megabytes in the record.
+    """
+    marker = uuid.uuid4().hex
+    labels: list[str] = []
+
+    def hold_label(entry: Any) -> Any:
+        if not isinstance(entry, dict) or "label" not in entry:
+            return entry
+        labels.append(
+            json.dumps(entry["label"], ensure_ascii=False, sort_keys=True, allow_nan=False)
+        )
+        return {**entry, "label": f"{marker}:{len(labels) - 1}"}
+
+    shallow = dict(value)
+    for key in ("images", "missing"):
+        if isinstance(shallow.get(key), list):
+            shallow[key] = [hold_label(entry) for entry in shallow[key]]
+    text = json.dumps(shallow, ensure_ascii=False, indent=2, sort_keys=True, allow_nan=False)
+    text = re.sub(f'"{marker}:([0-9]+)"', lambda found: labels[int(found.group(1))], text)
     return (text + "\n").encode("utf-8")
+
+
+def _record_bytes(record: Mapping[str, Any]) -> bytes:
+    data = _dump(record)
+    if len(data) > MAX_RECORD_BYTES:
+        raise IIIFError(
+            f"the fetch record would be larger than {MAX_RECORD_BYTES // (1024 * 1024)} MB, "
+            "more than PageLedger reads back: the manifest's labels or ids are unusually long"
+        )
+    return data
 
 
 def _file_name(index: int, count: int) -> str:
@@ -565,6 +686,8 @@ def _resolve(client: Client, url: str) -> tuple[Fetched, str, Any]:
         fetched = client.get(
             url, accept=_JSON_ACCEPT, limit=MAX_MANIFEST_BYTES, what="IIIF resource"
         )
+    except Unreachable:
+        raise
     except FetchError as error:
         first_error = error
     else:
@@ -605,6 +728,14 @@ def _select(canvases: list[Canvas], pages: str | None) -> list[Canvas]:
         return canvases
     from .runner import _parse_pages_expression
 
+    # Checked before the expression is expanded: a typo such as 1-10000000000 would
+    # otherwise build ten billion numbers.
+    for number in re.findall(r"[0-9]+", pages):
+        digits = number.lstrip("0")
+        if len(digits) > len(str(len(canvases))) or int(digits or "0") > len(canvases):
+            raise IIIFError(
+                f"--pages asks for canvas {number}, but the resource has {len(canvases)} canvases"
+            )
     wanted = _parse_pages_expression(pages)
     beyond = [number for number in wanted if number > len(canvases)]
     if beyond:
@@ -620,7 +751,7 @@ def _missing_entry(canvas: Canvas, count: int, error: str | None) -> dict[str, A
         "canvas_id": canvas.canvas_id,
         "label": canvas.label,
         "file": _file_name(canvas.index, count),
-        "error": error,
+        "error": None if error is None else redacted(error),
     }
 
 
@@ -639,7 +770,7 @@ def _fetch_canvas(
             raise
         # Servers behind a proxy often declare http ids for services they offer over https.
         raise type(error)(
-            f"{what}: the service is declared as {canvas.service_id}, and its https form "
+            f"{what}: the service is declared as {_shown(canvas.service_id)}, and its https form "
             f"did not answer: {error}"
         ) from error
     try:
@@ -679,14 +810,14 @@ def _fetch_canvas(
         "image_api": info.api,
         "info": {
             "url": info_fetched.url,
-            "final_url": info_fetched.final_url,
+            "final_url": redacted(info_fetched.final_url),
             "artifact": info_artifact,
             "sha256": _sha256(info_fetched.body),
         },
         "native_width": info.width,
         "native_height": info.height,
         "request_url": request_url,
-        "final_url": image.final_url,
+        "final_url": redacted(image.final_url),
         "width": width,
         "height": height,
         "below_native": width < info.width or height < info.height,
@@ -750,6 +881,16 @@ def _load_record(out: Path) -> tuple[dict[str, Any], bytes]:
             raise IIIFError(f"{path} has a malformed missing entry")
     if len(set(names)) != len(names):
         raise IIIFError(f"{path} lists an image twice")
+    count = record["canvas_count"]
+    indexes = [entry["canvas_index"] for entry in record["images"] + record["missing"]]
+    if (
+        len(set(indexes)) != len(indexes)
+        or any(index > count for index in indexes)
+        or any(
+            entry["file"] != _file_name(entry["canvas_index"], count) for entry in record["images"]
+        )
+    ):
+        raise IIIFError(f"{path} does not tie each image to one canvas of the {count} it lists")
     return record, data
 
 
@@ -801,6 +942,14 @@ def fetch_iiif(
     if max_image_bytes < 1:
         raise IIIFError("--max-image-bytes must be positive")
     check_url(url)
+    url = _lower_scheme(url)
+    secrets = credential_parameters(url)
+    if secrets:
+        raise IIIFError(
+            f"the URL carries {secrets[0]}= in its query, which looks like a key or password "
+            "and would be written into the fetch record and the job's report; PageLedger "
+            "does not record credentials, so fetch a URL without it"
+        )
     client = Client(opener, delay=delay, sleep=sleep, home=url)
     say = progress or (lambda _message: None)
 
@@ -845,7 +994,7 @@ def fetch_iiif(
         unusable = [canvas for canvas in pending if canvas.service_id is None]
         if unusable:
             canvas = unusable[0]
-            named = f" ({canvas.canvas_id})" if canvas.canvas_id else ""
+            named = f" ({_shown(canvas.canvas_id)})" if canvas.canvas_id else ""
             raise IIIFError(
                 f"canvas {canvas.index}{named} has {canvas.problem}; PageLedger fetches page "
                 f"images only through a IIIF Image API 2 or 3 service"
@@ -859,7 +1008,7 @@ def fetch_iiif(
         if kind == "manifest":
             manifest = {
                 "url": fetched.url,
-                "final_url": fetched.final_url,
+                "final_url": redacted(fetched.final_url),
                 "sha256": _sha256(fetched.body),
                 "artifact": f"{RECORD_DIR}/manifest.json",
                 "api_version": version,
@@ -879,7 +1028,7 @@ def fetch_iiif(
             "images": [],
             "missing": [_missing_entry(canvas, count, None) for canvas in pending],
         }
-        first = _dump(record)
+        first = _record_bytes(record)
         out.mkdir(parents=True)
         (out / RECORD_DIR).mkdir()
         if manifest is not None:
@@ -895,7 +1044,7 @@ def fetch_iiif(
         record["missing"] = [missing[index] for index in sorted(missing)]
         record["status"] = "incomplete" if missing else "complete"
         record["finished_at"] = _now() if finished else None
-        atomic_bytes(out / RECORD_NAME, _dump(record))
+        atomic_bytes(out / RECORD_NAME, _record_bytes(record))
 
     try:
         for canvas in pending:
@@ -906,8 +1055,9 @@ def fetch_iiif(
             try:
                 entry = _fetch_canvas(client, out, canvas, count, max_image_bytes)
             except ServerBusy as error:
-                missing[canvas.index] = _missing_entry(canvas, count, str(error))
-                record["stopped_by"] = str(error)
+                stopped = f"{error} with --resume"
+                missing[canvas.index] = _missing_entry(canvas, count, stopped)
+                record["stopped_by"] = redacted(stopped)
                 break
             except FetchError as error:
                 missing[canvas.index] = _missing_entry(canvas, count, str(error))

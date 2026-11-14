@@ -51,7 +51,10 @@ default) between requests. When a server answers 429, 502, 503 or 504, it
 waits as long as the server's `Retry-After` header asks, up to 60 seconds, or
 else 2, 4, 8, 16 and 32 seconds, and gives up after five retries. A server
 that keeps refusing stops the fetch, so it does not go on to ask for the
-remaining pages. Requests identify themselves as `PageLedger/VERSION (IIIF
+remaining pages. A connection the server refuses, a certificate that cannot be
+verified and a host name that cannot be found are not retried. A server that
+keeps a response trickling in, more slowly than 10 KB a second on average after
+the first minute, also stops the fetch. Requests identify themselves as `PageLedger/VERSION (IIIF
 fetch)` and carry nothing about you.
 
 ## Resume an incomplete fetch

@@ -5,6 +5,9 @@ from __future__ import annotations
 import hashlib
 import io
 import json
+import socket
+import ssl
+import urllib.error
 import urllib.request
 import urllib.response
 from email.message import Message
@@ -1207,4 +1210,205 @@ def test_a_missing_entry_without_its_error_is_a_damaged_record(tmp_path: Path) -
     record["missing"].append({"canvas_index": 2})
     (out / iiif.RECORD_NAME).write_text(json.dumps(record), encoding="utf-8")
     with pytest.raises(ValueError, match="malformed missing entry"):
+        iiif.read_fetch_record(out)
+
+
+class DripResponse(FakeResponse):
+    """Sends one byte per receive, each a few seconds of a fake clock apart."""
+
+    def __init__(self, clock: list[float], body: bytes) -> None:
+        super().__init__(200, body, {"Content-Type": "application/ld+json"})
+        self.clock = clock
+
+    def read1(self, amount: int) -> bytes:
+        self.clock[0] += 5.0
+        return super().read(min(amount, 1))
+
+
+def test_a_server_that_drips_bytes_is_stopped_by_the_clock(monkeypatch) -> None:
+    clock = [0.0]
+    monkeypatch.setattr(iiif, "_clock", lambda: clock[0])
+    server = FakeServer({MANIFEST_URL: DripResponse(clock, b" " * 10_000)})
+    with pytest.raises(iiif.ServerBusy, match="too slowly"):
+        iiif.Client(server, sleep=lambda _s: None).get(
+            MANIFEST_URL, accept="*/*", limit=1_000_000, what="x"
+        )
+    # Stopped soon after the grace period, and not asked again.
+    assert iiif.REQUEST_TIMEOUT < clock[0] <= iiif.REQUEST_TIMEOUT + 10
+    assert len(server.requests) == 1
+
+
+def test_a_slow_but_steady_server_is_not_stopped(monkeypatch) -> None:
+    clock = [0.0]
+    monkeypatch.setattr(iiif, "_clock", lambda: clock[0])
+
+    class Steady(FakeResponse):
+        def read1(self, amount: int) -> bytes:
+            clock[0] += 1.0
+            return super().read(min(amount, 2 * iiif.MIN_BYTES_PER_SECOND))
+
+    body = bytes(20 * iiif.MIN_BYTES_PER_SECOND * 10)
+    server = FakeServer({MANIFEST_URL: Steady(200, body)})
+    fetched = iiif.Client(server, sleep=lambda _s: None).get(
+        MANIFEST_URL, accept="*/*", limit=len(body), what="x"
+    )
+    assert fetched.body == body and clock[0] > iiif.REQUEST_TIMEOUT
+
+
+@pytest.mark.parametrize(
+    ("error", "reason"),
+    [
+        (ConnectionRefusedError(61, "Connection refused"), "refused the connection"),
+        (
+            urllib.error.URLError(ssl.SSLCertVerificationError("certificate verify failed")),
+            "certificate could not be verified",
+        ),
+        (
+            urllib.error.URLError(socket.gaierror(socket.EAI_NONAME, "nodename nor servname")),
+            "host name could not be found",
+        ),
+    ],
+)
+def test_an_unreachable_host_is_not_retried_or_sent_to_resume(
+    tmp_path: Path, error: Exception, reason: str
+) -> None:
+    sleeps: list[float] = []
+    server = FakeServer({MANIFEST_URL: error, MANIFEST_URL + "/info.json": error})
+    out = tmp_path / "snap"
+    with pytest.raises(iiif.FetchError, match=reason) as raised:
+        iiif.fetch_iiif(MANIFEST_URL, out, opener=server, sleep=sleeps.append)
+    assert "--resume" not in str(raised.value) and "urlopen" not in str(raised.value)
+    assert len(server.requests) == 1 and sleeps == [] and not out.exists()
+
+
+def test_a_busy_server_before_any_folder_does_not_suggest_resume(tmp_path: Path) -> None:
+    server = FakeServer({MANIFEST_URL: FakeResponse(503)})
+    with pytest.raises(iiif.ServerBusy) as raised:
+        iiif.fetch_iiif(MANIFEST_URL, tmp_path / "snap", opener=server, sleep=lambda _s: None)
+    assert "try again later" in str(raised.value) and "--resume" not in str(raised.value)
+
+
+def test_an_upper_case_scheme_is_recorded_in_lower_case(tmp_path: Path) -> None:
+    server = two_page_v3()
+    upper = "HTTPS://" + MANIFEST_URL.removeprefix("https://")
+    server.routes[upper] = server.routes[MANIFEST_URL]
+    document = server.routes[MANIFEST_URL]
+    document["items"][1]["items"][0]["items"][0]["body"]["service"][0]["id"] = (
+        "HTTP://" + f"{SERVICE}2".removeprefix("https://")
+    )
+    out = tmp_path / "snap"
+    summary = iiif.fetch_iiif(upper, out, opener=server, sleep=lambda _s: None)
+    record = load(out)
+    validate(record)
+    assert summary["status"] == "complete" and record["requested_url"] == MANIFEST_URL
+    # An http service under an https manifest is asked for over https, as for lower case.
+    assert record["images"][1]["service_id"] == "http://" + f"{SERVICE}2".removeprefix("https://")
+    assert record["images"][1]["request_url"].startswith(SERVICE)
+
+
+@pytest.mark.parametrize(
+    "query", ["?token=abc", "?wskey=abc", "?x=1&api_key=abc", "?X-Amz-Signature=abc"]
+)
+def test_a_url_carrying_a_key_is_refused_before_any_request(tmp_path: Path, query: str) -> None:
+    server = two_page_v3()
+    with pytest.raises(iiif.IIIFError, match="looks like a key or password"):
+        iiif.fetch_iiif(MANIFEST_URL + query, tmp_path / "snap", opener=server)
+    assert server.requests == [] and not (tmp_path / "snap").exists()
+
+
+def test_a_query_that_only_looks_alike_is_fetched(tmp_path: Path) -> None:
+    server = two_page_v3()
+    url = MANIFEST_URL + "?keyword=map&monkey=1"
+    server.routes[url] = server.routes[MANIFEST_URL]
+    summary = iiif.fetch_iiif(url, tmp_path / "snap", opener=server, sleep=lambda _s: None)
+    assert summary["status"] == "complete"
+
+
+def test_a_signed_redirect_is_recorded_without_its_signature(tmp_path: Path) -> None:
+    server = two_page_v3()
+    image = f"{SERVICE}1/full/max/0/default.jpg"
+    signed = "https://cdn.example.org/p1.jpg?Expires=9&Signature=SECRET&Key-Pair-Id=K1"
+    server.routes[signed] = server.routes[image]
+    server.routes[image] = FakeResponse(302, b"", {"Location": signed})
+    broken = "https://cdn.example.org/p2.jpg?sig=SECRET2"
+    server.routes[broken] = FakeResponse(404)
+    server.routes[f"{SERVICE}2/full/max/0/default.jpg"] = FakeResponse(
+        302, b"", {"Location": broken}
+    )
+    out = tmp_path / "snap"
+    iiif.fetch_iiif(MANIFEST_URL, out, opener=server, sleep=lambda _s: None)
+    text = (out / iiif.RECORD_NAME).read_text(encoding="utf-8")
+    assert "SECRET" not in text
+    record = load(out)
+    validate(record)
+    assert record["images"][0]["final_url"] == (
+        "https://cdn.example.org/p1.jpg?Expires=9&Signature=redacted&Key-Pair-Id=redacted"
+    )
+    assert "sig=redacted" in record["missing"][0]["error"]
+
+
+def test_nested_labels_stay_compact_in_the_record(tmp_path: Path) -> None:
+    label = json.loads("[" * 900 + "]" * 900)
+    server = two_page_v3()
+    server.routes[MANIFEST_URL] = ok(manifest_v3([f"{SERVICE}1", f"{SERVICE}2"], [label, label]))
+    out = tmp_path / "snap"
+    iiif.fetch_iiif(MANIFEST_URL, out, opener=server, sleep=lambda _s: None)
+    data = (out / iiif.RECORD_NAME).read_bytes()
+    assert len(data) < 20_000
+    record = load(out)
+    validate(record)
+    assert record["images"][0]["label"] == label
+    assert iiif.read_fetch_record(out) is not None
+
+
+def test_a_record_too_large_to_read_back_is_refused_before_any_file(
+    tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.setattr(iiif, "MAX_RECORD_BYTES", 2_000)
+    server = two_page_v3()
+    server.routes[MANIFEST_URL] = ok(manifest_v3([f"{SERVICE}1"], ["x" * 3_000]))
+    out = tmp_path / "snap"
+    with pytest.raises(iiif.IIIFError, match="unusually long"):
+        iiif.fetch_iiif(MANIFEST_URL, out, opener=server, sleep=lambda _s: None)
+    assert not out.exists()
+
+
+def test_a_huge_pages_range_is_refused_before_it_is_expanded(tmp_path: Path) -> None:
+    with pytest.raises(iiif.IIIFError, match="canvas 10000000000, but the resource has 2"):
+        iiif.fetch_iiif(
+            MANIFEST_URL,
+            tmp_path / "snap",
+            pages="1-10000000000",
+            opener=two_page_v3(),
+            sleep=lambda _s: None,
+        )
+
+
+def test_control_characters_in_a_canvas_id_are_shown_quoted(tmp_path: Path) -> None:
+    document = manifest_v3([None])
+    document["items"][0]["id"] = "x\x1b[2J"
+    with pytest.raises(iiif.IIIFError) as raised:
+        iiif.fetch_iiif(
+            MANIFEST_URL,
+            tmp_path / "snap",
+            opener=FakeServer({MANIFEST_URL: ok(document)}),
+            sleep=lambda _s: None,
+        )
+    assert "\x1b" not in str(raised.value) and "\\x1b" in str(raised.value)
+
+
+@pytest.mark.parametrize(
+    "damage",
+    [
+        lambda record: record["images"][1].update(canvas_index=1),
+        lambda record: record["images"][1].update(file="0009.jpg"),
+        lambda record: record["missing"].append({"canvas_index": 9, "error": None}),
+    ],
+)
+def test_a_record_must_tie_each_image_to_one_canvas(tmp_path: Path, damage) -> None:
+    out = _complete(tmp_path)
+    record = load(out)
+    damage(record)
+    (out / iiif.RECORD_NAME).write_text(json.dumps(record), encoding="utf-8")
+    with pytest.raises(ValueError, match="does not tie each image|lists an image twice"):
         iiif.read_fetch_record(out)

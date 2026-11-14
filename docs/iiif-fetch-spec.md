@@ -9,7 +9,7 @@ from. See the [how-to](iiif.md) and the
 |---|---|
 | `schema_version`, `kind` | Exactly `0.1`, `iiif_fetch` |
 | `tool` | `name` (`pageledger`), `version`, and the `user_agent` sent with every request |
-| `requested_url` | The URL given on the command line |
+| `requested_url` | The URL given on the command line, its scheme in lower case. A URL whose query carries a key, token, password or signature (`token=`, `wskey=`, `api_key=`, `X-Amz-Signature=` and the like) is refused, as is one with a user name or password |
 | `source_kind` | `manifest`, or `image_service` for an `info.json` or image service URL |
 | `manifest` | Null for an image service; otherwise `url`, `final_url` after redirects, `sha256` of the bytes as fetched, `artifact` (`iiif/manifest.json`) and `api_version` (Presentation API `2` or `3`) |
 | `canvas_count` | Canvases in the manifest (1 for an image service) |
@@ -32,7 +32,7 @@ An `images` entry:
 | `image_api` | Image API version of the service, `2` or `3` |
 | `info` | The image information document: `url`, `final_url`, `artifact` (`iiif/0007.info.json`) and `sha256` |
 | `native_width`, `native_height` | Size declared in `info.json` |
-| `request_url`, `final_url` | The image URL asked for, and the URL that answered after redirects |
+| `request_url`, `final_url` | The image URL asked for, and the URL that answered after redirects. In every `final_url`, and in each recorded error, the value of a query parameter that looks like a key or signature (a signed CDN link a server redirected to) is written as `redacted` |
 | `width`, `height` | Size read from the JPEG header |
 | `below_native` | True when the image is narrower or shorter than its native size, because the server limits sizes |
 | `fetched_at` | UTC time the image was received |
