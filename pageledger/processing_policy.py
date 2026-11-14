@@ -117,6 +117,8 @@ BLANK_REFUTING_POLICIES = frozenset({"0.6.1", "0.8", HOLD_POLICY})
 LADDER_POLICIES = frozenset({"0.8", "0.9"})
 # Policies that keep an inherited OCR layer as a witness (the 0.9 rules).
 WITNESS_POLICIES = frozenset({"0.9"})
+# Policies whose engine comparison keeps a word's combining marks inside it.
+MARKED_WORD_POLICIES = frozenset({"0.9"})
 _DELTA = "suspicious_embedded_text_delta"
 # A reader with fewer words than this share of the literal reading left text out.
 # Below the floor of literal words a page says too little to judge.

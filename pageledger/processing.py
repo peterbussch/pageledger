@@ -158,7 +158,7 @@ def _pdf_like(source: dict) -> bool:
     return source.get("kind") == KIND or Path(source["path"]).suffix.lower() == ".pdf"
 
 
-def _build_comparisons(attempts: list[dict]) -> list[dict]:
+def _build_comparisons(attempts: list[dict], *, marks: bool) -> list[dict]:
     readable = [
         item for item in attempts if item["outcome"] == "completed" and item["text"].strip()
     ]
@@ -166,7 +166,7 @@ def _build_comparisons(attempts: list[dict]) -> list[dict]:
         {
             "left_attempt": left["attempt_id"],
             "right_attempt": right["attempt_id"],
-            **compare_texts(left["text"], right["text"]),
+            **compare_texts(left["text"], right["text"], marks=marks),
         }
         for index, left in enumerate(readable)
         for right in readable[index + 1 :]
@@ -1046,7 +1046,10 @@ def _refresh(job: dict, root: Path, *, materialize: bool = True, check_source: b
     ladder_policy = job.get("hold_policy") in processing_policy.LADDER_POLICIES
     for page in pages.values():
         if job.get("hold_policy") in HOLD_POLICIES:
-            page["comparisons"] = _build_comparisons(page["attempts"])
+            page["comparisons"] = _build_comparisons(
+                page["attempts"],
+                marks=job.get("hold_policy") in processing_policy.MARKED_WORD_POLICIES,
+            )
         else:
             page.pop("comparisons", None)
         page.update(

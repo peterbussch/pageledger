@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import functools
 import re
 import unicodedata
 from difflib import SequenceMatcher
@@ -15,6 +16,17 @@ _NUMBER = re.compile(rf"(?<!\w){_NUMBER_TOKEN}(?!\w)")
 _TOKEN = re.compile(rf"{_NUMBER_TOKEN}|\w+", re.UNICODE)
 
 
+@functools.cache
+def _marked_token() -> re.Pattern[str]:
+    """A number, or a word with its combining marks: vowel signs, viramas, points, accents."""
+    marks = "".join(
+        re.escape(chr(code))
+        for code in range(0x300, 0x20000)
+        if unicodedata.category(chr(code)).startswith("M")
+    )
+    return re.compile(rf"{_NUMBER_TOKEN}|(?:\w|[{marks}])+")
+
+
 def _normalise(text: str) -> str:
     return " ".join(unicodedata.normalize("NFC", text).split())
 
@@ -23,13 +35,19 @@ def _context(tokens: list[str], start: int, end: int, radius: int = 5) -> str:
     return " ".join(tokens[max(0, start - radius) : min(len(tokens), end + radius)])
 
 
-def compare_texts(left: str, right: str) -> dict:
-    """Compare two texts and return bounded word-level differences and numbers."""
+def compare_texts(left: str, right: str, *, marks: bool = False) -> dict:
+    """Compare two texts and return bounded word-level differences and numbers.
+
+    With ``marks``, a word keeps its combining marks, so readings that differ only in
+    a vowel sign or a point are different words. Without it, as jobs written before
+    hold policy 0.9 were compared, ``\\w`` splits a word at each mark and drops it.
+    """
     if not isinstance(left, str) or not isinstance(right, str):
         raise ValueError("Attempt texts must be strings")
     truncated = len(left) > MAX_TEXT_CHARS or len(right) > MAX_TEXT_CHARS
-    left_tokens = _TOKEN.findall(_normalise(left[:MAX_TEXT_CHARS]))
-    right_tokens = _TOKEN.findall(_normalise(right[:MAX_TEXT_CHARS]))
+    token = _marked_token() if marks else _TOKEN
+    left_tokens = token.findall(_normalise(left[:MAX_TEXT_CHARS]))
+    right_tokens = token.findall(_normalise(right[:MAX_TEXT_CHARS]))
     truncated = truncated or len(left_tokens) > MAX_TOKENS or len(right_tokens) > MAX_TOKENS
     left_tokens = left_tokens[:MAX_TOKENS]
     right_tokens = right_tokens[:MAX_TOKENS]
