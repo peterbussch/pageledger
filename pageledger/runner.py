@@ -899,7 +899,9 @@ def _run_pages(
                 unit = sorted(unknown_capped)[0]
                 stop = (
                     f"Budget cannot be checked before {page_id}: the adapter did not report "
-                    f"the {unit} an earlier page used, so max_{unit} cannot be enforced"
+                    f"the {unit} an earlier page used, so max_{unit} cannot be enforced. Set "
+                    "run.pricing for the adapter, or run.budget.unknown_usage: continue to go "
+                    "on without the check"
                 )
             if stop is not None:
                 failure_error = BudgetExceededError(stop)

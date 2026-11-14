@@ -29,7 +29,7 @@ class AppleVisionAdapter:
     deterministic: ClassVar[bool] = False
     input_types: ClassVar[tuple[str, ...]] = ("pdf",)
     output_types: ClassVar[tuple[str, ...]] = ("text",)
-    capabilities: ClassVar[tuple[str, ...]] = ("ocr", "page_image")
+    capabilities: ClassVar[tuple[str, ...]] = ("ocr", "page_image", "local")
 
     def __post_init__(self) -> None:
         if type(self.max_side) is not int or not 256 <= self.max_side <= 10000:

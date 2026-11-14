@@ -1452,7 +1452,10 @@ class _PaidTextAdapter(adapters_module.TextAdapter):
 def test_a_cap_on_unreported_usage_stops_before_the_next_request(tmp_path, monkeypatch, cap):
     monkeypatch.setattr(runner_module, "load_adapter", lambda *args: _PaidTextAdapter())
     source, config, out_dir = _budget_run(tmp_path, f"    {cap}")
-    with pytest.raises(BudgetExceededError, match="cannot be checked before doc_0001_page_0002"):
+    with pytest.raises(
+        BudgetExceededError,
+        match="cannot be checked before doc_0001_page_0002.*unknown_usage: continue",
+    ):
         run(inputs=[source], config_path=config, out_dir=out_dir, dry_run=False)
     assert [path.name for path in (out_dir / "raw").iterdir()] == ["doc_0001_page_0001.txt"]
     log = [json.loads(line) for line in (out_dir / "run.log").read_text().splitlines()]

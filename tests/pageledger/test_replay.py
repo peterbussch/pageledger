@@ -1859,3 +1859,12 @@ def test_recorded_profile_with_other_encoding_spelling_still_matches() -> None:
     recorded["runtime"]["python_version"] = "0.0.0"
     recorded["profile_sha256"] = profile_sha256(recorded)
     assert not profiles_match(local, recorded)
+
+
+def test_a_changed_adapter_version_is_named_when_replay_refuses() -> None:
+    from pageledger.replay import _identity_difference
+
+    baseline = {"adapter": "text", "version": "0.1", "capabilities": ["local"]}
+    local = {"adapter": "text", "version": "0.2", "capabilities": ["local"]}
+    message = _identity_difference(local, baseline)
+    assert "made with text version 0.1" in message and "has version 0.2" in message

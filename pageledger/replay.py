@@ -735,8 +735,7 @@ def _replay_bundle_in_process(
     local_extractor = _runtime_extractor_identity(adapter, adapter_options, None)
     if _identity_without_profile(local_extractor) != _identity_without_profile(baseline_extractor):
         raise ReplayError(
-            "extractor_identity_mismatch",
-            "Local adapter identity does not match the baseline",
+            "extractor_identity_mismatch", _identity_difference(local_extractor, baseline_extractor)
         )
     cloud = "cloud" in {str(value).casefold() for value in baseline_extractor["capabilities"]}
     try:
@@ -885,6 +884,26 @@ def _runtime_extractor_identity(
         "options": dict(options),
         "reproducibility_profile": profile,
     }
+
+
+def _identity_difference(local: dict[str, Any], baseline: dict[str, Any]) -> str:
+    """Why the adapter here is not the one the bundle was made with, in one sentence."""
+    message = "Local adapter identity does not match the baseline"
+    if local.get("adapter") == baseline.get("adapter"):
+        if local.get("version") != baseline.get("version"):
+            return (
+                f"{message}: the bundle was made with {baseline.get('adapter')} version "
+                f"{baseline.get('version')}, and this PageLedger has version "
+                f"{local.get('version')}, whose readings can differ, so it cannot replay it"
+            )
+        changed = sorted(
+            key
+            for key in ("deterministic", "input_types", "output_types", "capabilities", "options")
+            if local.get(key) != baseline.get(key)
+        )
+        if changed:
+            return f"{message}: its {', '.join(changed)} differ from the bundle's"
+    return message
 
 
 def _identity_without_profile(identity: dict[str, Any]) -> dict[str, Any]:
