@@ -166,6 +166,16 @@ class PageLedgerConfig:
         return normalized
 
     @property
+    def named_adapters(self) -> list[tuple[str, dict[str, Any]]]:
+        """Every adapter this config names, with the options it gives it."""
+        pairs = [(entry["adapter"], entry["adapter_options"]) for entry in self.adapter_order or []]
+        if self.adapter_order is None and self.adapter_name is not None:
+            pairs.append((self.adapter_name, self.adapter_options))
+        if self.classify_adapter is not None:
+            pairs.append((self.classify_adapter, self.classify_adapter_options))
+        return pairs
+
+    @property
     def named_code(self) -> list[str]:
         """Every adapter or hook this config names, built-in or ``module:object``."""
         names = [entry["adapter"] for entry in self.adapter_order or []]

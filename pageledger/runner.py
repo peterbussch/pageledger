@@ -9,7 +9,7 @@ import math
 import re
 import sys
 import time
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Iterable, Sequence
 from contextlib import ExitStack
 from datetime import datetime, timezone
 from pathlib import Path
@@ -26,12 +26,14 @@ from .adapters import (
     PdfTextAdapter,
     adapter_page_count,
     check_named_code,
+    check_named_endpoint,
     load_adapter,
     named_by_record,
     native_page_pixels,
     ocr_pdf_page_count,
     paginate,
     pdf_page_count,
+    trusted_endpoints,
 )
 from .aligner import ALIGNABLE_FORMATS, align_page, load_schema_spec
 from .artifacts import (
@@ -353,7 +355,12 @@ def run(
         return _run(**arguments, _checkpoint=Checkpoint(root))
 
 
-def resume(run_dir: Path, *, adapter_path: Path | None = None) -> dict[str, Any]:
+def resume(
+    run_dir: Path,
+    *,
+    adapter_path: Path | None = None,
+    trust_endpoints: Iterable[str] | None = None,
+) -> dict[str, Any]:
     """Continue verified pending work in place; never repeat an ambiguous request."""
     from .checkpoint import Checkpoint, read_record, writer_lock
 
@@ -394,12 +401,17 @@ def resume(run_dir: Path, *, adapter_path: Path | None = None) -> dict[str, Any]
         assert checkpoint.job is not None
         job = checkpoint.job
         snapshot = root / "config-snapshot.yml"
-        # The snapshot came with the run folder: code it names runs only from --adapter-path.
-        for spec in load_config(snapshot, validate_adapter=False).named_code:
+        # The snapshot came with the run folder: code it names runs only from --adapter-path,
+        # and pages go off this machine only to a server the user named.
+        recorded = load_config(snapshot, validate_adapter=False)
+        for spec in recorded.named_code:
             check_named_code(spec, "run", root, adapter_path)
+        endpoints = trusted_endpoints(trust_endpoints)
+        for name, options in recorded.named_adapters:
+            check_named_endpoint(name, options, "run", endpoints)
         # The checkpoint keeps the recorded paths as source identity; reads go
         # wherever the verified bytes are now (the source index may relocate them).
-        with named_by_record("run", root, adapter_path):
+        with named_by_record("run", root, adapter_path, endpoints):
             return _run(
                 inputs=[checkpoint.sources[item["path"]] for item in job["inputs"]],
                 config_path=snapshot,

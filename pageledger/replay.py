@@ -18,7 +18,7 @@ import sys
 import sysconfig
 import tempfile
 import uuid
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from importlib import metadata
 from pathlib import Path
 from typing import Any, cast
@@ -50,6 +50,8 @@ _WORKER_GENERIC_CODE = "replay_worker_failed"
 _WORKER_GENERIC_MESSAGE = "Replay worker failed without a valid result."
 # A whole run is replayed in one worker; adapters keep their own per-call timeouts.
 REPLAY_TIMEOUT_SECONDS = 6 * 3600
+# How replay hands the worker the model servers the user named.
+_ENDPOINTS_ENV = "PAGELEDGER_TRUST_ENDPOINTS"
 _WORKER_MAX_RESULT_BYTES = 1_048_576
 _WORKER_BOOTSTRAP = """\
 import runpy
@@ -578,8 +580,13 @@ def replay_bundle(
     out_dir: Path,
     *,
     adapter_path: Path | None = None,
+    trust_endpoints: Iterable[str] = (),
 ) -> dict[str, Any]:
-    """Replay a verified bundle in one fresh, isolated Python interpreter."""
+    """Replay a verified bundle in one fresh, isolated Python interpreter.
+
+    ``trust_endpoints`` are the model servers the user named (--trust-endpoint); the
+    worker reads them from its environment.
+    """
     root = _resolve_directory(bundle_dir, "bundle_path_invalid")
     requested_out = Path(out_dir).expanduser()
     if requested_out.exists() or requested_out.is_symlink():
@@ -633,6 +640,7 @@ def replay_bundle(
                     stderr=subprocess.DEVNULL,
                     check=False,
                     timeout=REPLAY_TIMEOUT_SECONDS,
+                    env={**os.environ, _ENDPOINTS_ENV: "\n".join(sorted(set(trust_endpoints)))},
                 )
             except subprocess.TimeoutExpired as exc:
                 raise ReplayError(
@@ -678,7 +686,14 @@ def _replay_bundle_in_process(
 
     if trusted_path is not None:
         sys.path.insert(0, str(trusted_path))
-    from .adapters import UntrustedCode, check_named_code, load_adapter, named_by_record
+    from .adapters import (
+        UntrustedCode,
+        check_named_code,
+        check_named_endpoint,
+        load_adapter,
+        named_by_record,
+        trusted_endpoints,
+    )
     from .aligner import align_run
     from .compare import compare_runs
     from .config import load_config
@@ -698,7 +713,11 @@ def _replay_bundle_in_process(
         # A bundle may come from anyone: code it names runs only from --adapter-path.
         for spec in config.named_code:
             check_named_code(spec, "bundle", root, trusted_path)
-        with named_by_record("bundle", root, trusted_path):
+        # ...and pages go off this machine only to a server the user named.
+        endpoints = [url for url in os.environ.get(_ENDPOINTS_ENV, "").split("\n") if url]
+        for name, options in config.named_adapters:
+            check_named_endpoint(name, options, "bundle", trusted_endpoints(endpoints))
+        with named_by_record("bundle", root, trusted_path, endpoints):
             adapter = load_adapter(adapter_name, adapter_options)
     except UntrustedCode as exc:
         raise ReplayError("adapter_not_trusted", str(exc)) from exc

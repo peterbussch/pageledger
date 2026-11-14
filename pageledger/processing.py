@@ -10,7 +10,7 @@ import math
 import re
 import shlex
 from collections import Counter
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterable, Iterator
 from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from contextvars import ContextVar
 from dataclasses import asdict
@@ -21,7 +21,13 @@ from uuid import uuid4
 import yaml
 
 from . import adjudication, corrections, processing_policy, runner
-from .adapters import PageLedgerDiagnostic, check_named_code, named_by_record
+from .adapters import (
+    PageLedgerDiagnostic,
+    check_named_code,
+    check_named_endpoint,
+    named_by_record,
+    trusted_endpoints,
+)
 from .checkpoint import (
     Checkpoint,
     atomic_bytes,
@@ -1883,26 +1889,34 @@ def resume_job(
     adapter_path: Path | None = None,
     raise_limits: dict[str, int | float] | None = None,
     progress: Progress | None = None,
+    trust_endpoints: Iterable[str] = (),
 ) -> dict:
     """Continue a job where it stopped; `progress` is called as process() calls it."""
     token = _progress.set(progress)
     try:
-        return _resume_job(job_dir, adapter_path, raise_limits)
+        return _resume_job(job_dir, adapter_path, raise_limits, trust_endpoints)
     finally:
         _progress.reset(token)
 
 
 def _resume_job(
-    job_dir: Path, adapter_path: Path | None, raise_limits: dict[str, int | float] | None
+    job_dir: Path,
+    adapter_path: Path | None,
+    raise_limits: dict[str, int | float] | None,
+    trust_endpoints: Iterable[str] = (),
 ) -> dict:
     root = job_dir.expanduser().resolve()
-    with writer_lock(root), named_by_record("job", root, adapter_path):
+    endpoints = trusted_endpoints(trust_endpoints)
+    with writer_lock(root), named_by_record("job", root, adapter_path, endpoints):
         job = _load(root)
         _refuse_relocated_resume(job, root)
         # A job folder may come from anyone: code it names runs only from --adapter-path,
-        # and is refused before anything in the job changes.
+        # pages go off this machine only to a server the user named, and either is
+        # refused before anything in the job changes.
         for spec in _named_code(job, root):
             check_named_code(spec, "job", root, adapter_path)
+        for name, options in _named_adapters(job, root):
+            check_named_endpoint(name, options, "job", endpoints)
         # Refuse changes in any retained attempt before starting a pending one.
         _refresh(job, root)
         if raise_limits:
@@ -1924,18 +1938,38 @@ def _resume_job(
         return _continue(job, root, adapter_path)
 
 
+def _job_configs(job: dict, root: Path) -> list[Any]:
+    """Every run config this job's files hold: each stage's, and each child run's snapshot."""
+    configs = []
+    for stage in job["stages"]:
+        paths = [_safe(root, stage["config_path"])]
+        snapshot = _safe(root, stage["run_path"]) / "config-snapshot.yml"
+        if snapshot.is_file():
+            paths.append(snapshot)
+        configs += [load_config(path, validate_adapter=False) for path in paths]
+    return configs
+
+
 def _named_code(job: dict, root: Path) -> list[str]:
     """The ``module:object`` adapters this job would import if resumed, as its files name them."""
     policy = job["policy"]
     names = [policy[name]["adapter"] for name in ladder(policy) if policy[name] is not None]
-    for stage in job["stages"]:
-        configs = [_safe(root, stage["config_path"])]
-        snapshot = _safe(root, stage["run_path"]) / "config-snapshot.yml"
-        if snapshot.is_file():
-            configs.append(snapshot)
-        for path in configs:
-            names += load_config(path, validate_adapter=False).named_code
+    for config in _job_configs(job, root):
+        names += config.named_code
     return sorted({name for name in names if ":" in name})
+
+
+def _named_adapters(job: dict, root: Path) -> list[tuple[str, dict]]:
+    """Every adapter this job would build if resumed, with the options its files give it."""
+    policy = job["policy"]
+    pairs = [
+        (policy[name]["adapter"], policy[name]["adapter_options"])
+        for name in ladder(policy)
+        if policy[name] is not None
+    ]
+    for config in _job_configs(job, root):
+        pairs += config.named_adapters
+    return pairs
 
 
 def review_job(

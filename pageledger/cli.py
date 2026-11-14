@@ -712,6 +712,13 @@ def build_parser() -> argparse.ArgumentParser:
         help="Folder to import custom adapters from (trusted code)",
     )
     resume_parser.add_argument(
+        "--trust-endpoint",
+        action="append",
+        default=[],
+        metavar="URL",
+        help=argparse.SUPPRESS,  # named by the refusal that needs it
+    )
+    resume_parser.add_argument(
         "--raise-limit",
         action="append",
         default=[],
@@ -890,6 +897,13 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         metavar="DIR",
         help="Folder to import the bundle's adapter from (trusted code)",
+    )
+    replay_parser.add_argument(
+        "--trust-endpoint",
+        action="append",
+        default=[],
+        metavar="URL",
+        help=argparse.SUPPRESS,  # named by the refusal that needs it
     )
     replay_parser.add_argument(
         "--json", action="store_true", dest="json_output", help="Print the result as JSON"
@@ -1340,7 +1354,12 @@ def _cmd_bundle(args: argparse.Namespace) -> int:
 
 
 def _cmd_replay(args: argparse.Namespace) -> int:
-    result = replay_bundle(args.bundle_dir, args.out, adapter_path=args.adapter_path)
+    result = replay_bundle(
+        args.bundle_dir,
+        args.out,
+        adapter_path=args.adapter_path,
+        trust_endpoints=args.trust_endpoint,
+    )
     if args.json_output:
         print(json.dumps(result, ensure_ascii=False, sort_keys=True))
     else:
@@ -1562,14 +1581,20 @@ def _cmd_resume(args: argparse.Namespace) -> int:
         progress = _Progress(show=not args.json_output)
         try:
             result = resume_job(
-                args.run_dir, adapter_path=args.adapter_path, raise_limits=raised, progress=progress
+                args.run_dir,
+                adapter_path=args.adapter_path,
+                raise_limits=raised,
+                progress=progress,
+                trust_endpoints=args.trust_endpoint,
             )
         finally:
             progress.clear()
     elif raised:
         raise ValueError("--raise-limit applies to document jobs made by pageledger process")
     else:
-        result = resume(args.run_dir, adapter_path=args.adapter_path)
+        result = resume(
+            args.run_dir, adapter_path=args.adapter_path, trust_endpoints=args.trust_endpoint
+        )
     if args.json_output:
         print(json.dumps(result, ensure_ascii=False, sort_keys=True))
     elif job and result.get("report"):
@@ -1738,12 +1763,6 @@ def _reading_line(source: Path, engine: str, options: dict | None) -> str:
     kind = source_kind(source)
     if kind == "text":
         how = "the text of each page, as it is"
-        try:
-            if b"\r" in source.read_bytes():
-                # Read as text, Windows and old Mac line endings become LF, as in corrections.
-                how += ", with its line endings made plain newlines"
-        except OSError:
-            pass
     elif kind == KIND:
         how = f"{ocr}, page by page" if ocr else "the page images, without OCR"
     else:
@@ -1962,6 +1981,33 @@ class _Progress:
             self.width = 0
 
 
+def _remote_endpoints(folder: Path) -> list[str]:
+    """The model servers off this machine that the job or run in ``folder`` names."""
+    import urllib.parse
+
+    from .config import load_config
+    from .vision import _on_this_machine
+
+    options: list[object] = []
+    try:
+        job = json.loads((folder / "job.json").read_text(encoding="utf-8"))["payload"]
+        options = [profile.get("adapter_options") for profile in job["policy"].values()]
+    except (OSError, ValueError, KeyError, TypeError, AttributeError):
+        try:
+            run = load_config(folder / "config-snapshot.yml", validate_adapter=False)
+            options = [opts for _, opts in run.named_adapters]
+        except (OSError, ValueError):
+            return []
+    urls = []
+    for option in options:
+        url = option.get("base_url") if isinstance(option, dict) else None
+        if isinstance(url, str) and url not in urls:
+            host = urllib.parse.urlsplit(url).hostname
+            if host and not _on_this_machine(host):
+                urls.append(url)
+    return urls
+
+
 def _interrupted(args: argparse.Namespace) -> str:
     """What an interrupt left, and how to go on."""
     command = args.command
@@ -1985,8 +2031,12 @@ def _interrupted(args: argparse.Namespace) -> str:
             f"{kept} --resume"
         )
     if (folder / "job.json").is_file() or (folder / "checkpoint.json").is_file():
-        # A custom adapter is found again only where it was found the first time.
+        # A custom adapter is found again only where it was found the first time, and a
+        # model server off this machine is used again only when named.
         kept = _given_options(args, ("--adapter-path", "adapter_path"))
+        kept += "".join(
+            f" --trust-endpoint {shlex.quote(url)}" for url in _remote_endpoints(folder)
+        )
         return (
             f"Interrupted. The pages read so far are kept in {folder}.\n"
             f"To continue: pageledger resume {shown}{kept}"

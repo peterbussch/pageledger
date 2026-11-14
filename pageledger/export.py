@@ -288,7 +288,7 @@ def _txt(report: dict, pages: list[dict], source: str) -> str:
             # The page's text could hold a line such as "--- Page 2 ---": its length
             # says exactly where it ends.
             text = page["text"]
-            count = text.count("\n") + 1
+            count = len(_LINE_BREAK.split(text))  # a reading keeps CRLF and lone CR
             lines.append(
                 f"Text: {len(text)} characters on {count} line{'' if count == 1 else 's'}, below"
             )

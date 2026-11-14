@@ -14,7 +14,8 @@ import subprocess
 import sys
 import tempfile
 import time
-from collections.abc import Callable, Iterator
+import urllib.parse
+from collections.abc import Callable, Iterable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from functools import lru_cache
@@ -193,7 +194,7 @@ def adapter_page_count(adapter: Any, source: Path) -> int:
 @dataclass(frozen=True)
 class TextAdapter:
     name: ClassVar[str] = "text"
-    version: ClassVar[str] = "0.1"
+    version: ClassVar[str] = "0.2"
     deterministic: ClassVar[bool] = True
     input_types: ClassVar[tuple[str, ...]] = ("text",)
     output_types: ClassVar[tuple[str, ...]] = ("text",)
@@ -337,7 +338,7 @@ class PdfOcrAdapter:
     max_render_pixels: int = _DEFAULT_MAX_RENDER_PIXELS
     _image_ppis: dict = field(default_factory=dict, init=False, repr=False, compare=False)
     name: ClassVar[str] = "pdf_ocr"
-    version: ClassVar[str] = "0.1"
+    version: ClassVar[str] = "0.2"
     deterministic: ClassVar[bool] = True
     input_types: ClassVar[tuple[str, ...]] = ("pdf",)
     output_types: ClassVar[tuple[str, ...]] = ("text",)
@@ -1383,6 +1384,8 @@ def check_adapter_name(name: str) -> None:
 
 def load_adapter(name: str, options: dict[str, Any] | None = None) -> Any:
     opts = dict(options or {})
+    if _RECORDS:
+        check_named_endpoint(name, opts, _RECORDS[-1][0], _ENDPOINTS[-1])
     if name == "text":
         adapter = _construct_builtin(TextAdapter, name, opts)
     elif name == "vision":
@@ -1507,16 +1510,55 @@ class UntrustedCode(ValueError):
 # leads PageLedger to import must live in the --adapter-path folder the user named.
 # Process-wide rather than a contextvar, so a job's worker threads see it too.
 _RECORDS: list[tuple[str, Path, Path | None]] = []
+# The model servers the user named for the record being continued (--trust-endpoint).
+_ENDPOINTS: list[frozenset[str]] = []
 
 
 @contextmanager
-def named_by_record(what: str, record: Path, adapter_path: Path | None) -> Iterator[None]:
-    """Hold custom code that ``record`` (a job, run or bundle) names to ``adapter_path``."""
+def named_by_record(
+    what: str,
+    record: Path,
+    adapter_path: Path | None,
+    endpoints: Iterable[str] | None = None,
+) -> Iterator[None]:
+    """Hold custom code that ``record`` (a job, run or bundle) names to ``adapter_path``,
+    and the servers it sends pages to to ``endpoints`` (inherited when None)."""
     _RECORDS.append((what, record.expanduser().resolve(), adapter_path))
+    _ENDPOINTS.append(trusted_endpoints(endpoints))
     try:
         yield
     finally:
         _RECORDS.pop()
+        _ENDPOINTS.pop()
+
+
+def trusted_endpoints(endpoints: Iterable[str] | None) -> frozenset[str]:
+    """The servers the user named, or those of the record being continued around this one."""
+    if endpoints is None:
+        return _ENDPOINTS[-1] if _ENDPOINTS else frozenset()
+    return frozenset(url.rstrip("/") for url in endpoints)
+
+
+def check_named_endpoint(
+    name: str, options: dict[str, Any], what: str, endpoints: frozenset[str]
+) -> None:
+    """Refuse a record whose vision adapter sends pages (and the API key its settings
+    name) to a server off this machine that the user did not name with --trust-endpoint."""
+    if name != "vision":
+        return
+    base_url = options.get("base_url")
+    if not isinstance(base_url, str):
+        return  # the adapter refuses it when built
+    from .vision import _on_this_machine
+
+    host = urllib.parse.urlsplit(base_url).hostname
+    if (host and _on_this_machine(host)) or base_url.rstrip("/") in endpoints:
+        return
+    raise UntrustedCode(
+        f"This {what} sends page images, and any API key its settings name, to {base_url}, "
+        "a server it names itself. PageLedger sends them there only if you name it: if you "
+        f"trust that server, pass --trust-endpoint {base_url}."
+    )
 
 
 def check_named_code(spec: str, what: str, record: Path, adapter_path: Path | None) -> None:

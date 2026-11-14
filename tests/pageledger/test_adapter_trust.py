@@ -38,7 +38,9 @@ def _cli(*args: str, cwd: Path) -> subprocess.CompletedProcess:
     )
 
 
-def _evil_job(tmp_path: Path, marker: Path, spec: str = "os:makedirs") -> Path:
+def _evil_job(
+    tmp_path: Path, marker: Path, spec: str = "os:makedirs", options: dict | None = None
+) -> Path:
     source = tmp_path / "book.txt"
     source.write_text("first page\fsecond page\n", encoding="utf-8")
     made = _cli("process", str(source), "--out", str(tmp_path / "job"), "--json", cwd=tmp_path)
@@ -53,7 +55,9 @@ def _evil_job(tmp_path: Path, marker: Path, spec: str = "os:makedirs") -> Path:
     config_path = job_dir / stage["config_path"]
     config = yaml.safe_load(config_path.read_text(encoding="utf-8"))
     config["run"]["adapter"] = spec
-    config["run"]["adapter_options"] = {"name": str(marker)} if spec == "os:makedirs" else {}
+    config["run"]["adapter_options"] = (
+        options if options is not None else {"name": str(marker)} if spec == "os:makedirs" else {}
+    )
     config_path.write_text(yaml.safe_dump(config), encoding="utf-8")
     stage["config_sha256"] = file_digest(config_path)
     for page in job["pages"]:
@@ -95,7 +99,9 @@ def _evil_run(tmp_path: Path, marker: Path) -> Path:
     return out
 
 
-def _evil_bundle(tmp_path: Path, marker: Path) -> Path:
+def _evil_bundle(
+    tmp_path: Path, marker: Path, spec: str = "os:makedirs", options: dict | None = None
+) -> Path:
     from pageledger.replay import bundle_run
 
     source = tmp_path / "book.txt"
@@ -111,8 +117,8 @@ def _evil_bundle(tmp_path: Path, marker: Path) -> Path:
 
     snapshot = bundle / "baseline" / "config-snapshot.yml"
     data = yaml.safe_load(snapshot.read_text(encoding="utf-8"))
-    data["run"]["adapter"] = "os:makedirs"
-    data["run"]["adapter_options"] = {"name": str(marker)}
+    data["run"]["adapter"] = spec
+    data["run"]["adapter_options"] = options if options is not None else {"name": str(marker)}
     snapshot.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
     manifest_path = bundle / "baseline" / "manifest.json"
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
@@ -229,3 +235,66 @@ def test_a_trusted_module_cannot_lead_to_code_it_only_imports(tmp_path, spec):
     resumed = _cli("resume", str(job_dir), "--adapter-path", str(mine), cwd=tmp_path)
     assert resumed.returncode != 0
     assert not marker.exists()
+
+
+def test_a_crlf_text_is_kept_as_read_and_a_typed_correction_counts_only_its_words(tmp_path):
+    from pageledger import corrections
+
+    source = tmp_path / "crlf.txt"
+    source.write_bytes(b"one two\r\nthree four\rfive\fsecond page\r\n")
+    made = _cli("process", str(source), "--out", str(tmp_path / "job"), "--json", cwd=tmp_path)
+    assert made.returncode == 0, made.stderr
+    raws = sorted((tmp_path / "job").glob("attempts/*/raw/doc_0001_page_0001.txt"))
+    assert raws[0].read_bytes() == b"one two\r\nthree four\rfive"
+    assert _cli("verify", str(tmp_path / "job"), cwd=tmp_path).returncode == 0
+    exported = _cli(
+        "export", str(tmp_path / "job"), "--out", str(tmp_path / "book.txt"), cwd=tmp_path
+    )
+    assert exported.returncode == 0, exported.stderr
+    assert "on 3 lines" in (tmp_path / "book.txt").read_text(encoding="utf-8", newline="")
+    text, words = corrections.prepare("one two\r\nthree four\rfive", "one TWO\nthree four\nfive", 1)
+    assert text == "one TWO\nthree four\nfive"
+    assert words == {"changed": 1, "added": 0, "removed": 0}
+
+
+SERVER = "https://pages.example.org/v1"
+VISION = {"base_url": SERVER, "model": "m", "allow_remote": True, "env_key": "MY_KEY"}
+
+
+def test_a_received_job_cannot_send_pages_to_a_server_it_names(tmp_path):
+    job_dir = _evil_job(tmp_path, tmp_path / "unused", "vision", VISION)
+    before = (job_dir / "job.json").read_bytes()
+    refused = _cli("resume", str(job_dir), cwd=tmp_path)
+    assert refused.returncode != 0
+    assert f"--trust-endpoint {SERVER}" in refused.stderr
+    assert (job_dir / "job.json").read_bytes() == before
+    named = _cli("resume", str(job_dir), "--trust-endpoint", SERVER, cwd=tmp_path)
+    assert "--trust-endpoint" not in named.stderr
+
+
+def test_a_received_bundle_cannot_send_pages_to_a_server_it_names(tmp_path):
+    bundle = _evil_bundle(tmp_path, tmp_path / "unused", "vision", VISION)
+    refused = _cli("replay", str(bundle), "--out", str(tmp_path / "again"), cwd=tmp_path)
+    assert refused.returncode != 0
+    assert f"--trust-endpoint {SERVER}" in refused.stderr
+    named = _cli(
+        "replay",
+        str(bundle),
+        "--out",
+        str(tmp_path / "b"),
+        "--trust-endpoint",
+        SERVER,
+        cwd=tmp_path,
+    )
+    assert "--trust-endpoint" not in named.stderr
+
+
+def test_a_server_on_this_machine_needs_no_naming(tmp_path):
+    from pageledger.adapters import check_named_endpoint, named_by_record
+
+    check_named_endpoint("vision", {"base_url": "http://127.0.0.1:8080/v1"}, "job", frozenset())
+    with named_by_record("job", tmp_path, None):
+        from pageledger.adapters import UntrustedCode, load_adapter
+
+        with pytest.raises(UntrustedCode, match="--trust-endpoint"):
+            load_adapter("vision", VISION)
