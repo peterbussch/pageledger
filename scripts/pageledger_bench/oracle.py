@@ -111,6 +111,8 @@ def validate_run(run_dir: Path, workload: WorkloadSpec) -> ValidationReceipt:
         for error in errors
     )
     loaded = None if unsafe_inventory else _load_artifacts(root, schemas, errors)
+    if loaded is not None:
+        _validate_byte_forms(root, loaded, errors)
 
     if loaded is not None and workload_valid:
         _validate_inventory(inventory, workload, errors)
@@ -162,6 +164,7 @@ def canonical_run(run_dir: Path) -> dict[str, Any]:
     schemas = _load_frozen_schemas(load_frozen_manifest(), errors)
     loaded = _load_artifacts(root, schemas, errors)
     if loaded is not None:
+        _validate_byte_forms(root, loaded, errors)
         _validate_canonical_inventory(inventory, loaded, errors)
         _validate_generation_zero_identity(
             loaded["manifest.json"],
@@ -1351,6 +1354,37 @@ def _validate_log(
         }
         if event != expected:
             _add(errors, "run_log_record_mismatch", f"run.log differs for {_page_id(index)}")
+
+
+def _json_bytes(value: Any) -> bytes:
+    text = json.dumps(value, ensure_ascii=False, indent=2, sort_keys=True, allow_nan=False)
+    return (text + "\n").encode("utf-8")
+
+
+def _jsonl_bytes(entries: list[Any]) -> bytes:
+    return "".join(
+        json.dumps(entry, sort_keys=True, allow_nan=False) + "\n" for entry in entries
+    ).encode("utf-8")
+
+
+def _yaml_bytes(value: Any) -> bytes:
+    text = yaml.dump(value, Dumper=yaml.SafeDumper, allow_unicode=True, sort_keys=False)
+    return text.encode("utf-8")
+
+
+def _validate_byte_forms(root: Path, data: dict[str, Any], errors: list[OracleError]) -> None:
+    """Each artifact's bytes are the one serialization of its parsed content, so a
+    re-dumped file with the same data (another indent, flow style, ASCII escapes) fails."""
+    expected: list[tuple[str, bytes]] = [
+        *((name, _json_bytes(data[name])) for name in _JSON_SCHEMAS),
+        *((name, _jsonl_bytes(data[name])) for name in _JSONL_SCHEMAS),
+        *((name, _yaml_bytes(data[name])) for name in ("route-map.yml", "rerun-manifest.yml")),
+        *((f"normalized/{name}", _json_bytes(entry)) for name, entry in data["normalized"]),
+        ("audit.md", render_audit_markdown(data["audit.json"]).encode("utf-8")),
+    ]
+    for name, wanted in expected:
+        if (root / name).read_bytes() != wanted:
+            _add(errors, "artifact_bytes_noncanonical", f"{name} is not in its written form", name)
 
 
 def _canonical_loaded(root: Path, data: dict[str, Any]) -> dict[str, Any]:
