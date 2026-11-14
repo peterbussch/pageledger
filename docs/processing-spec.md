@@ -59,7 +59,13 @@ configured processing finished; human review may still be needed.
 
 For text files, set `processing.local_ocr` to `null`, as
 `init --engine none` does. Form-feed characters separate
-pages.
+pages. A text file must be UTF-8; `process` refuses any other before the job
+exists (and `run` fails its pages with `unreadable_text`). Each page's
+reading keeps the file's bytes exactly, Windows (CRLF) and old Mac (CR) line
+endings included, so its SHA-256 is that of the page in the source. Two things
+are not page text: a byte-order mark at the start of the file, which is dropped,
+and a form feed at the very end (with only white space after it), which ends
+the last page rather than starting an empty one.
 
 The source can also be an image file or a folder of page images, read as one
 document (see [a folder of page scans](process-a-collection.md#page-images)).
@@ -123,7 +129,15 @@ its recovery records.
 
 `--adapter-path DIR` on `process` or `resume` loads custom adapters. Use
 `process --review FILE` to supply source-bound human decisions before extraction,
-or `review --apply` to record them afterward. All job commands accept `--json`.
+or `review --apply` to record them afterward. Every job command except `export`
+accepts `--json`.
+
+Resuming runs the adapters the job's own files name. Built-in adapters load as
+always; a custom one (`module:object`) runs only from the folder you pass with
+`--adapter-path`, and a model server off this machine is used only when you name
+it with `--trust-endpoint URL`. So a job someone sent you cannot run code or send
+pages anywhere you did not choose; see
+[jobs, runs and bundles you receive](share-and-cite.md#jobs-runs-and-bundles-you-receive).
 
 ## Policy and configuration
 
@@ -133,9 +147,10 @@ ordered stages `local_text`, `local_ocr`, `image`, and optional `second_opinion`
 and two optional stages between local OCR and the image stage, `second_ocr` and
 `local_image` (see [the ladder](#the-ladder-a-second-ocr-engine-and-a-local-model)).
 Each stage is an adapter profile with `adapter`, optional `adapter_options`,
-and optional `prompt`. Set an optional stage to `null` to disable it;
-`local_text` is required. Local text defaults to `pdf_text` for PDFs or `text`
-otherwise. PDF OCR defaults to `pdf_ocr`.
+and optional `prompt`. Left out, `local_text` is chosen by the source (`pdf_text`
+for PDFs and page images, `text` otherwise), and `local_ocr` is `pdf_ocr` for PDFs
+and page images; set `local_ocr: null` for no OCR. `local_text` cannot be
+`null`. Set any other stage to `null`, or leave it out, to disable it.
 Image stages are disabled until configured with a positive
 `processing.limits.max_image_pages`. An image stage requires an enabled local
 OCR stage; a second opinion requires an image stage. Invalid combinations fail
@@ -183,7 +198,7 @@ processing:
     adapter_options:
       base_url: http://127.0.0.1:8080/v1
       model: YOUR_LOCAL_MODEL
-      timeout_seconds: 900
+      timeout_seconds: 600    # the most the vision adapter allows
   image:                 # the paid reader, called only when the local one is not enough
     adapter: vision
     adapter_options:
@@ -230,7 +245,11 @@ an explicit `local_ocr` stage.
 ## Compare engines on a page
 
 When a page has readings from more than one engine, the job compares them word
-by word, after NFC normalization and with whitespace collapsed. Each comparison
+by word, after NFC normalization and with whitespace collapsed. Under hold
+policy 0.9 a word keeps its combining marks (vowel signs, viramas, Hebrew
+points, stress accents), so two Hindi readings that differ only in their vowel
+signs no longer count as agreeing; two words that differ only in a mark count as
+different. Jobs under earlier hold policies compare as they did. Each comparison
 records the two attempts, their word agreement from 0 to 1, up to 20 passages
 where they differ and up to 20 numbers that differ. Comparisons are stored with
 the page in `job.json` and the report.
@@ -619,6 +638,8 @@ processing:
     adapter: pdf_text
   local_ocr:
     adapter: rapidocr
+    adapter_options:
+      rec_model_dir: models/cyrillic-rec   # a PP-OCRv5 recognizer; see the engine recipes
   image:
     adapter: vision
     adapter_options:
@@ -633,7 +654,7 @@ processing:
       confidence with [?] after it, and an illegible passage as [illegible].
   escalate_on: [hold, always]   # the model reads every page
   contest:
-    rules: ru-print-0.1
+    rules: ru-print-0.3
   lexicon:                      # optional; lets the glyph rule judge words
     provider: pymorphy3
     language: ru
@@ -974,7 +995,7 @@ still its own child run, planned in page order and recorded in `job.json`
 before it starts, so a job interrupted mid-batch resumes as before and its
 attempts, selections and reports are those of a job without `batch`. After the
 first failure in a batch nothing new starts; pages already in flight finish and
-are kept. Budgets count the whole batch before it starts. A job with
+are kept, and the pages not yet started are read afterwards, not dropped. Budgets count the whole batch before it starts. A job with
 `max_tokens` or `max_cost_usd` set ignores `batch`, because those limits are
 checked against usage measured after each page.
 
@@ -1237,7 +1258,9 @@ byte-order mark at the start of a correction file marks the file as UTF-8 and
 is dropped. A file that is not UTF-8 is refused, and so is a correction that is
 empty (decide `blank` instead) or identical to the reading it started from
 apart from line endings (decide `accept`). A change of spacing alone is a
-correction.
+correction. The engine's reading keeps its own line endings, so a correction of
+a page from a Windows text file is stored with LF while the reading beside it
+keeps CRLF; the word counts compare words, not line endings.
 
 `review --apply` writes the text once to
 `corrections/<page_id>-<sha256>.txt` and records the page as `reviewed_text`
@@ -1289,7 +1312,8 @@ reading, in words; then, under "From the record", the page's state and hold
 codes and each reading's attempt ID, outcome and warning codes. Then its image
 beside the selected text, the source page and any image a model was sent, and the
 other readings, each shown in full and compared word by word with the selected
-text; a reading with no letters or digits is listed as empty and not shown. On a
+text; a reading with no text at all is listed as empty and not shown, while one
+made only of symbols (`* * *`) is shown and can be chosen. On a
 contested page, the open
 spans are marked in the reading they were found in and listed with what each
 engine read. Transcripts are shown exactly, with their line breaks and spacing;

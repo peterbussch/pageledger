@@ -18,10 +18,11 @@ server and nothing from the network. It changes nothing in the job. Page
 images need Poppler's `pdftoppm`; add `--images none` to write the view
 without them, or `--images held` for only the pages that need a person.
 
-Run the same command again later and it says whether the view there still shows
-the job as it is: if nothing has changed, it says the view is up to date and
-where it is; once decisions have been applied, it says the view shows the job as
-it was, and asks for a new folder with `--out DIR` (or remove the old one).
+Run the same command again later (with or without `--images none`) and it says
+whether the view there still shows the job as it is: if nothing has changed, it
+says the view is up to date and where it is; once decisions have been applied or
+the job resumed, it says the view shows the job as it was, and asks for a new
+folder with `--out DIR` (or remove the old one).
 
 ## What the view shows
 
@@ -39,8 +40,9 @@ Russian does with pre-1918 letters" (at most two causes there). Under each page:
 - the page image beside the selected text;
 - the other readings, each compared word by word with the selected text: words
   only the selected text has are struck, the other reading's are underlined. A
-  reading with no letters or digits, such as the empty text layer of a scan, is
-  listed as empty; the own text of a page image, which is always empty, is
+  reading with no text at all, such as the empty text layer of a scan, is
+  listed as empty (one made only of symbols, such as `* * *`, is shown and can be
+  chosen); the own text of a page image, which is always empty, is
   left out (the record keeps it).
 
 ### When the flawed reading is not the selected one
@@ -90,7 +92,12 @@ never edited, with who changed it and when.
 
 ## Apply the decisions
 
-Your choices stay in the browser until you download them. Choose "Download my
+Your choices stay in the browser until you download them. The view keeps them
+in the browser's local storage, so closing the page loses nothing. Other HTML
+files opened from your disk in the same browser may be able to read that
+storage (Chrome treats every local file as one site), so on a shared computer
+apply your decisions when you finish, and do not open HTML files you were sent
+while a review is under way. Choose "Download my
 decisions (review.json)". Your browser saves the file where it saves downloads,
 usually your Downloads folder, and may name it `review (1).json` if a
 `review.json` is there already. Apply it by that path, first as a dry run:
@@ -116,7 +123,11 @@ for you to read: each leads with words ("Text may be missing or damaged in the
 reading (coverage_defect)", "Tesseract OCR (eng): the first words … (2407
 characters; local_ocr-0060:doc_0001_page_0060)"); applying the sheet reads only
 `row_id`, `page_number`, `decision` and `note`. Type a decision in each row's `decision` column (the codes in the table
-above), save the sheet as CSV in the same folder, and apply it the same way:
+above), save the sheet in the same folder as "CSV UTF-8 (comma delimited)",
+and apply it the same way. Another kind of CSV can use semicolons or tabs, or
+lose letters outside English. PageLedger refuses a sheet with semicolons or tabs,
+or one that is not UTF-8, and says how to save it; but letters a save has already
+turned into `?` cannot be noticed, so check a note in Cyrillic after saving.
 
 ```bash
 pageledger review jobs/book --apply jobs/book-review/review.csv --reviewer "Your Name"

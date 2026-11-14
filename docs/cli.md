@@ -173,19 +173,24 @@ saves downloads), a decisions file
 (or, without corrections, as that `review.csv`), and recorded only by `--apply`
 with the downloaded file's path.
 The folder is `JOB_DIR-review` beside the job unless `--out` names another. If
-that folder exists and is a review view of the job as it is now (the sheet
-`review` would write now has the same rows and bindings), `review` says it is
-up to date and where it is, and exits 0; if the job has changed since (decisions
-applied, say), it says so and asks for `--out DIR` (exit 1); any other folder
-there is refused as before. With `--out DIR`, an existing folder is always
-refused.
+that folder exists and is a review view written from the job as it is now (the
+view records the SHA-256 of the `document.json` it was made from), `review` says
+it is up to date and where it is, and exits 0; if the job has changed since
+(decisions applied, a resume), it says so and asks for `--out DIR` (exit 1); any
+other folder there is refused. So running the same command again is safe,
+`--images none` included. `--images all` or `held` asks for a new view, as does
+`--out DIR`, and an existing folder is then refused.
 `--images` renders a page image for every page (`all`, the default), only the
 pages that need a person (`held`), or none (`none`, which needs no Poppler).
 See [Review beside the page image](processing-spec.md#review-beside-the-page-image).
 
 `--sheet FILE` writes only the CSV of the job's pages, to fill in with a
 spreadsheet, its binding beside it, and `review-decisions.txt`, which lists the
-decisions and the readings each page can use. The cells a person reads lead with
+decisions and the readings each page can use. It refuses a sheet or binding that
+already exists, and a sheet inside the job's folder. If `review-decisions.txt`
+there belongs to another sheet or is someone's own file, the guide is named after
+the sheet instead (`r2-decisions.txt` for `r2.csv`), and `review --sheet` prints
+its path. The cells a person reads lead with
 words, the code or ID last: `disposition` ("Text may be missing or damaged in the
 reading (coverage_defect)"), `attempt_summary` (the reading's name, its first
 words, its length and its ID) and `review_reasons`. Applying a sheet reads only
@@ -225,8 +230,10 @@ with each page's review state and the reading that produced it. Without
 `--format`, the format follows the end of `--out`: `.txt`, `.md`, `.jsonl`, and
 `.xml` or `.tei` for TEI; any other ending is a usage error (exit 2). A job that does
 not verify is refused. `--reviewed-only` keeps only pages with a human review
-receipt. See [Export document text](export.md) for the formats and for citing an
-export.
+receipt. `--out` may not be inside the job, the job's source, a folder or a
+link, or an existing file that is not an earlier export of the same job; writing
+over your own earlier export is allowed. See [Export document text](export.md)
+for the formats and for citing an export.
 
 ## run
 
@@ -323,7 +330,15 @@ created with `process`, in its existing directory. For job recovery
 and processing limits, see [document processing](processing-spec.md). For
 individual-run recovery rules, see the [checkpoint contract](checkpoint-spec.md).
 `--adapter-path DIR` adds a trusted adapter import directory; `--json` emits a
-machine-readable result. `--raise-limit LIMIT=VALUE` applies only to a paused
+machine-readable result. Resuming runs the adapters the folder's own records
+name. A built-in adapter loads as always, but a custom one (`module:object`)
+runs only if its module is in a folder given with `--adapter-path`, outside the
+job or run, and the object is defined there; otherwise `resume` refuses before
+anything changes. A model server off this machine that the records name is used
+only when given with `--trust-endpoint URL` (one per server; not shown in
+`--help`, and named in the refusal); a server on this machine needs nothing.
+Give either only for a folder whose origin you trust: see
+[jobs, runs and bundles you receive](share-and-cite.md#jobs-runs-and-bundles-you-receive). `--raise-limit LIMIT=VALUE` applies only to a paused
 job; see [one budget for the job](processing-spec.md#one-budget-for-the-job).
 If a source file has moved, list its new path in a
 [source index](checkpoint-spec.md#moved-source-files) (`PAGELEDGER_SOURCE_INDEX`
@@ -370,7 +385,7 @@ Flags:
 | Flag | Effect |
 |---|---|
 | `--config FILE` | Optional taxonomy, action mapping, thresholds, probe adapter, hook, and minimum confidence. |
-| `--out FILE` | Required route-map YAML path; the evidence sidecar is written beside it. |
+| `--out FILE` | Required route-map YAML path; the evidence sidecar is written beside it. Refused if either file already exists. |
 | `--from-run DIR` | Use a parent run's manifest, routes, quality, provenance, and raw artifacts instead of probing inputs. |
 | `--adapter SPEC` | Probe adapter name or `module.path:Object`; overrides `classify.adapter`. |
 | `--adapter-path DIR` | Add a directory to `sys.path` for custom probe adapters or classifier hooks. |
@@ -479,6 +494,15 @@ run alone). A folder with neither, or with both, is refused with an error that
 names these files (exit 1), as are a file and a missing path. `--json` prints
 the report the job or run check produces; the two have different fields.
 
+A pass prints:
+
+```text
+Status: pass
+The record is intact: every file matches what was recorded. This does not check that the text is right.
+```
+
+A failure names the file that does not match what was recorded.
+
 For a job, `verify` checks the source, retained attempts, selections, and
 report, in whatever directory the job is now. A job that did not finish (its
 `job.json` still says `processing`, because it was interrupted or is still
@@ -504,6 +528,28 @@ as `source_relocated`; malformed or inconsistent ledger artifacts are errors
 and produce exit code 1. Verification
 checks coherence, not extraction accuracy, and is not a replacement for the
 JSON Schema test suite.
+
+Some files of a run are worked out from others, so `verify` works them out again
+from the bound readings and the config and compares: each `normalized/` page
+(aligned again from its raw reading with the schema in force), each page's grade
+in `quality.jsonl`, and the review and quarantine queues in `audit.json`. An edit
+to one of them fails with `normalized_evidence_mismatch`,
+`normalized_artifact_missing`, `grade_evidence_mismatch`,
+`quality_evidence_mismatch` (a quality line that no longer matches what the
+engine reported) or `audit_queue_mismatch`. A run whose provenance lost a page's
+source identity or route fails with `source_identity_missing` or
+`route_evidence_mismatch`, and an unreadable config snapshot with
+`config_snapshot_invalid`. The rules for these files have changed over time, so
+a run written by an older PageLedger whose rules differ from today's gets the
+warning `derived_evidence_differs`, naming the file and the version, and still
+passes. Text-derived quality signals (repetition, language, the comparison with
+a PDF's text layer) are not worked out again.
+
+Hidden files under `raw/` or `normalized/`, such as the `.DS_Store` and `._*`
+files Finder or a copy to an exFAT drive leaves, are named in the warning
+`stray_file` and otherwise ignored. An unreadable source file is the warning
+`source_unreadable`. A job reports its own warnings only; a stage's warnings,
+such as `stray_file`, show with `verify JOB/attempts/<stage>`.
 
 For page images, verification also checks that the recorded page list hashes
 to the source identity and that each page's provenance names the image listed
@@ -542,8 +588,9 @@ normalized exact denylist keys in mappings under `adapter_options` or
 `hook_options` in the config snapshot and persisted extractor options. It does
 not scan values, arbitrary fields or text, sources, raw artifacts, or logs.
 Warning: do not treat a bundle as scrubbed of secrets or personal data. A
-missing optional reproducibility profile does not block ordinary runs, but it means
-deterministic replay cannot claim exactness.
+deterministic local adapter that records no reproducibility profile (such as
+`alto`, `rapidocr` or `indra`) can still be bundled; its replay compares the
+output as evidence (`evidence_compared`) and never calls it exact.
 
 ## replay
 
@@ -554,9 +601,14 @@ pageledger replay BUNDLE_DIR --out RUN_DIR --adapter-path TRUSTED_DIR --json
 
 Validates the untrusted directory bundle, checks its baseline and inventory,
 loads the locally available adapter named by the bundle, and runs the ordinary
-PageLedger extraction path against the bundled sources. `--adapter-path DIR`
-is the only optional override and is a locally trusted import path; it must
-not be equal to, inside, or above the bundle. `--out DIR` is required and must
+PageLedger extraction path against the bundled sources. A built-in adapter loads
+as always. A custom one (`module:object`) runs only if its module is in the
+folder given with `--adapter-path DIR`, a locally trusted import path that must
+not be equal to, inside, or above the bundle, and the object is defined there;
+otherwise replay stops with `adapter_not_trusted` before anything is imported.
+A model server off this machine that the bundle names is used only when given
+with `--trust-endpoint URL` (not shown in `--help`). See
+[jobs, runs and bundles you receive](share-and-cite.md#jobs-runs-and-bundles-you-receive). `--out DIR` is required and must
 not already exist. `--json` emits the result and `replay.json` records baseline/local
 extractor linkage, profile match, raw equal/different/missing counts, and the
 comparison object.
@@ -565,7 +617,9 @@ these counts are evidence, not an authenticity claim. See the [replay
 boundary](capabilities-and-limits.md#verified-replay-boundary).
 
 See the [command index](#command-index) for exit codes. `--json` includes
-replay `outcome` and structured `error`/`code` fields on failure.
+replay `outcome` and structured `error`/`code` fields on failure. A replay that
+has not finished after 6 hours is stopped with `replay_timeout`; any other
+failure inside the replay names the kind of error that ended it.
 
 ## fetch
 
@@ -587,7 +641,12 @@ only the missing canvases; it needs the same URL as the first fetch, and
 `--pages`, if given, must repeat the first fetch's selection. Without `--json`, progress goes to stderr and the result, each
 `iiif_below_native` warning and each missing canvas to stdout; `--json`
 prints a summary with `status`, `fetched`, `fetched_now`, `missing`,
-`warnings` and `stopped_by`. See [Fetch page images from a IIIF
+`warnings` and `stopped_by`. A URL whose query carries something that looks
+like a key, token or password (`token=`, `api_key=`, `signature=` and the like)
+is refused before any request, because it would be written into the fetch
+record and the job's report. A server that refuses the connection, a host name
+that cannot be found and a certificate that fails are not retried: the fetch
+stops and says which it was. See [Fetch page images from a IIIF
 server](iiif.md) for what is fetched and the limits.
 
 ## inspect
@@ -622,11 +681,14 @@ retains its existing field names for machine consumers.
 
 ```bash
 pageledger init --out processing.yml
+# or, for Russian and English print:
 pageledger init --lang rus+eng --out processing.yml
+# or, for RapidOCR:
 pageledger init --engine rapidocr --model-dir models/cyrillic-rec --out processing.yml
 ```
 
-Writes a config to edit, to the screen or to `--out FILE`. By default it is a
+Writes a config to edit, to the screen or to `--out FILE`. `--out` never
+replaces an existing file: choose another name or move the old one away. By default it is a
 commented `processing.yml` for `process`: a
 local OCR stage after the source's own text, `max_image_pages: 0` so no paid
 stage can run, and the optional stages (`second_ocr`, `local_image`, `image`,
@@ -669,10 +731,11 @@ common languages installed for `--lang`, and which optional engines are not
 installed; and one line saying that `doctor --all` shows every detail. With
 `--all`, or with `--config`, the details follow: Python runtime, optional packages, external
 commands with versions and install hints, installed Tesseract language
-packs (the valid values for `run.adapter_options.lang`), and whether cloud
-OCR/VLM keys are present, without printing their values. With `--config`,
-doctor also reports every environment variable that config names through an
-adapter's `env_key`, such as a gateway's own key.
+packs (the valid values for `--lang` and an adapter's `lang`), and whether
+cloud OCR/VLM keys are set, without printing their values. With `--config`,
+doctor reports only the keys that config names through an adapter's
+`env_key`, such as a gateway's own key, or says it names none. A missing config
+file or one that is not valid YAML is named in a sentence.
 
 ## Earlier command names
 
@@ -733,7 +796,8 @@ Configuration sections and defaults:
 | `run.adapter` | string | Optional: `text`, `pdf_text`, `pdf_ocr`, `rapidocr`, `indra`, `vision`, `alto`, or a custom adapter's `module:object` import path. |
 | `run.adapter_options` | mapping | Empty; adapter-specific. Cannot accompany `adapter_order`. |
 | `run.adapter_order` | non-empty list | Optional chain; entries are adapter strings or `{adapter, adapter_options}` mappings. Mutually exclusive with `adapter` and top-level `adapter_options`. |
-| `run.budget.max_pages`, `max_tokens`, `max_usd` | non-negative integer, integer, number | No cap unless set; these limits are also used by `process` only when placed under `processing.limits`. |
+| `run.budget.max_pages`, `max_tokens`, `max_usd` | non-negative integer, integer, number | No cap unless set. `max_pages` counts only the pages routed to the adapter. `process` does not read `run.budget`; its limits are `processing.limits` (below). |
+| `run.budget.unknown_usage` | string | `stop`: under `max_tokens` or `max_usd`, a page whose adapter did not report that unit stops the run before the next request, since the cap can no longer be checked. `continue` reads on. Adapters that declare themselves local are exempt. |
 | `run.budget.warn_pages`, `warn_tokens`, `warn_usd` | non-negative integer, integer, number | No absolute warning unless set. |
 | `run.budget.warn_at_percent` | number 0–100 | No percentage warning unless set; relative to a configured cap. |
 | `run.pricing.cost_per_page`, `cost_per_1k_tokens` | non-negative numbers | No configured rate. Used only when adapter-reported cost is absent. |
@@ -749,14 +813,23 @@ Configuration sections and defaults:
 | `schema.columns[].name` | string | Required. `type` is `string` (default), `integer`, or `number`; `required` is boolean (default false); `aliases` is a list of strings (default empty). |
 | `schema.checks[]` | list | Optional entries require `name` and `expression`; `tolerance` is a non-negative number (default 0). Expressions allow one `==` and `+`, `-`, `*` over declared numeric columns and numeric constants. |
 | `schema.quality.minimum_required_column_coverage`, `low_confidence_threshold` | numbers 0–1 | Optional grading floors. |
-| `processing.local_text`, `local_ocr`, `image`, `second_opinion` | stage mappings or null | `local_text` required; OCR and image stages default disabled. Each stage has `adapter`, `adapter_options` (mapping, empty by default), and `prompt` (non-empty string). `second_opinion` requires `image`; image requires `local_ocr` and positive `max_image_pages`. |
+| `processing.local_text`, `local_ocr`, `second_ocr`, `local_image`, `image`, `second_opinion` | stage mappings or null | Left out, `local_text` is chosen by the source (`pdf_text` for PDFs and page images, `text` otherwise) and cannot be `null`; `local_ocr` is `pdf_ocr` for PDFs and page images, and `null` turns OCR off; the other stages are off. Each stage has `adapter`, `adapter_options` (mapping, empty by default), and `prompt` (non-empty string). `second_ocr`, `local_image` and `image` need a `local_ocr` stage; `second_opinion` needs `image`; `image` needs a positive `max_image_pages` and `local_image` a positive `max_local_image_pages`. See [the ladder](processing-spec.md#the-ladder-a-second-ocr-engine-and-a-local-model). |
 | `processing.limits.max_attempt_pages`, `max_tokens`, `max_cost_usd` | non-negative integer, integer, number | No limit unless set. |
 | `processing.limits.max_image_pages` | non-negative integer | `0`. Must be positive to enable image stage. |
+| `processing.limits.max_local_image_pages` | non-negative integer | `0`; accepted only with a `local_image` stage, and must then be positive. Not counted by `max_image_pages`. |
+| `processing.escalate_on` | list | `[hold]`. Adds `rough`, `disagreement` or `always` to what makes a page climb; must include `hold`, each once. See [climb on roughness and disagreement](processing-spec.md#climb-on-roughness-and-disagreement). |
+| `processing.lexicon` | mapping | Optional; `provider: pymorphy3` with `language: ru`, or `provider: wordlist` with `path`; `rough_below` (a share above 0, at most 1, default 1) only with the `rough` trigger. Needs the `rough` trigger or `contest`. |
+| `processing.contest` | mapping | Optional; `{rules}`, one of `ru-print-0.1`, `ru-print-0.2`, `ru-print-0.3`, `latin-print-0.1`. Needs an `image` or `local_image` stage. See [contest a model's reading](processing-spec.md#contest-a-models-reading). |
 | `processing.tiling` | mapping | Optional; `stages` (the stages read in tiles: `[image]`, the only one supported so far), `layout` (`local_text`, `local_ocr` or `second_ocr`, a stage whose adapter reports a layout), `min_line_pixels` (positive integer, default `32`), `max_tiles` (1–99, default `24`). Requires `processing.limits.max_image_requests`. See [Read dense pages in tiles](processing-spec.md#read-dense-pages-in-tiles). |
 | `processing.limits.max_image_requests` | positive integer | Required with `processing.tiling` and accepted only then: the image requests (one per tile) the paid stages may send. |
 | `processing.links.article`, `.custody` | non-empty strings | Optional caller-supplied links; PageLedger does not verify them. |
 | `processing.benchmark` | mapping | Optional; `{stage, every_nth_page}` requires an enabled stage and positive integer interval. |
 | `processing.batch` | mapping | Optional; `{pages, concurrent}` positive integers, `concurrent` no more than `pages`. Rebuilds the job once per batch and reads `image` and `second_opinion` pages concurrently; ignored when `max_tokens` or `max_cost_usd` is set. |
+
+A new run refuses a key under `run.budget` it does not know, since a misspelt
+cap would silently be no cap; a misspelt key under `run.pricing`, `run.retry`,
+`run.grading` or `classify` is warned about. A config recorded by an earlier run
+still loads, so old runs stay readable.
 
 Built-in `pdf_ocr` adapter options are `dpi` (integer 50–1200, default 300),
 `lang` (Tesseract language codes separated by `+`, default `eng`) and

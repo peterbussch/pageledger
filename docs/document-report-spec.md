@@ -26,7 +26,9 @@ reviewed as text or blank. For meanings and suggested actions, see the
 | `pages` | The selected-page inventory, including pages without attempts or selected text |
 | `usage` | `attempt_pages`, `image_calls`, `tokens`, `cost_usd`, and `cost_known`; optional `known_cost_usd`, `tokens_known`, `paid_cost_known`, `paid_tokens_known`, `local_image_calls` and `image_requests` (jobs with `processing.tiling`) |
 | `limits` | The job's recorded execution limits |
-| `stage_accounting` | Optional configured-stage attempt counts; a stage with zero pages includes why it did not run. Absent from older reports, which still verify with their original fields. |
+| `limits_history` | Optional. Each limit raised by `resume --raise-limit`, oldest first: `limit`, `previous`, `value` and `at`. Absent until a limit is raised. |
+| `hold_policy` | The rules the job's holds were set by: `"0.6"`, `"0.6.1"`, `"0.8"` or `"0.9"` (see [selection and escalation](#selection-and-escalation)). Absent from jobs written before 0.6. |
+| `stage_accounting` | Optional. For each configured stage, `stage`, `pages_read` and, when no page reached it, `reason`. Absent from older reports, which still verify with their original fields. |
 | `engines` | Report format 0.9. For each configured stage, the engine it ran, copied from the job's policy so that `report.md` and the review view can name each reading by what made it: `adapter`, and `lang` for `pdf_ocr` (its Tesseract language, `eng` when the config names none) or `model` for `vision` (the model the stage asked for; the model the endpoint served is in the attempt's image evidence). No other adapter option is copied. Absent from older reports. |
 | `links` | Nullable `article` and `custody` references supplied by the job |
 | `relocations` | Optional. Each `review --apply` or `adjudicate --decisions` change made to the job outside the directory it was written in: `root` (where it was made), `command` (`review-job`, the earlier name of `review --apply`, or `adjudicate`), and `at`. Rendered as a "Changed elsewhere" line, which names `review --apply` for `review-job`. Absent until such a change. |
@@ -86,10 +88,34 @@ readings' text is at hand, so that the report can name every hold's evidence; it
 does not change what the job selects or holds. Absent when no reading is held,
 and from reports in older formats.
 
+Other page fields, each present only when it applies:
+
+- `comparisons`: one entry per pair of readings the job compared, with
+  `left_attempt`, `right_attempt`, `agreement_ratio` (0 to 1), up to 20 differing
+  `spans` and 20 `number_differences`, and `truncated` when there were more (see
+  [compare engines on a page](processing-spec.md#compare-engines-on-a-page)).
+- `triggers`: why the page climbed although its reading was not held, each with
+  the `trigger` (`rough`, `disagreement`, `always`, `ocr_layer` or
+  `uncorroborated`) and the `attempt` it judged. Jobs since 0.8 write it on
+  every page, empty when nothing fired.
+- `contested`, in jobs with `processing.contest`: the spans `artifact` and its
+  `sha256`, the `base_attempt` (the reader) and `witness_attempt` (the literal
+  reading), span counts by `kinds`, and how many are `open`, settled `by_rule` or
+  settled `by_review` (by a high-confidence adjudication); `superseded` lists the
+  coverage, confidence and blank holds set aside, each with its `reason` and
+  `attempt`, because the page no longer rests on that reading.
+- `adjudications`: the adjudication receipts, oldest first (schema `0.2` or
+  `0.3`), each bound to the spans artifact it answers; `edition`: the selected
+  reading with its adjudicated changes applied, once no span is open, as an
+  `artifact`, its `sha256` and its `base_attempt`. The attempt itself is never
+  edited.
+- `source_image_sha256`: for page images, the hash of the page's own image.
+
 Each attempt records `attempt_id`, `stage`, `outcome`, nullable `raw_artifact`
 and `raw_sha256`, `format`, `warnings`, `classification`, nullable `alignment`,
-`usage`, and nullable `failure`. Stages are `local_text`, `local_ocr`, `image`,
-and `second_opinion`. Outcomes are `completed`, `failed`, `outcome_unknown`,
+`usage`, nullable `failure`, and `adapter_capabilities`, the capabilities the
+adapter declared (such as `local` or `embedded_text`). Stages are `local_text`,
+`local_ocr`, `second_ocr`, `local_image`, `image` and `second_opinion`. Outcomes are `completed`, `failed`, `outcome_unknown`,
 and `response`. A retained response awaiting completion is still uncertain.
 Failed partial outputs remain linked as attempt evidence and cannot be selected.
 Child-run attempts also retain `run_path`, `run_id`, `page_id`, `page_number`,
@@ -164,14 +190,24 @@ multisets cannot clear changed column associations. A successful comparison is
 not proof of fidelity to the source.
 
 Dispositions are `pending`, `unreviewed_text`, `coverage_defect`,
-`low_confidence`, `numeric_column_conflict`, `blank_candidate`, `reviewed_blank`, `reviewed_text`,
+`low_confidence`, `numeric_column_conflict`, `engine_disagreement`,
+`numeric_disagreement`, `unconfirmed_model_output`, `contested`,
+`adjudicated_text`, `blank_candidate`, `reviewed_blank`, `reviewed_text`,
 `illustration`, `handwriting`, `unreadable`, `source_defect`, `provider_failure`,
-and `outcome_unknown`. Empty extraction is a `blank_candidate`, not confirmed
+and `outcome_unknown`. The engine comparison sets the second three (see
+[compare engines on a page](processing-spec.md#compare-engines-on-a-page)), and
+contested jobs the last two (see
+[contest a model's reading](processing-spec.md#contest-a-models-reading)). Empty extraction is a `blank_candidate`, not confirmed
 visual blankness. A latest failed/unknown attempt takes precedence in the
 displayed disposition; earlier selected text and review reasons remain available.
 
 `next_action` is the next stage name, `review`, or `none`. Defective candidates
-advance through the stage sequence. Clean candidates and numerical disagreements
+advance through the stage sequence. Under hold policy 0.9 a page climbs when
+none of its readings is clean, whichever is shown first, unless a typeset text
+layer is kept (no later reading could replace it); a stage the job does not
+configure is no next step, so a held page with nothing above it records
+`review`, and a local reader that failed with nothing after it leaves
+`provider_failure` on the page. Clean candidates and numerical disagreements
 await review. Source defects, illustration classifications, and unknown/failed
 outcomes stop automatic escalation. A bound human receipt sets `next_action` to
 `none`; only the receipt can establish `reviewed_text` or `reviewed_blank`.
@@ -429,8 +465,9 @@ codes.
 The words for every code come from one table, `pageledger/wording.py`, which
 [warnings.md](warnings.md#in-plain-words) repeats. The report of a real
 three-page job, three pages of an 1877 book scanned by the Internet Archive
-(the first blank, the others carrying the scan's earlier OCR layer, which runs
-words together), read with Tesseract in English:
+(a blank page, the title page and the copyright page, the last two carrying the
+scan's earlier OCR layer, which runs words together), read with Tesseract in
+English:
 
 ```markdown
 # book.pdf: document job report
@@ -440,7 +477,8 @@ Finished: 3 pages read; 3 need a person.
 Source: [book.pdf][source]; 3 of its 3 pages selected, 3 read.
 
 - Need a person: 3 pages (1-3):
-  - The selected text is Tesseract OCR (eng); the PDF's own text (an earlier OCR), the only other reading, has words run together, so their comparison does not count and nothing confirms the selected text: 2 pages (2-3).
+  - Tesseract OCR (eng) has very little text; the same is true of the PDF's own text (an earlier OCR): 1 page (3).
+  - The selected text is Tesseract OCR (eng); the PDF's own text (an earlier OCR), the only other reading, has very little text, so their comparison does not count and nothing confirms the selected text: 1 page (2).
   - No reading found text, or one came back empty: the page may be blank: 1 page (1).
 
 Next: in this job's folder, `pageledger review .` writes the review view, where you check the 3 pages that need a person, each beside its page image, and record what you decide.
@@ -450,7 +488,7 @@ Next: in this job's folder, `pageledger review .` writes the review view, where 
 - On 2 pages (2-3), nothing confirms the selected text: an earlier OCR, which could have, has a flaw of its own.
   - Check each page against its image in the review view, where both readings are shown: an OCR reading with no warning of its own can still be wrong, and an earlier OCR with a flaw of its own can have those words right.
   - For a whole book of such pages, add a second OCR engine (`second_ocr` in the config; `pageledger init` writes it as a commented block), so that a second reading can confirm the first.
-  - Why these pages are held: docs/processing-spec.md, under Hold policy 0.9, "What holding for the layer's warnings costs".
+  - Why these pages are held: [Hold policy 0.9](https://github.com/peterbussch/pageledger/blob/v0.9.0/docs/processing-spec.md#hold-policy-09), under "What holding for the layer's warnings costs".
 
 These warnings hold no page, but they bear on how far to trust the text.
 
@@ -463,16 +501,16 @@ Pages that need a person come first. The review view (`pageledger review .` in t
 | Page | Held for | Selected text | Review |
 | --- | --- | --- | --- |
 | 1 | No reading found text, or one came back empty: the page may be blank. | none | not checked |
-| 2 | The selected text is Tesseract OCR (eng); the PDF's own text (an earlier OCR), the only other reading, has words run together, so their comparison does not count and nothing confirms the selected text. | [Tesseract OCR (eng)](<attempts/local_ocr-0002/raw/doc_0001_page_0002.txt>) | not checked |
-| 3 | The selected text is Tesseract OCR (eng); the PDF's own text (an earlier OCR), the only other reading, has words run together, so their comparison does not count and nothing confirms the selected text. | [Tesseract OCR (eng)](<attempts/local_ocr-0003/raw/doc_0001_page_0003.txt>) | not checked |
+| 2 | The selected text is Tesseract OCR (eng); the PDF's own text (an earlier OCR), the only other reading, has very little text, so their comparison does not count and nothing confirms the selected text. | [Tesseract OCR (eng)](<attempts/local_ocr-0002/raw/doc_0001_page_0002.txt>) | not checked |
+| 3 | Tesseract OCR (eng) has very little text; the same is true of the PDF's own text (an earlier OCR). | [Tesseract OCR (eng)](<attempts/local_ocr-0003/raw/doc_0001_page_0003.txt>) | not checked |
 
 ## For the record
 
-Everything below is in document.json, of which this report is a rendering. The codes in backticks are explained in PageLedger's docs/warnings.md.
+Everything below is in document.json, of which this report is a rendering. The codes in backticks are explained in [PageLedger's warnings](https://github.com/peterbussch/pageledger/blob/v0.9.0/docs/warnings.md).
 
-- Job: `job_bad2f2dca0fa4fe6a33c9baf2ffadbaa`, created 2026-11-11T06:11:09Z; hold policy 0.9; report format 0.9.
+- Job: `job_a6945f679fb74564b87d292a8c2e27de`, created 2026-11-14T01:10:12Z; hold policy 0.9; report format 0.9.
 - Source: [../../book.pdf][source]
-- Source SHA-256: `64735b18c469f64dad4d3cb15ce67af05c7784007319bf25fa83d8c6c18110d1`
+- Source SHA-256: `0a1b6e3288b7f3dccddad4368ce46e84f526746b9c5d17142d5fd31e5fcc2ea3`
 - Read by: the `local_text` stage, the PDF's own text (`pdf_text`); the `local_ocr` stage, Tesseract OCR (eng) (`pdf_ocr`).
 - Pages: 3 selected of 3 in the source; 3 read; 2 with selected text; 3 not yet reviewed as text or blank (`unresolved_pages`).
 
@@ -486,22 +524,23 @@ Each page's number in the source, its state and every hold the job recorded; the
   - The PDF's own text: [local_text:doc_0001_page_0001](<attempts/local_text/raw/doc_0001_page_0001.txt>) completed, `empty_text`.
   - Tesseract OCR (eng): [local_ocr-0001:doc_0001_page_0001](<attempts/local_ocr-0001/raw/doc_0001_page_0001.txt>) completed, `empty_text`.
 - Page 2: `coverage_defect`; held for `coverage_defect`.
-  - Hold: `coverage_defect` from `joined_text` on `local_text:doc_0001_page_0002`: the PDF's own text (an earlier OCR) has words run together.
-  - The PDF's own text (an earlier OCR): [local_text:doc_0001_page_0002](<attempts/local_text/raw/doc_0001_page_0002.txt>) completed, `ocr_text_layer`, `joined_text`.
+  - Hold: `coverage_defect` from `sparse` on `local_text:doc_0001_page_0002`: the PDF's own text (an earlier OCR) has very little text.
+  - The PDF's own text (an earlier OCR): [local_text:doc_0001_page_0002](<attempts/local_text/raw/doc_0001_page_0002.txt>) completed, `ocr_text_layer`.
   - Tesseract OCR (eng): [local_ocr-0002:doc_0001_page_0002](<attempts/local_ocr-0002/raw/doc_0001_page_0002.txt>) completed, selected.
-  - Compared `local_text:doc_0001_page_0002` and `local_ocr-0002:doc_0001_page_0002`: 2% of words agree; not counted, because `local_text:doc_0001_page_0002` is held itself.
+  - Compared `local_text:doc_0001_page_0002` and `local_ocr-0002:doc_0001_page_0002`: 24% of words agree; not counted, because `local_text:doc_0001_page_0002` is held itself.
 - Page 3: `coverage_defect`; held for `coverage_defect`.
-  - Hold: `coverage_defect` from `joined_text` on `local_text:doc_0001_page_0003`: the PDF's own text (an earlier OCR) has words run together.
-  - The PDF's own text (an earlier OCR): [local_text:doc_0001_page_0003](<attempts/local_text/raw/doc_0001_page_0003.txt>) completed, `ocr_text_layer`, `joined_text`.
+  - Hold: `coverage_defect` from `sparse` on `local_text:doc_0001_page_0003`: the PDF's own text (an earlier OCR) has very little text.
+  - Hold: `coverage_defect` from `sparse` on `local_ocr-0003:doc_0001_page_0003`: Tesseract OCR (eng) has very little text.
+  - The PDF's own text (an earlier OCR): [local_text:doc_0001_page_0003](<attempts/local_text/raw/doc_0001_page_0003.txt>) completed, `ocr_text_layer`.
   - Tesseract OCR (eng): [local_ocr-0003:doc_0001_page_0003](<attempts/local_ocr-0003/raw/doc_0001_page_0003.txt>) completed, selected.
-  - Compared `local_text:doc_0001_page_0003` and `local_ocr-0003:doc_0001_page_0003`: 2% of words agree, 1 number differs; not counted, because `local_text:doc_0001_page_0003` is held itself.
+  - Compared `local_text:doc_0001_page_0003` and `local_ocr-0003:doc_0001_page_0003`: 34% of words agree, 1 number differs; not counted, because `local_text:doc_0001_page_0003` is held itself.
 
 ### How the job ran
 
 | Stage | Pages read | Tokens | Seconds |
 | --- | --- | --- | --- |
 | `local_text` | 3 | not reported | 0 |
-| `local_ocr` | 3 | not reported | 9.2 |
+| `local_ocr` | 3 | not reported | 3.7 |
 
 Readings sent on to the next stage for a reason other than a hold, by trigger (a page can be sent on more than once): `ocr_layer` 2.
 
@@ -523,7 +562,7 @@ PageLedger records what it knows of the source file; it does not preserve or rem
 
 ### Files
 
-- Transcript: [transcript.md](<transcript.md>), SHA-256 `3158f345166bd66d99490ca3203c30dac176567200dd0c41b51126d2604cef07`
+- Transcript: [transcript.md](<transcript.md>), SHA-256 `d60a48ebadc41d2aafa015db8877a737bcc92d5ef175169bc2b1dff2257ec0df`
 - Next action recorded by the job: Check the pages against the source, those that need a person first, and record decisions with pageledger review.
 
 [source]: <../../book.pdf>
@@ -533,9 +572,9 @@ The status line comes first because it changes what the rest means. The groups
 under it count pages, and a page held for two causes is named under both. The
 table says, for each page, what holds it and which reading is its text; the
 record says the same with every code and ID, so a reader can look the codes up
-in [warnings.md](warnings.md) and follow each ID to its reading. Pages 2 and 3
-are held although Tesseract's reading carries no warning: the earlier OCR, the
-only other reading, runs its words together, so nothing confirms Tesseract's.
+in [warnings.md](warnings.md) and follow each ID to its reading. Page 2 is
+held although Tesseract's reading carries no warning: the earlier OCR, the only
+other reading, has a flaw of its own, so nothing confirms Tesseract's.
 
 ### Older formats
 

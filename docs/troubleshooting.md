@@ -94,7 +94,7 @@ custom adapters that use the same failure codes.
 | `MODEL_NETWORK_ERROR` | Nothing answers at `base_url`. | Start the server, or correct its host and port; `curl {base_url}/models` should answer. |
 | `MODEL_HTTP_ERROR` | The server answered with an error, shown as its HTTP status: often a `base_url` without its `/v1`, a model name the server does not know, or a rejected key (401, 403). | Compare `base_url` and `model` with the names `{base_url}/models` lists, and check the key. |
 | `MODEL_UNAVAILABLE` | The variable that `env_key` names is not set. | Set it in the shell that runs PageLedger. |
-| `MODEL_QUOTA` | A rate limit or an exhausted quota (HTTP 402 or 429). | Wait, or use another route. PageLedger sends one page at a time. |
+| `MODEL_QUOTA` | A rate limit or an exhausted quota (HTTP 402 or 429). | Wait, or use another route. A job with `processing.batch` sends up to `concurrent` image pages at once: lower `concurrent` if the provider limits requests per minute. Otherwise PageLedger sends one page at a time. |
 | `MODEL_TIMEOUT` | No answer within `timeout_seconds`. | A local model can need longer on a large page: raise `timeout_seconds`, up to 600, or lower `max_image_side`. |
 | `MODEL_OUTPUT_TRUNCATED` | The reading reached `max_tokens`: the model spent it reasoning, looped, or the page is very long. | See [models that reason before answering](vision-adapter.md#models-that-reason-before-answering) and [time, heat and loops](vision-adapter.md#local-models-time-heat-and-loops). |
 | `MODEL_CONTENT_FILTERED`, `MODEL_RECITATION` | The provider declined the page. | Read that page with another engine or by hand. |
@@ -112,8 +112,9 @@ halted source-container failure; check the `job.json` failure details and
 replace the source only if you can establish it is a valid, authorized copy.
 
 When reading a damaged PDF, pypdf may report that it repaired structural
-objects. PageLedger summarizes these notices on stderr and keeps other pypdf
-warnings visible.
+objects. PageLedger summarizes these notices on stderr in one line, and does the
+same for pypdf's notices that it needs the optional `fontTools` package to
+decode a font fully; other pypdf warnings stay visible.
 
 ## `unsupported_image` or `malformed_image`
 
@@ -124,13 +125,35 @@ message names a command that converts it. Convert the folder, then run the conve
 what PageLedger records. `malformed_image` names a damaged or truncated file;
 replace it with a good copy. Either stops the command before any page is read.
 
+## A text file is "not UTF-8" (`unreadable_text`)
+
+A text source must be UTF-8. `process` refuses another file before the job
+exists ("is not a PDF, a page image or UTF-8 text"); in a run the page fails with
+`unreadable_text`, naming the first byte that cannot be read as UTF-8. Open the
+file in a text editor, save it with the encoding UTF-8, and read it again. PageLedger does not guess another encoding, because a wrong
+guess would change letters without saying so.
+
+## "This job names its own adapter" or "a server it names itself"
+
+`resume` and `replay` refuse to run Python code, or to send page images to a
+model server off this machine, that a job, run or bundle names in its own files,
+unless you name that code's folder with `--adapter-path` or the server with
+`--trust-endpoint`. The refusal comes before anything changes, so the folder is
+as it was. If the folder is your own, or you trust where it came from and that
+code or server, run the command again with the option the message gives;
+otherwise do not. See
+[jobs, runs and bundles you receive](share-and-cite.md#jobs-runs-and-bundles-you-receive).
+
 ## `render_limit` or `render_dpi_capped`
 
 `render_dpi_capped` is a page warning, not a failed render: the page was
 rendered below the requested DPI to remain within `max_render_pixels`. Check
-the effective DPI in provenance. `render_limit` means fitting the page under
+the effective DPI in provenance. When the same page also has `render_upsampled`,
+the render already holds more pixels than the scan, so raising the cap adds
+nothing: ignore the DPI warning. `render_limit` means fitting the page under
 the configured pixel cap would require less than 72 DPI. Consider splitting the
-page upstream or, if memory allows, increasing `max_render_pixels` in
+page upstream or, if memory allows, increasing `max_render_pixels`: in a job
+under `processing.local_ocr.adapter_options`, in a run under
 `run.adapter_options`. See [page size and rendering](ocr-options.md#page-size-and-rendering).
 
 ## "It resumes only where it was written"
@@ -144,11 +167,14 @@ Move it back to the folder the message names to resume it.
 
 A job that judges words with a word list (`processing.lexicon` with
 `provider: wordlist`) records the list's path and SHA-256. `resume` and
-`verify` refuse the job when the file at that path is missing or different
-(`This job judged words with wordlist:...`): restore the recorded file. A new
-list is read only by a new job. `cannot read the word list`, `has no words`
-and `is not UTF-8 text` mean the file named in the config is not a plain UTF-8
-list of one word per line.
+`verify` refuse the job when the file at that path has changed (`This job
+judged words with the word list /path/words.txt (SHA-256 3f2a9c…); the installed
+lexicon is …`) or is gone (`processing.lexicon cannot read the word list …`):
+restore the recorded file. A new list is read only by a new job. `cannot read
+the word list`, `has no words` and `is not UTF-8 text` on a new job mean the
+file named in the config is not a plain UTF-8 list of one word per line. A job
+that judges words with `pymorphy3` is refused the same way when another version
+of it or its dictionary is installed: install the recorded versions.
 
 ## An `alto` name template is refused
 
@@ -195,7 +221,9 @@ paid request is safe to repeat when its outcome is unknown. See
 ## `verify` reports a problem
 
 Verification checks whether the retained files agree with their records and
-hashes; it does not judge the text. A failure names the file and what is wrong.
+hashes; it does not judge the text. A pass says so on its second line: `The
+record is intact: every file matches what was recorded. This does not check that
+the text is right.` A failure names the file and what is wrong.
 Do not edit generated files to silence it. Keep a copy of the folder,
 investigate whether a file was changed, left out or copied incompletely, and
 verify again after restoring the exact file; otherwise keep the failure as part
@@ -217,6 +245,10 @@ source is now rather than a fault in the record:
 | `source_changed` | For a run only: the source no longer matches what the run read; for page images, each image that changed, went missing or was added is named. A job whose source changed fails instead. |
 | `carrier_not_reproduced` | The PDF PageLedger builds from page images came out differently, which means another PageLedger version wrote it; the images match. |
 | `iiif_snapshot_incomplete`, `iiif_record_changed`, `iiif_snapshot_grown` | The IIIF snapshot was incomplete when read, its fetch record has changed since, or a later `fetch --resume` added images; see [process the snapshot](iiif.md#process-the-snapshot). |
+
+| `stray_file` | For a run: a hidden file under `raw/` or `normalized/`, such as the `.DS_Store` or `._*` files Finder or a copy to an exFAT drive leaves. It is ignored. |
+| `source_unreadable` | The source is there but could not be read (for example, no permission). |
+| `derived_evidence_differs` | For a run written by an older PageLedger: a normalized page, grade or queue worked out again by today's rules differs from what that version recorded. The file and version are named. |
 
 Other bytes at the source's recorded path fail verification.
 
