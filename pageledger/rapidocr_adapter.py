@@ -17,6 +17,8 @@ import shutil
 import subprocess
 import tempfile
 import time
+import unicodedata
+from collections.abc import Iterable
 from dataclasses import dataclass
 from functools import cached_property
 from pathlib import Path
@@ -37,7 +39,7 @@ class RapidOCRAdapter:
     reading_order: str = "rows"
     render_timeout_seconds: int = 120
     name: ClassVar[str] = "rapidocr"
-    version: ClassVar[str] = "0.1"
+    version: ClassVar[str] = "0.2"
     deterministic: ClassVar[bool] = True
     input_types: ClassVar[tuple[str, ...]] = ("pdf",)
     output_types: ClassVar[tuple[str, ...]] = ("text",)
@@ -190,7 +192,7 @@ class RapidOCRAdapter:
                     "y1": max(ys),
                 }
             )
-        content = assemble(lines, reading_order=self.reading_order)
+        content, right_to_left_rows = _assemble(lines, self.reading_order)
         layout = None if size is None else _layout(lines, *size)
         if self.reading_order == "rows" and _multi_column_rows(lines):
             warnings = [*warnings, "multi_column_rows"]
@@ -215,6 +217,7 @@ class RapidOCRAdapter:
                 f"sha256:{self._recognizer_sha256}; keys-sha256:{self._recognizer_keys_sha256}; "
                 f"scale-to={self.max_side}"
                 + ("; reading-order=columns" if self.reading_order == "columns" else "")
+                + (f"; right-to-left-rows={right_to_left_rows}" if right_to_left_rows else "")
             ),
             warnings=warnings,
             usage={
@@ -249,13 +252,38 @@ def assemble(lines: list[dict[str, Any]], reading_order: str = "rows") -> str:
     (recursive XY-cut), so the columns of a journal page are read one after
     the other instead of line by line across the gutter.
     """
+    return _assemble(lines, reading_order)[0]
+
+
+def _assemble(lines: list[dict[str, Any]], reading_order: str) -> tuple[str, int]:
+    """The text, and how many rows were written right to left."""
     if not lines:
-        return ""
+        return "", 0
     if reading_order == "columns":
         heights = sorted(line["h"] for line in lines)
         gap = max(heights[len(heights) // 2], 1.0)
-        return "\n".join(_rows(block) for block in _xy_cut(lines, gap))
+        blocks = [_rows(block) for block in _xy_cut(lines, gap)]
+        return "\n".join(text for text, _ in blocks), sum(count for _, count in blocks)
     return _rows(lines)
+
+
+def right_to_left(texts: Iterable[str]) -> bool:
+    """Whether ``texts``, in the engine's or the file's order, read right to left.
+
+    As in the Unicode bidirectional algorithm, the first letter with a strong
+    direction decides: Hebrew or Arabic script makes the row right to left,
+    a Latin, Cyrillic or Greek letter left to right; digits and punctuation
+    have no say. Engines give a line's text in reading order but place lines
+    and words by their boxes, so such a row is read from its right-hand end.
+    """
+    for text in texts:
+        for character in text:
+            kind = unicodedata.bidirectional(character)
+            if kind in ("R", "AL"):
+                return True
+            if kind == "L":
+                return False
+    return False
 
 
 def _gaps(spans: list[tuple[float, float]], minimum: float) -> list[float]:
@@ -386,12 +414,21 @@ def _row_groups(lines: list[dict[str, Any]]) -> list[list[dict[str, Any]]]:
     return rows
 
 
-def _rows(lines: list[dict[str, Any]]) -> str:
-    """Write each visual row left to right, its lines joined by " | "."""
-    return "\n".join(
-        " | ".join(item["text"] for item in sorted(row, key=lambda item: item["cx"]))
-        for row in _row_groups(lines)
-    )
+def _rows(lines: list[dict[str, Any]]) -> tuple[str, int]:
+    """Write each visual row in its reading direction, its lines joined by " | ".
+
+    A row that reads right to left (``right_to_left``, over its lines in the
+    engine's order) is written from its right-hand end, and counted.
+    """
+    position = {id(line): index for index, line in enumerate(lines)}
+    texts, count = [], 0
+    for row in _row_groups(lines):
+        found = sorted(row, key=lambda item: position[id(item)])
+        backwards = right_to_left(item["text"] for item in found)
+        count += backwards
+        ordered = sorted(row, key=lambda item: item["cx"], reverse=backwards)
+        texts.append(" | ".join(item["text"] for item in ordered))
+    return "\n".join(texts), count
 
 
 def _multi_column_rows(lines: list[dict[str, Any]]) -> bool:

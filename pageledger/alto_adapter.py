@@ -16,7 +16,10 @@ the page image's file name without its extension, so ``{stem}.xml`` finds
 The text is built from words, never from ``TextLine`` grouping, because ALTO lines
 can run across columns. Words are kept as printed (``CONTENT``, never
 ``SUBS_CONTENT``); a ``HYP`` element adds its printed hyphen to the word before
-it. Text is not Unicode-normalised, as with every other adapter; comparisons
+it. A row that reads right to left (its first strong letter, in the file's
+order, is Hebrew or Arabic script) is written from its right-hand end, its words
+in the file's order, which ALTO gives in reading order; the column order stays
+left to right. Text is not Unicode-normalised, as with every other adapter; comparisons
 normalise when they compare.
 """
 
@@ -37,7 +40,7 @@ from xml.parsers import expat
 
 from .adapters import ExtractionResult, ocr_pdf_page_count
 from .layout import GRID, UNITS, grid_box, validate_layout
-from .rapidocr_adapter import _row_groups, _xy_cut
+from .rapidocr_adapter import _row_groups, _xy_cut, right_to_left
 
 MAX_BYTES = 32 * 1024 * 1024
 # Several times the words of a dense newspaper page. Column order costs more
@@ -274,7 +277,12 @@ def parse_alto(data: bytes) -> AltoPage:
 
 
 def page_text(page: AltoPage) -> str:
-    """The page's words in reading order.
+    """The page's words in reading order (see ``_page_text``)."""
+    return _page_text(page)[0]
+
+
+def _page_text(page: AltoPage) -> tuple[str, int]:
+    """The page's words in reading order, and how many rows were written right to left.
 
     Words in one visual row are first joined into runs wherever they stand less
     than the median word height apart: a word space is narrower than that, a
@@ -287,13 +295,17 @@ def page_text(page: AltoPage) -> str:
     """
     words = list(page.words)
     if not words:
-        return ""
+        return "", 0
     if any(word.box is None for word in words):
         lines: dict[int, list[str]] = {}
         for word in words:
             lines.setdefault(word.line, []).append(word.text)
-        return "\n".join(" ".join(texts) for texts in lines.values())
-    items = [_item(word.text, *word.box) for word in words if word.box is not None]
+        return "\n".join(" ".join(texts) for texts in lines.values()), 0
+    items = [
+        {**_item(word.text, *word.box), "index": index}
+        for index, word in enumerate(words)
+        if word.box is not None
+    ]
     runs = _runs(items)
     heights = sorted(run["h"] for run in runs)
     gap = max(heights[len(heights) // 2], 1e-9)
@@ -304,13 +316,14 @@ def page_text(page: AltoPage) -> str:
             blocks[-1] = blocks[-1] + block
         else:
             blocks.append(block)
-    return "\n".join(
-        "\n".join(
-            " ".join(item["text"] for item in sorted(row, key=lambda item: item["cx"]))
-            for row in _row_groups(block)
-        )
-        for block in blocks
-    )
+    rows, backwards = [], 0
+    for block in blocks:
+        for row in _row_groups(block):
+            reverse = right_to_left(item["text"] for item in sorted(row, key=lambda i: i["index"]))
+            backwards += reverse
+            ordered = sorted(row, key=lambda item: item["cx"], reverse=reverse)
+            rows.append(" ".join(item["text"] for item in ordered))
+    return "\n".join(rows), backwards
 
 
 def _item(text: str, x0: float, y0: float, x1: float, y1: float) -> dict[str, Any]:
@@ -327,6 +340,7 @@ def _item(text: str, x0: float, y0: float, x1: float, y1: float) -> dict[str, An
 
 
 def _runs(words: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    words = [{"index": index, **word} for index, word in enumerate(words)]
     heights = sorted(word["h"] for word in words)
     gap = heights[len(heights) // 2]
     runs = []
@@ -342,25 +356,44 @@ def _runs(words: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 current, right = [word], word["x1"]
         runs.append(current)
     return [
-        _item(
-            " ".join(w["text"] for w in run),
-            min(w["x0"] for w in run),
-            min(w["y0"] for w in run),
-            max(w["x1"] for w in run),
-            max(w["y1"] for w in run),
-        )
+        {
+            **_item(
+                " ".join(w["text"] for w in _in_file_order_if_right_to_left(run)),
+                min(w["x0"] for w in run),
+                min(w["y0"] for w in run),
+                max(w["x1"] for w in run),
+                max(w["y1"] for w in run),
+            ),
+            "index": min(w["index"] for w in run),
+        }
         for run in runs
     ]
 
 
+def _in_file_order_if_right_to_left(run: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """A run's words left to right, or, when they read right to left, as the file lists them.
+
+    The file's order is the reading order, which also keeps a Latin name inside a
+    Hebrew line the right way round.
+    """
+    in_file_order = sorted(run, key=lambda word: word["index"])
+    return in_file_order if right_to_left(word["text"] for word in in_file_order) else run
+
+
 def confidence_detail(page: AltoPage) -> dict[str, Any] | None:
-    """Word confidences in RapidOCR's shape (percent), or None when the file gives none."""
+    """Word confidences in RapidOCR's shape (percent), or None when the file gives none.
+
+    Only scored words have a confidence; ``unscored_count`` says how many words the
+    file gives no usable ``WC`` or ``CC`` for, so a mean over a few scored words is
+    not mistaken for the page's.
+    """
     scores = [word.confidence * 100 for word in page.words if word.confidence is not None]
     if not scores:
         return None
     low = sum(score < 60 for score in scores)
     return {
         "word_count": len(scores),
+        "unscored_count": len(page.words) - len(scores),
         "mean": round(mean(scores), 2),
         "min": round(min(scores), 2),
         "below_60_count": low,
@@ -550,7 +583,7 @@ class AltoAdapter:
             page_width=size[0] if size else None,
             page_height=size[1] if size else None,
         )
-        text = page_text(page)
+        text, right_to_left_rows = _page_text(page)
         warnings = ["ocr_text_layer"] if text.strip() else []
         if layout is None:
             warnings.append("alto_geometry_mismatch")
@@ -558,9 +591,15 @@ class AltoAdapter:
         return ExtractionResult(
             content=text,
             format="text",
-            confidence=None if detail is None else round(detail["mean"] / 100, 4),
+            # A page confidence only when the file scores every word.
+            confidence=(
+                None
+                if detail is None or detail["unscored_count"]
+                else round(detail["mean"] / 100, 4)
+            ),
             model=(
                 f"alto; file {file} sha256:{digest}; software {page.software or 'not declared'}"
+                + (f"; right-to-left-rows={right_to_left_rows}" if right_to_left_rows else "")
             ),
             warnings=warnings,
             usage={"pages": 1, "tokens": None, "compute_seconds": None, "cost_usd": None},

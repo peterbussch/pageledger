@@ -38,7 +38,9 @@ order: segments (full-width bands and the column regions between them) from
 top to bottom, a segment's columns from left to right, and a column's pieces
 from top to bottom. That order, like the column detection, assumes left-to-right print;
 for right-to-left pages the geometry is still a valid partition but the tile
-order and the indentation hints below read the columns in the wrong order.
+order and the indentation hints below read the columns in the wrong order. Text
+taken from a layout (a heading, a projected witness) writes a row whose letters
+are mostly right to left from its right-hand end.
 
 Fields of a tile:
 
@@ -109,6 +111,7 @@ from fractions import Fraction
 from typing import Any
 
 from .layout import GRID, LEVELS, canonical_json, layout_sha256, validate_layout
+from .rapidocr_adapter import right_to_left
 
 PLAN_VERSION = "0.1"
 MAX_TILES = 99
@@ -220,7 +223,10 @@ def _row_groups(boxes: Sequence[_Box], gap: int) -> list[list[_Box]]:
 
 
 def _row_text(row: Sequence[_Box]) -> str:
-    return " ".join(box.text for box in row if box.text)
+    """A row's text in its reading direction: from the right when it reads right to left."""
+    in_layout_order = sorted(row, key=lambda box: box.index)
+    ordered = reversed(row) if right_to_left(box.text for box in in_layout_order) else row
+    return " ".join(box.text for box in ordered if box.text)
 
 
 def _runs(boxes: list[_Box], level: str, gap: int) -> list[_Box]:
@@ -241,13 +247,19 @@ def _runs(boxes: list[_Box], level: str, gap: int) -> list[_Box]:
     return runs
 
 
+def _reading_order(words: list[_Box]) -> list[_Box]:
+    """Words left to right, or in the layout's own order when that reads right to left."""
+    in_layout_order = sorted(words, key=lambda word: word.index)
+    return in_layout_order if right_to_left(word.text for word in in_layout_order) else words
+
+
 def _join(words: list[_Box]) -> _Box:
     return _Box(
         min(w.x0 for w in words),
         min(w.y0 for w in words),
         max(w.x1 for w in words),
         max(w.y1 for w in words),
-        " ".join(w.text for w in words if w.text),
+        " ".join(w.text for w in _reading_order(words) if w.text),
         min(w.index for w in words),
     )
 
@@ -264,6 +276,9 @@ def _gaps(spans: list[tuple[int, int]], gap: int, parts: int = 4) -> list[int]:
 
 
 def _gutters(lines: list[_Box], gap: int) -> list[int]:
+    if not lines:
+        # A band between cuts can hold no line centre when lines are a grid step tall.
+        return []
     cuts = _gaps([(line.x0, line.x1) for line in lines], gap)
     if cuts:
         return cuts

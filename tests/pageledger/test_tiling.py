@@ -493,3 +493,32 @@ def test_plan_tiles_rejects_bad_settings(overrides):
         plan(None, 612, 792, **overrides)
     with pytest.raises(ValueError):
         plan_tiles(None, page_width=0, page_height=792, **SETTINGS)
+
+
+def test_a_witness_writes_a_right_to_left_row_from_the_right():
+    width, height = 600.0, 800.0
+    words = [
+        (402, 100, 460, 115, "אחד"),
+        (330, 100, 400, 115, "שתיים"),
+        (290, 100, 328, 115, "Herzl"),
+        (300, 300, 360, 315, "one"),
+        (362, 300, 430, 315, "two"),
+    ]
+    layout = page(words, width, height, level="word")
+    text, outside = project_witness(layout, plan(layout, width, height))
+    assert outside == 0
+    assert text.split("\n") == ["אחד שתיים Herzl", "one two"]
+
+
+def test_lines_a_grid_step_tall_leave_an_empty_band_and_still_plan():
+    # Valid boxes one grid step tall: a band between whitespace cuts holds no line centre.
+    layout = {
+        "units": "page_millionths",
+        "level": "line",
+        "source": {},
+        "items": [
+            {"box": [100000, 2, 900000, 3], "text": "a"},
+            {"box": [100000, 4, 900000, 5], "text": "a"},
+        ],
+    }
+    validate_plan(plan(layout, 612.0, 792.0, min_line_pixels=20, max_image_side=2048))

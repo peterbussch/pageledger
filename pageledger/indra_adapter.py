@@ -45,7 +45,9 @@ class IndraAdapter:
     deterministic: ClassVar[bool] = True
     input_types: ClassVar[tuple[str, ...]] = ("pdf",)
     output_types: ClassVar[tuple[str, ...]] = ("text", "markdown")
-    capabilities: ClassVar[tuple[str, ...]] = ("ocr", "page_image", "layout", "local")
+    # Indra's layout blocks go into confidence_detail; it returns no word or line
+    # layout that tiles could be planned from, so it does not claim "layout".
+    capabilities: ClassVar[tuple[str, ...]] = ("ocr", "page_image", "local")
 
     def __post_init__(self) -> None:
         if self.mode not in INDRA_MODES:

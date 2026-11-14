@@ -161,3 +161,13 @@ def test_a_page_indra_left_half_unread_is_low_confidence(monkeypatch, tmp_path):
         Path("b.pdf"), page_id="p1", page_number=1, action="transcribe_text"
     )
     assert _has_low_confidence_tail(result.confidence_detail)
+
+
+def test_indra_does_not_claim_a_layout_tiles_could_be_planned_from(monkeypatch, tmp_path):
+    _fake_indra(monkeypatch, tmp_path, PAGE)
+    adapter = load_adapter("indra", {})
+    assert "layout" not in adapter.capabilities
+    result = adapter.extract(
+        Path("book.pdf"), page_id="p2", page_number=2, action="transcribe_text"
+    )
+    assert result.layout is None and "layout" in result.confidence_detail

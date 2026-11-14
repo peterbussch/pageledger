@@ -566,3 +566,17 @@ def test_apple_vision_adapter_runs_helper_and_assembles_rows(tmp_path: Path) -> 
     )
     assert result.content == "first | second"
     assert result.usage["pages"] == 1
+
+
+def test_rapidocr_rows_read_a_right_to_left_row_from_the_right() -> None:
+    from pageledger.rapidocr_adapter import _assemble, assemble
+
+    lines = [
+        _line("שם", 600, 100, 700, 130),
+        _line("עיר", 300, 100, 400, 130),
+        _line("שנה", 50, 100, 150, 130),
+        _line("Name", 50, 200, 150, 230),
+        _line("City", 300, 200, 400, 230),
+    ]
+    assert assemble(lines).splitlines() == ["שם | עיר | שנה", "Name | City"]
+    assert _assemble(lines, "rows")[1] == 1

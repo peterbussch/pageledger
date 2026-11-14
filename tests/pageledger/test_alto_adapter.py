@@ -162,6 +162,7 @@ def test_confidence_from_wc_then_cc_then_none():
     assert [word.confidence for word in page.words] == [1.0, 0.5, None, None]
     assert confidence_detail(page) == {
         "word_count": 2,
+        "unscored_count": 2,
         "mean": 75.0,
         "min": 50.0,
         "below_60_count": 1,
@@ -820,3 +821,70 @@ def test_page_never_reads_another_pages_file_through_a_carrier(gapped):
     with carrier(read_image_source(folder), [1, 2]) as (path, _):
         with pytest.raises(ValueError, match="'0003.png' is page 2"):
             adapter.extract(path, page_id="p0002", page_number=2, action="transcribe_text")
+
+
+def test_a_right_to_left_line_keeps_its_reading_order():
+    # ALTO lists a Hebrew line's words in reading order, the first at the right.
+    line = [
+        _string("אחד", 700, 100, 120, 30),
+        _string("שתיים", 520, 100, 150, 30),
+        _string("שלוש", 360, 100, 130, 30),
+    ]
+    assert page_text(parse_alto(alto([line]))) == "אחד שתיים שלוש"
+
+
+def test_a_latin_name_inside_a_hebrew_line_keeps_its_own_order():
+    line = [
+        _string("ספר", 800, 100, 100, 30),
+        _string("של", 720, 100, 60, 30),
+        # Laid out left to right inside the line, as a Latin phrase is printed.
+        _string("Theodor", 420, 100, 150, 30),
+        _string("Herzl", 590, 100, 80, 30),
+        _string("בווינה", 250, 100, 140, 30),
+    ]
+    assert page_text(parse_alto(alto([line]))) == "ספר של Theodor Herzl בווינה"
+
+
+def test_a_right_to_left_table_row_is_read_from_the_right():
+    # Cells far apart are separate runs; the row starts with the right-hand cell.
+    line = [_string("ראשון", 800, 100, 120, 30), _string("שני", 100, 100, 100, 30)]
+    assert page_text(parse_alto(alto([line]))) == "ראשון שני"
+
+
+def test_left_to_right_rows_are_unchanged_by_the_right_to_left_rule():
+    line = [_string("one", 50, 100, 80, 30), _string("two", 140, 100, 80, 30)]
+    reversed_file = [line[1], line[0]]
+    assert page_text(parse_alto(alto([reversed_file]))) == "one two"
+
+
+def test_a_page_confidence_only_when_every_word_is_scored():
+    lines = [
+        [
+            _string("a", 50, 100, 80, 30, 'WC="0.99"'),
+            _string("b", 140, 100, 80, 30),
+            _string("c", 230, 100, 80, 30),
+        ]
+    ]
+    page = parse_alto(alto(lines))
+    detail = confidence_detail(page)
+    assert detail is not None
+    assert detail["word_count"] == 1 and detail["unscored_count"] == 2
+
+
+def test_the_reading_says_how_many_rows_it_read_right_to_left_and_claims_no_partial_confidence(
+    tmp_path,
+):
+    folder = tmp_path / "alto"
+    folder.mkdir()
+    lines = [
+        [_string("אחד", 700, 100, 120, 30, 'WC="0.9"'), _string("שתיים", 520, 100, 150, 30)],
+        [_string("one", 50, 300, 80, 30, 'WC="0.9"'), _string("two", 140, 300, 80, 30)],
+    ]
+    (folder / "1.xml").write_bytes(alto(lines))
+    source = _pdf(tmp_path / "reel.pdf", [(500, 700, 0)])
+    result = AltoAdapter(dir=str(folder), name="{page}.xml").extract(
+        source, page_id="p1", page_number=1, action="transcribe_text"
+    )
+    assert result.content == "אחד שתיים\none two"
+    assert result.model.endswith("; right-to-left-rows=1")
+    assert result.confidence is None and result.confidence_detail["unscored_count"] == 2
