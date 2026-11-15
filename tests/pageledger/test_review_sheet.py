@@ -119,6 +119,24 @@ def test_a_renamed_spreadsheet_sheet_finds_its_unique_binding(job, tmp_path):
     assert _pages(job)[0]["disposition"] == "reviewed_text"
 
 
+def test_applying_a_renamed_sheet_twice_says_the_job_changed_not_that_a_file_is_missing(
+    job, tmp_path
+):
+    original = _sheet(job, tmp_path / "review.csv")
+    renamed = tmp_path / "review-done.csv"
+    shutil.copyfile(original, renamed)
+    _edit(renamed, lambda rows: rows[0].update(decision="accept"))
+    review_job(job, renamed, reviewer="A. Reader")
+
+    with pytest.raises(ValueError) as refused:
+        review_job(job, renamed, reviewer="A. Reader")
+
+    message = str(refused.value)
+    assert "no longer matches the job: page 1 was read again, reviewed or corrected" in message
+    assert "applying a sheet a second time" in message and "Write a new review sheet" in message
+    assert "missing or ambiguous" not in message
+
+
 def test_renamed_sheet_reports_missing_or_ambiguous_binding(job, tmp_path):
     original = _sheet(job, tmp_path / "review.csv")
     renamed = tmp_path / "review-done.csv"
