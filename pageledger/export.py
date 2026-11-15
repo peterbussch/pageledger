@@ -209,6 +209,9 @@ def _reading(report: dict, page: dict) -> str:
 
 def _state_words(report: dict, page: dict) -> str:
     code = page["disposition"]
+    if page["review"] is not None and code in REVIEWED:
+        # A person's decision shares its code with an engine's judgement; say whose it is.
+        return f"{REVIEWED[code]} ({code})"
     return f"{hold_in_words(_shown(report, page), code)} ({code})"
 
 
