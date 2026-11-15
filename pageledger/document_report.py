@@ -896,7 +896,15 @@ def closing_lines(report: dict, job: Path | str) -> list[str]:
     lines.append(f"The job is in {folder}.")
     if held:
         groups = _grouped(held, lambda page: _group_keys(report, page))
-        lines.append("Why it needs a person:" if len(held) == 1 else "Why they need a person:")
+        why = "Why it needs a person" if len(held) == 1 else "Why they need a person"
+        if sum(len(items) for _, items in groups) > len(held):
+            # A page under two causes is counted under each, so the counts pass the total.
+            why += (
+                " (more than one cause)"
+                if len(held) == 1
+                else " (a page can have more than one cause)"
+            )
+        lines.append(f"{why}:")
         for key, items in groups[:3]:
             count = f"{len(items)} page{'' if len(items) == 1 else 's'}"
             lines.append(f"  {count}: {_group_words(key)}.")

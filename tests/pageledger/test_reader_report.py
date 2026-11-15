@@ -244,6 +244,34 @@ def test_process_ends_with_where_the_job_is_and_one_next_command(setup, capsys):
     )
 
 
+def test_closing_lines_count_a_page_under_each_of_its_causes_and_say_so(
+    setup,  # noqa: F811
+    monkeypatch,
+):
+    from pageledger import document_report
+
+    setup[3].update(defective={2, 3})
+    launch(setup)
+    report = json.loads((setup[2] / "document.json").read_text(encoding="utf-8"))
+    assert "Why they need a person:" in closing_lines(report, "jobs/a")
+
+    monkeypatch.setattr(
+        document_report,
+        "_group_keys",
+        lambda report, page: ["x\x1ffirst cause", "y\x1fsecond cause"],
+    )
+    lines = closing_lines(report, "jobs/a")
+    assert lines[2:5] == [
+        "Why they need a person (a page can have more than one cause):",
+        "  2 pages: first cause.",
+        "  2 pages: second cause.",
+    ]
+    report["pages"] = [page for page in report["pages"] if page["page_number"] != 3]
+    report["counts"]["human_review"] = 1
+    lines = closing_lines(report, "jobs/a")
+    assert "Why it needs a person (more than one cause):" in lines
+
+
 def test_closing_lines_follow_the_job_status(tmp_path):
     job = job_fixture(tmp_path)
     job["pages"] = job["pages"][:1]
