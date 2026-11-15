@@ -3,6 +3,43 @@
 Release changes follow the [artifact compatibility policy](docs/run-manifest-spec.md#compatibility-policy)
 and, from 1.0, [stability](docs/stability.md).
 
+## 0.9.1 - 2026-11-15
+
+Fixes from the first days of 0.9.0 in use: a newcomer's first PDF, and four places
+where the screen or an export said something other than what happened. Artifacts
+and rule sets are unchanged; jobs and runs written by 0.9.0 verify as before.
+
+### Fixed
+
+- `process` on a PDF with a plain `pip install pageledger` (no `[pdf]` extra)
+  halted with "Obtain a valid source container and start a new job", and `resume`
+  repeated it. It is now refused before the job exists: "This install of
+  PageLedger cannot read PDFs. Add PDF support, then run the command again:
+  pip install "pageledger[pdf]"". See [process](docs/cli.md#process).
+- `verify` on a job that halted or failed printed only "Status: pass" and that
+  the record is intact, which read as "the job is all right". It still passes,
+  because the record is intact, and now adds that the job itself halted, how
+  many pages it read and what to do next; the JSON result carries `job_status`
+  and `job_next_action`. See [verify](docs/cli.md#verify).
+- The closing lines of `process` list why pages need a person with a page count
+  for each cause. A page with two causes is counted under both, so the counts
+  could pass the number of pages held; the heading now says so ("a page can have
+  more than one cause"), as the report already did.
+- An export of a page that a person recorded as unreadable, handwriting or an
+  illustration gave its state as an engine's judgement ("An engine judged the
+  page unreadable"). It now says "A person recorded the page as unreadable"; so
+  does the review view.
+- Applying a renamed review sheet a second time failed with "Binding file ... is
+  missing or ambiguous". The sheet's binding is now found, and the refusal names
+  the cause: the page was read again, reviewed or corrected after the sheet was
+  written. See [review in a spreadsheet](docs/processing-spec.md#review-in-a-spreadsheet).
+
+### Changed
+
+- [Stability](docs/stability.md) says plainly that it is a draft until 1.0 is
+  released: what real use of 0.9 shows may still change the list. A job or run
+  written by a released version stays readable and verifiable either way.
+
 ## 0.9.0 - 2026-11-13
 
 0.9.0 is the candidate for 1.0. It writes down the contract that 1.0 will keep
