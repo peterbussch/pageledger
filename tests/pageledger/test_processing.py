@@ -123,6 +123,34 @@ def test_process_names_the_first_page_past_the_source_end(setup):
     assert not out.exists()
 
 
+def test_a_pdf_is_refused_before_the_job_exists_when_pdf_support_is_missing(
+    setup, monkeypatch, capsys
+):
+    from pageledger import adapters as adapters_module
+    from pageledger.cli import main
+
+    def missing_pypdf():
+        raise ValueError("PDF support requires the optional dependency: install pageledger[pdf]")
+
+    monkeypatch.setattr(adapters_module, "_load_pypdf", missing_pypdf)
+    _, config, out, _ = setup
+    source = out.parent / "book.pdf"
+    source.write_bytes(b"%PDF-1.4\n")
+    with pytest.raises(ValueError, match=r'pip install "pageledger\[pdf\]"'):
+        process(source=source, config_path=config, out_dir=out)
+    assert not out.exists()
+
+    assert main(["process", str(source), "--engine", "none", "--out", str(out)]) == 1
+    captured = capsys.readouterr()
+    assert (
+        "cannot read PDFs. Add PDF support, then run the command again: "
+        'pip install "pageledger[pdf]"'
+    ) in captured.err
+    assert "Reading book.pdf" not in captured.err
+    assert "source container" not in captured.err + captured.out
+    assert not out.exists()
+
+
 def test_serial_escalation_preserves_exact_denominator_and_review_holds(setup):
     result = launch(setup, pages="2-3")
     assert result["status"] == "completed"
@@ -387,6 +415,7 @@ def test_tampered_selected_output_fails_verification(setup):
 
 
 def test_invalid_pdf_gets_failed_container_report_without_invented_pages(setup):
+    pytest.importorskip("pypdf")  # without it a PDF is refused before the job exists
     pdf = setup[0].with_suffix(".pdf")
     pdf.write_bytes(b"%PDF-invalid synthetic container")
     result = process(source=pdf, config_path=setup[1], out_dir=setup[2])
@@ -396,6 +425,35 @@ def test_invalid_pdf_gets_failed_container_report_without_invented_pages(setup):
     assert job["pages"] == []
     assert setup[3]["calls"] == []
     assert "source_container_invalid" in job["halt_reason"]
+
+
+def test_verify_says_when_the_job_it_passes_had_halted(setup, capsys):
+    pytest.importorskip("pypdf")
+    from pageledger.cli import main
+
+    pdf = setup[0].with_suffix(".pdf")
+    pdf.write_bytes(b"%PDF-invalid synthetic container")
+    process(source=pdf, config_path=setup[1], out_dir=setup[2])
+    result = verify_job(setup[2])
+    assert result["status"] == "pass"
+    assert result["job_status"] == "halted"
+    assert "start a new job" in result["job_next_action"]
+    capsys.readouterr()
+    assert main(["verify", str(setup[2])]) == 0
+    printed = capsys.readouterr().out.splitlines()
+    assert printed[0] == "Status: pass"
+    assert printed[2].startswith("The job itself halted: 0 pages read. ")
+    assert printed[2].endswith("Then start a new job.")
+
+
+def test_verify_adds_nothing_for_a_job_that_finished(setup, capsys):
+    from pageledger.cli import main
+
+    launch(setup)
+    assert "job_status" not in verify_job(setup[2])
+    capsys.readouterr()
+    assert main(["verify", str(setup[2])]) == 0
+    assert "The job itself" not in capsys.readouterr().out
 
 
 def _encrypted_pdf(path, *, algorithm, user_password=""):

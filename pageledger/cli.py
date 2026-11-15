@@ -1676,6 +1676,14 @@ def _cmd_job(args: argparse.Namespace) -> int:
             print(f"Status: {result['status']}{reason}")
         if args.command == "verify-job" and result["status"] == "pass":
             print(VERIFIED)
+            if result.get("job_status"):
+                from .document_report import _read_and_held
+
+                document = json.loads((args.job_dir / "document.json").read_text("utf-8"))
+                print(
+                    f"The job itself {result['job_status']}: {_read_and_held(document)[0]}. "
+                    f"{result.get('job_next_action') or ''}".rstrip()
+                )
         if "decisions" in result:
             counts = sorted(result["decisions"].items())
             print("Decisions: " + (", ".join(f"{name} {n}" for name, n in counts) or "none"))
@@ -1730,6 +1738,11 @@ def _process_without_config(
     if engine != "none":
         options = yaml.safe_load(config_text)["processing"]["local_ocr"]["adapter_options"]
         _check_engine(engine, options, args.source)
+    if args.source.suffix.lower() == ".pdf":
+        # After the engine's tools, so each missing piece is named in the order it is needed.
+        from .processing_source import require_pdf_support
+
+        require_pdf_support()
     print(_reading_line(args.source, engine, options), file=sys.stderr)
     fd, temp_config = tempfile.mkstemp(prefix="pageledger-", suffix=".yml")
     try:
