@@ -56,7 +56,7 @@ from .processing_policy import (
     HOLD_POLICY,
     warning_holds,
 )
-from .processing_source import TEXT, inspect_source, source_kind
+from .processing_source import PDF, TEXT, inspect_source, require_pdf_support, source_kind
 from .replay import _package_code_sha256
 from .review_sheet import _corrected as review_sheet_corrected
 from .review_sheet import read_review_decisions, read_review_sheet, write_review_sheet
@@ -548,6 +548,8 @@ def _process(
     if config.max_retries or config.on_page_error != "stop":
         raise ValueError("process requires zero retries and on_page_error: stop")
     kind = source_kind(source)
+    if kind == PDF:
+        require_pdf_support()
     images = read_image_source(source) if kind == KIND else None
     policy = processing_config(config.data, pdf=kind != TEXT)
     if images is not None and any(
@@ -2242,11 +2244,16 @@ def verify_job(job_dir: Path) -> dict:
             include_stage_accounting="stage_accounting" in report,
         ):
             raise ValueError("Document report differs from verified job evidence")
-        return {
+        result = {
             "status": "pass",
             "job_id": job["job_id"],
             "out_dir": str(root),
             "warnings": warnings,
         }
+        if job["status"] in ("halted", "failed"):
+            # An intact record of a job that stopped is still a pass; say that it stopped.
+            result["job_status"] = job["status"]
+            result["job_next_action"] = job.get("next_action")
+        return result
     except (ValueError, OSError, KeyError, TypeError) as exc:
         return {"status": "fail", "out_dir": str(root), "error": str(exc)}

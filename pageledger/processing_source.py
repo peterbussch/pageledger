@@ -5,6 +5,7 @@ from __future__ import annotations
 import codecs
 from pathlib import Path
 
+from . import adapters
 from .adapters import _reading_pdf, text_pages
 from .image_source import KIND, is_image_source
 
@@ -44,6 +45,17 @@ def source_kind(source: Path) -> str:
             f"process it. {_SOURCES}"
         ) from None
     return TEXT
+
+
+def require_pdf_support() -> None:
+    """Refuse a PDF before its job exists when this install cannot read one."""
+    try:
+        adapters._load_pypdf()
+    except ValueError:
+        raise ValueError(
+            "This install of PageLedger cannot read PDFs. Add PDF support, then run the "
+            'command again: pip install "pageledger[pdf]"'
+        ) from None
 
 
 def inspect_source(source: Path) -> tuple[int, dict]:

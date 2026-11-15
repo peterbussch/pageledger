@@ -234,7 +234,7 @@ def read_review_sheet(
     if expected_binding.is_file():
         binding_file = expected_binding
     else:
-        matches = []
+        matches, same_rows = [], []
         for candidate in sheet.parent.glob("*.binding.json"):
             try:
                 proposed = json.loads(candidate.read_text(encoding="utf-8"))
@@ -242,6 +242,12 @@ def read_review_sheet(
                 continue
             if _binding_matches_rows(proposed, rows, job, pages):
                 matches.append(candidate)
+            elif _binding_matches_rows(proposed, rows, job, pages, evidence=False):
+                same_rows.append(candidate)
+        if not matches and len(same_rows) == 1:
+            # The sheet's own binding, written before the job last changed: the rows
+            # below are then refused for what is wrong with them, not for a file name.
+            matches = same_rows
         if len(matches) != 1:
             raise ValueError(
                 f"Binding file {expected_binding.name} is missing or ambiguous. Keep the "
@@ -333,8 +339,10 @@ def _receipt(
             page["page_number"]
         ):
             raise ValueError(
-                f"Review row {row_id} no longer matches the job's evidence; "
-                "write a new review sheet"
+                f"Review row {row_id} no longer matches the job: page "
+                f"{page['page_number']} was read again, reviewed or corrected after this "
+                "sheet was written (applying a sheet a second time does this too). "
+                "Write a new review sheet"
             )
         token = row["decision"].strip()
         text, start = row.get("text"), row.get("from") or None
@@ -378,8 +386,10 @@ def _receipt(
 
 
 def _binding_matches_rows(
-    binding: object, rows: list[dict[str, str]], job: dict, pages: dict
+    binding: object, rows: list[dict[str, str]], job: dict, pages: dict, *, evidence: bool = True
 ) -> bool:
+    """Whether a binding is this sheet's: the same rows and, with ``evidence``, pages
+    that still are as the binding recorded them."""
     if (
         not isinstance(binding, dict)
         or binding.get("schema_version") != "0.1"
@@ -396,7 +406,7 @@ def _binding_matches_rows(
         if (
             page is None
             or row_id in seen
-            or not _bound(bindings.get(row_id), _binding(job, page), False)
+            or (evidence and not _bound(bindings.get(row_id), _binding(job, page), False))
             or row.get("page_number") != str(page["page_number"])
         ):
             return False

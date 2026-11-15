@@ -11,6 +11,13 @@ in them is removed, renamed or narrowed.
 taken away. New commands, options, fields, codes and rule sets may be added in
 any minor release.
 
+Until 1.0 is released, this page is a draft of that promise, not the promise
+itself. 0.9 is being used on real collections, and what that shows may still
+change the list below, for example how a page that no second reading confirmed
+is described, or which engine reads first. What does not wait for 1.0: a job or
+run written by a released version stays readable and verifiable, which the
+tests hold every release to with jobs written by 0.5.2 to 0.8.0.
+
 ## What is stable
 
 | Surface | The promise | Checked by |

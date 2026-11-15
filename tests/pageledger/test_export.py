@@ -210,6 +210,9 @@ def test_a_page_reviewed_as_not_text_is_exported_without_its_machine_text(job, d
     assert records[1]["review"]["disposition"] == disposition
     text = _export(job, "txt", reviewed_only=True)
     assert "Page two" not in text and "--- Page 2 ---" in text
+    # The decision is the reviewer's: its code is also an engine's judgement of a page.
+    assert "State: A person " in text and f"({disposition})" in text
+    assert "An engine judged" not in text
     assert "Page two" not in _export(job, "md")
     tei = ET.fromstring(_export(job, "tei", reviewed_only=True))
     gap = tei.findall(f".//{TEI}div")[1].find(f"{TEI}gap")

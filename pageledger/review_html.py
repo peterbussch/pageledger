@@ -848,6 +848,8 @@ def _why(page: dict, report: dict, *, every: bool = False) -> str:
 
 def _state(page: dict) -> str:
     state = page["disposition"]
+    if page.get("review") is not None and state in REVIEWED:
+        return REVIEWED[state]
     return HOLDS.get(state) or REVIEWED.get(state) or state
 
 

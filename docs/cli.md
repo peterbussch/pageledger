@@ -62,6 +62,9 @@ stages. The source is a PDF, a text file, an image file or a folder of page
 images (see [run](#run) for how a folder is read). `--out` is required, and
 the output directory must be new.
 
+Reading a PDF needs the `pdf` extra (`pip install "pageledger[pdf]"`); without
+it a PDF is refused before the job directory is created, with that command.
+
 Without `--config`, the job runs with exactly the configuration
 `init` writes for the same `--engine`, `--lang` and
 `--model-dir` options (see [init](#init)) and records it as it
@@ -512,7 +515,10 @@ report, in whatever directory the job is now. A job that did not finish (its
 `job.json` still says `processing`, because it was interrupted or is still
 running) fails with `"reason": "unfinished"` in the JSON result, prints
 `Status: fail (unfinished)`, and says to run `resume`; a finished job is checked
-in full. It reports warnings:
+in full. A job that halted or failed can still pass, because its record is
+intact; `verify` then adds a line saying that the job itself halted, how many
+pages it read and what to do next (`job_status` and `job_next_action` in the
+JSON result). It reports warnings:
 `job_relocated` when the job is not in the directory it was written in,
 `job_changed_elsewhere` for a review or adjudication recorded on such a copy,
 and `source_missing` or `source_relocated` as for a run; other bytes at the
@@ -749,8 +755,10 @@ Releases before 0.9.0 named some commands differently. Those names still work,
 with the same options, the same output and the same exit codes, and will keep
 working through every 1.x release (see [stability](stability.md)); they are not
 listed by `pageledger --help`. On a job and a run written by 0.8.0, each printed
-what 0.8.0 printed, with two additions: the JSON result of `verify-job` has a
-`warnings` list (empty when there is nothing to report), and `review-sheet` also
+what 0.8.0 printed, with these additions: the JSON result of `verify-job` has a
+`warnings` list (empty when there is nothing to report) and, for a job that
+halted or failed, `job_status` and `job_next_action`, which it also prints as one
+line; and `review-sheet` also
 writes `review-decisions.txt`, a guide to the decisions, beside the sheet, whose
 `disposition`, `attempt_summary` and `review_reasons` cells now lead with words
 (the codes and IDs follow in parentheses; applying a sheet does not read them). They
